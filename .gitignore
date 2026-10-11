@@ -1,0 +1,16 @@
+/target
+**/*.rs.bk
+
+# Never commit ROM images or rips, even by accident.
+*.sfc
+*.smc
+*.swc
+*.fig
+*.spc
+
+# Converted content from a user's own ROM stays local.
+/content/imported/
+
+# Local Claude Code state
+.claude/settings.local.json
+.claude/taint-guard.log

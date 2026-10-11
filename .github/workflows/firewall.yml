@@ -1,0 +1,16 @@
+name: firewall
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  firewall:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No ROM images
+        run: ci/forbid-roms.sh
+      - name: Taint lint
+        run: ci/taint-lint.sh

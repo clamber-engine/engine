@@ -1,0 +1,51 @@
+{
+  "permissions": {
+    "deny": [
+      "WebSearch",
+      "Read(**/*.sfc)",
+      "Read(**/*.smc)",
+      "Read(**/*.swc)",
+      "Read(**/*.fig)",
+      "Read(**/*.spc)",
+      "Edit(.claude/**)",
+      "Edit(ci/**)",
+      "Edit(.github/**)",
+      "Edit(CONTRIBUTING.md)",
+      "Edit(CLAUDE.md)"
+    ],
+    "blockReadsOutsideWorkingDirectories": true,
+    "ask": [
+      "Edit(tests/golden/**)",
+      "Edit(tests/conformance-status.toml)",
+      "Bash(CLAMBER_BLESS=*)"
+    ]
+  },
+  "disableClaudeAiConnectors": true,
+  "sandbox": {
+    "enabled": true,
+    "network": {
+      "allowedDomains": [
+        "index.crates.io",
+        "static.crates.io",
+        "crates.io",
+        "static.rust-lang.org",
+        "docs.rs",
+        "doc.rust-lang.org"
+      ]
+    }
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "WebSearch|WebFetch|Bash|Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/taint-guard.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
