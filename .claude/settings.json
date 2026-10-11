@@ -11,12 +11,24 @@
       "Edit(ci/**)",
       "Edit(.github/**)",
       "Edit(CONTRIBUTING.md)",
-      "Edit(CLAUDE.md)"
+      "Edit(CLAUDE.md)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(gh repo delete*)"
     ],
     "blockReadsOutsideWorkingDirectories": true,
     "additionalDirectories": [
       "~/.cargo",
       "~/.rustup"
+    ],
+    "allow": [
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(cargo *)",
+      "Bash(ci/forbid-roms.sh)",
+      "Bash(ci/taint-lint.sh)"
     ]
   },
   "disableClaudeAiConnectors": true,
@@ -37,7 +49,11 @@
         "~/.cargo",
         "~/.rustup"
       ]
-    }
+    },
+    "excludedCommands": [
+      "git *",
+      "gh *"
+    ]
   },
   "hooks": {
     "PreToolUse": [
