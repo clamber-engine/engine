@@ -1,0 +1,8 @@
+[package]
+name = "clamber-fixed"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+description = "Deterministic fixed-point numbers for the Clamber simulation"
+
+[dependencies]

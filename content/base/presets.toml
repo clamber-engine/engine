@@ -1,0 +1,74 @@
+# Clamber's built-in feel presets.
+#
+# A preset adjusts world physics (`world`) and, optionally, the character in
+# a given roster slot (`roster.<slot>`, which may also adjust ability
+# parameters under `abilities.<name>`). Values are plain numbers, or
+# `{ scale = <factor> }` to multiply what the base preset gives.
+#
+# Units: pixels and frames at 60 Hz. Speeds are px/frame, accelerations
+# px/frame², and +y points down.
+#
+# `default` is the root every other preset builds on, so it sets every
+# movement parameter. These are Clamber's own values, chosen for feel.
+
+[presets.default]
+label = "Default"
+description = "Clamber's standard feel."
+
+[presets.default.world]
+gravity = 0.25
+max_fall_speed = 12
+ground_acceleration = 0.0625
+ground_deceleration = 0.375
+ground_friction = 0.0625
+top_speed = 5
+air_acceleration = 0.0625
+jump_speed = 6
+jump_release_speed = 3
+roll_friction = 0.03125
+roll_deceleration = 0.125
+roll_min_speed = 0.75
+bounce_speed = 5
+
+[presets.snappy]
+label = "Snappy"
+description = "Quicker starts and stops, heavier and shorter jumps."
+
+[presets.snappy.world]
+gravity = 0.375
+jump_speed = 7.5
+ground_acceleration = 0.125
+ground_deceleration = 0.5
+ground_friction = 0.125
+air_acceleration = 0.125
+
+[presets.floaty]
+label = "Floaty"
+description = "Light gravity, slow falls and long, steerable jumps."
+
+[presets.floaty.world]
+gravity = 0.15625
+max_fall_speed = 8
+jump_speed = 5
+jump_release_speed = 2.5
+air_acceleration = 0.09375
+
+# The Classic presets will be filled in from measured values in
+# `spec/behavior/` once those are released. Until then they play like
+# Default and are marked as placeholders. Don't put values here that
+# don't come from `spec`.
+
+[presets.classic-1]
+label = "Classic 1"
+description = "Placeholder: plays like Default until measured values are available."
+placeholder = true
+
+[presets.classic-2]
+label = "Classic 2"
+description = "Placeholder: plays like Default until measured values are available."
+placeholder = true
+
+[presets.classic-3]
+label = "Classic 3"
+description = "Placeholder: plays like Default until measured values are available."
+placeholder = true

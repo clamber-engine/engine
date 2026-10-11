@@ -1,0 +1,383 @@
+//! Feel presets: named bundles of world physics and per-slot roster
+//! adjustments.
+//!
+//! The engine ships its own presets in `content/base/presets.toml`, and a
+//! pack may add more. Each preset builds on a `base` (`default` if none is
+//! given); `default` is the root and sets every movement parameter, which
+//! makes it the engine's generic world defaults.
+
+use std::collections::BTreeMap;
+use std::sync::OnceLock;
+
+use serde::Deserialize;
+use toml::Table;
+
+use crate::load::{LoadError, Reader};
+use crate::physics::{Adjust, Param, ParamsPatch, Physics, PhysicsPatch};
+
+/// The root preset.
+pub const DEFAULT: &str = "default";
+
+/// Adjustments a preset makes to the character in one roster slot.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SlotPatch {
+    pub physics: PhysicsPatch,
+    /// By ability name.
+    pub abilities: BTreeMap<String, ParamsPatch>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Preset {
+    pub id: String,
+    /// Shown to players, for example in an options menu.
+    pub label: String,
+    pub description: Option<String>,
+    /// Exists so it can be chosen, but its values aren't final yet.
+    pub placeholder: bool,
+    /// `None` only for [`DEFAULT`].
+    pub base: Option<String>,
+    pub world: PhysicsPatch,
+    /// By roster slot. Presets know slots, not characters, so the same
+    /// preset applies to any pack.
+    pub slots: BTreeMap<usize, SlotPatch>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPreset {
+    label: String,
+    description: Option<String>,
+    #[serde(default)]
+    placeholder: bool,
+    base: Option<String>,
+    #[serde(default)]
+    world: Table,
+    #[serde(default)]
+    roster: Table,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPresetsFile {
+    presets: Table,
+}
+
+/// A set of presets, in the order they were written.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Presets(Vec<Preset>);
+
+impl Presets {
+    /// The engine's own presets.
+    pub fn builtin() -> &'static Presets {
+        static BUILTIN: OnceLock<Presets> = OnceLock::new();
+        BUILTIN.get_or_init(|| {
+            Presets::from_toml_str(
+                include_str!("../../../content/base/presets.toml"),
+                "content/base/presets.toml",
+            )
+            .unwrap_or_else(|e| panic!("built-in presets: {e}"))
+        })
+    }
+
+    /// Reads a file with a `[presets]` table. It must define [`DEFAULT`].
+    pub fn from_toml_str(src: &str, origin: &str) -> Result<Presets, LoadError> {
+        let reader = Reader { origin };
+        let raw: RawPresetsFile = reader.parse_document(src)?;
+        let presets = Presets(read_presets(&reader, &raw.presets)?);
+
+        let root = presets
+            .get(DEFAULT)
+            .ok_or_else(|| reader.err("presets", format!("no `{DEFAULT}` preset")))?;
+        for &param in Param::ALL {
+            if !matches!(root.world.0.get(&param), Some(Adjust::Set(_))) {
+                return Err(reader.err(
+                    &format!("presets.{DEFAULT}.world.{param}"),
+                    "the default preset must set every movement parameter",
+                ));
+            }
+        }
+        presets.check(&reader)?;
+        Ok(presets)
+    }
+
+    pub fn get(&self, id: &str) -> Option<&Preset> {
+        self.0.iter().find(|p| p.id == id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Preset> {
+        self.0.iter()
+    }
+
+    /// Adds `more` after these presets. Ids must not collide.
+    pub(crate) fn extended(
+        &self,
+        reader: &Reader,
+        more: Vec<Preset>,
+    ) -> Result<Presets, LoadError> {
+        let mut all = self.0.clone();
+        for preset in more {
+            if self.get(&preset.id).is_some() {
+                return Err(reader.err(
+                    &format!("presets.{}", preset.id),
+                    "a built-in preset already has this id",
+                ));
+            }
+            all.push(preset);
+        }
+        let presets = Presets(all);
+        presets.check(reader)?;
+        Ok(presets)
+    }
+
+    /// The preset and its bases, root first.
+    pub fn chain(&self, id: &str) -> Option<Vec<&Preset>> {
+        let mut chain = Vec::new();
+        let mut next = Some(id);
+        while let Some(id) = next {
+            let preset = self.get(id)?;
+            if chain.iter().any(|p: &&Preset| p.id == id) {
+                return None;
+            }
+            chain.push(preset);
+            next = preset.base.as_deref();
+        }
+        chain.reverse();
+        Some(chain)
+    }
+
+    /// The preset's world physics.
+    pub fn world(&self, id: &str) -> Option<Physics> {
+        let mut physics = Physics::default();
+        for preset in self.chain(id)? {
+            physics.apply(&preset.world);
+        }
+        Some(physics)
+    }
+
+    /// Every base names a preset, and no chain loops.
+    fn check(&self, reader: &Reader) -> Result<(), LoadError> {
+        for preset in &self.0 {
+            let path = format!("presets.{}.base", preset.id);
+            if let Some(base) = &preset.base
+                && self.get(base).is_none()
+            {
+                return Err(reader.err(&path, format!("no preset named `{base}`")));
+            }
+            if self.chain(&preset.id).is_none() {
+                return Err(reader.err(&path, "presets build on each other in a loop"));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Reads a `[presets]` table.
+pub(crate) fn read_presets(reader: &Reader, table: &Table) -> Result<Vec<Preset>, LoadError> {
+    table
+        .iter()
+        .map(|(id, value)| read_preset(reader, id, value))
+        .collect()
+}
+
+fn read_preset(reader: &Reader, id: &str, value: &toml::Value) -> Result<Preset, LoadError> {
+    let path = format!("presets.{id}");
+    reader.id(&path, id)?;
+    let raw: RawPreset = reader.structure(&path, value)?;
+
+    let base = match raw.base {
+        Some(base) if id == DEFAULT => {
+            return Err(reader.err(
+                &path,
+                format!("`{DEFAULT}` is the root and has no base (`{base}`)"),
+            ));
+        }
+        Some(base) => Some(base),
+        None if id == DEFAULT => None,
+        None => Some(DEFAULT.to_string()),
+    };
+
+    let world = reader.physics_patch(&format!("{path}.world"), &raw.world)?;
+
+    let mut slots = BTreeMap::new();
+    for (key, value) in &raw.roster {
+        let at = format!("{path}.roster.{key}");
+        let slot = key
+            .parse::<usize>()
+            .ok()
+            .filter(|n| n.to_string() == *key)
+            .ok_or_else(|| reader.err(&at, "roster slots are numbered 0, 1, 2, …"))?;
+        slots.insert(slot, read_slot(reader, &at, reader.table(&at, value)?)?);
+    }
+
+    Ok(Preset {
+        id: id.to_string(),
+        label: raw.label,
+        description: raw.description,
+        placeholder: raw.placeholder,
+        base,
+        world,
+        slots,
+    })
+}
+
+/// Movement parameters, plus an optional `abilities` table of ability
+/// parameter adjustments.
+fn read_slot(reader: &Reader, path: &str, table: &Table) -> Result<SlotPatch, LoadError> {
+    let mut physics = table.clone();
+    let mut abilities = BTreeMap::new();
+    if let Some(value) = physics.remove("abilities") {
+        let at = format!("{path}.abilities");
+        for (name, params) in reader.table(&at, &value)? {
+            let at = format!("{at}.{name}");
+            reader.name(&at, name)?;
+            abilities.insert(
+                name.clone(),
+                reader.params_patch(&at, reader.table(&at, params)?)?,
+            );
+        }
+    }
+    Ok(SlotPatch {
+        physics: reader.physics_patch(path, &physics)?,
+        abilities,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clamber_fixed::Fixed;
+
+    fn load(src: &str) -> Result<Presets, LoadError> {
+        Presets::from_toml_str(src, "test")
+    }
+
+    fn full_default() -> String {
+        let mut src =
+            String::from("[presets.default]\nlabel = \"Default\"\n[presets.default.world]\n");
+        for p in Param::ALL {
+            src += &format!("{p} = 1\n");
+        }
+        src
+    }
+
+    #[test]
+    fn builtin_presets_load() {
+        let presets = Presets::builtin();
+        let ids: Vec<_> = presets.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "default",
+                "snappy",
+                "floaty",
+                "classic-1",
+                "classic-2",
+                "classic-3"
+            ]
+        );
+        for preset in presets.iter() {
+            assert!(presets.world(&preset.id).is_some());
+            assert_eq!(
+                preset.placeholder,
+                preset.id.starts_with("classic-"),
+                "{}",
+                preset.id
+            );
+        }
+        // The default world has a positive value for every parameter.
+        let world = presets.world(DEFAULT).unwrap();
+        for &p in Param::ALL {
+            assert!(world[p] > Fixed::ZERO, "{p}");
+        }
+    }
+
+    #[test]
+    fn inheritance_applies_root_first() {
+        let src = full_default()
+            + "[presets.a]\nlabel = \"A\"\nworld.gravity = 2\n\
+               [presets.b]\nlabel = \"B\"\nbase = \"a\"\nworld.gravity = { scale = 1.5 }\n";
+        let presets = load(&src).unwrap();
+        assert_eq!(presets.get("a").unwrap().base.as_deref(), Some(DEFAULT));
+        let ids: Vec<_> = presets.chain("b").unwrap().iter().map(|p| &p.id).collect();
+        assert_eq!(ids, ["default", "a", "b"]);
+        let world = presets.world("b").unwrap();
+        assert_eq!(world[Param::Gravity], Fixed::from_int(3));
+        assert_eq!(world[Param::TopSpeed], Fixed::ONE);
+    }
+
+    #[test]
+    fn slots_and_ability_patches() {
+        let src = full_default()
+            + "[presets.a]\nlabel = \"A\"\n\
+               [presets.a.roster.1]\ntop_speed = 4\nabilities.glide.fall_speed = { scale = 0.5 }\n";
+        let presets = load(&src).unwrap();
+        let slot = &presets.get("a").unwrap().slots[&1];
+        assert_eq!(
+            slot.physics.0[&Param::TopSpeed],
+            Adjust::Set(Fixed::from_int(4))
+        );
+        assert_eq!(
+            slot.abilities["glide"].0["fall_speed"],
+            Adjust::Scale(Fixed::from_ratio_pow2(1, 1))
+        );
+    }
+
+    #[test]
+    fn rejects_bad_presets() {
+        let cases = [
+            (
+                "[presets.x]\nlabel = \"X\"\n",
+                "test: presets: no `default` preset",
+            ),
+            (
+                "[presets.default]\nlabel = \"D\"\nworld.gravity = 1\n",
+                "test: presets.default.world.max_fall_speed: the default preset must set every movement parameter",
+            ),
+        ];
+        for (src, want) in cases {
+            assert_eq!(load(src).unwrap_err().to_string(), want);
+        }
+
+        let cases = [
+            (
+                "[presets.a]\nlabel = \"A\"\nbase = \"nope\"\n",
+                "presets.a.base: no preset named `nope`",
+            ),
+            (
+                "[presets.a]\nlabel = \"A\"\nbase = \"b\"\n[presets.b]\nlabel = \"B\"\nbase = \"a\"\n",
+                "presets.a.base: presets build on each other in a loop",
+            ),
+            (
+                "[presets.a]\nlabel = \"A\"\nroster.01.top_speed = 1\n",
+                "presets.a.roster.01: roster slots are numbered 0, 1, 2, …",
+            ),
+            (
+                "[presets.a]\nlabel = \"A\"\nroster.x.top_speed = 1\n",
+                "presets.a.roster.x: roster slots are numbered 0, 1, 2, …",
+            ),
+            (
+                "[presets.a]\nlabel = \"A\"\nroster.0.speed = 1\n",
+                "presets.a.roster.0.speed: unknown movement parameter",
+            ),
+            (
+                "[presets.A]\nlabel = \"A\"\n",
+                "presets.A: `A` is not a valid id (use a-z, 0-9, - and _)",
+            ),
+        ];
+        for (extra, want) in cases {
+            let err = load(&(full_default() + extra)).unwrap_err();
+            assert_eq!(err.message, want);
+        }
+
+        let err = load(&(full_default() + "[presets.a]\nlabel = \"A\"\ncolour = 1\n")).unwrap_err();
+        assert!(
+            err.message.starts_with("presets.a: unknown field `colour`"),
+            "{err}"
+        );
+        let err = load(
+            &full_default().replace("[presets.default]\n", "[presets.default]\nbase = \"x\"\n"),
+        )
+        .unwrap_err();
+        assert!(err.message.contains("is the root"), "{err}");
+    }
+}

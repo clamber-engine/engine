@@ -1,0 +1,36 @@
+# An example pack with three characters and a preset of its own.
+id = "example"
+name = "Example Pack"
+preset = "example-feel"
+
+[[roster]]
+id = "runner"
+name = "Runner"
+abilities.roll = {}
+
+[[roster]]
+id = "glider"
+name = "Glider"
+profile.top_speed = { scale = 0.875 }
+profile.jump_speed = 5.5
+abilities.roll = {}
+abilities.glide = { fall_speed = 1, turn_speed = 0.125 }
+
+[[roster]]
+id = "climber"
+name = "Climber"
+profile.ground_acceleration = 0.09375
+abilities.climb = { speed = 1.5 }
+
+[presets.example-feel]
+label = "Example"
+base = "snappy"
+world.max_fall_speed = 14
+
+[presets.example-feel.roster.1]
+top_speed = 4
+abilities.glide.fall_speed = { scale = 0.75 }
+
+# Only applies when a pack has a sixth character.
+[presets.example-feel.roster.5]
+top_speed = 9

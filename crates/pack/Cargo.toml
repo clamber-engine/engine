@@ -1,0 +1,11 @@
+[package]
+name = "clamber-pack"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+description = "Game packs: rosters, abilities, physics and feel presets"
+
+[dependencies]
+clamber-fixed = { path = "../fixed" }
+serde = { version = "1.0.229", features = ["derive"] }
+toml = { version = "1.1.8", features = ["preserve_order"] }
