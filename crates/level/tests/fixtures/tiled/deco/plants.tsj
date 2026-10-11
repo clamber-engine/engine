@@ -1,0 +1,2 @@
+{ "type": "tileset", "name": "plants", "image": "plants.png", "imagewidth": 32, "imageheight": 16,
+  "tilewidth": 16, "tileheight": 16, "tilecount": 2, "columns": 2, "margin": 1, "spacing": 2 }

@@ -1,0 +1,19 @@
+# clamber level v1
+#
+# For scenario walk-off-ledge: "a ledge 48 to 64 px ahead, a drop of at
+# least 96 px to flat ground below". The ledge is 56 px ahead of the
+# start and the drop is 128 px.
+format = 1
+name = "Test: walk off a ledge"
+size = [1024, 480]
+start = [64, 272]
+
+# upper ground, ending at the ledge
+[[collision]]
+shape = "rect"
+rect = [0, 272, 120, 208]
+
+# lower ground
+[[collision]]
+shape = "rect"
+rect = [120, 400, 904, 80]

@@ -1,0 +1,17 @@
+# Built-in surface types for level collision. A level can change these or
+# add its own under `[surfaces.<name>]`.
+#
+# `physics` adjusts movement while standing on the surface, the same way
+# presets do: plain numbers set a value, `{ scale = <factor> }` multiplies
+# it. `hazard = true` hurts on touch. These are Clamber's own values.
+
+[surfaces.normal]
+
+[surfaces.slippery]
+physics = { ground_acceleration = { scale = 0.25 }, ground_deceleration = { scale = 0.125 }, ground_friction = { scale = 0.125 } }
+
+[surfaces.sticky]
+physics = { top_speed = { scale = 0.5 }, jump_speed = { scale = 0.75 } }
+
+[surfaces.hazard]
+hazard = true

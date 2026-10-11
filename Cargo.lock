@@ -67,6 +67,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "clamber-level"
+version = "0.1.0"
+dependencies = [
+ "clamber-fixed",
+ "clamber-pack",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "clamber-pack"
 version = "0.1.0"
 dependencies = [

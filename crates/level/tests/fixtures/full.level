@@ -1,0 +1,79 @@
+# clamber level v1
+format = 1
+name = "Everything"
+size = [1600, 600]
+start = [40, 500]
+
+[camera]
+look_ahead = [48, 0]
+
+[surfaces.ice]
+physics = { ground_friction = { scale = 0.05 } }
+
+[surfaces.hazard]
+hazard = true
+physics = { top_speed = 1 }
+
+[[layers]]
+name = "sky"
+image = "bg/sky.png"
+parallax = [0.25, 0.5]
+repeat = [true, false]
+
+[[layers]]
+name = "ground tiles"
+depth = "back"
+tiles = { tileset = "tiles/ground.png", tile_size = [16, 16], columns = 4, data = [0, 1, 2, 3, 2147483653, 0, 0, 0] }
+
+[[layers]]
+name = "fog"
+depth = "front"
+image = "fg/fog.png"
+parallax = [1.5, 1]
+offset = [0, -32]
+
+[[entities]]
+type = "spring"
+id = "spring-a"
+at = [320, 500]
+params = { strength = 10.5, facing = "left" }
+
+[[entities]]
+type = "coin"
+at = [400.5, 450]
+
+[[collision]]
+shape = "rect"
+rect = [0, 500, 1600, 100]
+
+[[collision]]
+shape = "polygon"
+points = [[600, 500], [800, 400], [800, 500]]
+surface = "ice"
+
+[[collision]]
+shape = "segment"
+from = [900, 380]
+to = [1000, 380]
+one_way = true
+
+[[collision]]
+shape = "polyline"
+points = [[1100, 500], [1200, 450], [1300, 450]]
+surface = "hazard"
+
+[[regions]]
+name = "pool"
+rect = [1000, 400, 200, 100]
+water = true
+physics = { gravity = { scale = 0.5 }, max_fall_speed = 2 }
+
+[[regions]]
+points = [[0, 0], [400, 0], [400, 300]]
+wind = [-0.125, 0]
+darkness = 0.75
+
+[[regions]]
+name = "shaft"
+rect = [1400, 0, 200, 600]
+camera = { lock_x = 1500, limits = [1400, 0, 200, 600] }

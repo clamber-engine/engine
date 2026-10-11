@@ -1,0 +1,42 @@
+{ "type": "map", "version": "1.10", "tiledversion": "1.10.2",
+  "orientation": "orthogonal", "renderorder": "right-down", "infinite": false,
+  "width": 4, "height": 3, "tilewidth": 16, "tileheight": 16,
+  "properties": [
+    { "name": "name", "type": "string", "value": "From Tiled" },
+    { "name": "camera.look_ahead_x", "type": "float", "value": 40 }
+  ],
+  "tilesets": [
+    { "firstgid": 1, "name": "ground", "image": "ground.png", "imagewidth": 64, "imageheight": 16,
+      "tilewidth": 16, "tileheight": 16, "tilecount": 4, "columns": 4, "margin": 0, "spacing": 0 },
+    { "firstgid": 5, "source": "deco/plants.tsj" }
+  ],
+  "layers": [
+    { "type": "imagelayer", "id": 1, "name": "sky", "image": "sky.png", "x": 0, "y": 0,
+      "parallaxx": 0.5, "parallaxy": 0.25, "repeatx": true, "opacity": 1, "visible": true },
+    { "type": "group", "id": 2, "name": "back", "offsetx": 8, "offsety": 0, "parallaxx": 0.5,
+      "layers": [
+        { "type": "tilelayer", "id": 3, "name": "ground", "x": 0, "y": 0, "width": 4, "height": 3,
+          "offsetx": 0, "offsety": 4,
+          "data": [0, 0, 0, 0,  0, 5, 6, 0,  1, 2, 2147483651, 4] }
+      ] },
+    { "type": "objectgroup", "id": 4, "name": "collision", "objects": [
+        { "id": 1, "name": "", "type": "", "x": 0, "y": 32, "width": 64, "height": 16, "rotation": 0, "visible": true },
+        { "id": 2, "name": "", "type": "platform", "x": 16, "y": 8, "width": 32, "height": 4, "rotation": 0, "visible": true },
+        { "id": 3, "name": "", "type": "solid", "x": 10, "y": 10, "width": 0, "height": 0, "rotation": 0,
+          "polyline": [ { "x": 0, "y": 0 }, { "x": 20, "y": 5 } ],
+          "properties": [ { "name": "surface", "type": "string", "value": "slippery" } ] }
+      ] },
+    { "type": "objectgroup", "id": 5, "name": "things", "objects": [
+        { "id": 10, "name": "", "class": "start", "point": true, "x": 8, "y": 32, "width": 0, "height": 0, "rotation": 0 },
+        { "id": 11, "name": "door-1", "type": "door", "x": 40, "y": 16, "width": 16, "height": 16, "rotation": 0,
+          "properties": [ { "name": "target", "type": "string", "value": "level-2" },
+                          { "name": "locked", "type": "bool", "value": true } ] },
+        { "id": 12, "name": "", "type": "region", "x": 0, "y": 0, "width": 32, "height": 48, "rotation": 0,
+          "properties": [ { "name": "water", "type": "bool", "value": true },
+                          { "name": "physics.gravity.scale", "type": "float", "value": 0.5 },
+                          { "name": "physics.max_fall_speed", "type": "float", "value": 2 },
+                          { "name": "wind_x", "type": "float", "value": 0.25 },
+                          { "name": "camera.limits", "type": "bool", "value": true } ] }
+      ] }
+  ]
+}

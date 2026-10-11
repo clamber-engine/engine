@@ -1,0 +1,13 @@
+# clamber level v1
+#
+# For scenario run-jump-flat: "flat ground, at least 320 px clear ahead,
+# no entities within 400 px". The start leaves 1984 px of flat ground
+# ahead, more than a 180-frame run can cover.
+format = 1
+name = "Test: run and jump on flat ground"
+size = [2048, 480]
+start = [64, 400]
+
+[[collision]]
+shape = "rect"
+rect = [0, 400, 2048, 80]
