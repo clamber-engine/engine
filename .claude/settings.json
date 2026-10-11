@@ -18,6 +18,10 @@
       "Edit(tests/golden/**)",
       "Edit(tests/conformance-status.toml)",
       "Bash(CLAMBER_BLESS=*)"
+    ],
+    "additionalDirectories": [
+      "~/.cargo",
+      "~/.rustup"
     ]
   },
   "disableClaudeAiConnectors": true,
@@ -31,6 +35,12 @@
         "static.rust-lang.org",
         "docs.rs",
         "doc.rust-lang.org"
+      ]
+    },
+    "filesystem": {
+      "allowWrite": [
+        "~/.cargo",
+        "~/.rustup"
       ]
     }
   },
