@@ -1,0 +1,56 @@
+# Default input settings. A player's own settings file overrides only what
+# it lists; a `keys` or `pad` table there replaces that device's bindings.
+#
+# Keys are named by physical position (W3C UI Events `code` values), pad
+# face buttons by position (South is the bottom one).
+
+# Frames a jump press stays buffered, so pressing jump just before landing
+# still jumps. 0 turns buffering off.
+jump_buffer_frames = 4
+
+# How far a stick must be pushed (0 to 1) before its direction counts.
+stick_dead_zone = 0.5
+
+[[player]]
+
+[player.keys]
+left = ["ArrowLeft"]
+right = ["ArrowRight"]
+up = ["ArrowUp"]
+down = ["ArrowDown"]
+jump = ["KeyZ", "Space"]
+action = ["KeyX"]
+swap = ["KeyC"]
+pause = ["Enter", "Escape"]
+
+[player.pad]
+left = ["DPadLeft", "LeftStickLeft"]
+right = ["DPadRight", "LeftStickRight"]
+up = ["DPadUp", "LeftStickUp"]
+down = ["DPadDown", "LeftStickDown"]
+jump = ["South"]
+action = ["West", "East"]
+swap = ["North", "LeftShoulder", "RightShoulder"]
+pause = ["Start"]
+
+[[player]]
+
+[player.keys]
+left = ["KeyA"]
+right = ["KeyD"]
+up = ["KeyW"]
+down = ["KeyS"]
+jump = ["KeyG"]
+action = ["KeyF"]
+swap = ["KeyH"]
+pause = ["Tab"]
+
+[player.pad]
+left = ["DPadLeft", "LeftStickLeft"]
+right = ["DPadRight", "LeftStickRight"]
+up = ["DPadUp", "LeftStickUp"]
+down = ["DPadDown", "LeftStickDown"]
+jump = ["South"]
+action = ["West", "East"]
+swap = ["North", "LeftShoulder", "RightShoulder"]
+pause = ["Start"]
