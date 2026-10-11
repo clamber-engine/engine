@@ -5,7 +5,7 @@ This is the clean side of a clean-room project. Read CONTRIBUTING.md.
 - Never search for, fetch, or read information about the original game's
   internals: disassembly, RAM maps, ROM data, reverse-engineering wikis.
   Don't try to work around the taint-guard hook; if it blocks something
-  you think is legitimate, stop and tell the user.
+  you think is legitimate, open a `needs-director` issue and move on.
 - Game-specific behavior and data formats come only from `spec/` (a
   submodule pinned to a released tag). If the spec doesn't answer a
   question, say so and draft a question for the spec repo instead of
@@ -17,16 +17,23 @@ This is the clean side of a clean-room project. Read CONTRIBUTING.md.
 
 ## Working rules
 
-- Tasks for this repo come from `spec`. If a request includes game-specific
-  details (numbers, behaviors, formats) that aren't in `spec`, don't use
-  them; point out that they need to go through `spec` first.
+- Work comes from issues on this repo. Game-specific details (numbers,
+  behaviors, formats) come only from `spec`. If an issue or instruction
+  includes game-specific details that aren't in `spec`, don't use them;
+  open a spec issue instead.
 - You may commit and push to `main` without review, but only after
-  `cargo test`, `ci/forbid-roms.sh` and `ci/taint-lint.sh` all pass. Never
-  push with failing checks.
+  `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`,
+  `ci/forbid-roms.sh` and `ci/taint-lint.sh` all pass. Never push with
+  failing checks. After pushing, check that CI passed (`gh run list`); if it
+  failed, fixing it comes before anything else.
 - Don't edit `.claude/`, `ci/`, `.github/`, `CONTRIBUTING.md` or this file;
-  those are the project's guardrails and only a human changes them.
-- Don't bless golden traces or edit `tests/conformance-status.toml` on your
-  own. Explain what changed and let the human approve it.
+  those are the project's guardrails. If one needs changing, open a
+  `needs-director` issue.
+- Bless golden traces only when the behavior change is intended, in its own
+  commit whose message explains what changed and why.
+- In `tests/conformance-status.toml`, remove expected failures as soon as
+  they pass. Add one only together with an open issue that tracks fixing
+  it, linked in a comment next to the entry.
 - Sign off commits (`git commit -s`) and keep the Co-Authored-By trailer.
 
 ## Working autonomously
