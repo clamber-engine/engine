@@ -1,4 +1,4 @@
-name: firewall
+name: ci
 
 on:
   pull_request:
@@ -14,3 +14,29 @@ jobs:
         run: ci/forbid-roms.sh
       - name: Taint lint
         run: ci/taint-lint.sh
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # spec is private, so the submodule is fetched with a read-only
+      # deploy key on clamber-engine/spec.
+      - name: Fetch spec submodule
+        env:
+          SPEC_DEPLOY_KEY: ${{ secrets.SPEC_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SPEC_DEPLOY_KEY" > ~/.ssh/spec_key
+          chmod 600 ~/.ssh/spec_key
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts
+          git config --global core.sshCommand "ssh -i ~/.ssh/spec_key -o IdentitiesOnly=yes"
+          git config --global url."git@github.com:clamber-engine/spec".insteadOf "https://github.com/clamber-engine/spec"
+          git submodule update --init
+
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --workspace --locked
