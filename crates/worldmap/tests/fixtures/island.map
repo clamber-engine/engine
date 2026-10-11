@@ -1,0 +1,25 @@
+format = 1
+id = "island"
+size = [800, 800]
+scene = "island.level"
+mode = "free"
+
+[free]
+start = [400, 400]
+speed = 1.5
+vehicle = { sprite = "map/boat.json", animation = "sail", speed = 3 }
+
+[[nodes]]
+id = "dock"
+kind = "warp"
+map = "overworld"
+node = "home"
+at = [400, 700]
+radius = 20
+
+[[nodes]]
+id = "cave"
+kind = "level"
+level = "levels/cave.level"
+at = [100, 100]
+unlock = { flag = "map-found" }

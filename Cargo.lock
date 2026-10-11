@@ -100,6 +100,15 @@ name = "clamber-trace"
 version = "0.1.0"
 
 [[package]]
+name = "clamber-worldmap"
+version = "0.1.0"
+dependencies = [
+ "clamber-level",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "crc32fast"
 version = "1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

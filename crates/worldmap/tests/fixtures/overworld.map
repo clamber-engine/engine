@@ -1,0 +1,78 @@
+format = 1
+id = "overworld"
+name = "The Overworld"
+size = [640, 480]
+scene = "overworld.level"
+start = "home"
+
+[[nodes]]
+id = "home"
+kind = "save"
+at = [64, 400]
+
+[[nodes]]
+id = "meadow"
+kind = "level"
+level = "levels/meadow.level"
+exits = ["normal", "secret"]
+at = [200, 400]
+sprite = "map/level-dot.json"
+animation = "blink"
+
+[[nodes]]
+id = "fork"
+kind = "waypoint"
+at = [300, 300]
+
+[[nodes]]
+id = "shop"
+kind = "event"
+event = "shop"
+params = { stock = "basic" }
+at = [300, 200]
+unlock = { cleared = "meadow" }
+
+[[nodes]]
+id = "forest-gate"
+kind = "warp"
+map = "forest"
+node = "entry"
+at = [450, 300]
+unlock = { all = [{ cleared = "meadow" }, { counter = "stars", at_least = 3 }] }
+
+[[nodes]]
+id = "grotto"
+kind = "level"
+level = "levels/grotto.level"
+at = [200, 250]
+hidden = true
+unlock = { cleared = "meadow", by = "secret" }
+
+[[paths]]
+from = "home"
+to = "meadow"
+
+[[paths]]
+from = "meadow"
+to = "fork"
+via = [[260, 380]]
+unlock = { cleared = "meadow" }
+
+[[paths]]
+from = "fork"
+to = "shop"
+
+[[paths]]
+from = "fork"
+to = "forest-gate"
+
+[[paths]]
+from = "meadow"
+to = "grotto"
+hidden = true
+one_way = true
+
+[[decorations]]
+sprite = "map/waves.json"
+animation = "roll"
+at = [500, 450]
