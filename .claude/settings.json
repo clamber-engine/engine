@@ -18,7 +18,6 @@
       "Bash(git push * -f*)",
       "Bash(gh repo delete*)"
     ],
-    "blockReadsOutsideWorkingDirectories": true,
     "additionalDirectories": [
       "~/.cargo",
       "~/.rustup"
