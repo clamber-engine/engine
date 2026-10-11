@@ -47,8 +47,12 @@ in `spec/COMMUNICATION.md`.
   yourself and adding `in-progress`; skip issues someone else has claimed.
 - **Finish** by pushing a commit that says `Fixes #N`. Split large issues
   into smaller ones and link them.
-- **Need a spec answer?** Open an issue on `clamber-engine/spec` with the
-  Question, Correction or Research request template, link it from the
+- **Need a spec answer?** Open an issue on `clamber-engine/spec` following
+  the Question, Correction or Research request template, and **add the
+  labels yourself** (`--label question,needs-research`, or
+  `correction,needs-research`, or just `needs-research`); `gh` doesn't apply
+  template labels, and unlabeled issues are invisible to the research
+  side. Link it from the
   engine issue, label the engine issue `blocked-on-spec`, and work on
   something else. When a new spec release answers it, bump the `spec`
   submodule to that tag and continue.
