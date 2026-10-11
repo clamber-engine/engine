@@ -61,6 +61,21 @@ fn accepts_crlf_line_endings() {
     assert_eq!(crlf, Trace::load(&fixture("valid/basic.trace")).unwrap());
 }
 
+#[test]
+fn writes_what_it_reads() {
+    let t = Trace::load(&fixture("valid/basic.trace")).unwrap();
+    let text = t.to_string();
+    assert_eq!(Trace::parse(&text, "written").unwrap(), t);
+    let rows: Vec<&str> = text.lines().skip(5).collect();
+    // Every row has 10 fields; a row without events ends in a tab.
+    assert_eq!(rows[0], "0\tR\t0\t0\t0\t0\tidle\t1\tR\t");
+    assert_eq!(
+        rows[3],
+        "3\tLRJA\t2\t-5.5\t-0.0625\t-2.5\tjump\t0\tL\tjump_release,turn"
+    );
+    assert!(rows.iter().all(|r| r.split('\t').count() == 10));
+}
+
 /// Each malformed fixture, with the line and part of the message its
 /// error must have. Line 0 means the file as a whole.
 const INVALID: &[(&str, usize, &str)] = &[
@@ -107,7 +122,17 @@ const INVALID: &[(&str, usize, &str)] = &[
     (
         "frames-not-increasing",
         6,
-        "frame 0 follows frame 0; frames must increase",
+        "frame 0 follows frame 0; frames must go up by 1",
+    ),
+    (
+        "frame-gap",
+        6,
+        "frame 2 follows frame 0; frames must go up by 1",
+    ),
+    (
+        "first-frame-not-zero",
+        5,
+        "the first frame must be 0, found 1",
     ),
     (
         "input-out-of-order",

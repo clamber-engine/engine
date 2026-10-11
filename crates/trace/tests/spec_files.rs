@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use clamber_trace::{Event, Metric, Scenario, State, Trace};
+use clamber_trace::{Event, Metric, Row, Scenario, State, Trace};
 
 fn spec(path: &str) -> PathBuf {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -84,8 +84,26 @@ fn format_examples_parse() {
     let scenario = Scenario::parse(&example("scenarios/FORMAT.md"), "scenarios/FORMAT.md").unwrap();
     assert_eq!(scenario.id, "run-jump-flat");
     assert_eq!(scenario.metrics.len(), 5);
-    let trace = Trace::parse(&example("traces/FORMAT.md"), "traces/FORMAT.md").unwrap();
-    assert_eq!(trace.rows.len(), 4);
+    // The trace example is an excerpt: `…` stands for omitted rows. The
+    // part before it is a whole trace, and every row after it must parse.
+    let text = example("traces/FORMAT.md");
+    let (head, rest) = text.split_once("…\n").expect("the example is an excerpt");
+    let trace = Trace::parse(head, "traces/FORMAT.md").unwrap();
+    assert_eq!(trace.rows.len(), 2);
+    let tail: Vec<Row> = rest
+        .lines()
+        .map(|l| Row::parse(l).unwrap_or_else(|e| panic!("`{l}`: {e}")))
+        .collect();
+    assert_eq!(tail.len(), 2);
+    // The spec writes rows the way the engine does.
+    for (line, row) in head
+        .lines()
+        .skip(4)
+        .zip(&trace.rows)
+        .chain(rest.lines().zip(&tail))
+    {
+        assert_eq!(row.to_string(), line);
+    }
 }
 
 #[test]

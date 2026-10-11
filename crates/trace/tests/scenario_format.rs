@@ -106,9 +106,19 @@ fn labels_match_conformance_status_keys() {
 /// error must have. Line 0 means the file as a whole.
 const INVALID: &[(&str, usize, &str)] = &[
     ("wrong-version", 1, "unsupported scenario format `v2`"),
+    (
+        "missing-version",
+        1,
+        "first line must be `# clamber-scenario v1`",
+    ),
+    (
+        "version-not-first",
+        1,
+        "first line must be `# clamber-scenario v1`",
+    ),
     ("missing-id", 0, "missing required header `id`"),
     ("missing-frames", 0, "missing required header `frames`"),
-    ("bad-id", 1, "id `Bad_Id` may only contain a-z, 0-9 and `-`"),
+    ("bad-id", 2, "id `Bad_Id` may only contain a-z, 0-9 and `-`"),
     (
         "id-mismatch",
         0,
@@ -116,15 +126,15 @@ const INVALID: &[(&str, usize, &str)] = &[
     ),
     ("unknown-key", 7, "unknown header key `author`"),
     ("duplicate-key", 7, "header `frames` appears twice"),
-    ("empty-value", 2, "header `summary` is empty"),
+    ("empty-value", 3, "header `summary` is empty"),
     (
         "frames-zero",
-        5,
+        6,
         "frames must be a positive whole number, found `0`",
     ),
     (
         "frames-not-number",
-        5,
+        6,
         "frames must be a positive whole number, found `ten`",
     ),
     ("not-key-value", 7, "expected `key: value`"),
@@ -209,6 +219,8 @@ fn every_invalid_fixture_is_checked() {
 fn error_display_names_file_and_line() {
     let e = Scenario::load(&fixture("invalid/unknown-key.scn")).unwrap_err();
     assert!(e.to_string().ends_with("invalid/unknown-key.scn:7: unknown header key `author`; expected one of id, summary, requires, start, frames"));
-    let e = Scenario::parse("id: x\n", "inline").unwrap_err();
+    let e = Scenario::parse("# clamber-scenario v1\nid: x\n", "inline").unwrap_err();
     assert_eq!(e.to_string(), "inline: missing required header `frames`");
+    let e = Scenario::parse("", "inline").unwrap_err();
+    assert_eq!(e.to_string(), "inline: file is empty");
 }

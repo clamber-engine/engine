@@ -1,0 +1,5 @@
+id: missing-version
+summary: No version line.
+requires: anything
+start: anything
+frames: 1

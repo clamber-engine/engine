@@ -1,0 +1,7 @@
+
+# clamber-scenario v1
+id: version-not-first
+summary: Version line after a blank line.
+requires: anything
+start: anything
+frames: 1

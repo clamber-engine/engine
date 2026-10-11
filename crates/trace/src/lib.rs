@@ -1,6 +1,6 @@
 //! Scenario and trace formats for Clamber conformance testing.
 //!
-//! Implements, as of spec-v0.1.0:
+//! Implements, as of spec-v0.3.0:
 //!
 //! - `spec/scenarios/FORMAT.md` ([`scenario`])
 //! - `spec/traces/FORMAT.md` ([`trace`])

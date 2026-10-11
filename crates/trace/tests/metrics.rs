@@ -150,6 +150,26 @@ fn bounce_height() {
     assert_eq!(metric(Metric::BounceHeight, &t).as_deref(), Some("5"));
 }
 
+#[test]
+fn height_windows_include_the_land_frame_and_need_it() {
+    // Landing on a ledge higher than anywhere the jump reached before.
+    let t = trace(
+        "0 J 0 0   0 0  idle 1 R
+         1 J 0 -4  0 -4 jump 0 R jump_start
+         2 J 0 -6  0 -2 jump 0 R
+         3 J 0 -10 0 0  idle 1 R land",
+    );
+    assert_eq!(metric(Metric::ApexHeight, &t).as_deref(), Some("6"));
+    // A bounce cut off before landing has no height, rather than the
+    // height up to the end of the trace.
+    let t = trace(
+        "0 . 0 0  0 0  fall   0 R
+         1 . 0 -1 0 -6 bounce 0 R bounce
+         2 . 0 -6 0 -2 bounce 0 R",
+    );
+    assert_eq!(compute(Metric::BounceHeight, &t), None);
+}
+
 fn scalar(metric: Metric, tol: &str) -> Comparison {
     Comparison::Scalar {
         metric,

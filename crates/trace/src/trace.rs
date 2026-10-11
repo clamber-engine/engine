@@ -94,17 +94,24 @@ impl Trace {
 
         for (n, line) in lines {
             if columns {
-                let row = parse_row(line).map_err(|m| err(n, m))?;
-                if let Some(prev) = rows.last()
-                    && row.frame <= prev.frame
-                {
-                    return Err(err(
-                        n,
-                        format!(
-                            "frame {} follows frame {}; frames must increase",
-                            row.frame, prev.frame
-                        ),
-                    ));
+                let row = Row::parse(line).map_err(|m| err(n, m))?;
+                match rows.last() {
+                    None if row.frame != 0 => {
+                        return Err(err(
+                            n,
+                            format!("the first frame must be 0, found {}", row.frame),
+                        ));
+                    }
+                    Some(prev) if Some(row.frame) != prev.frame.checked_add(1) => {
+                        return Err(err(
+                            n,
+                            format!(
+                                "frame {} follows frame {}; frames must go up by 1",
+                                row.frame, prev.frame
+                            ),
+                        ));
+                    }
+                    _ => {}
                 }
                 rows.push(row);
             } else if let Some(rest) = line.strip_prefix('#') {
@@ -174,67 +181,117 @@ impl Trace {
     }
 }
 
-fn parse_row(line: &str) -> Result<Row, String> {
-    let f: Vec<&str> = line.split('\t').collect();
-    // The events column may be left off entirely when nothing happened.
-    if f.len() != 9 && f.len() != 10 {
-        return Err(format!(
-            "expected 10 tab-separated columns, found {}",
-            f.len()
-        ));
-    }
-
-    let frame = if !f[0].is_empty() && f[0].bytes().all(|b| b.is_ascii_digit()) {
-        f[0].parse()
-            .map_err(|_| format!("frame `{}` is too large", f[0]))?
-    } else {
-        return Err(format!("frame must be a whole number, found `{}`", f[0]));
-    };
-    let input = Buttons::parse_trace(f[1]).map_err(|e| format!("input: {e}"))?;
-    let decimal = |i: usize, name: &str| Decimal::parse(f[i]).map_err(|e| format!("{name}: {e}"));
-    let (x, y, vx, vy) = (
-        decimal(2, "x")?,
-        decimal(3, "y")?,
-        decimal(4, "vx")?,
-        decimal(5, "vy")?,
-    );
-    let state = State::from_name(f[6])
-        .ok_or_else(|| format!("unknown state `{}` (see traces/VOCABULARY.md)", f[6]))?;
-    let ground = match f[7] {
-        "0" => false,
-        "1" => true,
-        other => return Err(format!("ground must be `0` or `1`, found `{other}`")),
-    };
-    let facing = match f[8] {
-        "L" => Facing::Left,
-        "R" => Facing::Right,
-        other => return Err(format!("facing must be `L` or `R`, found `{other}`")),
-    };
-
-    let mut events = Vec::new();
-    if let Some(&list) = f.get(9).filter(|s| !s.is_empty()) {
-        for name in list.split(',') {
-            let event = Event::from_name(name)
-                .ok_or_else(|| format!("unknown event `{name}` (see traces/VOCABULARY.md)"))?;
-            if events.contains(&event) {
-                return Err(format!("event `{name}` listed twice"));
-            }
-            events.push(event);
+impl Row {
+    /// Parses one tab-separated row. Rows of 9 fields have no events.
+    pub fn parse(line: &str) -> Result<Row, String> {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() != 9 && f.len() != 10 {
+            return Err(format!(
+                "expected 10 tab-separated columns, found {}",
+                f.len()
+            ));
         }
-    }
 
-    Ok(Row {
-        frame,
-        input,
-        x,
-        y,
-        vx,
-        vy,
-        state,
-        ground,
-        facing,
-        events,
-    })
+        let frame = if !f[0].is_empty() && f[0].bytes().all(|b| b.is_ascii_digit()) {
+            f[0].parse()
+                .map_err(|_| format!("frame `{}` is too large", f[0]))?
+        } else {
+            return Err(format!("frame must be a whole number, found `{}`", f[0]));
+        };
+        let input = Buttons::parse_trace(f[1]).map_err(|e| format!("input: {e}"))?;
+        let decimal =
+            |i: usize, name: &str| Decimal::parse(f[i]).map_err(|e| format!("{name}: {e}"));
+        let (x, y, vx, vy) = (
+            decimal(2, "x")?,
+            decimal(3, "y")?,
+            decimal(4, "vx")?,
+            decimal(5, "vy")?,
+        );
+        let state = State::from_name(f[6])
+            .ok_or_else(|| format!("unknown state `{}` (see traces/VOCABULARY.md)", f[6]))?;
+        let ground = match f[7] {
+            "0" => false,
+            "1" => true,
+            other => return Err(format!("ground must be `0` or `1`, found `{other}`")),
+        };
+        let facing = match f[8] {
+            "L" => Facing::Left,
+            "R" => Facing::Right,
+            other => return Err(format!("facing must be `L` or `R`, found `{other}`")),
+        };
+
+        let mut events = Vec::new();
+        if let Some(&list) = f.get(9).filter(|s| !s.is_empty()) {
+            for name in list.split(',') {
+                let event = Event::from_name(name)
+                    .ok_or_else(|| format!("unknown event `{name}` (see traces/VOCABULARY.md)"))?;
+                if events.contains(&event) {
+                    return Err(format!("event `{name}` listed twice"));
+                }
+                events.push(event);
+            }
+        }
+
+        Ok(Row {
+            frame,
+            input,
+            x,
+            y,
+            vx,
+            vy,
+            state,
+            ground,
+            facing,
+            events,
+        })
+    }
+}
+
+/// The row as written in a trace: always 10 fields, so a row without
+/// events ends in a tab.
+impl fmt::Display for Row {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let facing = match self.facing {
+            Facing::Left => "L",
+            Facing::Right => "R",
+        };
+        write!(
+            f,
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{facing}\t",
+            self.frame,
+            self.input,
+            self.x,
+            self.y,
+            self.vx,
+            self.vy,
+            self.state,
+            u8::from(self.ground),
+        )?;
+        for (i, event) in self.events.iter().enumerate() {
+            if i > 0 {
+                f.write_str(",")?;
+            }
+            write!(f, "{event}")?;
+        }
+        Ok(())
+    }
+}
+
+/// The whole trace file, one `\n`-terminated line each.
+impl fmt::Display for Trace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{MAGIC}")?;
+        writeln!(f, "# scenario: {}", self.scenario)?;
+        writeln!(f, "# source: {}", self.source)?;
+        for (key, value) in &self.extra {
+            writeln!(f, "# {key}: {value}")?;
+        }
+        writeln!(f, "{COLUMNS}")?;
+        for row in &self.rows {
+            writeln!(f, "{row}")?;
+        }
+        Ok(())
+    }
 }
 
 impl fmt::Display for Source {

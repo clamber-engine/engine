@@ -79,19 +79,21 @@ impl Scenario {
         let mut inputs: Vec<(InputLine, usize)> = Vec::new();
         let mut metrics: Vec<Comparison> = Vec::new();
 
-        for (i, raw) in text.lines().enumerate() {
-            let n = i + 1;
-            if let Some(version) = raw.trim().strip_prefix("# clamber-scenario ")
-                && version.trim() != "v1"
-            {
+        let mut lines = text.lines().enumerate().map(|(i, l)| (i + 1, l));
+        match lines.next() {
+            Some((_, MAGIC)) => {}
+            Some((n, l)) if l.starts_with("# clamber-scenario ") => {
+                let version = l["# clamber-scenario ".len()..].trim();
                 return Err(err(
                     n,
-                    format!(
-                        "unsupported scenario format `{}`; expected v1",
-                        version.trim()
-                    ),
+                    format!("unsupported scenario format `{version}`; expected v1"),
                 ));
             }
+            Some((n, _)) => return Err(err(n, format!("first line must be `{MAGIC}`"))),
+            None => return Err(err(0, "file is empty".into())),
+        }
+
+        for (n, raw) in lines {
             let line = raw.split('#').next().unwrap_or("").trim();
             if line.is_empty() {
                 continue;
@@ -209,6 +211,9 @@ impl Scenario {
         })
     }
 }
+
+/// Required first line.
+pub const MAGIC: &str = "# clamber-scenario v1";
 
 const HEADER_KEYS: &[&str] = &["id", "summary", "requires", "start", "frames"];
 
