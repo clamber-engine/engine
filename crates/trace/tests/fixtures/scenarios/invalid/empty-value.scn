@@ -1,0 +1,5 @@
+id: empty-value
+summary:
+requires: r
+start: s
+frames: 10

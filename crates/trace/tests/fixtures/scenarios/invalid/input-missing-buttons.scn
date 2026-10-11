@@ -1,0 +1,8 @@
+# clamber-scenario v1
+id: input-missing-buttons
+summary: s
+requires: r
+start: s
+frames: 10
+[inputs]
+0-9

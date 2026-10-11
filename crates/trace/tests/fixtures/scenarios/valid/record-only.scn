@@ -1,0 +1,6 @@
+# clamber-scenario v1
+id: record-only
+summary: No inputs and no metrics; only records a trace.
+requires: anything
+start: anything
+frames: 1

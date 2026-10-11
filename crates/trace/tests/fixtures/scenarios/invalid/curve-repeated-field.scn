@@ -1,0 +1,8 @@
+# clamber-scenario v1
+id: curve-repeated-field
+summary: s
+requires: r
+start: s
+frames: 10
+[metrics]
+curve x,x from jump_start for 5 tol 1

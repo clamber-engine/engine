@@ -1,0 +1,8 @@
+# clamber-scenario v1
+id: curve-malformed
+summary: s
+requires: r
+start: s
+frames: 10
+[metrics]
+curve x from jump_start tol 1

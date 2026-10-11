@@ -1,0 +1,5 @@
+id: some-other-id
+summary: s
+requires: r
+start: s
+frames: 10

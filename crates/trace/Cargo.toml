@@ -1,0 +1,6 @@
+[package]
+name = "clamber-trace"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+description = "Scenario and trace formats, metrics, and the clamber-trace CLI"

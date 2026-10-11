@@ -1,0 +1,9 @@
+# clamber-scenario v1
+id: duplicate-metric
+summary: s
+requires: r
+start: s
+frames: 10
+[metrics]
+airtime tol 1
+airtime tol 2

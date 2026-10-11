@@ -1,0 +1,7 @@
+# clamber-scenario v1
+id: not-key-value
+summary: s
+requires: r
+start: s
+frames: 10
+just some words

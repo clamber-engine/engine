@@ -1,0 +1,7 @@
+# clamber-scenario v1
+id: unknown-section
+summary: s
+requires: r
+start: s
+frames: 10
+[outputs]

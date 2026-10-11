@@ -1,0 +1,5 @@
+# clamber-trace v1
+# scenario: x
+# source: reference
+frame	input	x	y	vx	vy	state	ground	facing	events
+0	RX	0	0	0	0	idle	1	R

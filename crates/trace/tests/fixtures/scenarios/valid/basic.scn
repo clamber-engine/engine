@@ -1,0 +1,17 @@
+# clamber-scenario v1
+# Synthetic fixture: every header key, input form and metric form.
+id: basic
+summary: Fixture scenario.   # trailing comment
+requires: anything at all, even: colons
+start: grounded, facing right
+frames: 10
+
+[inputs]
+0-9	R
+2-4    AJ   # combines with the line above
+7 L
+
+[metrics]
+apex_height	tol 0.5
+airtime tol 1
+curve x,vy from jump_start for 3 tol 0.25

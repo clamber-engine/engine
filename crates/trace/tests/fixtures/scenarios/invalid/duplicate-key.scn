@@ -1,0 +1,7 @@
+# clamber-scenario v1
+id: duplicate-key
+summary: s
+requires: r
+start: s
+frames: 10
+frames: 20

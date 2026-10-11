@@ -1,0 +1,8 @@
+# clamber-scenario v1
+id: missing-tol
+summary: s
+requires: r
+start: s
+frames: 10
+[metrics]
+apex_height 0.5

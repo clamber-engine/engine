@@ -1,0 +1,8 @@
+# clamber-scenario v1
+id: curve-zero-frames
+summary: s
+requires: r
+start: s
+frames: 10
+[metrics]
+curve x from jump_start for 0 tol 1

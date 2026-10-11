@@ -1,0 +1,10 @@
+# clamber-scenario v1
+id: duplicate-section
+summary: s
+requires: r
+start: s
+frames: 10
+[inputs]
+0 R
+[inputs]
+1 R

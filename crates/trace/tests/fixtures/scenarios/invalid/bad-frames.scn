@@ -1,0 +1,8 @@
+# clamber-scenario v1
+id: bad-frames
+summary: s
+requires: r
+start: s
+frames: 10
+[inputs]
+-3 R

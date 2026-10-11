@@ -1,0 +1,8 @@
+# clamber-scenario v1
+id: repeated-button
+summary: s
+requires: r
+start: s
+frames: 10
+[inputs]
+0 RR

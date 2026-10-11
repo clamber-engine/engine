@@ -1,0 +1,9 @@
+# clamber-scenario v1
+id: header-after-section
+summary: s
+requires: r
+start: s
+frames: 10
+[inputs]
+0 R
+id: late
