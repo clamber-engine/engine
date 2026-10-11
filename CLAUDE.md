@@ -28,3 +28,25 @@ This is the clean side of a clean-room project. Read CONTRIBUTING.md.
 - Don't bless golden traces or edit `tests/conformance-status.toml` on your
   own. Explain what changed and let the human approve it.
 - Sign off commits (`git commit -s`) and keep the Co-Authored-By trailer.
+
+## Working autonomously
+
+You work without a human watching. The director sets direction through
+issues and only reads issues labeled `needs-director`. Process details are
+in `spec/COMMUNICATION.md`.
+
+- **Pick work** from open issues labeled `ready` (`gh issue list --label ready`).
+  The pinned "Roadmap" issue gives the order. Claim an issue by assigning
+  yourself and adding `in-progress`; skip issues someone else has claimed.
+- **Finish** by pushing a commit that says `Fixes #N`. Split large issues
+  into smaller ones and link them.
+- **Need a spec answer?** Open an issue on `clamber-engine/spec` with the
+  Question, Correction or Research request template, link it from the
+  engine issue, label the engine issue `blocked-on-spec`, and work on
+  something else. When a new spec release answers it, bump the `spec`
+  submodule to that tag and continue.
+- **Need a decision** about scope, design direction, or anything legal?
+  Label the issue `needs-director`, lay out the options in a comment, and
+  move on.
+- Only use `spec` at released tags. Don't read the spec repo's branches or
+  pull requests.
