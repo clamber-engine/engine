@@ -89,6 +89,9 @@ pub struct Player {
     pub coyote: Option<u8>,
     /// Frames of swapping left.
     pub swap: u8,
+    /// Colliders the body ran into or stood on during the last step:
+    /// walls it was stopped by, a ceiling it hit, the ground.
+    pub touched: Vec<usize>,
 }
 
 impl Player {
@@ -105,6 +108,7 @@ impl Player {
             jump_buffer: JumpBuffer::new(0),
             coyote: None,
             swap: 0,
+            touched: Vec::new(),
         };
         player.ground = level
             .collision
@@ -131,6 +135,7 @@ impl Player {
         input: &Frame,
         events: &mut Vec<Event>,
     ) {
+        self.touched.clear();
         self.swap = self.swap.saturating_sub(1);
         // While swapping, nothing is pressed or held.
         let input = if self.swap > 0 {
@@ -283,11 +288,11 @@ impl Player {
                 level.collision.cast(from, cast_dir, distance + HALF_WIDTH)
             })
             .filter(is_wall)
-            .map(|hit| hit.distance - HALF_WIDTH)
-            .min();
-        let moved = match wall {
-            Some(room) if room < distance => {
+            .min_by_key(|hit| hit.distance);
+        let moved = match wall.map(|hit| (hit.distance - HALF_WIDTH, hit.collider)) {
+            Some((room, collider)) if room < distance => {
                 self.vel.x = Fixed::ZERO;
+                self.touched.push(collider);
                 room.max(Fixed::ZERO)
             }
             _ => distance,
@@ -307,6 +312,7 @@ impl Player {
                 self.pos.y = hit.point.y;
                 self.vel.y = Fixed::ZERO;
                 self.ground = Some(hit.collider);
+                self.touched.push(hit.collider);
             }
             None => {
                 self.ground = None;
@@ -324,6 +330,7 @@ impl Player {
                 Some(hit) => {
                     self.pos.y = hit.point.y + HEIGHT;
                     self.vel.y = Fixed::ZERO;
+                    self.touched.push(hit.collider);
                 }
                 None => self.pos.y += self.vel.y,
             }
@@ -334,6 +341,7 @@ impl Player {
                 self.pos.y = hit.point.y;
                 self.vel.y = Fixed::ZERO;
                 self.ground = Some(hit.collider);
+                self.touched.push(hit.collider);
                 events.push(Event::Land);
             }
             None => self.pos.y += self.vel.y,

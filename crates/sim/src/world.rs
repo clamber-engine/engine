@@ -7,6 +7,7 @@ use clamber_fixed::Fixed;
 use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Feel, Physics, Presets};
 
+use crate::flow::{self, Flow, FlowEvent, Outcome};
 use crate::player::{Facing, Player, ROLL};
 use crate::script::{InputFrame, Script};
 
@@ -67,6 +68,8 @@ pub struct World {
     pub things: Vec<Thing>,
     /// What happened during the last step, in order.
     pub events: Vec<Event>,
+    /// Goal, lives, checkpoints and pickups.
+    pub flow: Flow,
 }
 
 impl World {
@@ -93,6 +96,7 @@ impl World {
             player,
             things,
             events: Vec::new(),
+            flow: Flow::new(),
         }
     }
 
@@ -157,13 +161,50 @@ impl World {
 
         count(&mut out, self.events.len());
         out.extend(self.events.iter().map(|&e| e as u8));
+
+        let f = &self.flow;
+        match f.outcome {
+            Outcome::Playing => out.push(0),
+            Outcome::Dying(left) => out.extend([1, left]),
+            Outcome::Complete => out.push(2),
+            Outcome::GameOver => out.push(3),
+        }
+        out.push(f.lives);
+        out.extend(f.gems.to_le_bytes());
+        out.extend(f.relics.to_le_bytes());
+        count(&mut out, f.checkpoints.len());
+        for &i in &f.checkpoints {
+            count(&mut out, i);
+        }
+        count(&mut out, f.events.len());
+        for e in &f.events {
+            let (tag, index) = match *e {
+                FlowEvent::Collect(i) => (0, i),
+                FlowEvent::Checkpoint(i) => (1, i),
+                FlowEvent::Die => (2, 0),
+                FlowEvent::Respawn => (3, 0),
+                FlowEvent::Complete => (4, 0),
+                FlowEvent::GameOver => (5, 0),
+            };
+            out.push(tag);
+            count(&mut out, index);
+        }
         out
     }
 }
 
-/// Advances the world one logic frame (1/60 s).
+/// Advances the world one logic frame (1/60 s). Once the level is
+/// complete or the game is over, nothing changes.
 pub fn step(world: &mut World, input: &InputFrame) {
     world.events.clear();
+    world.flow.events.clear();
+    if world.flow.outcome.is_over() {
+        return;
+    }
+    if flow::dying(world) {
+        world.frame += 1;
+        return;
+    }
     let physics = world.player_physics();
     world.player.update(
         &world.level,
@@ -172,6 +213,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         &input.players[0],
         &mut world.events,
     );
+    flow::update(world);
     world.frame += 1;
 }
 

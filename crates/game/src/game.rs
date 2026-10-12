@@ -1,7 +1,7 @@
 //! A level being played: the world, its camera, and drawing both.
 
 use clamber_level::{Area, Shape, Vec2};
-use clamber_sim::{Facing, HALF_WIDTH, HEIGHT, InputFrame, State, World, step};
+use clamber_sim::{Facing, FlowEvent, HALF_WIDTH, HEIGHT, InputFrame, Outcome, State, World, step};
 
 use crate::camera::{Camera, VIEW, point};
 use crate::canvas::{Canvas, Color, rgb};
@@ -40,11 +40,26 @@ impl Game {
         }
     }
 
-    /// Advances one logic frame.
+    /// Advances one logic frame. After the last life is lost, the level
+    /// starts over.
     pub fn step(&mut self, input: &InputFrame) {
+        if self.world.flow.outcome == Outcome::GameOver {
+            let world = World::new(self.world.level.clone(), self.world.feel.clone());
+            *self = Game {
+                debug: self.debug,
+                ..Game::new(world)
+            };
+            return;
+        }
         self.previous = self.world.player.pos;
         step(&mut self.world, input);
-        self.camera.update(&self.world);
+        if self.world.flow.events.contains(&FlowEvent::Respawn) {
+            // A jump to somewhere else, not a move to draw between.
+            self.previous = self.world.player.pos;
+            self.camera = Camera::new(&self.world);
+        } else {
+            self.camera.update(&self.world);
+        }
     }
 
     /// A new canvas the size of the view.
@@ -222,5 +237,31 @@ mod tests {
         assert_eq!(game.world.frame, 1);
         assert!(game.world.player.pos.x > game.previous.x);
         assert!(game.camera.centre.0 > game.camera.previous.0);
+    }
+
+    #[test]
+    fn starts_over_after_the_last_life() {
+        // Nothing to stand on, so every life falls out of the level.
+        let src = LEVEL.replace("rect = [0, 300, 1000, 100]", "rect = [0, 0, 10, 10]");
+        let level = Level::from_toml_str(&src, "test").unwrap();
+        let mut game = Game::new(World::new(
+            Arc::new(level),
+            Arc::new(generic_feel("default").unwrap()),
+        ));
+        game.debug = false;
+        let idle = InputFrame::default();
+        let mut respawned = false;
+        while game.world.flow.outcome != Outcome::GameOver {
+            game.step(&idle);
+            if game.world.flow.events.contains(&FlowEvent::Respawn) {
+                respawned = true;
+                assert_eq!(game.previous, game.world.level.start);
+            }
+        }
+        assert!(respawned);
+        game.step(&idle);
+        assert_eq!(game.world.frame, 0);
+        assert_eq!(game.world.flow.lives, clamber_sim::START_LIVES);
+        assert!(!game.debug, "keeps the debug view setting");
     }
 }
