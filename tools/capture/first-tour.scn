@@ -1,0 +1,50 @@
+# clamber-scenario v1
+#
+# The README's gameplay capture (tools/capture.sh): from the title
+# screen, the opening of the first level, then pause. The inputs are the
+# first 1000 frames of tests/playthrough/first-level.scn, 41 frames later
+# because the level starts on the frame after Start is picked.
+id: first-tour
+summary: The opening of the first level, for the README's GIF
+requires: content/base/levels/first.level
+start: the title screen, before the level starts
+frames: 1071
+
+[inputs]
+40        J         # Start
+41-748    RA
+107-118   J
+143-148   J
+179-190   J
+233-238   J
+263-274   J
+293-304   J
+341-352   J
+383-394   J
+425-442   J
+485-496   J
+533-544   J
+581-592   J
+605-616   J
+629-646   J
+671-682   J
+749-754   LJ
+755-814   RA
+779-790   J
+809-826   J
+815-904   L
+827-844   A
+845-862   J
+863-892   A
+893-910   J
+905-928   R
+905-952   A
+935-970   L
+953-970   J
+971-988   RA
+989-994   L
+989-1006  J
+995-1030  R
+995-1040  A
+1037-1040 RJ
+1051      P         # pause at the end

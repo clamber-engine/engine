@@ -1,10 +1,10 @@
 # clamber level v1
 #
-# A playground for trying movement and the camera until the first real
-# level exists: flat ground, one-way platforms, a hill with a gentle and a
-# steep side, a climb up a shaft where the camera holds still
-# horizontally, and past the shaft, a launcher and two enemies to try. Platforms are 56 px apart, within the default preset's
-# 72 px jump.
+# A playground for trying movement and the camera: flat ground, one-way
+# platforms, a hill with a gentle and a steep side, a climb up a shaft
+# where the camera holds still horizontally, and past the shaft, a
+# launcher and two enemies to try. Platforms are 56 px apart, within the
+# default preset's 72 px jump.
 format = 1
 name = "Sandbox"
 size = [3000, 1200]

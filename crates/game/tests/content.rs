@@ -50,3 +50,29 @@ fn every_archetype_has_a_sprite_sheet() {
         assert!(cast.has_kind(name), "{name}");
     }
 }
+
+/// The first level is made by `tools/levels/first.py`; this checks it
+/// hasn't been edited by hand or left behind by a change to the layout.
+#[test]
+fn the_first_level_is_up_to_date_with_its_layout() {
+    let root = content_dir().join("..");
+    let out = std::env::temp_dir().join(format!("first-{}.level", std::process::id()));
+    let made = std::process::Command::new("python3")
+        .arg(root.join("tools/levels/first.py"))
+        .arg(&out)
+        .status();
+    match made {
+        Ok(status) => assert!(status.success(), "tools/levels/first.py failed"),
+        Err(e) => {
+            eprintln!("skipped: can't run python3 ({e})");
+            return;
+        }
+    }
+    let made = std::fs::read_to_string(&out).unwrap();
+    std::fs::remove_file(&out).unwrap();
+    let committed = std::fs::read_to_string(root.join("content/base/levels/first.level")).unwrap();
+    assert!(
+        made == committed,
+        "content/base/levels/first.level is out of date: run tools/levels/first.py"
+    );
+}

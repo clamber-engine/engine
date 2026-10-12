@@ -56,7 +56,7 @@ pub use sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
 pub use text::{ADVANCE, GLYPH, LINE, SHADOW, draw_text, draw_text_centred, text_size};
 
 /// The level played when none is given, relative to the content folder.
-pub const DEFAULT_LEVEL: &str = "levels/sandbox.level";
+pub const DEFAULT_LEVEL: &str = "base/levels/first.level";
 
 /// The player's and entities' sprite sheets, relative to the content
 /// folder.

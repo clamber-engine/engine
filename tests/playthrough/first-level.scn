@@ -1,0 +1,111 @@
+# clamber-scenario v1
+#
+# A whole run through the first level, from the start to the goal,
+# without losing a life, on the default preset. The playthrough test
+# (crates/sim/tests/playthrough.rs) plays it so CI proves the level stays
+# completable. If a change to the level or to movement breaks it, find a
+# new run with crates/sim/examples/find_run.rs.
+id: first-level
+summary: Play the first level from the start to the goal
+requires: content/base/levels/first.level
+start: the level's start, lead character, default preset
+frames: 3108
+
+[inputs]
+0-707     RA
+66-77     J
+102-107   J
+138-149   J
+192-197   J
+222-233   J
+252-263   J
+300-311   J
+342-353   J
+384-401   J
+444-455   J
+492-503   J
+540-551   J
+564-575   J
+588-605   J
+630-641   J
+708-713   LJ
+714-773   RA
+738-749   J
+768-785   J
+774-863   L
+786-803   A
+804-821   J
+822-851   A
+852-869   J
+864-887   R
+864-911   A
+894-929   L
+912-929   J
+930-947   RA
+948-953   L
+948-965   J
+954-989   R
+954-1031  A
+996-1013  J
+996-1571  R
+1032-1049 J
+1050-1595 A
+1080-1091 J
+1122-1139 J
+1170-1175 J
+1206-1211 J
+1308-1313 J
+1344-1355 J
+1386-1397 J
+1428-1445 J
+1494-1505 J
+1548-1565 J
+1572-1583 L
+1590-1601 L
+1596-1601 J
+1602-2153 R
+1602-2159 A
+1662-1673 J
+1698-1709 J
+1800-1805 J
+1842-1853 J
+1896-1907 J
+1938-1943 J
+1968-1985 J
+2046-2057 J
+2112-2123 J
+2154-2159 L
+2160-2183 J
+2160-2189 R
+2184-2195 A
+2190-2207 L
+2196-2207 J
+2208-2261 A
+2214-2249 L
+2262-2279 J
+2262-2297 L
+2280-2393 A
+2298-2309 RJ
+2310-2321 L
+2322-3107 R
+2328-2345 J
+2364-2375 J
+2394-2399 J
+2400-3107 A
+2424-2435 J
+2484-2495 J
+2544-2561 J
+2598-2603 J
+2622-2627 J
+2646-2657 J
+2688-2699 J
+2736-2747 J
+2766-2771 J
+2808-2819 J
+2862-2867 J
+2898-2903 J
+2934-2945 J
+2970-2987 J
+3030-3035 J
+3054-3059 J
+3090-3095 J
