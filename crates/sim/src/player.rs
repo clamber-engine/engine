@@ -267,7 +267,12 @@ impl Player {
         if self.grounded() {
             self.follow_ground(level, events);
         } else {
-            self.vel.y = (self.vel.y + physics[Param::Gravity]).min(physics[Param::MaxFallSpeed]);
+            let gravity = if self.vel.y.is_negative() {
+                physics[Param::Gravity]
+            } else {
+                physics[Param::FallGravity]
+            };
+            self.vel.y = (self.vel.y + gravity).min(physics[Param::MaxFallSpeed]);
             self.move_vertically(level, moved, events);
         }
 

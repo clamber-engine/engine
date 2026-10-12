@@ -10,41 +10,45 @@
 # frames.
 #
 # `default` is the root every other preset builds on, so it sets every
-# movement parameter. These are Clamber's own values, chosen for feel.
+# movement parameter. These are Clamber's own values, chosen for feel:
+# heavy and quick, with falls faster than climbs (`fall_gravity` above
+# `gravity`) so there's little hang at the top of a jump.
 
 [presets.default]
 label = "Default"
 description = "Clamber's standard feel."
 
 [presets.default.world]
-gravity = 0.25
-max_fall_speed = 12
-ground_acceleration = 0.09375
-ground_deceleration = 0.375
-ground_friction = 0.09375
+gravity = 0.375
+fall_gravity = 0.5625
+max_fall_speed = 15
+ground_acceleration = 0.1875
+ground_deceleration = 0.5
+ground_friction = 0.1875
 top_speed = 5
 walk_speed = 2.5
-air_acceleration = 0.078125
-jump_speed = 6
+air_acceleration = 0.125
+jump_speed = 7.5
 jump_release_speed = 3
 jump_buffer = 5
 coyote_time = 5
 roll_friction = 0.03125
 roll_deceleration = 0.125
 roll_min_speed = 0.75
-bounce_speed = 5
+bounce_speed = 6
 
 [presets.snappy]
 label = "Snappy"
 description = "Quicker starts and stops, heavier and shorter jumps."
 
 [presets.snappy.world]
-gravity = 0.375
-jump_speed = 7.5
-ground_acceleration = 0.125
-ground_deceleration = 0.5
-ground_friction = 0.125
-air_acceleration = 0.125
+gravity = 0.5
+fall_gravity = 0.75
+jump_speed = 8
+ground_acceleration = 0.25
+ground_deceleration = 0.75
+ground_friction = 0.25
+air_acceleration = 0.15625
 
 [presets.floaty]
 label = "Floaty"
@@ -52,6 +56,7 @@ description = "Light gravity, slow falls and long, steerable jumps."
 
 [presets.floaty.world]
 gravity = 0.15625
+fall_gravity = 0.15625
 max_fall_speed = 8
 jump_speed = 5
 jump_release_speed = 2.5

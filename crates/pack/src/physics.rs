@@ -41,8 +41,12 @@ macro_rules! params {
 }
 
 params! {
-    /// Added to vertical speed every airborne frame. May be negative.
+    /// Added to vertical speed every airborne frame while rising. May be
+    /// negative.
     Gravity => "gravity",
+    /// Used instead of `gravity` once the body stops rising, so falls can
+    /// be quicker than climbs. May be negative.
+    FallGravity => "fall_gravity",
     /// Downward speed never exceeds this.
     MaxFallSpeed => "max_fall_speed",
     /// Speed gained per frame when pressing in the direction of motion.
@@ -83,7 +87,7 @@ impl Param {
     /// Whether the parameter may be set to a negative value. Everything
     /// except gravity is a magnitude.
     pub fn allows_negative(self) -> bool {
-        self == Param::Gravity
+        matches!(self, Param::Gravity | Param::FallGravity)
     }
 }
 

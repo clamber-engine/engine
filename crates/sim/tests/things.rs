@@ -122,7 +122,7 @@ fn landing_on_an_enemy_defeats_it_and_bounces() {
             break;
         }
     }
-    assert_eq!(bounced, Some(-Fixed::from_int(5)));
+    assert_eq!(bounced, Some(-Fixed::from_int(6)));
     assert_eq!(w.player.state, State::Bounce);
     assert_eq!(w.things[0].phase, Phase::Defeated(DEFEATED_FRAMES));
 
@@ -207,7 +207,7 @@ fn launchers_fire_the_player_then_rest() {
         }
     }
     assert!(fired);
-    assert_eq!(w.player.vel.y, -Fixed::from_int(11));
+    assert_eq!(w.player.vel.y, -Fixed::from_ratio_pow2(27, 1));
     assert!(!w.player.grounded());
     assert_eq!(w.things[0].phase, Phase::Fired(0));
 

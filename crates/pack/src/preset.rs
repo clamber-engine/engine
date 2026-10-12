@@ -331,7 +331,7 @@ mod tests {
             ),
             (
                 "[presets.default]\nlabel = \"D\"\nworld.gravity = 1\n",
-                "test: presets.default.world.max_fall_speed: the default preset must set every movement parameter",
+                "test: presets.default.world.fall_gravity: the default preset must set every movement parameter",
             ),
         ];
         for (src, want) in cases {

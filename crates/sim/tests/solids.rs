@@ -68,7 +68,7 @@ fn launches_into_a_wall_stop_at_it_at_any_speed() {
     // to many times any speed the player reaches by moving, and the
     // fastest falls.
     let velocities = [
-        "[0, -11]",
+        "[0, -13.5]",
         "[11, -11]",
         "[40, -11]",
         "[64, 0]",
