@@ -20,10 +20,12 @@ CI builds the game for Windows from every push to `main`.
    SmartScreen may stop it the first time: choose **More info**, then
    **Run anyway**.
 
-A console window opens alongside the game and shows any warnings, for
-example when there's no sound device. Closing it closes the game. If the
-game closes as soon as it starts, run `clamber-game.exe` from a Command
-Prompt in the unzipped folder to see why.
+Warnings, for example when there's no sound device, go to a log file,
+`%APPDATA%\Clamber\clamber.log`, which starts afresh each time the game
+runs. If the game can't start, for example because the `content` folder
+isn't next to it, a message box says why. To see warnings as they
+happen, run `clamber-game.exe --console` from a Command Prompt in the
+unzipped folder.
 
 ## Controls
 
@@ -71,3 +73,6 @@ plays silently with the keyboard only.
 `cargo run --release -p clamber-game -- --help` lists the other options:
 playing another level file, choosing a physics preset or a game pack, and
 starting with the collision view on.
+
+Warnings and errors show in the terminal, and are also written to
+`~/.config/clamber/clamber.log`.

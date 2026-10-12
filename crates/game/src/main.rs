@@ -1,5 +1,9 @@
 //! `clamber-game`: play a level in a window.
 
+// Release builds on Windows open no console window; warnings and errors
+// go to the log instead (see `report`), and `--console` opens one.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -10,7 +14,7 @@ use std::time::Instant;
 
 use clamber_game::{
     Canvas, Cast, Clock, Game, LayerArt, SPRITES, Session, VIEW, content_dir, encode_gif,
-    encode_png, keys, present, rgb,
+    encode_png, keys, present, report, rgb,
 };
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
@@ -27,7 +31,7 @@ use winit::window::{Fullscreen, Window, WindowId};
 const USAGE: &str = "\
 usage:
   clamber-game [<file.level>] [--pack <pack.toml>] [--preset <id>]
-               [--settings <input.toml>] [--debug]
+               [--settings <input.toml>] [--debug] [--console]
   clamber-game --capture <file.level> --inputs <file.scn> --out <dir>
                [--pack <pack.toml>] [--preset <id>] [--debug]
 
@@ -35,7 +39,9 @@ Plays the level, or the bundled one if none is given, from the title
 screen. Without --pack, a single character plays with the preset's
 world physics. Controls are read from, and saved by the controls screen
 to, --settings or the per-user settings file. --debug starts with the
-collision and region view on. With sound (the `audio`
+collision and region view on. Warnings and errors are written to
+clamber.log in the per-user settings folder, and to stderr; on Windows,
+--console shows them in a console window. With sound (the `audio`
 feature), the level's music plays, and effects from the content folder's
 base/sounds.toml.
 
@@ -70,6 +76,7 @@ struct Options {
     settings: Option<String>,
     capture: Option<Capture>,
     debug: bool,
+    console: bool,
 }
 
 /// Where a headless capture's inputs come from and its output goes.
@@ -86,6 +93,7 @@ fn parse(args: &[String]) -> Option<Options> {
         settings: None,
         capture: None,
         debug: false,
+        console: false,
     };
     let (mut capture, mut inputs, mut out) = (None, None, None);
     let mut iter = args.iter();
@@ -99,6 +107,10 @@ fn parse(args: &[String]) -> Option<Options> {
             "--out" => &mut out,
             "--debug" if !options.debug => {
                 options.debug = true;
+                continue;
+            }
+            "--console" if !options.console => {
+                options.console = true;
                 continue;
             }
             _ if arg.starts_with('-') || options.level.is_some() => return None,
@@ -128,17 +140,25 @@ fn parse(args: &[String]) -> Option<Options> {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(mut options) = parse(&args) else {
-        eprintln!("{USAGE}");
+        report::fatal(USAGE);
         return ExitCode::from(2);
     };
+    if options.console {
+        report::open_console();
+    }
     let result = match options.capture.take() {
         Some(capture) => record(options, &capture),
-        None => play(options),
+        None => {
+            if let Some(path) = clamber_game::log_path() {
+                report::start_log(&path);
+            }
+            play(options)
+        }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("clamber-game: {e}");
+            report::fatal(format!("clamber-game: {e}"));
             ExitCode::FAILURE
         }
     }
@@ -166,7 +186,7 @@ fn play(options: Options) -> Result<(), String> {
         canvas: Game::canvas(),
         #[cfg(feature = "gamepad")]
         gamepads: clamber_input::Gamepads::new()
-            .map_err(|e| eprintln!("warning: no gamepads: {e}"))
+            .map_err(|e| report::warn(format!("no gamepads: {e}")))
             .ok(),
         #[cfg(feature = "audio")]
         audio,
@@ -217,6 +237,11 @@ fn record(options: Options, capture: &Capture) -> Result<(), String> {
 /// The level and feel the options ask for, as a session at its title
 /// screen, and the level's path.
 fn load(options: &Options) -> Result<(Session, PathBuf), String> {
+    if !content_dir().is_dir() {
+        return Err("can't find the `content` folder; \
+            keep it in the same folder as clamber-game"
+            .into());
+    }
     let level_path = options
         .level
         .clone()
@@ -232,7 +257,7 @@ fn load(options: &Options) -> Result<(Session, PathBuf), String> {
                 .select_feel(options.preset.as_deref())
                 .map_err(|e| e.to_string())?;
             for warning in &selection.warnings {
-                eprintln!("warning: {warning}");
+                report::warn(warning);
             }
             selection.feel
         }
@@ -257,7 +282,7 @@ fn load(options: &Options) -> Result<(Session, PathBuf), String> {
 fn open_audio(level: &Level, dir: &Path) -> Option<(clamber_audio::Output, clamber_game::Audio)> {
     use clamber_game::{Audio, DEFAULT_SOUNDS, SoundList};
 
-    let warn = |w: String| eprintln!("warning: {w}");
+    let warn = |w: String| report::warn(w);
     let (handle, mixer) = clamber_audio::mixer(MAX_VOICES);
     let output = clamber_audio::Output::open(mixer)
         .map_err(|e| warn(format!("{e}; playing without sound")))
@@ -278,15 +303,15 @@ fn load_settings(path: &Path) -> Settings {
         Ok(src) => src,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Settings::builtin(),
         Err(e) => {
-            eprintln!(
-                "warning: {}: {e}; using the default controls",
+            report::warn(format!(
+                "{}: {e}; using the default controls",
                 path.display()
-            );
+            ));
             return Settings::builtin();
         }
     };
     Settings::from_toml_str(&src, &path.display().to_string()).unwrap_or_else(|e| {
-        eprintln!("warning: {e}; using the default controls");
+        report::warn(format!("{e}; using the default controls"));
         Settings::builtin()
     })
 }
@@ -390,7 +415,7 @@ impl App {
             self.session.tick();
             #[cfg(feature = "audio")]
             if let Some((_, audio)) = &mut self.audio {
-                audio.update(&self.session, |w| eprintln!("warning: {w}"));
+                audio.update(&self.session, report::warn);
             }
             if self.session.quit {
                 return Ok(());
@@ -474,6 +499,8 @@ mod tests {
         assert!(!o.debug);
         assert!(parse(&args("--debug")).unwrap().debug);
         assert!(parse(&args("--debug --debug")).is_none());
+        assert!(parse(&args("--console")).unwrap().console);
+        assert!(!parse(&args("--debug")).unwrap().console);
         let o = parse(&args("--settings my.toml")).unwrap();
         assert_eq!(o.settings.as_deref(), Some("my.toml"));
         assert!(parse(&args("")).unwrap().level.is_none());

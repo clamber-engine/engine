@@ -33,6 +33,7 @@ mod hud;
 pub mod keys;
 mod layers;
 mod menu;
+pub mod report;
 mod session;
 mod sound;
 mod sprites;
@@ -80,16 +81,27 @@ pub fn content_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("content"))
 }
 
-/// The input settings file: `Clamber/input.toml` in the platform's
-/// per-user settings folder. `None` when the environment doesn't say
-/// where that is.
+/// The input settings file: `input.toml` in the [`user_dir`].
 pub fn settings_path() -> Option<PathBuf> {
+    Some(user_dir()?.join("input.toml"))
+}
+
+/// The log of the last run's warnings and errors: `clamber.log` in the
+/// [`user_dir`].
+pub fn log_path() -> Option<PathBuf> {
+    Some(user_dir()?.join("clamber.log"))
+}
+
+/// The game's folder in the platform's per-user settings folder:
+/// `%APPDATA%\Clamber` on Windows. `None` when the environment doesn't
+/// say where that is.
+pub fn user_dir() -> Option<PathBuf> {
     let var = |name| {
         std::env::var_os(name)
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
     };
-    let dir = if cfg!(windows) {
+    Some(if cfg!(windows) {
         var("APPDATA")?.join("Clamber")
     } else if cfg!(target_os = "macos") {
         var("HOME")?.join("Library/Application Support/Clamber")
@@ -97,6 +109,5 @@ pub fn settings_path() -> Option<PathBuf> {
         var("XDG_CONFIG_HOME")
             .or_else(|| Some(var("HOME")?.join(".config")))?
             .join("clamber")
-    };
-    Some(dir.join("input.toml"))
+    })
 }

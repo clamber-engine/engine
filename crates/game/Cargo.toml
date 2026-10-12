@@ -26,3 +26,8 @@ serde = { version = "1.0.229", features = ["derive"] }
 softbuffer = "0.4.8"
 toml = "1.1.8"
 winit = "0.30.13"
+
+# Release builds on Windows run without a console, so fatal errors show
+# in a message box and `--console` can open one.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
