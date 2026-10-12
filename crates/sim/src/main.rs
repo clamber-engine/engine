@@ -101,7 +101,7 @@ fn simulate(options: &Options) -> Result<(), String> {
         _ => unreachable!("parse requires one of them"),
     };
 
-    let mut world = World::new(Arc::new(level), Arc::new(feel));
+    let mut world = World::try_new(Arc::new(level), Arc::new(feel)).map_err(|e| e.to_string())?;
     run(&mut world, &script, |_| {});
 
     let p = &world.player;

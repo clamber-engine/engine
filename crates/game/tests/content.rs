@@ -7,7 +7,7 @@ use clamber_game::{
     Cast, Cue, DEFAULT_LEVEL, DEFAULT_SOUNDS, Game, LayerArt, SPRITES, SoundList, content_dir,
 };
 use clamber_level::Level;
-use clamber_sim::{InputFrame, World, generic_feel};
+use clamber_sim::{Archetypes, InputFrame, World, generic_feel};
 
 #[test]
 fn the_default_level_loads_and_plays() {
@@ -40,5 +40,13 @@ fn every_cue_has_a_sound_that_decodes() {
         let path = list.effects.get(&cue).unwrap_or_else(|| panic!("{cue:?}"));
         let sound = Sound::load(&Input::file(path), 48_000).unwrap();
         assert!(sound.frames() > 0, "{cue:?}");
+    }
+}
+
+#[test]
+fn every_archetype_has_a_sprite_sheet() {
+    let cast = Cast::load(&content_dir().join(SPRITES)).unwrap();
+    for name in Archetypes::builtin().names() {
+        assert!(cast.has_kind(name), "{name}");
     }
 }

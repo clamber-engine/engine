@@ -1,0 +1,39 @@
+# Built-in entity archetypes. An entity's `type` in a level names one of
+# these, and the archetype says how it behaves. An entity can change any
+# value but `behavior` under its own `params`.
+#
+# Every archetype has a `behavior`, which the engine implements, and a
+# `size = [w, h]`: the box it touches the player with. A walker stands on
+# its position; anything else is centred on it.
+#
+# Behaviors and their values:
+#
+# - `walker`: an enemy that walks along the ground at `speed` and turns
+#   at walls and ledges. It starts walking the way `facing` says
+#   (`"left"` or `"right"`).
+# - `patrol`: an enemy that flies from where it's placed to `path = [x, y]`
+#   away and back, taking `period` frames for the round trip.
+# - `launcher`: fires the player off at `velocity = [x, y]` on touch.
+#
+# The player defeats an enemy by landing on it, and bounces off, or by
+# rolling into it. Touching one any other way costs a life.
+#
+# Units: px and frames at 60 Hz, +y down. Speeds are px/frame. These are
+# Clamber's own values.
+
+[archetypes.crawler]
+behavior = "walker"
+size = [20, 18]
+speed = 0.5
+facing = "left"
+
+[archetypes.flutter]
+behavior = "patrol"
+size = [18, 16]
+path = [0, -64]
+period = 180
+
+[archetypes.launcher]
+behavior = "launcher"
+size = [24, 16]
+velocity = [0, -11]

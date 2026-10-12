@@ -2,7 +2,8 @@
 # a cue without a file is silent.
 #
 # Cues: jump, land, roll, collect, checkpoint, hurt, complete, game_over,
-# pause. These are the placeholders generated from art/art.toml.
+# pause, defeat, launch. These are the placeholders generated from
+# art/art.toml.
 
 [effects]
 jump = "sounds/jump.wav"
@@ -14,3 +15,5 @@ hurt = "sounds/hurt.wav"
 complete = "sounds/complete.wav"
 game_over = "sounds/game_over.wav"
 pause = "sounds/pause.wav"
+defeat = "sounds/defeat.wav"
+launch = "sounds/launch.wav"

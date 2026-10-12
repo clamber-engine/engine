@@ -33,10 +33,14 @@ pub enum Cue {
     Complete,
     GameOver,
     Pause,
+    /// An enemy was defeated.
+    Defeat,
+    /// A launcher fired.
+    Launch,
 }
 
 impl Cue {
-    pub const ALL: [Cue; 9] = [
+    pub const ALL: [Cue; 11] = [
         Cue::Jump,
         Cue::Land,
         Cue::Roll,
@@ -46,6 +50,8 @@ impl Cue {
         Cue::Complete,
         Cue::GameOver,
         Cue::Pause,
+        Cue::Defeat,
+        Cue::Launch,
     ];
 
     /// The cue's name in a sound list.
@@ -60,6 +66,8 @@ impl Cue {
             Cue::Complete => "complete",
             Cue::GameOver => "game_over",
             Cue::Pause => "pause",
+            Cue::Defeat => "defeat",
+            Cue::Launch => "launch",
         }
     }
 
@@ -82,6 +90,8 @@ pub fn cues(world: &World) -> impl Iterator<Item = Cue> + '_ {
         FlowEvent::Die => Some(Cue::Hurt),
         FlowEvent::Complete => Some(Cue::Complete),
         FlowEvent::GameOver => Some(Cue::GameOver),
+        FlowEvent::Defeat(_) => Some(Cue::Defeat),
+        FlowEvent::Launch(_) => Some(Cue::Launch),
         FlowEvent::Respawn => None,
     });
     moves.chain(flow)

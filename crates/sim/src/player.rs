@@ -21,7 +21,7 @@ pub const HALF_WIDTH: Fixed = Fixed::from_int(8);
 pub const HEIGHT: Fixed = Fixed::from_int(32);
 
 /// How far a grounded body follows the ground up or down in one step, px.
-const STEP: Fixed = Fixed::from_int(8);
+pub(crate) const STEP: Fixed = Fixed::from_int(8);
 
 /// The ability a character needs to roll.
 pub const ROLL: &str = "roll";
@@ -54,6 +54,10 @@ pub enum State {
     Fall,
     /// Switching to the next roster character; control is suspended.
     Swap,
+    /// Airborne after bouncing off an enemy.
+    Bounce,
+    /// Hurt, and losing a life; control is suspended.
+    Hurt,
 }
 
 impl State {
@@ -66,6 +70,8 @@ impl State {
             State::Jump => "jump",
             State::Fall => "fall",
             State::Swap => "swap",
+            State::Bounce => "bounce",
+            State::Hurt => "hurt",
         }
     }
 }
@@ -122,6 +128,34 @@ impl Player {
 
     pub fn grounded(&self) -> bool {
         self.ground.is_some()
+    }
+
+    /// The body as `(left, top, right, bottom)`.
+    pub fn body(&self) -> (Fixed, Fixed, Fixed, Fixed) {
+        let p = self.pos;
+        (p.x - HALF_WIDTH, p.y - HEIGHT, p.x + HALF_WIDTH, p.y)
+    }
+
+    /// Sends the player flying at `vel`, as a launcher does.
+    pub fn launch(&mut self, vel: Vec2, events: &mut Vec<Event>) {
+        if self.state == State::Roll {
+            events.push(Event::RollEnd);
+        }
+        self.vel = vel;
+        self.ground = None;
+        self.coyote = None;
+        self.state = State::Fall;
+    }
+
+    /// Bounces up at `speed` off something landed on.
+    pub fn bounce(&mut self, speed: Fixed, events: &mut Vec<Event>) {
+        self.vel.y = -speed;
+        self.ground = None;
+        self.coyote = None;
+        if !events.contains(&Event::Bounce) {
+            events.push(Event::Bounce);
+        }
+        self.state = State::Bounce;
     }
 
     /// Advances the player one step under `physics`, the physics in
@@ -265,6 +299,8 @@ impl Player {
             }
         } else if self.state == State::Jump && self.vel.y.is_negative() {
             State::Jump
+        } else if self.state == State::Bounce {
+            State::Bounce
         } else {
             State::Fall
         }
@@ -355,7 +391,7 @@ fn frames(value: Fixed) -> u8 {
 }
 
 /// Edges steeper than 45 degrees block; shallower ones are walked on.
-fn is_wall(hit: &Hit) -> bool {
+pub(crate) fn is_wall(hit: &Hit) -> bool {
     let (a, b) = hit.edge;
     (b.y - a.y).abs() > (b.x - a.x).abs()
 }

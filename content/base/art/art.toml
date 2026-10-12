@@ -227,3 +227,14 @@ wave = "noise"
 volume = 0.05
 fade = 1.0
 notes = "C8 - C8 C8 C8 - C8 C8"
+
+[[sounds]]
+out = "sounds/defeat.wav"
+tones = [
+    { wave = "noise", from = 3000, to = 600, length = 0.05, volume = 0.3 },
+    { from = 330, to = 880, length = 0.1, volume = 0.25, duty = 0.25, fade = 0.5 },
+]
+
+[[sounds]]
+out = "sounds/launch.wav"
+tones = [{ wave = "triangle", from = 180, to = 900, length = 0.25, volume = 0.5, fade = 0.4 }]

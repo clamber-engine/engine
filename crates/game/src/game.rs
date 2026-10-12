@@ -214,6 +214,8 @@ fn state_color(state: State) -> Color {
         State::Jump => rgb(0x8a, 0xd0, 0xf0),
         State::Fall => rgb(0x60, 0x9c, 0xe0),
         State::Swap => rgb(0xc0, 0x90, 0xf0),
+        State::Bounce => rgb(0x70, 0xe0, 0xb0),
+        State::Hurt => rgb(0xf0, 0x40, 0x40),
     }
 }
 

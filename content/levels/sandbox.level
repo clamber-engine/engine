@@ -2,8 +2,8 @@
 #
 # A playground for trying movement and the camera until the first real
 # level exists: flat ground, one-way platforms, a hill with a gentle and a
-# steep side, and a climb up a shaft where the camera holds still
-# horizontally. Platforms are 56 px apart, within the default preset's
+# steep side, a climb up a shaft where the camera holds still
+# horizontally, and past the shaft, a launcher and two enemies to try. Platforms are 56 px apart, within the default preset's
 # 72 px jump.
 format = 1
 name = "Sandbox"
@@ -147,3 +147,22 @@ shape = "segment"
 from = [2570, 440]
 to = [2690, 440]
 one_way = true
+
+# Past the shaft: a launcher on the ground, a crawler pacing a block, and
+# a flutter rising and falling above it.
+[[entities]]
+type = "launcher"
+at = [2740, 992]
+
+[[collision]]
+shape = "rect"
+rect = [2800, 960, 140, 40]
+
+[[entities]]
+type = "crawler"
+at = [2870, 960]
+
+[[entities]]
+type = "flutter"
+at = [2870, 900]
+params = { path = [0, -64] }

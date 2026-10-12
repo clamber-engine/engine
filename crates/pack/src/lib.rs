@@ -36,3 +36,10 @@ pub fn read_physics_patch(
 ) -> Result<PhysicsPatch, LoadError> {
     load::Reader { origin }.physics_patch(path, table)
 }
+
+/// Reads a number the way content files write them: an integer, or a
+/// float rounded to the nearest representable [`Fixed`]. `path` names
+/// the value in error messages.
+pub fn read_number(value: &toml::Value, origin: &str, path: &str) -> Result<Fixed, LoadError> {
+    load::Reader { origin }.number(path, value)
+}

@@ -244,7 +244,7 @@ fn load(options: &Options) -> Result<(Session, PathBuf), String> {
             generic_feel(preset).ok_or_else(|| format!("no preset named `{preset}`"))?
         }
     };
-    let world = World::new(Arc::new(level), Arc::new(feel));
+    let world = World::try_new(Arc::new(level), Arc::new(feel)).map_err(|e| e.to_string())?;
     let mut session = Session::new(Game::new(world).with_art(art).with_cast(cast));
     session.game.debug = options.debug;
     Ok((session, level_path))

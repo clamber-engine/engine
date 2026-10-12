@@ -309,6 +309,8 @@ dependencies = [
  "clamber-level",
  "clamber-pack",
  "clamber-trace",
+ "serde",
+ "toml",
 ]
 
 [[package]]

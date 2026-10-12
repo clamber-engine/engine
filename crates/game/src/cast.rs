@@ -10,12 +10,14 @@
 //! A character in roster slot `n` past the first uses the sheet's `n`th
 //! named palette, in name order, if it has one. Entities play their
 //! sheet's first animation, except a reached checkpoint, which plays
-//! `reached`.
+//! `reached`, a defeated enemy, which plays `defeated`, and a launcher
+//! that just fired, which plays `fire`. Entities facing left are
+//! mirrored too.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use clamber_sim::{CHECKPOINT, Facing, Outcome, Thing, World};
+use clamber_sim::{CHECKPOINT, Facing, Outcome, Phase, State, Thing, World};
 use clamber_sprite::{Playback, SpriteSheet};
 
 use crate::canvas::Canvas;
@@ -118,7 +120,11 @@ impl Cast {
     /// Draws `thing` in `pose` with its origin at `(x, y)`.
     pub fn draw_thing(&self, canvas: &mut Canvas, thing: &Thing, pose: &Pose, x: i32, y: i32) {
         if let Some(&id) = self.kinds.get(&thing.kind) {
-            self.bank.draw(canvas, &self.sprite(id, pose, x, y));
+            let sprite = Sprite {
+                flip_x: thing.facing == Facing::Left,
+                ..self.sprite(id, pose, x, y)
+            };
+            self.bank.draw(canvas, &sprite);
         }
     }
 
@@ -206,16 +212,23 @@ impl Poses {
     }
 }
 
-/// The player's animation: its state's, or `hurt` while losing a life.
+/// The player's animation: its state's, `jump` while bouncing, or
+/// `hurt` while losing a life.
 fn player_animation(world: &World) -> &'static str {
-    match world.flow.outcome {
-        Outcome::Dying(_) | Outcome::GameOver => "hurt",
-        _ => world.player.state.name(),
+    match (world.flow.outcome, world.player.state) {
+        (Outcome::Dying(_) | Outcome::GameOver, _) => "hurt",
+        (_, State::Bounce) => "jump",
+        (_, state) => state.name(),
     }
 }
 
 /// A thing's animation, if not its sheet's first.
 fn thing_animation(world: &World, thing: &Thing) -> Option<&'static str> {
+    match thing.phase {
+        Phase::Defeated(_) => return Some("defeated"),
+        Phase::Fired(_) => return Some("fire"),
+        Phase::Ready => {}
+    }
     let reached = thing.kind == CHECKPOINT && world.flow.checkpoints.contains(&thing.index);
     reached.then_some("reached")
 }

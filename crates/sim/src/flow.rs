@@ -10,7 +10,8 @@
 //! - `gem` and `relic`: picked up and counted; relics are the rare ones.
 //!   Pickups stay picked up after losing a life.
 //!
-//! Touching a hazard surface or falling below the level costs a life.
+//! Getting hurt, by touching a hazard surface or an enemy
+//! ([`things`](crate::things)), or falling below the level costs a life.
 //! The player stays where it was for [`DYING_FRAMES`], then comes back at
 //! the last checkpoint reached, or the level's start. Losing the last
 //! life ends the world with [`Outcome::GameOver`].
@@ -18,8 +19,8 @@
 use clamber_fixed::Fixed;
 use clamber_level::Vec2;
 
-use crate::player::{HALF_WIDTH, HEIGHT, Player};
-use crate::world::World;
+use crate::player::{Player, State};
+use crate::world::{Event, World};
 
 pub const GOAL: &str = "goal";
 pub const CHECKPOINT: &str = "checkpoint";
@@ -68,6 +69,10 @@ pub enum FlowEvent {
     Respawn,
     Complete,
     GameOver,
+    /// The enemy at this index was defeated.
+    Defeat(usize),
+    /// The launcher at this index fired.
+    Launch(usize),
 }
 
 /// Progress through the level.
@@ -107,13 +112,8 @@ pub fn reach(kind: &str, at: Vec2) -> Option<(Fixed, Fixed, Fixed, Fixed)> {
     Some((at.x - half, at.y - up, at.x + half, at.y + down))
 }
 
-/// The player's body as `(left, top, right, bottom)`.
-fn body(player: &Player) -> (Fixed, Fixed, Fixed, Fixed) {
-    let p = player.pos;
-    (p.x - HALF_WIDTH, p.y - HEIGHT, p.x + HALF_WIDTH, p.y)
-}
-
-fn overlap(a: (Fixed, Fixed, Fixed, Fixed), b: (Fixed, Fixed, Fixed, Fixed)) -> bool {
+/// Whether two `(left, top, right, bottom)` boxes overlap.
+pub(crate) fn overlap(a: (Fixed, Fixed, Fixed, Fixed), b: (Fixed, Fixed, Fixed, Fixed)) -> bool {
     a.0 < b.2 && b.0 < a.2 && a.1 < b.3 && b.1 < a.3
 }
 
@@ -145,7 +145,7 @@ pub(crate) fn dying(world: &mut World) -> bool {
 pub(crate) fn update(world: &mut World) {
     let level = &world.level;
     let flow = &mut world.flow;
-    let body = body(&world.player);
+    let body = world.player.body();
 
     for thing in world.things.iter_mut().filter(|t| t.active) {
         let Some(area) = reach(&thing.kind, thing.pos) else {
@@ -182,8 +182,15 @@ pub(crate) fn update(world: &mut World) {
         .touched
         .iter()
         .any(|&c| level.surface(c).hazard);
+    if hazard && !world.events.contains(&Event::Hurt) {
+        world.events.push(Event::Hurt);
+    }
+    let hurt = world.events.contains(&Event::Hurt);
+    if hurt {
+        world.player.state = State::Hurt;
+    }
     let fell = body.1 > level.size.y;
-    if hazard || fell {
+    if hurt || fell {
         flow.lives = flow.lives.saturating_sub(1);
         flow.outcome = Outcome::Dying(DYING_FRAMES);
         flow.events.push(FlowEvent::Die);

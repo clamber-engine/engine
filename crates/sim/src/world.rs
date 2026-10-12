@@ -7,9 +7,11 @@ use clamber_fixed::Fixed;
 use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Feel, Physics, Presets};
 
+use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
 use crate::player::{Facing, Player, ROLL};
 use crate::script::{InputFrame, Script};
+use crate::things;
 
 /// Something that happened during a step. Names follow
 /// `spec/traces/VOCABULARY.md`, so traces can record them directly.
@@ -29,6 +31,10 @@ pub enum Event {
     RollStart,
     /// A roll ended.
     RollEnd,
+    /// Bounced off an enemy.
+    Bounce,
+    /// Took damage.
+    Hurt,
 }
 
 impl Event {
@@ -41,6 +47,8 @@ impl Event {
             Event::JumpRelease => "jump_release",
             Event::RollStart => "roll_start",
             Event::RollEnd => "roll_end",
+            Event::Bounce => "bounce",
+            Event::Hurt => "hurt",
         }
     }
 }
@@ -55,6 +63,25 @@ pub struct Thing {
     /// Gone things, such as collected or defeated ones, stay in the list
     /// so indices are stable.
     pub active: bool,
+    /// How it behaves, if its kind is an archetype.
+    pub archetype: Option<Archetype>,
+    /// The way it's going or looking.
+    pub facing: Facing,
+    /// Steps it has moved, which a patrol follows its path by.
+    pub clock: u32,
+    pub phase: Phase,
+}
+
+/// What an archetype thing is doing besides its behavior.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Phase {
+    /// Behaving as usual.
+    #[default]
+    Ready,
+    /// Defeated; gone after this many more frames.
+    Defeated(u8),
+    /// A launcher that fired this many frames ago.
+    Fired(u8),
 }
 
 /// Everything the simulation advances.
@@ -75,21 +102,45 @@ pub struct World {
 impl World {
     /// The level at its start, with the lead character at the start
     /// position. `feel` needs at least one character.
+    ///
+    /// # Panics
+    ///
+    /// If an entity's params don't fit its archetype; [`World::try_new`]
+    /// reports that instead.
     pub fn new(level: Arc<Level>, feel: Arc<Feel>) -> World {
+        World::try_new(level, feel).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// The level at its start, or why an entity's params don't fit its
+    /// archetype in the built-in [`Archetypes`].
+    pub fn try_new(level: Arc<Level>, feel: Arc<Feel>) -> Result<World, ArchetypeError> {
         assert!(!feel.roster.is_empty(), "a world needs a character");
         let player = Player::new(&level, level.start);
+        let archetypes = Archetypes::builtin();
         let things = level
             .entities
             .iter()
             .enumerate()
-            .map(|(index, e)| Thing {
-                index,
-                kind: e.kind.clone(),
-                pos: e.at,
-                active: true,
+            .map(|(index, e)| {
+                let path = format!("entities[{index}]");
+                let archetype = archetypes.resolve(e, &level.name, &path)?;
+                let facing = match archetype.map(|a| a.behavior) {
+                    Some(Behavior::Walker { facing, .. }) => facing,
+                    _ => Facing::Right,
+                };
+                Ok(Thing {
+                    index,
+                    kind: e.kind.clone(),
+                    pos: e.at,
+                    active: true,
+                    archetype,
+                    facing,
+                    clock: 0,
+                    phase: Phase::Ready,
+                })
             })
-            .collect();
-        World {
+            .collect::<Result<_, _>>()?;
+        Ok(World {
             level,
             feel,
             frame: 0,
@@ -97,7 +148,7 @@ impl World {
             things,
             events: Vec::new(),
             flow: Flow::new(),
-        }
+        })
     }
 
     /// The player's physics where it is now: the character's own, then
@@ -157,6 +208,16 @@ impl World {
             out.extend(t.kind.as_bytes());
             vec2(&mut out, t.pos);
             out.push(t.active.into());
+            out.push(match t.facing {
+                Facing::Left => 0,
+                Facing::Right => 1,
+            });
+            out.extend(t.clock.to_le_bytes());
+            out.extend(match t.phase {
+                Phase::Ready => [0, 0],
+                Phase::Defeated(left) => [1, left],
+                Phase::Fired(since) => [2, since],
+            });
         }
 
         count(&mut out, self.events.len());
@@ -185,6 +246,8 @@ impl World {
                 FlowEvent::Respawn => (3, 0),
                 FlowEvent::Complete => (4, 0),
                 FlowEvent::GameOver => (5, 0),
+                FlowEvent::Defeat(i) => (6, i),
+                FlowEvent::Launch(i) => (7, i),
             };
             out.push(tag);
             count(&mut out, index);
@@ -206,6 +269,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         return;
     }
     let physics = world.player_physics();
+    let previous_feet = world.player.pos.y;
     world.player.update(
         &world.level,
         &world.feel,
@@ -213,6 +277,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         &input.players[0],
         &mut world.events,
     );
+    things::update(world, previous_feet);
     flow::update(world);
     world.frame += 1;
 }

@@ -65,7 +65,8 @@ pub fn capture(session: &mut Session, script: &Script) -> Capture {
 fn interest(cue: Cue) -> Option<(u8, u32)> {
     match cue {
         Cue::Complete | Cue::GameOver => Some((3, 40)),
-        Cue::Collect | Cue::Checkpoint | Cue::Hurt => Some((2, 4)),
+        Cue::Collect | Cue::Checkpoint | Cue::Hurt | Cue::Defeat => Some((2, 4)),
+        Cue::Launch => Some((2, 16)),
         Cue::Pause => Some((2, 8)),
         Cue::Jump | Cue::Roll => Some((1, 16)),
         Cue::Land => None,
