@@ -9,12 +9,14 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clamber_game::{
-    Canvas, Cast, Clock, Game, LayerArt, SPRITES, Session, VIEW, content_dir, keys, present, rgb,
+    Canvas, Cast, Clock, Game, LayerArt, SPRITES, Session, VIEW, content_dir, encode_gif,
+    encode_png, keys, present, rgb,
 };
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
 use clamber_pack::Pack;
-use clamber_sim::{World, generic_feel};
+use clamber_sim::{Script, World, generic_feel};
+use clamber_trace::Scenario;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -25,25 +27,37 @@ use winit::window::{Fullscreen, Window, WindowId};
 const USAGE: &str = "\
 usage:
   clamber-game [<file.level>] [--pack <pack.toml>] [--preset <id>]
-               [--settings <input.toml>]
+               [--settings <input.toml>] [--debug]
+  clamber-game --capture <file.level> --inputs <file.scn> --out <dir>
+               [--pack <pack.toml>] [--preset <id>] [--debug]
 
 Plays the level, or the bundled one if none is given, from the title
 screen. Without --pack, a single character plays with the preset's
 world physics. Controls are read from, and saved by the controls screen
-to, --settings or the per-user settings file. With sound (the `audio`
+to, --settings or the per-user settings file. --debug starts with the
+collision and region view on. With sound (the `audio`
 feature), the level's music plays, and effects from the content folder's
 base/sounds.toml.
 
   Z, Space       jump; pick in menus
   Enter, Escape  pause; back in menus
   F1             collision and region view
-  F11            fullscreen";
+  F11            fullscreen
+
+With --capture, plays the scenario's inputs from the title screen
+headlessly, without a window or display, and writes latest.gif and
+screenshots shot-1.png to shot-4.png to the folder.";
 
 /// Around the scaled view when the window's shape doesn't match it.
 const BORDER: u32 = rgb(0, 0, 0);
 
 /// The window starts at this multiple of the view.
 const START_SCALE: u32 = 3;
+
+/// Captures are scaled up by this, or drawn at 1:1 if that makes the
+/// GIF larger than [`GIF_LIMIT`] bytes.
+const CAPTURE_SCALE: u32 = 2;
+const GIF_LIMIT: usize = 5_000_000;
 
 /// Sound effects playing at once, at most.
 #[cfg(feature = "audio")]
@@ -54,6 +68,14 @@ struct Options {
     pack: Option<String>,
     preset: Option<String>,
     settings: Option<String>,
+    capture: Option<Capture>,
+    debug: bool,
+}
+
+/// Where a headless capture's inputs come from and its output goes.
+struct Capture {
+    inputs: PathBuf,
+    out: PathBuf,
 }
 
 fn parse(args: &[String]) -> Option<Options> {
@@ -62,13 +84,23 @@ fn parse(args: &[String]) -> Option<Options> {
         pack: None,
         preset: None,
         settings: None,
+        capture: None,
+        debug: false,
     };
+    let (mut capture, mut inputs, mut out) = (None, None, None);
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         let slot = match arg.as_str() {
             "--pack" => &mut options.pack,
             "--preset" => &mut options.preset,
             "--settings" => &mut options.settings,
+            "--capture" => &mut capture,
+            "--inputs" => &mut inputs,
+            "--out" => &mut out,
+            "--debug" if !options.debug => {
+                options.debug = true;
+                continue;
+            }
             _ if arg.starts_with('-') || options.level.is_some() => return None,
             _ => {
                 options.level = Some(PathBuf::from(arg));
@@ -79,16 +111,31 @@ fn parse(args: &[String]) -> Option<Options> {
             return None;
         }
     }
+    match (capture, inputs, out) {
+        (Some(level), Some(inputs), Some(out)) if options.level.is_none() => {
+            options.level = Some(PathBuf::from(level));
+            options.capture = Some(Capture {
+                inputs: PathBuf::from(inputs),
+                out: PathBuf::from(out),
+            });
+        }
+        (None, None, None) => {}
+        _ => return None,
+    }
     Some(options)
 }
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let Some(options) = parse(&args) else {
+    let Some(mut options) = parse(&args) else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
-    match play(options) {
+    let result = match options.capture.take() {
+        Some(capture) => record(options, &capture),
+        None => play(options),
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("clamber-game: {e}");
@@ -98,36 +145,12 @@ fn main() -> ExitCode {
 }
 
 fn play(options: Options) -> Result<(), String> {
-    let level_path = options
-        .level
-        .unwrap_or_else(|| content_dir().join(clamber_game::DEFAULT_LEVEL));
-    let level = Level::load(&level_path).map_err(|e| e.to_string())?;
-    let art = LayerArt::load(&level, level_path.parent().unwrap_or(Path::new("")))?;
-    let cast = Cast::load(&content_dir().join(SPRITES))?;
-    let feel = match &options.pack {
-        Some(path) => {
-            let src = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
-            let pack = Pack::from_toml_str(&src, path).map_err(|e| e.to_string())?;
-            let selection = pack
-                .select_feel(options.preset.as_deref())
-                .map_err(|e| e.to_string())?;
-            for warning in &selection.warnings {
-                eprintln!("warning: {warning}");
-            }
-            selection.feel
-        }
-        None => {
-            let preset = options
-                .preset
-                .as_deref()
-                .unwrap_or(clamber_pack::preset::DEFAULT);
-            generic_feel(preset).ok_or_else(|| format!("no preset named `{preset}`"))?
-        }
-    };
+    let (mut session, level_path) = load(&options)?;
     #[cfg(feature = "audio")]
-    let audio = open_audio(&level, level_path.parent().unwrap_or(Path::new("")));
-    let world = World::new(Arc::new(level), Arc::new(feel));
-    let mut session = Session::new(Game::new(world).with_art(art).with_cast(cast));
+    let audio = open_audio(
+        &session.game.world.level,
+        level_path.parent().unwrap_or(Path::new("")),
+    );
     session.settings_path = options
         .settings
         .map(PathBuf::from)
@@ -155,6 +178,76 @@ fn play(options: Options) -> Result<(), String> {
     };
     event_loop.run_app(&mut app).map_err(|e| e.to_string())?;
     app.error.map_or(Ok(()), Err)
+}
+
+/// Plays the capture's inputs from the title screen, with the default
+/// bindings and no sound, and writes the GIF and screenshots.
+fn record(options: Options, capture: &Capture) -> Result<(), String> {
+    let (mut session, _) = load(&options)?;
+    let scenario = Scenario::load(&capture.inputs).map_err(|e| e.to_string())?;
+    let run = clamber_game::capture(&mut session, &Script::from_scenario(&scenario));
+
+    let out = &capture.out;
+    std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
+    let write = |name: &str, bytes: &[u8]| {
+        let path = out.join(name);
+        std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    };
+    let mut gif = encode_gif(&run.frames, CAPTURE_SCALE)?;
+    if gif.len() > GIF_LIMIT {
+        gif = encode_gif(&run.frames, 1)?;
+    }
+    write("latest.gif", &gif)?;
+    for (n, &shot) in run.shots.iter().enumerate() {
+        write(
+            &format!("shot-{}.png", n + 1),
+            &encode_png(&run.frames[shot], CAPTURE_SCALE)?,
+        )?;
+    }
+    eprintln!(
+        "captured {} frames to {}: latest.gif ({} KB), {} screenshots",
+        run.frames.len(),
+        out.display(),
+        gif.len() / 1000,
+        run.shots.len()
+    );
+    Ok(())
+}
+
+/// The level and feel the options ask for, as a session at its title
+/// screen, and the level's path.
+fn load(options: &Options) -> Result<(Session, PathBuf), String> {
+    let level_path = options
+        .level
+        .clone()
+        .unwrap_or_else(|| content_dir().join(clamber_game::DEFAULT_LEVEL));
+    let level = Level::load(&level_path).map_err(|e| e.to_string())?;
+    let art = LayerArt::load(&level, level_path.parent().unwrap_or(Path::new("")))?;
+    let cast = Cast::load(&content_dir().join(SPRITES))?;
+    let feel = match &options.pack {
+        Some(path) => {
+            let src = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+            let pack = Pack::from_toml_str(&src, path).map_err(|e| e.to_string())?;
+            let selection = pack
+                .select_feel(options.preset.as_deref())
+                .map_err(|e| e.to_string())?;
+            for warning in &selection.warnings {
+                eprintln!("warning: {warning}");
+            }
+            selection.feel
+        }
+        None => {
+            let preset = options
+                .preset
+                .as_deref()
+                .unwrap_or(clamber_pack::preset::DEFAULT);
+            generic_feel(preset).ok_or_else(|| format!("no preset named `{preset}`"))?
+        }
+    };
+    let world = World::new(Arc::new(level), Arc::new(feel));
+    let mut session = Session::new(Game::new(world).with_art(art).with_cast(cast));
+    session.game.debug = options.debug;
+    Ok((session, level_path))
 }
 
 /// Sound output, playing `level`'s music (relative to `dir`) and the
@@ -378,11 +471,23 @@ mod tests {
         let o = parse(&args("a.level --preset fast")).unwrap();
         assert_eq!(o.level, Some(PathBuf::from("a.level")));
         assert_eq!(o.preset.as_deref(), Some("fast"));
+        assert!(!o.debug);
+        assert!(parse(&args("--debug")).unwrap().debug);
+        assert!(parse(&args("--debug --debug")).is_none());
         let o = parse(&args("--settings my.toml")).unwrap();
         assert_eq!(o.settings.as_deref(), Some("my.toml"));
         assert!(parse(&args("")).unwrap().level.is_none());
         assert!(parse(&args("a.level b.level")).is_none());
         assert!(parse(&args("--pack")).is_none());
         assert!(parse(&args("--bogus")).is_none());
+
+        let o = parse(&args("--capture a.level --inputs a.scn --out media")).unwrap();
+        assert_eq!(o.level, Some(PathBuf::from("a.level")));
+        let capture = o.capture.unwrap();
+        assert_eq!(capture.inputs, PathBuf::from("a.scn"));
+        assert_eq!(capture.out, PathBuf::from("media"));
+        assert!(parse(&args("--capture a.level --inputs a.scn")).is_none());
+        assert!(parse(&args("b.level --capture a.level --inputs a.scn --out m")).is_none());
+        assert!(parse(&args("--inputs a.scn --out m")).is_none());
     }
 }

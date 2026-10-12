@@ -19,6 +19,9 @@ clamber-level = { path = "../level" }
 clamber-pack = { path = "../pack" }
 clamber-sim = { path = "../sim" }
 clamber-sprite = { path = "../sprite" }
+clamber-trace = { path = "../trace" }
+gif = { version = "0.14.2", default-features = false, features = ["std"] }
+png = "0.18.1"
 serde = { version = "1.0.229", features = ["derive"] }
 softbuffer = "0.4.8"
 toml = "1.1.8"

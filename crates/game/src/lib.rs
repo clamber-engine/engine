@@ -19,10 +19,12 @@
 //! [`SoundList`], along with the level's music while it's being played.
 //!
 //! Everything here except the window itself works headlessly, so a
-//! [`Session`] or [`Game`] can be stepped and drawn in tests and captures.
+//! [`Session`] or [`Game`] can be stepped and drawn in tests, and
+//! [`capture`]d to a GIF and screenshots without a display.
 
 mod camera;
 mod canvas;
+mod capture;
 mod cast;
 mod clock;
 mod controls;
@@ -40,6 +42,7 @@ use std::path::{Path, PathBuf};
 
 pub use camera::{Camera, VIEW};
 pub use canvas::{Canvas, Color, Fit, present, rgb};
+pub use capture::{Capture, GIF_DELAY, SHOTS, capture, encode_gif, encode_png};
 pub use cast::{Cast, PLAYER, Pose, Poses};
 pub use clock::Clock;
 pub use controls::{Controls, Request, Row, TIMEOUT};
