@@ -22,9 +22,11 @@ clamber-sprite = { path = "../sprite" }
 clamber-trace = { path = "../trace" }
 gif = { version = "0.14.2", default-features = false, features = ["std"] }
 png = "0.18.1"
+pollster = "1.0.1"
 serde = { version = "1.0.229", features = ["derive"] }
 softbuffer = "0.4.8"
 toml = "1.1.8"
+wgpu = "30.0.1"
 winit = "0.30.13"
 
 # Release builds on Windows run without a console, so fatal errors show

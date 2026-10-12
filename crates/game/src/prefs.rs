@@ -14,6 +14,35 @@ pub struct Prefs {
     /// The movement preset picked on the movement screen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preset: Option<String>,
+    /// How the game is shown, from the options screen and the window.
+    #[serde(default)]
+    pub display: Display,
+}
+
+/// The window's settings.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Display {
+    pub fullscreen: bool,
+    /// Wait for the display's refresh to show each frame, so it doesn't
+    /// tear. Without it, frames are capped at [`FRAME_CAP`] a second.
+    ///
+    /// [`FRAME_CAP`]: crate::FRAME_CAP
+    pub vsync: bool,
+    /// The window's size when it isn't fullscreen, in physical pixels,
+    /// as the player last left it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window: Option<[u32; 2]>,
+}
+
+impl Default for Display {
+    fn default() -> Display {
+        Display {
+            fullscreen: false,
+            vsync: true,
+            window: None,
+        }
+    }
 }
 
 impl Prefs {
@@ -64,11 +93,29 @@ mod tests {
             Prefs::default(),
             Prefs {
                 preset: Some("snappy".into()),
+                display: Display::default(),
+            },
+            Prefs {
+                preset: None,
+                display: Display {
+                    fullscreen: true,
+                    vsync: false,
+                    window: Some([1600, 900]),
+                },
             },
         ] {
             assert_eq!(Prefs::from_toml_str(&prefs.to_toml_string()), Ok(prefs));
         }
         assert!(Prefs::from_toml_str("preset = 3").is_err());
+    }
+
+    #[test]
+    fn vsync_is_on_unless_turned_off() {
+        assert!(Prefs::default().display.vsync);
+        let prefs = Prefs::from_toml_str("preset = \"snappy\"").unwrap();
+        assert!(prefs.display.vsync, "prefs from before there were options");
+        let prefs = Prefs::from_toml_str("[display]\nfullscreen = true").unwrap();
+        assert!(prefs.display.fullscreen && prefs.display.vsync);
     }
 
     #[test]
@@ -78,6 +125,7 @@ mod tests {
         assert_eq!(Prefs::load(&path), Prefs::default(), "no file yet");
         let prefs = Prefs {
             preset: Some("floaty".into()),
+            ..Prefs::default()
         };
         prefs.save(&path).unwrap();
         assert_eq!(Prefs::load(&path), prefs);

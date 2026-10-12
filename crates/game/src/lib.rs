@@ -3,8 +3,11 @@
 //! The simulation runs at exactly 60 Hz ([`Clock`]) and the screen is
 //! drawn between its last two states, so motion stays smooth at any
 //! refresh rate. Drawing is software rendering into a [`Canvas`] at a
-//! fixed internal resolution ([`VIEW`]), scaled by whole pixels onto the
-//! window with no filtering ([`present`]). Level layers are drawn with
+//! fixed internal resolution ([`VIEW`]), which the GPU scales onto the
+//! window at its shape ([`Gpu`]), in step with the display's refresh
+//! unless vsync is turned off; without a GPU, it's scaled by whole
+//! pixels ([`present`]). The window's size and how often it's drawn
+//! come from [`display`]. Level layers are drawn with
 //! parallax from a [`LayerArt`], and sprites from atlas pages by a
 //! [`SpriteBank`], indexed sheets through a palette table. A [`Cast`]
 //! draws the player and entities from their sheets, animated by what
@@ -30,8 +33,10 @@ mod capture;
 mod cast;
 mod clock;
 mod controls;
+pub mod display;
 mod feels;
 mod game;
+mod gpu;
 mod hud;
 pub mod keys;
 mod layers;
@@ -53,11 +58,12 @@ pub use clock::Clock;
 pub use controls::{Controls, Request, Row, TIMEOUT};
 pub use feels::Feels;
 pub use game::Game;
+pub use gpu::Gpu;
 pub use hud::draw_hud;
 pub use layers::LayerArt;
 pub use menu::{Choice, Menu};
-pub use prefs::Prefs;
-pub use session::{Item, Screen, Session, clock_time};
+pub use prefs::{Display, Prefs};
+pub use session::{Item, Screen, Session, Setting, clock_time};
 pub use sound::{Audio, Cue, DEFAULT_SOUNDS, SoundList, cues};
 pub use sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
 pub use text::{ADVANCE, GLYPH, LINE, SHADOW, draw_text, draw_text_centred, text_size};

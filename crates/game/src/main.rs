@@ -8,13 +8,12 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
 use clamber_game::{
-    Canvas, Cast, Clock, Feels, Game, LayerArt, Prefs, SPRITES, Session, VIEW, content_dir,
-    encode_gif, encode_png, keys, present, report, rgb,
+    Canvas, Cast, Clock, Feels, Game, Gpu, LayerArt, Prefs, SPRITES, Screen, Session, VIEW,
+    content_dir, display, encode_gif, encode_png, keys, present, report, rgb,
 };
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
@@ -23,7 +22,7 @@ use clamber_sim::{Script, World};
 use clamber_trace::Scenario;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
-use winit::event::{ElementState, KeyEvent, WindowEvent};
+use winit::event::{ElementState, KeyEvent, Modifiers, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Fullscreen, Window, WindowId};
@@ -37,8 +36,10 @@ usage:
 
 Plays the level, or the bundled one if none is given, from the title
 screen. Without --pack, a single character plays with the preset's
-world physics. The movement screen's choice of preset is remembered in
-prefs.toml in the per-user settings folder; --preset overrides it.
+world physics. The movement screen's choice of preset, the options
+screen's display settings and the window's size are remembered in
+prefs.toml in the per-user settings folder; --preset overrides the
+preset.
 Controls are read from, and saved by the controls screen to, --settings
 or the per-user settings file. --debug starts with the
 collision and region view on. Warnings and errors are written to
@@ -50,17 +51,15 @@ base/sounds.toml.
   Z, Space       jump; pick in menus
   Enter, Escape  pause; back in menus
   F1             collision and region view
-  F11            fullscreen
+  F11, Alt+Enter fullscreen
 
 With --capture, plays the scenario's inputs from the title screen
 headlessly, without a window or display, and writes latest.gif and
 screenshots shot-1.png to shot-4.png to the folder.";
 
-/// Around the scaled view when the window's shape doesn't match it.
+/// Around the scaled view when the window's shape doesn't match it,
+/// drawing without a GPU.
 const BORDER: u32 = rgb(0, 0, 0);
-
-/// The window starts at this multiple of the view.
-const START_SCALE: u32 = 3;
 
 /// Captures are scaled up by this, or drawn at 1:1 if that makes the
 /// GIF larger than [`GIF_LIMIT`] bytes.
@@ -197,8 +196,12 @@ fn play(options: Options) -> Result<(), String> {
         #[cfg(feature = "audio")]
         audio,
         held: BTreeSet::new(),
+        modifiers: Modifiers::default(),
+        focused: true,
+        occluded: false,
         clock: Clock::new(),
         last: Instant::now(),
+        drawn: Instant::now(),
         window: None,
         error: None,
     };
@@ -339,9 +342,17 @@ fn title(level: &Level, path: &Path) -> String {
     }
 }
 
-struct Screen {
-    window: Rc<Window>,
-    surface: softbuffer::Surface<Rc<Window>, Rc<Window>>,
+struct Shown {
+    window: Arc<Window>,
+    output: Output,
+}
+
+/// How frames get to the window.
+enum Output {
+    Gpu(Box<Gpu>),
+    /// Without a GPU that can draw to the window: no vsync, and only
+    /// whole-number scales.
+    Software(softbuffer::Surface<Arc<Window>, Arc<Window>>),
 }
 
 struct App {
@@ -355,9 +366,16 @@ struct App {
     audio: Option<(clamber_audio::Output, clamber_game::Audio)>,
     /// Keys down now, to release them all when the window loses focus.
     held: BTreeSet<Key>,
+    modifiers: Modifiers,
+    focused: bool,
+    /// The window is hidden behind others or minimized.
+    occluded: bool,
     clock: Clock,
+    /// When the clock was last advanced.
     last: Instant,
-    window: Option<Screen>,
+    /// When the last frame was drawn.
+    drawn: Instant,
+    window: Option<Shown>,
     error: Option<String>,
 }
 
@@ -367,23 +385,44 @@ impl App {
         event_loop.exit();
     }
 
-    fn open(&mut self, event_loop: &ActiveEventLoop) -> Result<Screen, String> {
+    fn open(&mut self, event_loop: &ActiveEventLoop) -> Result<Shown, String> {
+        let prefs = &self.session.prefs.display;
+        let screen = event_loop
+            .primary_monitor()
+            .or_else(|| event_loop.available_monitors().next())
+            .map(|m| (m.size().width, m.size().height));
+        let (width, height) = display::start_size(prefs.window, screen, VIEW);
         let attributes = Window::default_attributes()
             .with_title(&self.title)
-            .with_inner_size(PhysicalSize::new(
-                VIEW.0 * START_SCALE,
-                VIEW.1 * START_SCALE,
-            ))
-            .with_min_inner_size(PhysicalSize::new(VIEW.0, VIEW.1));
-        let window = Rc::new(
+            .with_inner_size(PhysicalSize::new(width, height))
+            .with_min_inner_size(PhysicalSize::new(VIEW.0, VIEW.1))
+            .with_fullscreen(prefs.fullscreen.then_some(Fullscreen::Borderless(None)));
+        let window = Arc::new(
             event_loop
                 .create_window(attributes)
                 .map_err(|e| e.to_string())?,
         );
-        let context = softbuffer::Context::new(window.clone()).map_err(|e| e.to_string())?;
-        let surface =
-            softbuffer::Surface::new(&context, window.clone()).map_err(|e| e.to_string())?;
-        Ok(Screen { window, surface })
+        let gpu = Gpu::new(
+            window.clone(),
+            event_loop.owned_display_handle(),
+            VIEW,
+            prefs.vsync,
+        );
+        let output = match gpu {
+            Ok(gpu) => Output::Gpu(Box::new(gpu)),
+            Err(e) => {
+                report::warn(format!(
+                    "can't draw with the GPU ({e}); drawing without vsync"
+                ));
+                let context =
+                    softbuffer::Context::new(window.clone()).map_err(|e| e.to_string())?;
+                Output::Software(
+                    softbuffer::Surface::new(&context, window.clone())
+                        .map_err(|e| e.to_string())?,
+                )
+            }
+        };
+        Ok(Shown { window, output })
     }
 
     fn key(&mut self, event: KeyEvent) {
@@ -391,19 +430,19 @@ impl App {
             return;
         };
         let down = event.state == ElementState::Pressed;
+        let alt_enter = self.modifiers.state().alt_key()
+            && matches!(code, KeyCode::Enter | KeyCode::NumpadEnter);
         if down && !event.repeat {
             match code {
                 KeyCode::F1 => self.session.game.debug = !self.session.game.debug,
-                KeyCode::F11 => {
-                    if let Some(screen) = &self.window {
-                        let full = screen.window.fullscreen().is_some();
-                        screen
-                            .window
-                            .set_fullscreen((!full).then_some(Fullscreen::Borderless(None)));
-                    }
-                }
+                KeyCode::F11 => self.toggle_fullscreen(),
+                _ if alt_enter => self.toggle_fullscreen(),
                 _ => {}
             }
+        }
+        // Alt+Enter is only for fullscreen, not also pause.
+        if alt_enter && down {
+            return;
         }
         if let Some(key) = keys::key(code) {
             if down {
@@ -415,8 +454,72 @@ impl App {
         }
     }
 
-    /// Runs the steps that are due, then draws.
-    fn frame(&mut self) -> Result<(), String> {
+    fn toggle_fullscreen(&mut self) {
+        let display = &mut self.session.prefs.display;
+        display.fullscreen = !display.fullscreen;
+        self.session.save_prefs("fullscreen");
+        self.apply_display();
+    }
+
+    /// Makes the window match the display prefs, which the options
+    /// screen may have changed.
+    fn apply_display(&mut self) {
+        let Some(shown) = &mut self.window else {
+            return;
+        };
+        let display = &self.session.prefs.display;
+        if display.fullscreen != shown.window.fullscreen().is_some() {
+            shown
+                .window
+                .set_fullscreen(display.fullscreen.then_some(Fullscreen::Borderless(None)));
+        }
+        if let Output::Gpu(gpu) = &mut shown.output {
+            gpu.set_vsync(display.vsync);
+        }
+    }
+
+    /// Notes the window's size, to open at it next time, unless it's
+    /// fullscreen, maximized or minimized.
+    fn resized(&mut self, size: PhysicalSize<u32>) {
+        let Some(shown) = &self.window else {
+            return;
+        };
+        let window = &shown.window;
+        let windowed = !self.session.prefs.display.fullscreen
+            && window.fullscreen().is_none()
+            && !window.is_maximized()
+            && window.is_minimized() != Some(true);
+        if windowed && size.width > 0 && size.height > 0 {
+            self.session.prefs.display.window = Some([size.width, size.height]);
+        }
+        window.request_redraw();
+    }
+
+    /// Whether drawing would show anything.
+    fn visible(&self) -> bool {
+        self.window.as_ref().is_some_and(|shown| {
+            let size = shown.window.inner_size();
+            !self.occluded
+                && shown.window.is_minimized() != Some(true)
+                && size.width > 0
+                && size.height > 0
+        })
+    }
+
+    /// The least time between frames now: none during play with vsync,
+    /// as presenting waits for the display, and less often behind
+    /// menus and out of focus.
+    fn frame_interval(&self) -> std::time::Duration {
+        let vsync = matches!(
+            self.window.as_ref().map(|s| &s.output),
+            Some(Output::Gpu(gpu)) if gpu.vsync()
+        );
+        let active = self.focused && self.session.screen == Screen::Playing;
+        display::frame_interval(vsync, active)
+    }
+
+    /// Runs the logic steps that are due.
+    fn update(&mut self) {
         let now = Instant::now();
         let steps = self.clock.advance(now - self.last);
         self.last = now;
@@ -433,22 +536,41 @@ impl App {
                 audio.update(&self.session, report::warn);
             }
             if self.session.quit {
-                return Ok(());
+                return;
             }
         }
+        if steps > 0 {
+            self.apply_display();
+        }
+    }
+
+    /// Runs the steps that are due, then draws between the last two.
+    fn frame(&mut self) -> Result<(), String> {
+        self.update();
+        if self.session.quit {
+            return Ok(());
+        }
+        self.drawn = Instant::now();
         self.session.draw(&mut self.canvas, self.clock.alpha());
 
-        let Some(screen) = &mut self.window else {
+        let Some(shown) = &mut self.window else {
             return Ok(());
         };
-        let size = screen.window.inner_size();
-        let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
-            return Ok(());
-        };
-        screen.surface.resize(w, h).map_err(|e| e.to_string())?;
-        let mut buffer = screen.surface.buffer_mut().map_err(|e| e.to_string())?;
-        present(&self.canvas, &mut buffer, size.width, size.height, BORDER);
-        buffer.present().map_err(|e| e.to_string())
+        match &mut shown.output {
+            Output::Gpu(gpu) => gpu.present(&self.canvas),
+            Output::Software(surface) => {
+                let size = shown.window.inner_size();
+                let (Some(w), Some(h)) =
+                    (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
+                else {
+                    return Ok(());
+                };
+                surface.resize(w, h).map_err(|e| e.to_string())?;
+                let mut buffer = surface.buffer_mut().map_err(|e| e.to_string())?;
+                present(&self.canvas, &mut buffer, size.width, size.height, BORDER);
+                buffer.present().map_err(|e| e.to_string())
+            }
+        }
     }
 }
 
@@ -458,8 +580,8 @@ impl ApplicationHandler for App {
             return;
         }
         match self.open(event_loop) {
-            Ok(screen) => {
-                self.window = Some(screen);
+            Ok(shown) => {
+                self.window = Some(shown);
                 self.last = Instant::now();
             }
             Err(e) => self.fail(event_loop, format!("can't open a window: {e}")),
@@ -470,11 +592,19 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::KeyboardInput { event, .. } => self.key(event),
-            WindowEvent::Focused(false) => {
-                for key in std::mem::take(&mut self.held) {
-                    self.session.handle(Event::Key { key, down: false });
+            WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers,
+            WindowEvent::Focused(focused) => {
+                self.focused = focused;
+                if !focused {
+                    for key in std::mem::take(&mut self.held) {
+                        self.session.handle(Event::Key { key, down: false });
+                    }
+                    self.modifiers = Modifiers::default();
+                    self.session.pause();
                 }
             }
+            WindowEvent::Occluded(occluded) => self.occluded = occluded,
+            WindowEvent::Resized(size) => self.resized(size),
             WindowEvent::RedrawRequested => {
                 if let Err(e) = self.frame() {
                     self.fail(event_loop, e);
@@ -487,13 +617,32 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        let due = self.last + self.clock.until_next();
-        if Instant::now() >= due {
-            if let Some(screen) = &self.window {
-                screen.window.request_redraw();
+        self.update();
+        if self.session.quit {
+            event_loop.exit();
+            return;
+        }
+        let mut wake = self.last + self.clock.until_next();
+        if self.visible() {
+            let next_frame = self.drawn + self.frame_interval();
+            if Instant::now() >= next_frame {
+                if let Some(shown) = &self.window {
+                    shown.window.request_redraw();
+                }
+            } else {
+                wake = wake.min(next_frame);
             }
-        } else {
-            event_loop.set_control_flow(ControlFlow::WaitUntil(due));
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(wake));
+    }
+
+    /// Remembers the window's size for next time.
+    fn exiting(&mut self, _: &ActiveEventLoop) {
+        if let Some(path) = &self.session.prefs_path {
+            let saved = Prefs::load(path);
+            if saved.display.window != self.session.prefs.display.window {
+                self.session.save_prefs("the window's size");
+            }
         }
     }
 }

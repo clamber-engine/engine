@@ -1,5 +1,5 @@
 //! A software framebuffer at the game's internal resolution, and integer
-//! scaling of it onto the window.
+//! scaling of it onto the window for when there's no GPU to draw it.
 
 /// A colour as `0x00RRGGBB`, the layout the window surface takes.
 pub type Color = u32;

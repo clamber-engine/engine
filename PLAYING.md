@@ -39,7 +39,7 @@ The game starts at the title screen. Pick **Start** to play.
 | Roll | Down and X together while running | Down and run together while running |
 | Pause; back in menus | Enter or Escape | Start |
 | Collision and region view | F1 | |
-| Fullscreen | F11 | |
+| Fullscreen | F11 or Alt+Enter | |
 
 Hold jump longer to jump higher. Land on an enemy, or roll into it, to
 defeat it; touching one any other way, or falling into a pit, costs a
@@ -58,6 +58,12 @@ Snappy (quicker and heavier) or Floaty (light, long jumps). Picking one
 starts the level over with it. The Classic presets are listed but can't
 be picked yet. Your choice is saved to `prefs.toml` in the same folder
 as `input.toml`, and the game starts with it next time.
+
+**Options** on the title or pause screen turns fullscreen and vsync on
+and off. Vsync is on to start with, so the picture doesn't tear; with it
+off, the game draws up to 240 frames a second. Both settings, and the
+window's size, are saved to `prefs.toml` too. The game pauses when its
+window loses focus.
 
 ## On Linux, from source
 

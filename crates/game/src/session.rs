@@ -17,7 +17,7 @@ use crate::feels::Feels;
 use crate::game::Game;
 use crate::hud::{COUNT, GEM, RELIC_ICON, relic_total};
 use crate::menu::{Choice, Menu};
-use crate::prefs::Prefs;
+use crate::prefs::{Display, Prefs};
 use crate::report;
 use crate::sound::{Cue, cues};
 use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred, text_size};
@@ -43,6 +43,8 @@ pub enum Item {
     Controls,
     /// The movement screen.
     Movement,
+    /// The options screen.
+    Options,
     /// Back to the title screen.
     ToTitle,
     /// Close the game.
@@ -62,6 +64,16 @@ pub enum Screen {
     /// Choosing a movement preset, by index in the session's
     /// [`Feels::presets`], and the screen to go back to.
     Movement(Menu<usize>, Box<Screen>),
+    /// The display options, and the screen to go back to.
+    Options(Menu<Setting>, Box<Screen>),
+}
+
+/// An item on the options screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Setting {
+    Fullscreen,
+    Vsync,
+    Back,
 }
 
 impl Screen {
@@ -70,6 +82,7 @@ impl Screen {
             ("Start", Item::Start),
             ("Movement", Item::Movement),
             ("Controls", Item::Controls),
+            ("Options", Item::Options),
             ("Quit", Item::Quit),
         ]))
     }
@@ -79,6 +92,7 @@ impl Screen {
             ("Resume", Item::Resume),
             ("Restart level", Item::Restart),
             ("Controls", Item::Controls),
+            ("Options", Item::Options),
             ("Quit", Item::ToTitle),
         ]))
     }
@@ -198,6 +212,30 @@ impl Session {
             self.screen = *from;
             return;
         }
+        if let Screen::Options(menu, _) = &mut self.screen {
+            let setting = match menu.update(&frame) {
+                Some(Choice::Picked(Setting::Back) | Choice::Back) => {
+                    let Screen::Options(_, from) =
+                        std::mem::replace(&mut self.screen, Screen::Playing)
+                    else {
+                        unreachable!()
+                    };
+                    self.screen = *from;
+                    return;
+                }
+                Some(Choice::Picked(setting)) => setting,
+                None => return,
+            };
+            let display = &mut self.prefs.display;
+            match setting {
+                Setting::Fullscreen => display.fullscreen = !display.fullscreen,
+                Setting::Vsync => display.vsync = !display.vsync,
+                Setting::Back => unreachable!(),
+            }
+            menu.items = options_items(display);
+            self.save_prefs("the display options");
+            return;
+        }
         let (Screen::Title(menu)
         | Screen::Paused(menu)
         | Screen::Complete(menu)
@@ -224,6 +262,11 @@ impl Session {
             Item::Movement => {
                 let from = std::mem::replace(&mut self.screen, Screen::Playing);
                 self.screen = Screen::Movement(self.movement_menu(), Box::new(from));
+            }
+            Item::Options => {
+                let from = std::mem::replace(&mut self.screen, Screen::Playing);
+                let menu = Menu::new(options_items(&self.prefs.display));
+                self.screen = Screen::Options(menu, Box::new(from));
             }
             Item::ToTitle => self.screen = Screen::title(),
             Item::Quit => self.quit = true,
@@ -271,10 +314,24 @@ impl Session {
         };
         self.game.set_feel(feel);
         self.prefs.preset = Some(id.to_string());
+        self.save_prefs("the movement choice");
+    }
+
+    /// Saves the prefs, if there's somewhere to. On failure, warns that
+    /// `what` won't be remembered.
+    pub fn save_prefs(&self, what: &str) {
         if let Some(path) = &self.prefs_path
             && let Err(e) = self.prefs.save(path)
         {
-            report::warn(format!("{e}; the movement choice won't be remembered"));
+            report::warn(format!("{e}; {what} won't be remembered"));
+        }
+    }
+
+    /// Pauses the level if it's being played, as when the window loses
+    /// focus.
+    pub fn pause(&mut self) {
+        if self.screen == Screen::Playing {
+            self.screen = Screen::paused();
         }
     }
 
@@ -298,7 +355,7 @@ impl Session {
     pub fn music_on(&self) -> bool {
         match &self.screen {
             Screen::Playing | Screen::Paused(_) => true,
-            Screen::Controls(_, from) | Screen::Movement(_, from) => {
+            Screen::Controls(_, from) | Screen::Movement(_, from) | Screen::Options(_, from) => {
                 matches!(**from, Screen::Paused(_))
             }
             Screen::Title(_) | Screen::Complete(_) | Screen::GameOver(_) => false,
@@ -324,6 +381,11 @@ impl Session {
             }
             Screen::Movement(menu, _) => {
                 self.draw_movement(canvas, menu, centre);
+                return;
+            }
+            Screen::Options(menu, _) => {
+                draw_text_centred(canvas, centre, 70, "OPTIONS", HEADING);
+                menu.draw(canvas, centre, 100);
                 return;
             }
             Screen::Title(menu) => {
@@ -407,6 +469,19 @@ impl Session {
             x += text_size(&count).0 + gap;
         }
     }
+}
+
+/// The options screen's items, showing `display`'s settings.
+fn options_items(display: &Display) -> Vec<(String, Setting)> {
+    let on = |on| if on { "On" } else { "Off" };
+    vec![
+        (
+            format!("Fullscreen: {}", on(display.fullscreen)),
+            Setting::Fullscreen,
+        ),
+        (format!("Vsync: {}", on(display.vsync)), Setting::Vsync),
+        ("Back".into(), Setting::Back),
+    ]
 }
 
 /// Writes the input settings to `path`, creating its folder. Returns
@@ -651,6 +726,72 @@ mod tests {
         // Opening it again starts on the new preset.
         s.step(&press(Action::Jump));
         assert_eq!(movement_menu(&s).current(), 1);
+    }
+
+    #[test]
+    fn options_toggle_the_display_settings_and_remember_them() {
+        let dir = std::env::temp_dir().join(format!("clamber-options-{}", std::process::id()));
+        let path = dir.join("prefs.toml");
+        let mut s = session(LEVEL);
+        s.prefs_path = Some(path.clone());
+        while !matches!(&s.screen, Screen::Title(m) if m.current() == Item::Options) {
+            s.step(&press(Action::Down));
+        }
+        s.step(&press(Action::Jump));
+        let options = |s: &Session| {
+            let Screen::Options(menu, _) = &s.screen else {
+                panic!("not on the options screen")
+            };
+            menu.clone()
+        };
+        let labels =
+            |s: &Session| -> Vec<String> { options(s).items.into_iter().map(|(l, _)| l).collect() };
+        assert_eq!(labels(&s), ["Fullscreen: Off", "Vsync: On", "Back"]);
+        let mut canvas = Game::canvas();
+        s.draw(&mut canvas, 1.0);
+        assert!(canvas.pixels.contains(&HEADING));
+
+        s.step(&press(Action::Jump));
+        assert!(s.prefs.display.fullscreen);
+        s.step(&press(Action::Down));
+        s.step(&press(Action::Jump));
+        assert!(!s.prefs.display.vsync);
+        assert_eq!(labels(&s), ["Fullscreen: On", "Vsync: Off", "Back"]);
+        assert_eq!(options(&s).current(), Setting::Vsync, "stays put");
+        assert_eq!(Prefs::load(&path), s.prefs);
+        std::fs::remove_dir_all(dir).unwrap();
+
+        s.step(&press(Action::Down));
+        s.step(&press(Action::Jump));
+        let Screen::Title(menu) = &s.screen else {
+            panic!("back to the title")
+        };
+        assert_eq!(menu.current(), Item::Options);
+    }
+
+    #[test]
+    fn options_from_pause_go_back_there_with_the_music_on() {
+        let mut s = session(LEVEL);
+        s.step(&press(Action::Jump));
+        s.step(&press(Action::Pause));
+        while !matches!(&s.screen, Screen::Paused(m) if m.current() == Item::Options) {
+            s.step(&press(Action::Down));
+        }
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Options(..)));
+        assert!(s.music_on());
+        s.step(&press(Action::Pause));
+        assert!(matches!(s.screen, Screen::Paused(_)));
+    }
+
+    #[test]
+    fn pausing_from_outside_only_pauses_play() {
+        let mut s = session(LEVEL);
+        s.pause();
+        assert!(matches!(s.screen, Screen::Title(_)));
+        s.step(&press(Action::Jump));
+        s.pause();
+        assert!(matches!(s.screen, Screen::Paused(_)));
     }
 
     #[test]
