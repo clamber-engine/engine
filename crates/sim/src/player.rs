@@ -23,6 +23,9 @@ pub const HEIGHT: Fixed = Fixed::from_int(32);
 /// How far a grounded body follows the ground up or down in one step, px.
 pub(crate) const STEP: Fixed = Fixed::from_int(8);
 
+/// The smallest distance there is.
+pub(crate) const TINY: Fixed = Fixed::from_bits(1);
+
 /// The ability a character needs to roll.
 pub const ROLL: &str = "roll";
 
@@ -259,13 +262,13 @@ impl Player {
             };
             horizontal_speed(self.vel.x, dir, self.grounded(), cap, physics)
         };
-        self.move_horizontally(level);
+        let moved = self.move_horizontally(level);
 
         if self.grounded() {
             self.follow_ground(level, events);
         } else {
             self.vel.y = (self.vel.y + physics[Param::Gravity]).min(physics[Param::MaxFallSpeed]);
-            self.move_vertically(level, events);
+            self.move_vertically(level, moved, events);
         }
 
         self.coyote = if self.grounded() {
@@ -306,25 +309,28 @@ impl Player {
         }
     }
 
-    fn move_horizontally(&mut self, level: &Level) {
+    /// Moves sideways as far as walls allow, and returns how far.
+    fn move_horizontally(&mut self, level: &Level) -> Fixed {
         if self.vel.x == Fixed::ZERO {
-            return;
+            return Fixed::ZERO;
         }
         let (cast_dir, distance) = if self.vel.x.is_negative() {
             (Dir::Left, -self.vel.x)
         } else {
             (Dir::Right, self.vel.x)
         };
-        // Probe just above step height and just below the head, so low
-        // bumps are stepped over and slopes are walked up.
-        let wall = [STEP + Fixed::ONE, HEIGHT - Fixed::ONE]
-            .into_iter()
-            .filter_map(|h| {
-                let from = Vec2::new(self.pos.x, self.pos.y - h);
-                level.collision.cast(from, cast_dir, distance + HALF_WIDTH)
-            })
-            .filter(is_wall)
-            .min_by_key(|hit| hit.distance);
+        // Sweep the body from the feet to just below the head, so nothing
+        // slips past. On the ground, the bottom step's height is left out:
+        // low bumps are stepped over and slopes walked up, as following
+        // the ground goes up to a step. In the air there's no stepping
+        // over, since landing only happens with the middle of the feet
+        // over the ground.
+        let lift = if self.grounded() { STEP } else { Fixed::ZERO };
+        let from = Vec2::new(self.pos.x, self.pos.y - lift - TINY);
+        let reach = (HEIGHT - Fixed::ONE - lift - TINY, Fixed::ZERO);
+        let wall = level
+            .collision
+            .sweep(from, cast_dir, distance + HALF_WIDTH, reach, is_wall);
         let moved = match wall.map(|hit| (hit.distance - HALF_WIDTH, hit.collider)) {
             Some((room, collider)) if room < distance => {
                 self.vel.x = Fixed::ZERO;
@@ -337,6 +343,7 @@ impl Player {
             Dir::Left => self.pos.x -= moved,
             _ => self.pos.x += moved,
         }
+        moved
     }
 
     /// Keeps a grounded body on the ground as it moves over slopes and
@@ -357,7 +364,9 @@ impl Player {
         }
     }
 
-    fn move_vertically(&mut self, level: &Level, events: &mut Vec<Event>) {
+    /// Moves up or down as far as the level allows, after moving `moved`
+    /// sideways.
+    fn move_vertically(&mut self, level: &Level, moved: Fixed, events: &mut Vec<Event>) {
         if self.vel.y.is_negative() {
             // One-way platforms aren't found going up, so jumps pass
             // through them from below.
@@ -372,7 +381,21 @@ impl Player {
             }
             return;
         }
-        match level.collision.cast(self.pos, Dir::Down, self.vel.y) {
+        // Look for ground from above the feet: moving sideways into a
+        // slope, which isn't a wall, takes the feet below its surface by
+        // up to as far as they moved, and they land on it rather than
+        // falling on inside it. One-way platforms only catch feet coming
+        // down onto them.
+        let feet = self.pos.y;
+        let above = moved.max(STEP);
+        let from = Vec2::new(self.pos.x, feet - above);
+        let reach = (Fixed::ZERO, Fixed::ZERO);
+        let ground = level
+            .collision
+            .sweep(from, Dir::Down, above + self.vel.y, reach, |hit| {
+                !hit.one_way || hit.point.y >= feet
+            });
+        match ground {
             Some(hit) => {
                 self.pos.y = hit.point.y;
                 self.vel.y = Fixed::ZERO;

@@ -99,6 +99,20 @@ pub(crate) fn orient(a: Vec2, b: Vec2, c: Vec2) -> i8 {
     cross.signum() as i8
 }
 
+/// 1 if the polygon is wound clockwise on screen (+y down), -1 if
+/// anticlockwise.
+pub(crate) fn winding(points: &[Vec2]) -> i8 {
+    let twice_area: i128 = points
+        .iter()
+        .enumerate()
+        .map(|(i, &a)| {
+            let b = points[(i + 1) % points.len()];
+            w(a.x) * w(b.y) - w(b.x) * w(a.y)
+        })
+        .sum();
+    if twice_area < 0 { -1 } else { 1 }
+}
+
 /// Whether segments ab and cd cross or touch.
 pub(crate) fn segments_intersect(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> bool {
     let (o1, o2, o3, o4) = (

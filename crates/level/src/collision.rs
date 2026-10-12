@@ -13,7 +13,8 @@ use crate::geom::{self, Vec2};
 #[non_exhaustive]
 pub enum Shape {
     /// A solid area: a simple polygon, in either winding order. Its edges
-    /// can be any angle, so slopes are just edges.
+    /// can be any angle, so slopes are just edges. They only stop what
+    /// moves into the area, so something inside comes out freely.
     Solid(Vec<Vec2>),
     /// A line at any angle. Solid from both sides, unless `one_way`: then
     /// it only holds up what lands on it from above, like a thin platform.
@@ -55,6 +56,9 @@ struct Edge {
     b: Vec2,
     collider: usize,
     one_way: bool,
+    /// For a solid's edge, the signs of its outward normal's x and y.
+    /// Segments have none: they're solid from both sides.
+    outward: Option<(i8, i8)>,
 }
 
 /// log2 of the broadphase cell size in pixels.
@@ -78,12 +82,22 @@ impl Collision {
         for (i, c) in colliders.iter().enumerate() {
             match &c.shape {
                 Shape::Solid(points) => {
+                    let winding = geom::winding(points);
                     for (n, &a) in points.iter().enumerate() {
                         let b = points[(n + 1) % points.len()];
-                        edges.push(edge(a, b, i, false));
+                        // (dy, -dx) points out of an area wound clockwise
+                        // on screen, +y down.
+                        let sign = |v: Fixed| match v.cmp(&Fixed::ZERO) {
+                            std::cmp::Ordering::Less => -1,
+                            std::cmp::Ordering::Equal => 0,
+                            std::cmp::Ordering::Greater => 1,
+                        };
+                        let (dx, dy) = (sign(b.x - a.x), sign(b.y - a.y));
+                        let outward = (dy * winding, -dx * winding);
+                        edges.push(edge(a, b, i, false, Some(outward)));
                     }
                 }
-                Shape::Segment { a, b, one_way } => edges.push(edge(*a, *b, i, *one_way)),
+                Shape::Segment { a, b, one_way } => edges.push(edge(*a, *b, i, *one_way, None)),
             }
         }
         let mut grid: BTreeMap<(i64, i64), Vec<usize>> = BTreeMap::new();
@@ -103,26 +117,44 @@ impl Collision {
 
     /// The nearest edge within `max` of `from` in direction `dir`,
     /// including one at distance 0. One-way segments are only found going
-    /// down. Ties go to the edge listed first.
+    /// down, and a solid's edges only going into it. Ties go to the edge
+    /// listed first.
     pub fn cast(&self, from: Vec2, dir: Dir, max: Fixed) -> Option<Hit> {
+        self.sweep(from, dir, max, (Fixed::ZERO, Fixed::ZERO), |_| true)
+    }
+
+    /// Like [`Collision::cast`], but for a line moving in `dir` that
+    /// reaches `across.0` before `from` and `across.1` past it, across the
+    /// way it moves (to the left and right going up or down, above and
+    /// below going sideways), and only finding hits that `keep` accepts.
+    /// The distance is to the nearest part of an edge the line passes
+    /// over, from `from`.
+    pub fn sweep(
+        &self,
+        from: Vec2,
+        dir: Dir,
+        max: Fixed,
+        across: (Fixed, Fixed),
+        keep: impl Fn(&Hit) -> bool,
+    ) -> Option<Hit> {
         let vertical = matches!(dir, Dir::Down | Dir::Up);
-        let (along, across) = if vertical {
+        let (along, middle) = if vertical {
             (from.y, from.x)
         } else {
             (from.x, from.y)
         };
+        let (near, far) = (middle - across.0, middle + across.1);
         let (lo, hi) = match dir {
             Dir::Down | Dir::Right => (along, along + max),
             Dir::Up | Dir::Left => (along - max, along),
         };
+        let forward = matches!(dir, Dir::Down | Dir::Right);
         let mut candidates: Vec<usize> = (cell(lo)..=cell(hi))
             .flat_map(|c| {
-                let key = if vertical {
-                    (cell(across), c)
-                } else {
-                    (c, cell(across))
-                };
-                self.grid.get(&key).into_iter().flatten().copied()
+                (cell(near)..=cell(far)).flat_map(move |a| {
+                    let key = if vertical { (a, c) } else { (c, a) };
+                    self.grid.get(&key).into_iter().flatten().copied()
+                })
             })
             .collect();
         candidates.sort_unstable();
@@ -134,33 +166,88 @@ impl Collision {
             if e.one_way && dir != Dir::Down {
                 continue;
             }
-            // the edge must cross the ray's line and not lie along it
-            let (pos, point) = if vertical {
-                if e.a.x == e.b.x || across < e.a.x || across > e.b.x {
+            if let Some((nx, ny)) = e.outward {
+                let into = match dir {
+                    Dir::Down => ny < 0,
+                    Dir::Up => ny > 0,
+                    Dir::Right => nx < 0,
+                    Dir::Left => nx > 0,
+                };
+                if !into {
                     continue;
                 }
-                let y = geom::y_at(e.a, e.b, across);
-                (y, Vec2::new(across, y))
+            }
+            // The part of the edge the line passes over; the edge must
+            // cross the line's path and not lie along it.
+            let across_of = |v: Vec2| if vertical { v.x } else { v.y };
+            let along_of = |v: Vec2| if vertical { v.y } else { v.x };
+            let (top, bottom) = if across_of(e.a) <= across_of(e.b) {
+                (e.a, e.b)
             } else {
-                let (top, bottom) = (e.a.y.min(e.b.y), e.a.y.max(e.b.y));
-                if e.a.y == e.b.y || across < top || across > bottom {
+                (e.b, e.a)
+            };
+            if across_of(top) == across_of(bottom)
+                || far < across_of(top)
+                || near > across_of(bottom)
+            {
+                continue;
+            }
+            // Points on the edge where the line's ends cross it.
+            let at_across = |t: Fixed| {
+                if vertical {
+                    Vec2::new(t, geom::y_at(e.a, e.b, t))
+                } else {
+                    Vec2::new(geom::x_at(e.a, e.b, t), t)
+                }
+            };
+            let p = if near > across_of(top) {
+                at_across(near)
+            } else {
+                top
+            };
+            let q = if far < across_of(bottom) {
+                at_across(far)
+            } else {
+                bottom
+            };
+            // The end nearest `from`, or where the edge comes into reach
+            // if that end is behind it.
+            let (mut point, other) = if (along_of(p) <= along_of(q)) == forward {
+                (p, q)
+            } else {
+                (q, p)
+            };
+            let start = if forward { lo } else { hi };
+            let behind = |v: Vec2| {
+                if forward {
+                    along_of(v) < lo
+                } else {
+                    along_of(v) > hi
+                }
+            };
+            if behind(point) {
+                if behind(other) {
                     continue;
                 }
-                let x = geom::x_at(e.a, e.b, across);
-                (x, Vec2::new(x, across))
-            };
+                point = if vertical {
+                    Vec2::new(geom::x_at(e.a, e.b, start), start)
+                } else {
+                    Vec2::new(start, geom::y_at(e.a, e.b, start))
+                };
+            }
+            let pos = along_of(point);
             if pos < lo || pos > hi {
                 continue;
             }
-            let distance = (pos - along).abs();
-            if best.is_none_or(|b| distance < b.distance) {
-                best = Some(Hit {
-                    collider: e.collider,
-                    distance,
-                    point,
-                    edge: (e.a, e.b),
-                    one_way: e.one_way,
-                });
+            let found = Hit {
+                collider: e.collider,
+                distance: (pos - along).abs(),
+                point,
+                edge: (e.a, e.b),
+                one_way: e.one_way,
+            };
+            if best.is_none_or(|b| found.distance < b.distance) && keep(&found) {
+                best = Some(found);
             }
         }
         best
@@ -176,7 +263,7 @@ impl Collision {
 }
 
 /// An edge ordered left to right, or top to bottom when vertical.
-fn edge(a: Vec2, b: Vec2, collider: usize, one_way: bool) -> Edge {
+fn edge(a: Vec2, b: Vec2, collider: usize, one_way: bool, outward: Option<(i8, i8)>) -> Edge {
     let (a, b) = if (a.x, a.y) <= (b.x, b.y) {
         (a, b)
     } else {
@@ -187,6 +274,7 @@ fn edge(a: Vec2, b: Vec2, collider: usize, one_way: bool) -> Edge {
         b,
         collider,
         one_way,
+        outward,
     }
 }
 
@@ -256,12 +344,66 @@ mod tests {
     #[test]
     fn cast_sideways_into_walls() {
         let w = world();
-        let hit = w.cast(v(450, 80), Dir::Right, f(500)).unwrap();
-        assert_eq!((hit.collider, hit.distance), (1, f(50)));
-        let hit = w.cast(v(450, 80), Dir::Left, f(500)).unwrap();
+        let hit = w.cast(v(520, 80), Dir::Left, f(500)).unwrap();
+        assert_eq!((hit.collider, hit.distance), (1, f(20)));
+        let hit = w.cast(v(250, 80), Dir::Right, f(500)).unwrap();
         // the ramp's sloped edge at y = 80 is at x = 380
         assert_eq!(hit.point, v(380, 80));
-        assert_eq!(w.cast(v(450, 80), Dir::Left, f(69)), None);
+        assert_eq!(w.cast(v(250, 80), Dir::Right, f(129)), None);
+    }
+
+    #[test]
+    fn solids_only_stop_what_moves_into_them() {
+        let w = world();
+        // from inside the ramp, every way out is open
+        for dir in [Dir::Left, Dir::Right, Dir::Up] {
+            assert_eq!(w.cast(v(450, 80), dir, f(60)), None, "{dir:?}");
+        }
+        // and from inside the ground, there's no floor at its bottom
+        assert_eq!(w.cast(v(100, 150), Dir::Down, f(500)), None);
+        // the same holds whichever way a solid is wound
+        let ccw = Collider {
+            shape: Shape::Solid(vec![v(0, 100), v(0, 200), v(100, 200), v(100, 100)]),
+            surface: "normal".into(),
+        };
+        let w = Collision::new(vec![ccw]);
+        assert_eq!(
+            w.cast(v(50, 0), Dir::Down, f(500)).unwrap().distance,
+            f(100)
+        );
+        assert_eq!(w.cast(v(50, 150), Dir::Down, f(500)), None);
+        assert_eq!(
+            w.cast(v(-10, 150), Dir::Right, f(500)).unwrap().distance,
+            f(10)
+        );
+        assert_eq!(w.cast(v(50, 150), Dir::Right, f(500)), None);
+    }
+
+    #[test]
+    fn sweeps_find_edges_between_the_ends_of_the_line() {
+        let w = world();
+        // A line from y = 30 to y = 90 moving left from x = 560: the
+        // ramp's wall from y = 50 to 100 is in its way.
+        let from = v(560, 60);
+        let hit = w.sweep(from, Dir::Left, f(500), (f(30), f(30)), |_| true);
+        assert_eq!(hit.unwrap().distance, f(60));
+        // A line from y = 20 to 30 passes over it.
+        let hit = w.sweep(v(560, 25), Dir::Left, f(500), (f(5), f(5)), |_| true);
+        assert_eq!(hit, None);
+        // Moving right from x = 200, the slope is nearest at its bottom.
+        let hit = w.sweep(v(200, 70), Dir::Right, f(500), (f(10), f(20)), |_| true);
+        assert_eq!(hit.unwrap().point, v(340, 90));
+        // A line already over part of an edge hits it at distance 0.
+        let hit = w.sweep(v(400, 70), Dir::Right, f(500), (f(10), f(20)), |_| true);
+        assert_eq!(hit.unwrap().distance, f(0));
+        // Filtered out, the next one is found.
+        let hit = w.sweep(v(200, 70), Dir::Right, f(500), (f(10), f(20)), |h| {
+            h.collider != 1
+        });
+        assert_eq!(hit, None);
+        // Going down, the line lands on the ground's top beside the ramp.
+        let hit = w.sweep(v(290, 0), Dir::Down, f(500), (f(5), f(5)), |_| true);
+        assert_eq!(hit.unwrap().point, v(285, 100));
     }
 
     #[test]

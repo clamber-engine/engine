@@ -6,7 +6,7 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_sim::{
-    DYING_FRAMES, FlowEvent, InputFrame, Outcome, START_LIVES, World, generic_feel, step,
+    DYING_FRAMES, FlowEvent, InputFrame, Outcome, Player, START_LIVES, World, generic_feel, step,
 };
 
 /// Flat ground at y = 400 from x = 0 to 1000 with a hazard strip on it at
@@ -140,6 +140,37 @@ fn falling_out_of_the_level_costs_a_life_and_the_last_one_ends_the_game() {
     let state = w.state_bytes();
     assert_eq!(hold(&mut w, right, 10), []);
     assert_eq!(w.state_bytes(), state, "a finished world doesn't change");
+}
+
+#[test]
+fn below_the_level_or_inside_its_ground_costs_a_life_and_respawns_at_the_checkpoint() {
+    let src = TRACK.replace("surface = \"hazard\"", "surface = \"normal\"");
+    // Put below the level; inside the ground, which reaches the bottom
+    // of the level, so its bottom edge is level with the bottom; and
+    // inside the ground near its bottom edge.
+    for at in [
+        Vec2::ints(500, 700),
+        Vec2::ints(500, 450),
+        Vec2::ints(500, 599),
+    ] {
+        let mut w = world(&src);
+        let right: Actions = Action::Right.into();
+        while w.flow.checkpoints.is_empty() {
+            next_event(&mut w, right);
+        }
+        w.player = Player::new(&w.level, at);
+        assert!(!w.player.grounded(), "{at:?}: nothing to stand on in there");
+        // Whatever is pressed, it falls out of the level.
+        let events = next_event(&mut w, right);
+        assert_eq!(events, [FlowEvent::Die], "{at:?}");
+        assert_eq!(w.flow.lives, START_LIVES - 1);
+        assert_eq!(
+            hold(&mut w, right, DYING_FRAMES as usize),
+            [FlowEvent::Respawn]
+        );
+        assert_eq!(w.player.pos, Vec2::ints(300, 400), "{at:?}");
+        assert!(w.player.grounded());
+    }
 }
 
 #[test]

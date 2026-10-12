@@ -21,7 +21,7 @@ use clamber_pack::Param;
 
 use crate::archetype::Behavior;
 use crate::flow::{FlowEvent, overlap};
-use crate::player::{Facing, STEP, State, is_wall};
+use crate::player::{Facing, STEP, State, TINY, is_wall};
 use crate::world::{Event, Phase, Thing, World};
 
 /// How long a defeated enemy shows before it's gone.
@@ -63,7 +63,7 @@ fn advance(level: &Level, thing: &mut Thing) {
     }
     thing.clock = thing.clock.wrapping_add(1);
     match archetype.behavior {
-        Behavior::Walker { speed, .. } => walk(level, thing, speed, archetype.size.x),
+        Behavior::Walker { speed, .. } => walk(level, thing, speed, archetype.size),
         Behavior::Patrol { path, period } => {
             let origin = level.entities[thing.index].at;
             fly(thing, origin, path, period);
@@ -74,20 +74,23 @@ fn advance(level: &Level, thing: &mut Thing) {
 
 /// Moves a walker `speed` along the ground, or turns it around if a wall
 /// or a ledge is in the way.
-fn walk(level: &Level, thing: &mut Thing, speed: Fixed, width: Fixed) {
-    let half_width = Fixed::from_bits(width.to_bits() / 2);
+fn walk(level: &Level, thing: &mut Thing, speed: Fixed, size: Vec2) {
+    let half_width = Fixed::from_bits(size.x.to_bits() / 2);
     let (cast_dir, sign) = match thing.facing {
         Facing::Left => (Dir::Left, -Fixed::ONE),
         Facing::Right => (Dir::Right, Fixed::ONE),
     };
     let pos = thing.pos;
-    // Probe just above step height, so walkers climb what the player
-    // can walk up.
-    let probe = Vec2::new(pos.x, pos.y - STEP - Fixed::ONE);
+    // Sweep from just above step height, so walkers climb what the
+    // player can walk up, to just below the top of the walker.
+    let probe = Vec2::new(pos.x, pos.y - STEP - TINY);
+    let reach = (
+        (size.y - Fixed::ONE - STEP - TINY).max(Fixed::ZERO),
+        Fixed::ZERO,
+    );
     let wall = level
         .collision
-        .cast(probe, cast_dir, speed + half_width)
-        .filter(is_wall);
+        .sweep(probe, cast_dir, speed + half_width, reach, is_wall);
     let x = pos.x + sign * speed;
     let ground_at = |x: Fixed| {
         let from = Vec2::new(x, pos.y - STEP);
