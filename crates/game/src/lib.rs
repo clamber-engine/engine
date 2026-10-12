@@ -4,7 +4,8 @@
 //! drawn between its last two states, so motion stays smooth at any
 //! refresh rate. Drawing is software rendering into a [`Canvas`] at a
 //! fixed internal resolution ([`VIEW`]), scaled by whole pixels onto the
-//! window with no filtering ([`present`]).
+//! window with no filtering ([`present`]). Sprites are drawn from atlas
+//! pages by a [`SpriteBank`], indexed sheets through a palette table.
 //!
 //! Everything here except the window itself works headlessly, so a
 //! [`Game`] can be stepped and drawn in tests and captures.
@@ -14,6 +15,7 @@ mod canvas;
 mod clock;
 mod game;
 pub mod keys;
+mod sprites;
 
 use std::path::{Path, PathBuf};
 
@@ -21,6 +23,7 @@ pub use camera::{Camera, VIEW};
 pub use canvas::{Canvas, Color, Fit, present, rgb};
 pub use clock::Clock;
 pub use game::Game;
+pub use sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
 
 /// The level played when none is given, relative to the content folder.
 pub const DEFAULT_LEVEL: &str = "levels/sandbox.level";

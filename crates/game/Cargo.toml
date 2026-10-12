@@ -14,5 +14,6 @@ clamber-input = { path = "../input" }
 clamber-level = { path = "../level" }
 clamber-pack = { path = "../pack" }
 clamber-sim = { path = "../sim" }
+clamber-sprite = { path = "../sprite" }
 softbuffer = "0.4.8"
 winit = "0.30.13"

@@ -8,9 +8,11 @@
 //! Indexed PNGs stay indexed ([`Image::Indexed`]) so palettes can be
 //! swapped for character variants and hit flashes ([`Palette`]). Frames
 //! from many sheets are packed into texture pages with [`AtlasBuilder`].
+//! [`Playback`] steps through an animation one logic frame at a time.
 
 mod atlas;
 mod image;
+mod playback;
 pub mod sheet;
 
 use std::fmt;
@@ -20,6 +22,7 @@ pub use atlas::{Atlas, AtlasBuilder, AtlasError, Placement, pack};
 pub use image::{
     Image, ImageError, IndexImage, Palette, Pixels, Rect, Rgba, RgbaImage, decode_png, encode_png,
 };
+pub use playback::Playback;
 pub use sheet::{Animation, Area, AreaKind, Frame, Sheet, SheetError};
 
 /// A sheet's metadata with its decoded image.
