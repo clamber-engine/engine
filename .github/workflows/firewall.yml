@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
 
+# Agents push often; a newer push makes older runs on the same branch moot.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   firewall:
     runs-on: ubuntu-latest
