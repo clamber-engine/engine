@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use clamber_level::{Area, Depth, Shape, Vec2};
+use clamber_pack::Feel;
 use clamber_sim::{Facing, FlowEvent, HALF_WIDTH, HEIGHT, InputFrame, State, World, step};
 
 use crate::camera::{Camera, VIEW, point};
@@ -83,6 +84,12 @@ impl Game {
             cast: self.cast.clone(),
             ..Game::new(world)
         };
+    }
+
+    /// Plays `feel` from the start of the level.
+    pub fn set_feel(&mut self, feel: Feel) {
+        self.world.feel = Arc::new(feel);
+        self.restart();
     }
 
     /// Advances one logic frame. Once the level is complete or over, the

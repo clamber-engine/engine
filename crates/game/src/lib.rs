@@ -13,7 +13,9 @@
 //! A [`Session`] puts the title, pause, level complete and game over
 //! screens around the level, with [`Menu`]s driven by neutral actions,
 //! and a [`Controls`] screen for remapping each player's bindings and
-//! saving them to their settings file ([`settings_path`]).
+//! saving them to their settings file ([`settings_path`]), and a
+//! movement screen for choosing among the [`Feels`]' presets, which is
+//! remembered in the [`Prefs`] ([`prefs_path`]).
 //!
 //! What happens in play becomes [`Cue`]s, which [`Audio`] plays from a
 //! [`SoundList`], along with the level's music while it's being played.
@@ -28,11 +30,13 @@ mod capture;
 mod cast;
 mod clock;
 mod controls;
+mod feels;
 mod game;
 mod hud;
 pub mod keys;
 mod layers;
 mod menu;
+mod prefs;
 pub mod report;
 mod session;
 mod sound;
@@ -47,10 +51,12 @@ pub use capture::{Capture, GIF_DELAY, SHOTS, capture, encode_gif, encode_png};
 pub use cast::{Cast, PLAYER, Pose, Poses};
 pub use clock::Clock;
 pub use controls::{Controls, Request, Row, TIMEOUT};
+pub use feels::Feels;
 pub use game::Game;
 pub use hud::draw_hud;
 pub use layers::LayerArt;
 pub use menu::{Choice, Menu};
+pub use prefs::Prefs;
 pub use session::{Item, Screen, Session, clock_time};
 pub use sound::{Audio, Cue, DEFAULT_SOUNDS, SoundList, cues};
 pub use sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
@@ -84,6 +90,11 @@ pub fn content_dir() -> PathBuf {
 /// The input settings file: `input.toml` in the [`user_dir`].
 pub fn settings_path() -> Option<PathBuf> {
     Some(user_dir()?.join("input.toml"))
+}
+
+/// The menu choices file: `prefs.toml` in the [`user_dir`].
+pub fn prefs_path() -> Option<PathBuf> {
+    Some(user_dir()?.join("prefs.toml"))
 }
 
 /// The log of the last run's warnings and errors: `clamber.log` in the

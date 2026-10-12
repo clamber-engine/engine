@@ -13,9 +13,12 @@ use clamber_sim::{InputFrame, Outcome};
 use crate::camera::VIEW;
 use crate::canvas::{Canvas, Color, rgb};
 use crate::controls::{Controls, Request};
+use crate::feels::Feels;
 use crate::game::Game;
 use crate::hud::{COUNT, GEM, RELIC_ICON, relic_total};
 use crate::menu::{Choice, Menu};
+use crate::prefs::Prefs;
+use crate::report;
 use crate::sound::{Cue, cues};
 use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred, text_size};
 
@@ -38,6 +41,8 @@ pub enum Item {
     Restart,
     /// The controls screen.
     Controls,
+    /// The movement screen.
+    Movement,
     /// Back to the title screen.
     ToTitle,
     /// Close the game.
@@ -54,12 +59,16 @@ pub enum Screen {
     GameOver(Menu<Item>),
     /// The controls screen, and the screen to go back to.
     Controls(Controls, Box<Screen>),
+    /// Choosing a movement preset, by index in the session's
+    /// [`Feels::presets`], and the screen to go back to.
+    Movement(Menu<usize>, Box<Screen>),
 }
 
 impl Screen {
     pub fn title() -> Screen {
         Screen::Title(Menu::new([
             ("Start", Item::Start),
+            ("Movement", Item::Movement),
             ("Controls", Item::Controls),
             ("Quit", Item::Quit),
         ]))
@@ -98,6 +107,11 @@ pub struct Session {
     pub input: Input,
     /// Where the controls screen saves the input settings, if anywhere.
     pub settings_path: Option<PathBuf>,
+    /// The presets the movement screen offers, and how to play each.
+    pub feels: Feels,
+    /// Menu choices to remember, and where to save them, if anywhere.
+    pub prefs: Prefs,
+    pub prefs_path: Option<PathBuf>,
     /// Quit was picked on the title screen; the window should close.
     pub quit: bool,
     /// What made a sound during the last step, in order.
@@ -113,6 +127,9 @@ impl Session {
             screen: Screen::title(),
             input: Input::new(Settings::builtin()),
             settings_path: None,
+            feels: Feels::generic(),
+            prefs: Prefs::default(),
+            prefs_path: None,
             quit: false,
             cues: Vec::new(),
         }
@@ -163,6 +180,24 @@ impl Session {
             }
             return;
         }
+        if let Screen::Movement(menu, _) = &mut self.screen {
+            match menu.update(&frame) {
+                Some(Choice::Picked(index)) => {
+                    let id = self.feels.presets().iter().nth(index).map(|p| p.id.clone());
+                    if let Some(id) = id {
+                        self.choose_preset(&id);
+                    }
+                }
+                Some(Choice::Back) => {}
+                None => return,
+            }
+            let Screen::Movement(_, from) = std::mem::replace(&mut self.screen, Screen::Playing)
+            else {
+                unreachable!()
+            };
+            self.screen = *from;
+            return;
+        }
         let (Screen::Title(menu)
         | Screen::Paused(menu)
         | Screen::Complete(menu)
@@ -186,8 +221,60 @@ impl Session {
                 let from = std::mem::replace(&mut self.screen, Screen::Playing);
                 self.screen = Screen::Controls(Controls::new(), Box::new(from));
             }
+            Item::Movement => {
+                let from = std::mem::replace(&mut self.screen, Screen::Playing);
+                self.screen = Screen::Movement(self.movement_menu(), Box::new(from));
+            }
             Item::ToTitle => self.screen = Screen::title(),
             Item::Quit => self.quit = true,
+        }
+    }
+
+    /// The presets to choose from, with the one being played selected.
+    /// Placeholders are shown, but can't be picked.
+    fn movement_menu(&self) -> Menu<usize> {
+        let presets = self.feels.presets();
+        let playing = &self.game.world.feel.preset;
+        let menu = Menu::new(
+            presets
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (p.label.clone(), i)),
+        )
+        .with_unavailable(
+            presets
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.placeholder)
+                .map(|(i, _)| i),
+        );
+        match presets.iter().position(|p| &p.id == playing) {
+            Some(i) => menu.with_selected(i),
+            None => menu,
+        }
+    }
+
+    /// Plays preset `id` from the start of the level, and remembers it.
+    fn choose_preset(&mut self, id: &str) {
+        if self.game.world.feel.preset == id {
+            return;
+        }
+        let feel = match self.feels.feel(id) {
+            Ok((feel, warnings)) => {
+                warnings.iter().for_each(report::warn);
+                feel
+            }
+            Err(e) => {
+                report::warn(e);
+                return;
+            }
+        };
+        self.game.set_feel(feel);
+        self.prefs.preset = Some(id.to_string());
+        if let Some(path) = &self.prefs_path
+            && let Err(e) = self.prefs.save(path)
+        {
+            report::warn(format!("{e}; the movement choice won't be remembered"));
         }
     }
 
@@ -211,7 +298,9 @@ impl Session {
     pub fn music_on(&self) -> bool {
         match &self.screen {
             Screen::Playing | Screen::Paused(_) => true,
-            Screen::Controls(_, from) => matches!(**from, Screen::Paused(_)),
+            Screen::Controls(_, from) | Screen::Movement(_, from) => {
+                matches!(**from, Screen::Paused(_))
+            }
             Screen::Title(_) | Screen::Complete(_) | Screen::GameOver(_) => false,
         }
     }
@@ -231,6 +320,10 @@ impl Session {
             Screen::Playing => return,
             Screen::Controls(controls, _) => {
                 controls.draw(canvas, centre, &self.input);
+                return;
+            }
+            Screen::Movement(menu, _) => {
+                self.draw_movement(canvas, menu, centre);
                 return;
             }
             Screen::Title(menu) => {
@@ -256,6 +349,36 @@ impl Session {
             }
         };
         menu.draw(canvas, centre, top);
+    }
+
+    /// The movement screen: the presets, the one being played, and what
+    /// the selected one is like.
+    fn draw_movement(&self, canvas: &mut Canvas, menu: &Menu<usize>, centre: i32) {
+        let presets = self.feels.presets();
+        draw_text_centred(canvas, centre, 30, "MOVEMENT", HEADING);
+        let playing = &self.game.world.feel.preset;
+        let label = presets.get(playing).map_or(playing.as_str(), |p| &p.label);
+        draw_text_centred(
+            canvas,
+            centre,
+            30 + 2 * LINE,
+            &format!("NOW: {label}"),
+            SUBTITLE,
+        );
+        let top = 30 + 4 * LINE;
+        menu.draw(canvas, centre, top);
+        let about = match presets.iter().nth(menu.current()) {
+            Some(p) if p.placeholder => "Not available yet",
+            Some(p) => p.description.as_deref().unwrap_or(""),
+            None => "",
+        };
+        draw_text_centred(
+            canvas,
+            centre,
+            top + menu.height() + 2 * LINE,
+            about,
+            SUBTITLE,
+        );
     }
 
     /// The level's time and what was collected, centred on `centre_x`.
@@ -457,6 +580,77 @@ mod tests {
             panic!()
         };
         assert_eq!(controls.status(), Some("Can't save: no settings file"));
+    }
+
+    /// Goes from the title to the movement screen.
+    fn open_movement(s: &mut Session) {
+        s.step(&press(Action::Down));
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Movement(..)));
+    }
+
+    fn movement_menu(s: &Session) -> &Menu<usize> {
+        let Screen::Movement(menu, _) = &s.screen else {
+            panic!("not on the movement screen")
+        };
+        menu
+    }
+
+    #[test]
+    fn the_movement_screen_lists_presets_and_shows_placeholders_unavailable() {
+        let mut s = session(LEVEL);
+        open_movement(&mut s);
+        let menu = movement_menu(&s);
+        let labels: Vec<_> = menu.items.iter().map(|(l, _)| l.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Default",
+                "Snappy",
+                "Floaty",
+                "Classic 1",
+                "Classic 2",
+                "Classic 3"
+            ]
+        );
+        assert_eq!(menu.unavailable, [3, 4, 5]);
+        assert_eq!(menu.current(), 0, "starts on the preset being played");
+
+        // Up wraps to Classic 3, which can't be picked.
+        s.step(&press(Action::Up));
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Movement(..)));
+        assert_eq!(s.game.world.feel.preset, "default");
+
+        let mut canvas = Game::canvas();
+        s.draw(&mut canvas, 1.0);
+
+        s.step(&press(Action::Pause));
+        let Screen::Title(menu) = &s.screen else {
+            panic!("back to the title")
+        };
+        assert_eq!(menu.current(), Item::Movement);
+        assert_eq!(s.game.world.feel.preset, "default");
+    }
+
+    #[test]
+    fn picking_a_preset_plays_it_and_remembers_it() {
+        let dir = std::env::temp_dir().join(format!("clamber-prefs-{}", std::process::id()));
+        let path = dir.join("prefs.toml");
+        let mut s = session(LEVEL);
+        s.prefs_path = Some(path.clone());
+        open_movement(&mut s);
+        s.step(&press(Action::Down));
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Title(_)));
+        assert_eq!(*s.game.world.feel, generic_feel("snappy").unwrap());
+        assert_eq!(s.prefs.preset.as_deref(), Some("snappy"));
+        assert_eq!(Prefs::load(&path), s.prefs);
+        std::fs::remove_dir_all(dir).unwrap();
+
+        // Opening it again starts on the new preset.
+        s.step(&press(Action::Jump));
+        assert_eq!(movement_menu(&s).current(), 1);
     }
 
     #[test]

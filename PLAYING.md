@@ -53,6 +53,12 @@ are saved to `%APPDATA%\Clamber\input.toml` on Windows, and
 `~/.config/clamber/input.toml` on Linux. Delete that file to go back to
 the defaults.
 
+**Movement** on the title screen picks how the game feels: Default,
+Snappy (quicker and heavier) or Floaty (light, long jumps). Picking one
+starts the level over with it. The Classic presets are listed but can't
+be picked yet. Your choice is saved to `prefs.toml` in the same folder
+as `input.toml`, and the game starts with it next time.
+
 ## On Linux, from source
 
 You need a current stable Rust ([rustup](https://rustup.rs)) and, for sound
@@ -71,8 +77,9 @@ The `spec` submodule is only needed for the tests, not to play. Without
 plays silently with the keyboard only.
 
 `cargo run --release -p clamber-game -- --help` lists the other options:
-playing another level file, choosing a physics preset or a game pack, and
-starting with the collision view on.
+playing another level file, choosing a movement preset (which overrides
+the one picked in the game) or a game pack, and starting with the
+collision view on.
 
 Warnings and errors show in the terminal, and are also written to
 `~/.config/clamber/clamber.log`.

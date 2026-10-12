@@ -13,13 +13,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clamber_game::{
-    Canvas, Cast, Clock, Game, LayerArt, SPRITES, Session, VIEW, content_dir, encode_gif,
-    encode_png, keys, present, report, rgb,
+    Canvas, Cast, Clock, Feels, Game, LayerArt, Prefs, SPRITES, Session, VIEW, content_dir,
+    encode_gif, encode_png, keys, present, report, rgb,
 };
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
 use clamber_pack::Pack;
-use clamber_sim::{Script, World, generic_feel};
+use clamber_sim::{Script, World};
 use clamber_trace::Scenario;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -37,8 +37,10 @@ usage:
 
 Plays the level, or the bundled one if none is given, from the title
 screen. Without --pack, a single character plays with the preset's
-world physics. Controls are read from, and saved by the controls screen
-to, --settings or the per-user settings file. --debug starts with the
+world physics. The movement screen's choice of preset is remembered in
+prefs.toml in the per-user settings folder; --preset overrides it.
+Controls are read from, and saved by the controls screen to, --settings
+or the per-user settings file. --debug starts with the
 collision and region view on. Warnings and errors are written to
 clamber.log in the per-user settings folder, and to stderr; on Windows,
 --console shows them in a console window. With sound (the `audio`
@@ -165,7 +167,11 @@ fn main() -> ExitCode {
 }
 
 fn play(options: Options) -> Result<(), String> {
-    let (mut session, level_path) = load(&options)?;
+    let prefs_path = clamber_game::prefs_path();
+    let prefs = prefs_path.as_deref().map(Prefs::load).unwrap_or_default();
+    let (mut session, level_path) = load(&options, prefs.preset.as_deref())?;
+    session.prefs = prefs;
+    session.prefs_path = prefs_path;
     #[cfg(feature = "audio")]
     let audio = open_audio(
         &session.game.world.level,
@@ -201,9 +207,10 @@ fn play(options: Options) -> Result<(), String> {
 }
 
 /// Plays the capture's inputs from the title screen, with the default
-/// bindings and no sound, and writes the GIF and screenshots.
+/// bindings, no remembered choices and no sound, and writes the GIF and
+/// screenshots.
 fn record(options: Options, capture: &Capture) -> Result<(), String> {
-    let (mut session, _) = load(&options)?;
+    let (mut session, _) = load(&options, None)?;
     let scenario = Scenario::load(&capture.inputs).map_err(|e| e.to_string())?;
     let run = clamber_game::capture(&mut session, &Script::from_scenario(&scenario));
 
@@ -235,8 +242,10 @@ fn record(options: Options, capture: &Capture) -> Result<(), String> {
 }
 
 /// The level and feel the options ask for, as a session at its title
-/// screen, and the level's path.
-fn load(options: &Options) -> Result<(Session, PathBuf), String> {
+/// screen, and the level's path. The preset is --preset's, or else
+/// `saved` if there's a preset by that name, or else the one the pack
+/// was designed for.
+fn load(options: &Options, saved: Option<&str>) -> Result<(Session, PathBuf), String> {
     if !content_dir().is_dir() {
         return Err("can't find the `content` folder; \
             keep it in the same folder as clamber-game"
@@ -249,28 +258,34 @@ fn load(options: &Options) -> Result<(Session, PathBuf), String> {
     let level = Level::load(&level_path).map_err(|e| e.to_string())?;
     let art = LayerArt::load(&level, level_path.parent().unwrap_or(Path::new("")))?;
     let cast = Cast::load(&content_dir().join(SPRITES))?;
-    let feel = match &options.pack {
+    let feels = match &options.pack {
         Some(path) => {
             let src = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
-            let pack = Pack::from_toml_str(&src, path).map_err(|e| e.to_string())?;
-            let selection = pack
-                .select_feel(options.preset.as_deref())
-                .map_err(|e| e.to_string())?;
-            for warning in &selection.warnings {
-                report::warn(warning);
-            }
-            selection.feel
+            Feels::pack(Pack::from_toml_str(&src, path).map_err(|e| e.to_string())?)
         }
-        None => {
-            let preset = options
-                .preset
-                .as_deref()
-                .unwrap_or(clamber_pack::preset::DEFAULT);
-            generic_feel(preset).ok_or_else(|| format!("no preset named `{preset}`"))?
-        }
+        None => Feels::generic(),
     };
+    let saved = saved.filter(|id| {
+        let known = feels.presets().get(id).is_some();
+        if !known {
+            report::warn(format!(
+                "no preset named `{id}` any more; playing the default"
+            ));
+        }
+        known
+    });
+    let preset = options
+        .preset
+        .as_deref()
+        .or(saved)
+        .unwrap_or(feels.designed_for());
+    let (feel, warnings) = feels.feel(preset)?;
+    for warning in &warnings {
+        report::warn(warning);
+    }
     let world = World::try_new(Arc::new(level), Arc::new(feel)).map_err(|e| e.to_string())?;
     let mut session = Session::new(Game::new(world).with_art(art).with_cast(cast));
+    session.feels = feels;
     session.game.debug = options.debug;
     Ok((session, level_path))
 }

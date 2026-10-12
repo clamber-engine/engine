@@ -1,6 +1,8 @@
 //! A list of choices navigated with neutral actions, so the same menu
 //! works from a keyboard or a gamepad alone: Up and Down move the
 //! selection (wrapping around), Jump confirms and Pause goes back.
+//! Unavailable items can be selected, so they can be read, but not
+//! picked.
 
 use clamber_input::{Action, Frame};
 
@@ -10,6 +12,7 @@ use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred, text_size};
 const ITEM: Color = rgb(0xa8, 0xb0, 0xbc);
 const SELECTED: Color = rgb(0xf4, 0xf0, 0xe8);
 const MARKER: Color = rgb(0xf0, 0xc8, 0x40);
+const UNAVAILABLE: Color = rgb(0x58, 0x5e, 0x68);
 
 /// Extra space between items, beyond a line of text.
 const SPACING: i32 = 3;
@@ -27,6 +30,8 @@ pub enum Choice<T> {
 pub struct Menu<T> {
     pub items: Vec<(String, T)>,
     pub selected: usize,
+    /// Indices of the items that can't be picked.
+    pub unavailable: Vec<usize>,
 }
 
 impl<T: Copy> Menu<T> {
@@ -35,7 +40,29 @@ impl<T: Copy> Menu<T> {
         Menu {
             items: items.into_iter().map(|(l, t)| (l.into(), t)).collect(),
             selected: 0,
+            unavailable: Vec::new(),
         }
+    }
+
+    /// The menu with the items at `indices` shown, but not pickable.
+    pub fn with_unavailable(self, indices: impl IntoIterator<Item = usize>) -> Menu<T> {
+        Menu {
+            unavailable: indices.into_iter().collect(),
+            ..self
+        }
+    }
+
+    /// The menu with the item at `index` selected.
+    pub fn with_selected(self, index: usize) -> Menu<T> {
+        assert!(index < self.items.len());
+        Menu {
+            selected: index,
+            ..self
+        }
+    }
+
+    pub fn available(&self, index: usize) -> bool {
+        !self.unavailable.contains(&index)
     }
 
     pub fn current(&self) -> T {
@@ -44,14 +71,17 @@ impl<T: Copy> Menu<T> {
 
     /// Applies one frame of input: moves on Up or Down, and reports a
     /// pick on Jump or leaving on Pause. Only presses count, so holding
-    /// a button does nothing more.
+    /// a button does nothing more. Jump on an unavailable item does
+    /// nothing.
     pub fn update(&mut self, frame: &Frame) -> Option<Choice<T>> {
         let pressed = frame.pressed;
         if pressed.contains(Action::Pause) {
             return Some(Choice::Back);
         }
         if pressed.contains(Action::Jump) {
-            return Some(Choice::Picked(self.current()));
+            return self
+                .available(self.selected)
+                .then(|| Choice::Picked(self.current()));
         }
         let n = self.items.len();
         if pressed.contains(Action::Up) && !pressed.contains(Action::Down) {
@@ -72,12 +102,15 @@ impl<T: Copy> Menu<T> {
     pub fn draw(&self, canvas: &mut Canvas, centre_x: i32, top: i32) {
         for (i, (label, _)) in self.items.iter().enumerate() {
             let y = top + i as i32 * (LINE + SPACING);
+            let color = match (self.available(i), i == self.selected) {
+                (false, _) => UNAVAILABLE,
+                (true, true) => SELECTED,
+                (true, false) => ITEM,
+            };
+            draw_text_centred(canvas, centre_x, y, label, color);
             if i == self.selected {
-                draw_text_centred(canvas, centre_x, y, label, SELECTED);
                 let left = centre_x - text_size(label).0 / 2;
                 draw_text(canvas, left - 2 * ADVANCE, y, ">", MARKER);
-            } else {
-                draw_text_centred(canvas, centre_x, y, label, ITEM);
             }
         }
     }
@@ -128,6 +161,21 @@ mod tests {
         assert_eq!(menu.current(), 2);
         let jump = Actions::from(Action::Jump);
         assert_eq!(menu.update(&Frame::after(jump, jump)), None);
+    }
+
+    #[test]
+    fn unavailable_items_are_selected_but_not_picked() {
+        let mut menu = menu().with_unavailable([1]).with_selected(2);
+        assert_eq!(menu.current(), 3);
+        menu.update(&press(Action::Up));
+        assert_eq!(menu.current(), 2);
+        assert_eq!(menu.update(&press(Action::Jump)), None);
+        menu.update(&press(Action::Up));
+        assert_eq!(menu.update(&press(Action::Jump)), Some(Choice::Picked(1)));
+
+        let mut canvas = Canvas::new(100, 60);
+        menu.draw(&mut canvas, 50, 10);
+        assert!(canvas.pixels.contains(&UNAVAILABLE));
     }
 
     #[test]
