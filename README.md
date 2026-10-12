@@ -22,8 +22,9 @@ Placeholder art; nothing here is final.
 
 ## Status
 
-Early setup. See `CONTRIBUTING.md` before contributing; this project
-follows a clean-room process.
+Early setup. The first level is playable: see [`PLAYING.md`](PLAYING.md)
+for the Windows build and how to run from source. See `CONTRIBUTING.md`
+before contributing; this project follows a clean-room process.
 
 ## Repositories
 
