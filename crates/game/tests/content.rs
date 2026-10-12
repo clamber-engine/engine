@@ -8,6 +8,7 @@ use clamber_game::{
 };
 use clamber_level::Level;
 use clamber_sim::{Archetypes, InputFrame, World, generic_feel};
+use clamber_sprite::SpriteSheet;
 
 #[test]
 fn the_default_level_loads_and_plays() {
@@ -49,6 +50,23 @@ fn every_archetype_has_a_sprite_sheet() {
     for name in Archetypes::builtin().names() {
         assert!(cast.has_kind(name), "{name}");
     }
+}
+
+/// The climber is rendered by `tools/render-art.sh` in high definition,
+/// with an animation for every state and other colours for the second
+/// roster slot.
+#[test]
+fn the_player_sheet_covers_every_state() {
+    let sprite = SpriteSheet::load(&content_dir().join(SPRITES).join("player.json")).unwrap();
+    let sheet = &sprite.sheet;
+    assert!(sheet.scale > 1 && !sheet.pixel_art);
+    for state in [
+        "idle", "walk", "run", "roll", "jump", "fall", "swap", "hurt",
+    ] {
+        assert!(sheet.animation(state).is_some(), "{state}");
+    }
+    assert!(sprite.variants.contains_key("alt"));
+    assert!(sheet.frames.iter().all(|f| !f.boxes.is_empty()));
 }
 
 /// The first level is made by `tools/levels/first.py`; this checks it

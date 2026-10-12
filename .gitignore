@@ -1,4 +1,5 @@
 /target
+__pycache__/
 **/*.rs.bk
 
 # Never commit ROM images or rips, even by accident.

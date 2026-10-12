@@ -8,25 +8,7 @@
 # characters, between the feet). Animations name a first and last frame
 # and how many 60 Hz ticks each frame shows. Sprites face right.
 
-# The climber. Animations are named after the player's states, plus
-# `hurt` for losing a life. `alt` recolors it for the second roster slot.
-[[sheets]]
-source = "player.svg"
-out = "sprites/player.json"
-frame = [24, 32]
-origin = [12, 32]
-indexed = true
-palettes.alt = { "#3fa7d6" = "#8cc152", "#2f86b0" = "#5e9c2e", "#f25f5c" = "#ffb400" }
-animations = [
-    { name = "idle", frames = [0, 1], ticks = 30 },
-    { name = "walk", frames = [2, 5], ticks = 8 },
-    { name = "run", frames = [6, 9], ticks = 5 },
-    { name = "roll", frames = [10, 13], ticks = 3 },
-    { name = "jump", frames = [14, 14], ticks = 6 },
-    { name = "fall", frames = [15, 15], ticks = 6 },
-    { name = "swap", frames = [16, 16], ticks = 6 },
-    { name = "hurt", frames = [17, 17], ticks = 6 },
-]
+# The climber is pre-rendered from art/climber.py by tools/render-art.sh.
 
 # Enemies.
 [[sheets]]

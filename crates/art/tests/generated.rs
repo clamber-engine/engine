@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use clamber_sprite::{Image, SpriteSheet};
+use clamber_sprite::SpriteSheet;
 
 fn content() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content/base")
@@ -37,21 +37,5 @@ fn every_sheet_loads_with_its_animations() {
             "{}",
             out.path.display()
         );
-    }
-}
-
-#[test]
-fn player_palettes_cover_the_sheet() {
-    let sprite = SpriteSheet::load(&content().join("sprites/player.json")).unwrap();
-    let Image::Indexed { palette, .. } = &sprite.image else {
-        panic!("the player sheet should be indexed");
-    };
-    let alt = &sprite.sheet.palettes["alt"];
-    assert_eq!(alt.0.len(), palette.0.len());
-    assert_ne!(alt, palette);
-    for state in [
-        "idle", "walk", "run", "roll", "jump", "fall", "swap", "hurt",
-    ] {
-        assert!(sprite.sheet.animation(state).is_some(), "{state}");
     }
 }
