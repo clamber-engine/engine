@@ -171,6 +171,26 @@ fn scale_and_pixel_art_default_to_plain_texels_filtered_smoothly() {
 }
 
 #[test]
+fn variants_name_images_and_not_palettes() {
+    let s = Sheet::from_json_str(
+        &sheet_with(
+            FRAME,
+            r#", "clamber": { "variants": { "alt": "x-alt.png" } }"#,
+        ),
+        "test",
+    )
+    .unwrap();
+    assert_eq!(s.variants["alt"], "x-alt.png");
+    assert!(
+        sheet_err(&sheet_with(
+            FRAME,
+            r##", "clamber": { "palettes": { "alt": ["#000000"] }, "variants": { "alt": "x.png" } }"##
+        ))
+        .contains("meta.clamber.variants.alt: also the name of a palette")
+    );
+}
+
+#[test]
 fn indexed_png_keeps_indices_at_any_depth() {
     // 3x2 at 4 bits per pixel: rows are padded to whole bytes
     let bytes = indexed_png(
@@ -251,6 +271,46 @@ fn loads_sheet_and_image_from_disk() {
         err.message.contains("frame 2 is outside the 32x16 image"),
         "{err}"
     );
+}
+
+#[test]
+fn loads_variant_images_the_size_of_the_sheet() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sprite-variants");
+    std::fs::create_dir_all(&dir).unwrap();
+    let json = include_str!("fixtures/walker.json").replace(
+        r#""clamber": {"#,
+        r#""clamber": { "variants": { "night": "night.png" },"#,
+    );
+    std::fs::write(dir.join("walker.json"), &json).unwrap();
+    let rows: Vec<Vec<u8>> = (0..16).map(|y| vec![(y % 3) as u8; 64]).collect();
+    std::fs::write(
+        dir.join("walker.png"),
+        indexed_png(64, 16, png::BitDepth::Eight, &rows),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("night.png"),
+        indexed_png(64, 16, png::BitDepth::Eight, &rows),
+    )
+    .unwrap();
+    let loaded = SpriteSheet::load(&dir.join("walker.json")).unwrap();
+    assert_eq!(loaded.variants.len(), 1);
+    assert_eq!(loaded.variants["night"].width(), 64);
+
+    std::fs::write(
+        dir.join("night.png"),
+        indexed_png(32, 16, png::BitDepth::Eight, &vec![vec![0; 32]; 16]),
+    )
+    .unwrap();
+    let err = SpriteSheet::load(&dir.join("walker.json")).unwrap_err();
+    assert!(
+        err.message
+            .contains("variant `night` is 32x16, but the sheet image is 64x16"),
+        "{err}"
+    );
+    std::fs::remove_file(dir.join("night.png")).unwrap();
+    let err = SpriteSheet::load(&dir.join("walker.json")).unwrap_err();
+    assert!(err.path.ends_with("night.png"), "{err}");
 }
 
 #[test]

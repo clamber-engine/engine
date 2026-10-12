@@ -3,8 +3,9 @@
 //! Each sheet is one [`Texture`], filtered smoothly unless it's pixel art,
 //! and drawn at its own number of texels per world unit, so sheets made at
 //! any resolution are the same size in the world. An indexed sheet gets a
-//! texture for each of its palettes, coloured when it's added, so palette
-//! swaps cost nothing to draw; hit flashes recolour as they're drawn.
+//! texture for each of its palettes, coloured when it's added, and any
+//! sheet one for each of its variant images, so palette swaps cost nothing
+//! to draw; hit flashes recolour as they're drawn.
 
 use std::sync::Arc;
 
@@ -16,16 +17,17 @@ use crate::surface::{Flip, Quad, Surface, Texture};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SheetId(usize);
 
-/// One of a sheet's named palettes.
+/// One of a sheet's named palettes or variant images.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PaletteId(usize);
 
 #[derive(Clone, Debug)]
 struct Entry {
     sheet: Sheet,
-    /// The sheet's image, then one per named palette.
+    /// The sheet's image, then one per named palette or variant.
     textures: Vec<Arc<Texture>>,
-    /// The sheet's named palettes, by their index in `textures`.
+    /// The sheet's named palettes and variants, by their index in
+    /// `textures`, in name order.
     named: Vec<(String, PaletteId)>,
 }
 
@@ -57,6 +59,15 @@ impl SpriteBankBuilder {
                     .push(Texture::new(palette.apply(indices), pixel_art));
             }
         }
+        for (name, image) in &sprite.variants {
+            entry
+                .named
+                .push((name.clone(), PaletteId(entry.textures.len())));
+            entry
+                .textures
+                .push(Texture::new(image.to_rgba(), pixel_art));
+        }
+        entry.named.sort_by(|a, b| a.0.cmp(&b.0));
         self.sheets.push(entry);
         SheetId(self.sheets.len() - 1)
     }
@@ -87,7 +98,7 @@ pub struct Sprite {
     pub flip_x: bool,
     /// Mirror top to bottom about the origin.
     pub flip_y: bool,
-    /// One of an indexed sheet's named palettes instead of its own.
+    /// One of the sheet's named palettes or variants instead of its own.
     pub palette: Option<PaletteId>,
     /// Draw every visible pixel in this colour, keeping its alpha.
     pub flash: Option<Rgba>,
@@ -114,10 +125,15 @@ impl SpriteBank {
         &self.sheets[id.0].sheet
     }
 
-    /// The sheet's palette called `name`, if it has one.
+    /// The sheet's palette or variant called `name`, if it has one.
     pub fn palette(&self, id: SheetId, name: &str) -> Option<PaletteId> {
         let named = &self.sheets[id.0].named;
         named.iter().find(|(n, _)| n == name).map(|&(_, id)| id)
+    }
+
+    /// The sheet's palettes and variants, in name order.
+    pub fn palettes(&self, id: SheetId) -> impl Iterator<Item = PaletteId> + '_ {
+        self.sheets[id.0].named.iter().map(|&(_, id)| id)
     }
 
     pub fn draw(&self, surface: &mut dyn Surface, sprite: &Sprite) {
@@ -283,6 +299,37 @@ mod tests {
         assert_eq!(draw(&bank, sprite)[1..3], [
             [BG, BG, G, G, BG, BG],
             [BG, BG, half_green, G, G, BG],
+        ]);
+    }
+
+    #[test]
+    fn swaps_in_variant_images() {
+        let json = SHEET.replace(
+            r##""palettes": { "alt": ["#000000", "#00ff00", "#0000ff", "#ffffff"] }"##,
+            r#""variants": { "blue": "blue.png" }"#,
+        );
+        let sheet = Sheet::from_json_str(&json, "test").unwrap();
+        let image = rgba().image;
+        let mut blue = Pixels::new(4, 2);
+        blue.data = vec![BLUE; 8];
+        let variants = [("blue".to_string(), Image::Rgba(blue))].into();
+        let sheet = SpriteSheet::new(sheet, image)
+            .and_then(|s| s.with_variants(variants))
+            .unwrap();
+        let (bank, id) = bank(&sheet);
+        let sprite = Sprite {
+            palette: bank.palette(id, "blue"),
+            ..Sprite::new(id, 0, 3.0, 3.0)
+        };
+        assert!(sprite.palette.is_some());
+        assert_eq!(
+            bank.palettes(id).collect::<Vec<_>>(),
+            [sprite.palette.unwrap()]
+        );
+        #[rustfmt::skip]
+        assert_eq!(draw(&bank, sprite)[1..3], [
+            [BG, BG, B, B, B, BG],
+            [BG, BG, B, B, B, BG],
         ]);
     }
 

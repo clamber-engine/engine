@@ -15,6 +15,10 @@
 //!   Defaults to 1. Frame rectangles, origins and slices stay in texels.
 //! - `meta.clamber.pixelArt`: `true` to draw the sheet with sharp texel
 //!   edges at any size. Otherwise it's filtered smoothly, with mipmaps.
+//! - `meta.clamber.variants`: named alternative images, relative to the
+//!   metadata file and laid out like the sheet's own, such as a costume
+//!   in other colours. They stand in for palettes on sheets that aren't
+//!   indexed; a name can't be both a palette and a variant.
 //!
 //! Slices carry per-frame geometry. A slice key applies from its frame
 //! until the slice's next key; a key with zero width or height means the
@@ -46,6 +50,8 @@ pub struct Sheet {
     /// By name, in the order the file lists them.
     pub animations: Vec<Animation>,
     pub palettes: BTreeMap<String, Palette>,
+    /// Alternative images by name, relative to the metadata file.
+    pub variants: BTreeMap<String, String>,
     /// Texels per world unit, at least 1.
     pub scale: u32,
     /// Drawn with sharp texel edges rather than filtered smoothly.
@@ -151,6 +157,8 @@ struct Extensions {
     origin: Option<Point>,
     #[serde(default)]
     palettes: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    variants: BTreeMap<String, String>,
     scale: Option<u32>,
     #[serde(default)]
     pixel_art: bool,
@@ -361,8 +369,14 @@ fn parse(file: File) -> Result<Sheet, String> {
         });
     }
 
+    let (raw_palettes, variants) = ext.map_or_else(Default::default, |e| (e.palettes, e.variants));
+    if let Some(name) = variants.keys().find(|n| raw_palettes.contains_key(*n)) {
+        return Err(format!(
+            "meta.clamber.variants.{name}: also the name of a palette"
+        ));
+    }
     let mut palettes = BTreeMap::new();
-    for (name, colors) in ext.map(|e| e.palettes).unwrap_or_default() {
+    for (name, colors) in raw_palettes {
         let parsed = colors
             .iter()
             .map(|c| {
@@ -378,6 +392,7 @@ fn parse(file: File) -> Result<Sheet, String> {
         frames,
         animations,
         palettes,
+        variants,
         scale,
         pixel_art,
     })

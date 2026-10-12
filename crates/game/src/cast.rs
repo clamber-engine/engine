@@ -8,7 +8,7 @@
 //! The player's animations are named after its states, with `hurt` while
 //! it's losing a life. Sprites face right and are mirrored to face left.
 //! A character in roster slot `n` past the first uses the sheet's `n`th
-//! named palette, in name order, if it has one. Entities play their
+//! named palette or variant image, in name order, if it has one. Entities play their
 //! sheet's first animation, except a reached checkpoint, which plays
 //! `reached`, a defeated enemy, which plays `defeated`, and a launcher
 //! that just fired, which plays `fire`. Entities facing left are
@@ -31,7 +31,7 @@ pub const PLAYER: &str = "player";
 pub struct Cast {
     bank: SpriteBank,
     player: Option<SheetId>,
-    /// The player's palettes for roster slots after the first.
+    /// The player's palettes or variants for roster slots after the first.
     alternates: Vec<PaletteId>,
     kinds: BTreeMap<String, SheetId>,
 }
@@ -54,10 +54,7 @@ impl Cast {
         let bank = builder.build();
         let mut kinds: BTreeMap<_, _> = ids.into_iter().collect();
         let player = kinds.remove(PLAYER);
-        let alternates = player.map_or_else(Vec::new, |id| {
-            let names = bank.sheet(id).palettes.keys();
-            names.filter_map(|name| bank.palette(id, name)).collect()
-        });
+        let alternates = player.map_or_else(Vec::new, |id| bank.palettes(id).collect());
         Cast {
             bank,
             player,
