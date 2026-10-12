@@ -5,6 +5,7 @@ use clamber_sim::{Facing, FlowEvent, HALF_WIDTH, HEIGHT, InputFrame, Outcome, St
 
 use crate::camera::{Camera, VIEW, point};
 use crate::canvas::{Canvas, Color, rgb};
+use crate::hud::draw_hud;
 
 const SKY: Color = rgb(0x2a, 0x34, 0x4a);
 const SOLID: Color = rgb(0x6b, 0x74, 0x80);
@@ -67,7 +68,7 @@ impl Game {
         Canvas::new(VIEW.0, VIEW.1)
     }
 
-    /// Draws the world `alpha` of the way from the state before the last
+    /// Draws the world, and the HUD over it, `alpha` of the way from the state before the last
     /// step to the state after it.
     pub fn draw(&self, canvas: &mut Canvas, alpha: f64) {
         let origin = self.camera.top_left(alpha);
@@ -118,6 +119,7 @@ impl Game {
         }
 
         self.draw_player(canvas, alpha, origin);
+        draw_hud(canvas, &self.world);
     }
 
     /// The player as its body box, coloured by state, until it has

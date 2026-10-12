@@ -14,8 +14,10 @@ mod camera;
 mod canvas;
 mod clock;
 mod game;
+mod hud;
 pub mod keys;
 mod sprites;
+mod text;
 
 use std::path::{Path, PathBuf};
 
@@ -23,7 +25,9 @@ pub use camera::{Camera, VIEW};
 pub use canvas::{Canvas, Color, Fit, present, rgb};
 pub use clock::Clock;
 pub use game::Game;
+pub use hud::draw_hud;
 pub use sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
+pub use text::{ADVANCE, GLYPH, LINE, SHADOW, draw_text, draw_text_centred, text_size};
 
 /// The level played when none is given, relative to the content folder.
 pub const DEFAULT_LEVEL: &str = "levels/sandbox.level";
