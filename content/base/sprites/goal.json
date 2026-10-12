@@ -1,75 +1,398 @@
 {
   "frames": [
     {
-      "filename": "goal 0",
+      "filename": "goal glow 0",
       "frame": {
-        "x": 0,
-        "y": 0,
-        "w": 32,
-        "h": 64
+        "x": 2,
+        "y": 2,
+        "w": 182,
+        "h": 292
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 32,
-        "h": 64
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
       },
       "sourceSize": {
-        "w": 32,
-        "h": 64
+        "w": 200,
+        "h": 340
       },
-      "duration": 267,
-      "ticks": 16
+      "duration": 33,
+      "ticks": 2
     },
     {
-      "filename": "goal 1",
+      "filename": "goal glow 1",
       "frame": {
-        "x": 32,
-        "y": 0,
-        "w": 32,
-        "h": 64
+        "x": 186,
+        "y": 2,
+        "w": 182,
+        "h": 292
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 32,
-        "h": 64
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
       },
       "sourceSize": {
-        "w": 32,
-        "h": 64
+        "w": 200,
+        "h": 340
       },
-      "duration": 267,
-      "ticks": 16
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 2",
+      "frame": {
+        "x": 370,
+        "y": 2,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 3",
+      "frame": {
+        "x": 554,
+        "y": 2,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 4",
+      "frame": {
+        "x": 738,
+        "y": 2,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 5",
+      "frame": {
+        "x": 922,
+        "y": 2,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 6",
+      "frame": {
+        "x": 1106,
+        "y": 2,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 7",
+      "frame": {
+        "x": 1290,
+        "y": 2,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 8",
+      "frame": {
+        "x": 1474,
+        "y": 2,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 9",
+      "frame": {
+        "x": 1658,
+        "y": 2,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 10",
+      "frame": {
+        "x": 1842,
+        "y": 2,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 11",
+      "frame": {
+        "x": 2,
+        "y": 296,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 12",
+      "frame": {
+        "x": 186,
+        "y": 296,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 13",
+      "frame": {
+        "x": 370,
+        "y": 296,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 14",
+      "frame": {
+        "x": 554,
+        "y": 296,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "goal glow 15",
+      "frame": {
+        "x": 738,
+        "y": 296,
+        "w": 182,
+        "h": 292
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 40,
+        "w": 182,
+        "h": 292
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 340
+      },
+      "duration": 33,
+      "ticks": 2
     }
   ],
   "meta": {
-    "app": "clamber-art",
+    "app": "clamber render-art",
     "image": "goal.png",
     "format": "RGBA8888",
     "size": {
-      "w": 64,
-      "h": 64
+      "w": 2026,
+      "h": 590
     },
     "scale": "1",
     "frameTags": [
       {
         "name": "glow",
         "from": 0,
-        "to": 1,
+        "to": 15,
         "direction": "forward"
       }
     ],
     "clamber": {
       "origin": {
-        "x": 16,
-        "y": 64
+        "x": 100,
+        "y": 330
       },
-      "pixelArt": true
+      "scale": 5,
+      "normals": "goal-normals.png"
     }
   }
 }

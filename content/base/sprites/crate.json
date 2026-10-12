@@ -1,82 +1,220 @@
 {
   "frames": [
     {
-      "filename": "crate 0",
+      "filename": "crate whole 0",
       "frame": {
-        "x": 0,
-        "y": 0,
-        "w": 32,
-        "h": 32
+        "x": 2,
+        "y": 2,
+        "w": 165,
+        "h": 124
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 32,
-        "h": 32
+        "x": 37,
+        "y": 58,
+        "w": 165,
+        "h": 124
       },
       "sourceSize": {
-        "w": 32,
-        "h": 32
+        "w": 240,
+        "h": 200
       },
       "duration": 100,
       "ticks": 6
     },
     {
-      "filename": "crate 1",
+      "filename": "crate break 0",
       "frame": {
-        "x": 32,
-        "y": 0,
-        "w": 32,
-        "h": 32
+        "x": 169,
+        "y": 2,
+        "w": 183,
+        "h": 145
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 32,
-        "h": 32
+        "x": 29,
+        "y": 38,
+        "w": 183,
+        "h": 145
       },
       "sourceSize": {
-        "w": 32,
-        "h": 32
+        "w": 240,
+        "h": 200
       },
-      "duration": 100,
-      "ticks": 6
+      "duration": 33,
+      "ticks": 2
     },
     {
-      "filename": "crate 2",
+      "filename": "crate break 1",
       "frame": {
-        "x": 64,
-        "y": 0,
-        "w": 32,
-        "h": 32
+        "x": 354,
+        "y": 2,
+        "w": 204,
+        "h": 163
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 32,
-        "h": 32
+        "x": 19,
+        "y": 23,
+        "w": 204,
+        "h": 163
       },
       "sourceSize": {
-        "w": 32,
-        "h": 32
+        "w": 240,
+        "h": 200
       },
-      "duration": 100,
-      "ticks": 6
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crate break 2",
+      "frame": {
+        "x": 560,
+        "y": 2,
+        "w": 220,
+        "h": 176
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 15,
+        "w": 220,
+        "h": 176
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crate break 3",
+      "frame": {
+        "x": 782,
+        "y": 2,
+        "w": 231,
+        "h": 180
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 15,
+        "w": 231,
+        "h": 180
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crate break 4",
+      "frame": {
+        "x": 1015,
+        "y": 2,
+        "w": 232,
+        "h": 176
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 5,
+        "y": 23,
+        "w": 232,
+        "h": 176
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crate break 5",
+      "frame": {
+        "x": 1249,
+        "y": 2,
+        "w": 226,
+        "h": 161
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 39,
+        "w": 226,
+        "h": 161
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crate break 6",
+      "frame": {
+        "x": 1477,
+        "y": 2,
+        "w": 211,
+        "h": 140
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15,
+        "y": 60,
+        "w": 211,
+        "h": 140
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crate break 7",
+      "frame": {
+        "x": 1690,
+        "y": 2,
+        "w": 83,
+        "h": 80
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 81,
+        "y": 102,
+        "w": 83,
+        "h": 80
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
     }
   ],
   "meta": {
-    "app": "clamber-art",
+    "app": "clamber render-art",
     "image": "crate.png",
     "format": "RGBA8888",
     "size": {
-      "w": 96,
-      "h": 32
+      "w": 1775,
+      "h": 184
     },
     "scale": "1",
     "frameTags": [
@@ -89,17 +227,18 @@
       {
         "name": "break",
         "from": 1,
-        "to": 2,
+        "to": 8,
         "direction": "forward",
         "repeat": "1"
       }
     ],
     "clamber": {
       "origin": {
-        "x": 16,
-        "y": 32
+        "x": 120,
+        "y": 180
       },
-      "pixelArt": true
+      "scale": 5,
+      "normals": "crate-normals.png"
     }
   }
 }

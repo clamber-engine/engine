@@ -1,82 +1,312 @@
 {
   "frames": [
     {
-      "filename": "checkpoint 0",
+      "filename": "checkpoint waiting 0",
       "frame": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 48
+        "x": 2,
+        "y": 2,
+        "w": 80,
+        "h": 247
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 48
+        "x": 11,
+        "y": 11,
+        "w": 80,
+        "h": 247
       },
       "sourceSize": {
-        "w": 24,
-        "h": 48
+        "w": 160,
+        "h": 260
       },
       "duration": 100,
       "ticks": 6
     },
     {
-      "filename": "checkpoint 1",
+      "filename": "checkpoint reached 0",
       "frame": {
-        "x": 24,
-        "y": 0,
-        "w": 24,
-        "h": 48
+        "x": 84,
+        "y": 2,
+        "w": 109,
+        "h": 247
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 48
+        "x": 11,
+        "y": 11,
+        "w": 109,
+        "h": 247
       },
       "sourceSize": {
-        "w": 24,
-        "h": 48
+        "w": 160,
+        "h": 260
       },
-      "duration": 200,
-      "ticks": 12
+      "duration": 33,
+      "ticks": 2
     },
     {
-      "filename": "checkpoint 2",
+      "filename": "checkpoint reached 1",
       "frame": {
-        "x": 48,
-        "y": 0,
-        "w": 24,
-        "h": 48
+        "x": 195,
+        "y": 2,
+        "w": 117,
+        "h": 247
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 48
+        "x": 11,
+        "y": 11,
+        "w": 117,
+        "h": 247
       },
       "sourceSize": {
-        "w": 24,
-        "h": 48
+        "w": 160,
+        "h": 260
       },
-      "duration": 200,
-      "ticks": 12
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "checkpoint reached 2",
+      "frame": {
+        "x": 314,
+        "y": 2,
+        "w": 119,
+        "h": 247
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 11,
+        "w": 119,
+        "h": 247
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 260
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "checkpoint reached 3",
+      "frame": {
+        "x": 435,
+        "y": 2,
+        "w": 118,
+        "h": 247
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 11,
+        "w": 118,
+        "h": 247
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 260
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "checkpoint reached 4",
+      "frame": {
+        "x": 555,
+        "y": 2,
+        "w": 118,
+        "h": 247
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 11,
+        "w": 118,
+        "h": 247
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 260
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "checkpoint reached 5",
+      "frame": {
+        "x": 675,
+        "y": 2,
+        "w": 118,
+        "h": 247
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 11,
+        "w": 118,
+        "h": 247
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 260
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "checkpoint reached 6",
+      "frame": {
+        "x": 795,
+        "y": 2,
+        "w": 115,
+        "h": 247
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 11,
+        "w": 115,
+        "h": 247
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 260
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "checkpoint reached 7",
+      "frame": {
+        "x": 912,
+        "y": 2,
+        "w": 107,
+        "h": 247
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 11,
+        "w": 107,
+        "h": 247
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 260
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "checkpoint reached 8",
+      "frame": {
+        "x": 1021,
+        "y": 2,
+        "w": 96,
+        "h": 247
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 11,
+        "w": 96,
+        "h": 247
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 260
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "checkpoint reached 9",
+      "frame": {
+        "x": 1119,
+        "y": 2,
+        "w": 89,
+        "h": 247
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 11,
+        "w": 89,
+        "h": 247
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 260
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "checkpoint reached 10",
+      "frame": {
+        "x": 1210,
+        "y": 2,
+        "w": 89,
+        "h": 247
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 11,
+        "w": 89,
+        "h": 247
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 260
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "checkpoint reached 11",
+      "frame": {
+        "x": 1301,
+        "y": 2,
+        "w": 98,
+        "h": 247
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 11,
+        "w": 98,
+        "h": 247
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 260
+      },
+      "duration": 33,
+      "ticks": 2
     }
   ],
   "meta": {
-    "app": "clamber-art",
+    "app": "clamber render-art",
     "image": "checkpoint.png",
     "format": "RGBA8888",
     "size": {
-      "w": 72,
-      "h": 48
+      "w": 1401,
+      "h": 251
     },
     "scale": "1",
     "frameTags": [
@@ -89,16 +319,17 @@
       {
         "name": "reached",
         "from": 1,
-        "to": 2,
+        "to": 12,
         "direction": "forward"
       }
     ],
     "clamber": {
       "origin": {
-        "x": 8,
-        "y": 48
+        "x": 50,
+        "y": 250
       },
-      "pixelArt": true
+      "scale": 5,
+      "normals": "checkpoint-normals.png"
     }
   }
 }

@@ -234,23 +234,7 @@ def pose(rig, name, i, count):
         raise ValueError(name)
 
 
-def main():
-    args = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
-    quick = "--quick" in args
-    content = [a for a in args if not a.startswith("--")][0]
-    scene = cr.reset()
-    cr.lights(scene)
-    cam = cr.camera(scene, FRAME, ORIGIN)
-    rig = build()
-    out = os.path.join(content, "sprites", "player.json")
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    cr.render_sheet(
-        scene, cam, rig, out, FRAME, ORIGIN, ANIMATIONS,
-        lambda name, i, count: pose(rig, name, i, count),
-        variants=VARIANTS,
-        hurtbox=[p for p in rig.parts if not p.name.startswith("bobble")],
-        samples=16 if quick else 192,
-    )
-
-
-main()
+cr.run(
+    "player", build, pose, FRAME, ORIGIN, ANIMATIONS, variants=VARIANTS,
+    hurtbox=lambda rig: [p for p in rig.parts if not p.name.startswith("bobble")],
+)

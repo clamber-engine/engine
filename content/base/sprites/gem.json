@@ -1,121 +1,398 @@
 {
   "frames": [
     {
-      "filename": "gem 0",
+      "filename": "gem spin 0",
       "frame": {
-        "x": 0,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 2,
+        "y": 2,
+        "w": 54,
+        "h": 66
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 23,
+        "y": 22,
+        "w": 54,
+        "h": 66
       },
       "sourceSize": {
-        "w": 16,
-        "h": 16
+        "w": 100,
+        "h": 100
       },
-      "duration": 133,
-      "ticks": 8
+      "duration": 33,
+      "ticks": 2
     },
     {
-      "filename": "gem 1",
+      "filename": "gem spin 1",
       "frame": {
-        "x": 16,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 58,
+        "y": 2,
+        "w": 50,
+        "h": 66
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 25,
+        "y": 22,
+        "w": 50,
+        "h": 66
       },
       "sourceSize": {
-        "w": 16,
-        "h": 16
+        "w": 100,
+        "h": 100
       },
-      "duration": 133,
-      "ticks": 8
+      "duration": 33,
+      "ticks": 2
     },
     {
-      "filename": "gem 2",
+      "filename": "gem spin 2",
       "frame": {
-        "x": 32,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 110,
+        "y": 2,
+        "w": 40,
+        "h": 66
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 30,
+        "y": 22,
+        "w": 40,
+        "h": 66
       },
       "sourceSize": {
-        "w": 16,
-        "h": 16
+        "w": 100,
+        "h": 100
       },
-      "duration": 133,
-      "ticks": 8
+      "duration": 33,
+      "ticks": 2
     },
     {
-      "filename": "gem 3",
+      "filename": "gem spin 3",
       "frame": {
-        "x": 48,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 152,
+        "y": 2,
+        "w": 32,
+        "h": 66
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 34,
+        "y": 22,
+        "w": 32,
+        "h": 66
       },
       "sourceSize": {
-        "w": 16,
-        "h": 16
+        "w": 100,
+        "h": 100
       },
-      "duration": 133,
-      "ticks": 8
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "gem spin 4",
+      "frame": {
+        "x": 186,
+        "y": 2,
+        "w": 26,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 37,
+        "y": 22,
+        "w": 26,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "gem spin 5",
+      "frame": {
+        "x": 214,
+        "y": 2,
+        "w": 32,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 34,
+        "y": 22,
+        "w": 32,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "gem spin 6",
+      "frame": {
+        "x": 248,
+        "y": 2,
+        "w": 40,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 22,
+        "w": 40,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "gem spin 7",
+      "frame": {
+        "x": 290,
+        "y": 2,
+        "w": 50,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 22,
+        "w": 50,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "gem spin 8",
+      "frame": {
+        "x": 342,
+        "y": 2,
+        "w": 54,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 22,
+        "w": 54,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "gem spin 9",
+      "frame": {
+        "x": 398,
+        "y": 2,
+        "w": 50,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 22,
+        "w": 50,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "gem spin 10",
+      "frame": {
+        "x": 450,
+        "y": 2,
+        "w": 40,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 22,
+        "w": 40,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "gem spin 11",
+      "frame": {
+        "x": 492,
+        "y": 2,
+        "w": 32,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 34,
+        "y": 22,
+        "w": 32,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "gem spin 12",
+      "frame": {
+        "x": 526,
+        "y": 2,
+        "w": 26,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 37,
+        "y": 22,
+        "w": 26,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "gem spin 13",
+      "frame": {
+        "x": 554,
+        "y": 2,
+        "w": 32,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 34,
+        "y": 22,
+        "w": 32,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "gem spin 14",
+      "frame": {
+        "x": 588,
+        "y": 2,
+        "w": 40,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 22,
+        "w": 40,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "gem spin 15",
+      "frame": {
+        "x": 630,
+        "y": 2,
+        "w": 50,
+        "h": 66
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 22,
+        "w": 50,
+        "h": 66
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 33,
+      "ticks": 2
     }
   ],
   "meta": {
-    "app": "clamber-art",
+    "app": "clamber render-art",
     "image": "gem.png",
     "format": "RGBA8888",
     "size": {
-      "w": 64,
-      "h": 16
+      "w": 682,
+      "h": 70
     },
     "scale": "1",
     "frameTags": [
       {
         "name": "spin",
         "from": 0,
-        "to": 3,
+        "to": 15,
         "direction": "forward"
       }
     ],
     "clamber": {
       "origin": {
-        "x": 8,
-        "y": 8
+        "x": 50,
+        "y": 50
       },
-      "pixelArt": true
+      "scale": 5,
+      "normals": "gem-normals.png"
     }
   }
 }

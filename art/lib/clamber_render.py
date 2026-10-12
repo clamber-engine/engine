@@ -24,6 +24,7 @@ import json
 import math
 import os
 import struct
+import sys
 import tempfile
 import zlib
 from array import array
@@ -136,6 +137,18 @@ def material(name, color, roughness=0.55, sheen=0.0):
     shader.inputs["Sheen Weight"].default_value = sheen
     mat["color"] = color
     return mat
+
+
+def glow(name, color, strength):
+    """A material that gives off light of an `#rrggbb` colour, as well as
+    painted in it. Returns the material and its strength input, for
+    `Rig.track`."""
+    mat = material(name, color, roughness=0.3)
+    shader = mat.node_tree.nodes["Principled BSDF"]
+    shader.inputs["Emission Color"].default_value = (*linear(color), 1.0)
+    socket = shader.inputs["Emission Strength"]
+    socket.default_value = strength
+    return mat, socket
 
 
 def recolor(colors):
@@ -258,6 +271,77 @@ def ring(name, mat, radius, thickness, location=(0, 0, 0), rotation=(0, 0, 0)):
     return obj
 
 
+def lathe(name, mat, profile, location=(0, 0, 0), rotation=(0, 0, 0), segments=32,
+          smooth=True):
+    """A solid turned about its local Z axis: `profile` lists `(radius,
+    height)` from bottom to top, a radius of 0 closing that end to a
+    point. Unsmoothed with few segments, it's cut like a jewel."""
+    def build(bm):
+        rings = []
+        for r, z in profile:
+            if r == 0:
+                rings.append([bm.verts.new((0, 0, z))])
+                continue
+            rings.append([
+                bm.verts.new((r * math.cos(a), r * math.sin(a), z))
+                for a in (2 * math.pi * i / segments for i in range(segments))
+            ])
+        for low, high in zip(rings, rings[1:]):
+            for i in range(segments):
+                j = (i + 1) % segments
+                if len(low) == 1:
+                    bm.faces.new((low[0], high[i], high[j]))
+                elif len(high) == 1:
+                    bm.faces.new((low[i], low[j], high[0]))
+                else:
+                    bm.faces.new((low[i], low[j], high[j], high[i]))
+        for end in (rings[0], rings[-1]):
+            if len(end) > 1:
+                face = bm.faces.new(end if end is rings[-1] else list(reversed(end)))
+                face.normal_update()
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+
+    obj = _mesh_object(name, build, mat, subdivide=0)
+    for poly in obj.data.polygons:
+        poly.use_smooth = smooth
+    if smooth:
+        # keeps the corners where the profile turns sharply crisp
+        split = obj.modifiers.new("corners", "EDGE_SPLIT")
+        split.split_angle = math.radians(40)
+    obj.location = location
+    obj.rotation_euler = rotation
+    return obj
+
+
+def prism(name, mat, outline, depth, location=(0, 0, 0), rotation=(0, 0, 0), bevel=0.04):
+    """A flat shape cut out along `outline`, `(x, z)` points around a
+    simple polygon as the camera sees it, `depth` thick, with its edges
+    rounded by `bevel`."""
+    def build(bm):
+        sides = []
+        for y in (-depth / 2, depth / 2):
+            sides.append([bm.verts.new((x, y, z)) for x, z in outline])
+        bm.faces.new(sides[0])
+        bm.faces.new(list(reversed(sides[1])))
+        n = len(outline)
+        for i in range(n):
+            j = (i + 1) % n
+            bm.faces.new((sides[0][i], sides[1][i], sides[1][j], sides[0][j]))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+
+    obj = _mesh_object(name, build, mat, subdivide=0)
+    for poly in obj.data.polygons:
+        poly.use_smooth = False
+    if bevel:
+        mod = obj.modifiers.new("round", "BEVEL")
+        mod.width = bevel
+        mod.segments = 3
+        mod.limit_method = "ANGLE"
+    obj.location = location
+    obj.rotation_euler = rotation
+    return obj
+
+
 def limb(name, mat, start, end, radius):
     """An ellipsoid stretched from `start` to `end`, `radius` thick."""
     start, end = Vector(start), Vector(end)
@@ -289,6 +373,7 @@ class Rig:
         bpy.ops.object.mode_set(mode="OBJECT")
         self.obj.rotation_euler = (0, 0, math.radians(yaw))
         self.parts = []
+        self.tracks = []
 
     def attach(self, bone, *parts):
         """Parents parts, placed in the model's rest pose, to `bone`."""
@@ -303,10 +388,17 @@ class Rig:
             part["rest_scale"] = tuple(part.scale)
             self.parts.append(part)
 
+    def track(self, owner, path):
+        """Keys `owner`'s `path` (a material's emission strength, say)
+        along with the pose; `rest` puts back the value it has now."""
+        self.tracks.append((owner, path, getattr(owner, path)))
+
     def rest(self):
-        """Clears the pose, and any part's change of scale."""
+        """Clears the pose, any part's change of scale, and tracked values."""
         for part in self.parts:
             part.scale = part["rest_scale"]
+        for owner, path, value in self.tracks:
+            setattr(owner, path, value)
         for bone in self.obj.pose.bones:
             bone.rotation_mode = "QUATERNION"
             bone.rotation_quaternion = (1, 0, 0, 0)
@@ -366,6 +458,8 @@ class Rig:
                 bone.keyframe_insert(path, frame=frame)
         for part in self.parts:
             part.keyframe_insert("scale", frame=frame)
+        for owner, path, _value in self.tracks:
+            owner.keyframe_insert(path, frame=frame)
 
 
 # Rendering sheets.
@@ -605,3 +699,26 @@ def render_sheet(scene, cam, rig, out, frame, origin, animations, pose, variants
 def _render_frame(scene, n, path):
     scene.frame_set(n)
     return _render(scene, path)
+
+
+def run(name, build, pose, frame, origin, animations, variants=None, hurtbox=None):
+    """Renders a sheet from the command line `tools/render-art.sh` gives
+    (`-- <content folder> [--quick]`) to `sprites/<name>.json`. `build()`
+    makes the model and returns its `Rig`; `pose(rig, name, i, count)` poses
+    it. `hurtbox(rig)` picks the parts the `hurtbox` slice surrounds."""
+    args = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
+    quick = "--quick" in args
+    content = [a for a in args if not a.startswith("--")][0]
+    scene = reset()
+    lights(scene)
+    cam = camera(scene, frame, origin)
+    rig = build()
+    out = os.path.join(content, "sprites", f"{name}.json")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    render_sheet(
+        scene, cam, rig, out, frame, origin, animations,
+        lambda anim, i, count: pose(rig, anim, i, count),
+        variants=variants,
+        hurtbox=hurtbox(rig) if hurtbox else None,
+        samples=16 if quick else 192,
+    )

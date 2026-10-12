@@ -1,82 +1,266 @@
 {
   "frames": [
     {
-      "filename": "launcher 0",
+      "filename": "launcher waiting 0",
       "frame": {
-        "x": 0,
-        "y": 0,
-        "w": 32,
-        "h": 32
+        "x": 2,
+        "y": 2,
+        "w": 118,
+        "h": 97
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 32,
-        "h": 32
+        "x": 31,
+        "y": 65,
+        "w": 118,
+        "h": 97
       },
       "sourceSize": {
-        "w": 32,
-        "h": 32
+        "w": 180,
+        "h": 200
       },
       "duration": 100,
       "ticks": 6
     },
     {
-      "filename": "launcher 1",
+      "filename": "launcher fire 0",
       "frame": {
-        "x": 32,
-        "y": 0,
-        "w": 32,
-        "h": 32
+        "x": 122,
+        "y": 2,
+        "w": 118,
+        "h": 102
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 32,
-        "h": 32
+        "x": 31,
+        "y": 60,
+        "w": 118,
+        "h": 102
       },
       "sourceSize": {
-        "w": 32,
-        "h": 32
+        "w": 180,
+        "h": 200
       },
-      "duration": 100,
-      "ticks": 6
+      "duration": 33,
+      "ticks": 2
     },
     {
-      "filename": "launcher 2",
+      "filename": "launcher fire 1",
       "frame": {
-        "x": 64,
-        "y": 0,
-        "w": 32,
-        "h": 32
+        "x": 242,
+        "y": 2,
+        "w": 118,
+        "h": 122
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 32,
-        "h": 32
+        "x": 31,
+        "y": 40,
+        "w": 118,
+        "h": 122
       },
       "sourceSize": {
-        "w": 32,
-        "h": 32
+        "w": 180,
+        "h": 200
       },
-      "duration": 100,
-      "ticks": 6
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "launcher fire 2",
+      "frame": {
+        "x": 362,
+        "y": 2,
+        "w": 118,
+        "h": 131
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 31,
+        "w": 118,
+        "h": 131
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "launcher fire 3",
+      "frame": {
+        "x": 482,
+        "y": 2,
+        "w": 118,
+        "h": 125
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 37,
+        "w": 118,
+        "h": 125
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "launcher fire 4",
+      "frame": {
+        "x": 602,
+        "y": 2,
+        "w": 118,
+        "h": 118
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 44,
+        "w": 118,
+        "h": 118
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "launcher fire 5",
+      "frame": {
+        "x": 722,
+        "y": 2,
+        "w": 118,
+        "h": 117
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 45,
+        "w": 118,
+        "h": 117
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "launcher fire 6",
+      "frame": {
+        "x": 842,
+        "y": 2,
+        "w": 118,
+        "h": 121
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 41,
+        "w": 118,
+        "h": 121
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "launcher fire 7",
+      "frame": {
+        "x": 962,
+        "y": 2,
+        "w": 118,
+        "h": 127
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 35,
+        "w": 118,
+        "h": 127
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "launcher fire 8",
+      "frame": {
+        "x": 1082,
+        "y": 2,
+        "w": 118,
+        "h": 127
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 35,
+        "w": 118,
+        "h": 127
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "launcher fire 9",
+      "frame": {
+        "x": 1202,
+        "y": 2,
+        "w": 118,
+        "h": 89
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 73,
+        "w": 118,
+        "h": 89
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
     }
   ],
   "meta": {
-    "app": "clamber-art",
+    "app": "clamber render-art",
     "image": "launcher.png",
     "format": "RGBA8888",
     "size": {
-      "w": 96,
-      "h": 32
+      "w": 1322,
+      "h": 135
     },
     "scale": "1",
     "frameTags": [
@@ -89,17 +273,18 @@
       {
         "name": "fire",
         "from": 1,
-        "to": 2,
+        "to": 10,
         "direction": "forward",
         "repeat": "1"
       }
     ],
     "clamber": {
       "origin": {
-        "x": 16,
-        "y": 16
+        "x": 90,
+        "y": 160
       },
-      "pixelArt": true
+      "scale": 5,
+      "normals": "launcher-normals.png"
     }
   }
 }

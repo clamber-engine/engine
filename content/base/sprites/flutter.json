@@ -1,127 +1,620 @@
 {
   "frames": [
     {
-      "filename": "flutter 0",
+      "filename": "flutter fly 0",
       "frame": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 2,
+        "y": 2,
+        "w": 96,
+        "h": 104
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 38,
+        "y": 14,
+        "w": 96,
+        "h": 104
       },
       "sourceSize": {
-        "w": 24,
-        "h": 24
+        "w": 170,
+        "h": 170
       },
-      "duration": 67,
-      "ticks": 4
+      "duration": 33,
+      "ticks": 2
     },
     {
-      "filename": "flutter 1",
+      "filename": "flutter fly 1",
       "frame": {
-        "x": 24,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 100,
+        "y": 2,
+        "w": 97,
+        "h": 98
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 37,
+        "y": 19,
+        "w": 97,
+        "h": 98
       },
       "sourceSize": {
-        "w": 24,
-        "h": 24
+        "w": 170,
+        "h": 170
       },
-      "duration": 67,
-      "ticks": 4
+      "duration": 33,
+      "ticks": 2
     },
     {
-      "filename": "flutter 2",
+      "filename": "flutter fly 2",
       "frame": {
-        "x": 48,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 199,
+        "y": 2,
+        "w": 100,
+        "h": 90
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 34,
+        "y": 25,
+        "w": 100,
+        "h": 90
       },
       "sourceSize": {
-        "w": 24,
-        "h": 24
+        "w": 170,
+        "h": 170
       },
-      "duration": 67,
-      "ticks": 4
+      "duration": 33,
+      "ticks": 2
     },
     {
-      "filename": "flutter 3",
+      "filename": "flutter fly 3",
       "frame": {
-        "x": 72,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 301,
+        "y": 2,
+        "w": 101,
+        "h": 90
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 33,
+        "y": 22,
+        "w": 101,
+        "h": 90
       },
       "sourceSize": {
-        "w": 24,
-        "h": 24
+        "w": 170,
+        "h": 170
       },
-      "duration": 100,
-      "ticks": 6
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter fly 4",
+      "frame": {
+        "x": 404,
+        "y": 2,
+        "w": 99,
+        "h": 89
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 35,
+        "y": 21,
+        "w": 99,
+        "h": 89
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter fly 5",
+      "frame": {
+        "x": 505,
+        "y": 2,
+        "w": 101,
+        "h": 88
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 33,
+        "y": 22,
+        "w": 101,
+        "h": 88
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter fly 6",
+      "frame": {
+        "x": 608,
+        "y": 2,
+        "w": 100,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 34,
+        "y": 25,
+        "w": 100,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter fly 7",
+      "frame": {
+        "x": 710,
+        "y": 2,
+        "w": 97,
+        "h": 96
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 37,
+        "y": 19,
+        "w": 97,
+        "h": 96
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter defeated 0",
+      "frame": {
+        "x": 809,
+        "y": 2,
+        "w": 99,
+        "h": 89
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 35,
+        "y": 25,
+        "w": 99,
+        "h": 89
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter defeated 1",
+      "frame": {
+        "x": 910,
+        "y": 2,
+        "w": 105,
+        "h": 85
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 23,
+        "w": 105,
+        "h": 85
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter defeated 2",
+      "frame": {
+        "x": 1017,
+        "y": 2,
+        "w": 109,
+        "h": 90
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 47,
+        "y": 22,
+        "w": 109,
+        "h": 90
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter defeated 3",
+      "frame": {
+        "x": 1128,
+        "y": 2,
+        "w": 109,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 51,
+        "y": 30,
+        "w": 109,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter defeated 4",
+      "frame": {
+        "x": 1239,
+        "y": 2,
+        "w": 103,
+        "h": 81
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 56,
+        "y": 43,
+        "w": 103,
+        "h": 81
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter defeated 5",
+      "frame": {
+        "x": 1344,
+        "y": 2,
+        "w": 92,
+        "h": 81
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 62,
+        "y": 53,
+        "w": 92,
+        "h": 81
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter defeated 6",
+      "frame": {
+        "x": 1438,
+        "y": 2,
+        "w": 84,
+        "h": 98
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 68,
+        "y": 53,
+        "w": 84,
+        "h": 98
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter defeated 7",
+      "frame": {
+        "x": 1524,
+        "y": 2,
+        "w": 82,
+        "h": 109
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 70,
+        "y": 57,
+        "w": 82,
+        "h": 109
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter defeated 8",
+      "frame": {
+        "x": 1608,
+        "y": 2,
+        "w": 82,
+        "h": 108
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 67,
+        "y": 62,
+        "w": 82,
+        "h": 108
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "flutter defeated 9",
+      "frame": {
+        "x": 1692,
+        "y": 2,
+        "w": 82,
+        "h": 99
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 63,
+        "y": 71,
+        "w": 82,
+        "h": 99
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 170
+      },
+      "duration": 33,
+      "ticks": 2
     }
   ],
   "meta": {
-    "app": "clamber-art",
+    "app": "clamber render-art",
     "image": "flutter.png",
     "format": "RGBA8888",
     "size": {
-      "w": 96,
-      "h": 24
+      "w": 1776,
+      "h": 113
     },
     "scale": "1",
     "frameTags": [
       {
         "name": "fly",
         "from": 0,
-        "to": 2,
-        "direction": "pingpong"
+        "to": 7,
+        "direction": "forward"
       },
       {
         "name": "defeated",
-        "from": 3,
-        "to": 3,
-        "direction": "forward"
+        "from": 8,
+        "to": 17,
+        "direction": "forward",
+        "repeat": "1"
+      }
+    ],
+    "slices": [
+      {
+        "name": "hurtbox",
+        "keys": [
+          {
+            "frame": 0,
+            "bounds": {
+              "x": 47,
+              "y": 58,
+              "w": 72,
+              "h": 58
+            }
+          },
+          {
+            "frame": 1,
+            "bounds": {
+              "x": 47,
+              "y": 56,
+              "w": 72,
+              "h": 60
+            }
+          },
+          {
+            "frame": 2,
+            "bounds": {
+              "x": 48,
+              "y": 54,
+              "w": 71,
+              "h": 59
+            }
+          },
+          {
+            "frame": 3,
+            "bounds": {
+              "x": 47,
+              "y": 51,
+              "w": 72,
+              "h": 59
+            }
+          },
+          {
+            "frame": 4,
+            "bounds": {
+              "x": 47,
+              "y": 50,
+              "w": 72,
+              "h": 58
+            }
+          },
+          {
+            "frame": 5,
+            "bounds": {
+              "x": 47,
+              "y": 51,
+              "w": 72,
+              "h": 57
+            }
+          },
+          {
+            "frame": 6,
+            "bounds": {
+              "x": 46,
+              "y": 54,
+              "w": 73,
+              "h": 56
+            }
+          },
+          {
+            "frame": 7,
+            "bounds": {
+              "x": 47,
+              "y": 56,
+              "w": 72,
+              "h": 58
+            }
+          },
+          {
+            "frame": 8,
+            "bounds": {
+              "x": 47,
+              "y": 54,
+              "w": 72,
+              "h": 58
+            }
+          },
+          {
+            "frame": 9,
+            "bounds": {
+              "x": 47,
+              "y": 57,
+              "w": 76,
+              "h": 49
+            }
+          },
+          {
+            "frame": 10,
+            "bounds": {
+              "x": 49,
+              "y": 61,
+              "w": 76,
+              "h": 49
+            }
+          },
+          {
+            "frame": 11,
+            "bounds": {
+              "x": 53,
+              "y": 61,
+              "w": 71,
+              "h": 54
+            }
+          },
+          {
+            "frame": 12,
+            "bounds": {
+              "x": 58,
+              "y": 57,
+              "w": 64,
+              "h": 65
+            }
+          },
+          {
+            "frame": 13,
+            "bounds": {
+              "x": 64,
+              "y": 55,
+              "w": 57,
+              "h": 73
+            }
+          },
+          {
+            "frame": 14,
+            "bounds": {
+              "x": 70,
+              "y": 55,
+              "w": 50,
+              "h": 79
+            }
+          },
+          {
+            "frame": 15,
+            "bounds": {
+              "x": 72,
+              "y": 58,
+              "w": 46,
+              "h": 82
+            }
+          },
+          {
+            "frame": 16,
+            "bounds": {
+              "x": 69,
+              "y": 64,
+              "w": 48,
+              "h": 79
+            }
+          },
+          {
+            "frame": 17,
+            "bounds": {
+              "x": 65,
+              "y": 72,
+              "w": 53,
+              "h": 74
+            }
+          }
+        ]
       }
     ],
     "clamber": {
       "origin": {
-        "x": 12,
-        "y": 12
+        "x": 85,
+        "y": 85
       },
-      "pixelArt": true
+      "scale": 5,
+      "normals": "flutter-normals.png"
     }
   }
 }

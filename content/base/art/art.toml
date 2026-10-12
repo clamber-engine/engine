@@ -8,81 +8,8 @@
 # characters, between the feet). Animations name a first and last frame
 # and how many 60 Hz ticks each frame shows. Sprites face right.
 
-# The climber is pre-rendered from art/climber.py by tools/render-art.sh.
-
-# Enemies.
-[[sheets]]
-source = "crawler.svg"
-out = "sprites/crawler.json"
-frame = [24, 24]
-origin = [12, 24]
-animations = [
-    { name = "walk", frames = [0, 1], ticks = 10 },
-    { name = "defeated", frames = [2, 2], ticks = 6 },
-]
-
-[[sheets]]
-source = "flutter.svg"
-out = "sprites/flutter.json"
-frame = [24, 24]
-origin = [12, 12]
-animations = [
-    { name = "fly", frames = [0, 2], ticks = 4, direction = "pingpong" },
-    { name = "defeated", frames = [3, 3], ticks = 6 },
-]
-
-# Pickups and level flow, named after their entity kinds.
-[[sheets]]
-source = "gem.svg"
-out = "sprites/gem.json"
-frame = [16, 16]
-origin = [8, 8]
-animations = [{ name = "spin", frames = [0, 3], ticks = 8 }]
-
-[[sheets]]
-source = "relic.svg"
-out = "sprites/relic.json"
-frame = [16, 16]
-origin = [8, 8]
-animations = [{ name = "glint", frames = [0, 1], ticks = 20 }]
-
-[[sheets]]
-source = "checkpoint.svg"
-out = "sprites/checkpoint.json"
-frame = [24, 48]
-origin = [8, 48]
-animations = [
-    { name = "waiting", frames = [0, 0], ticks = 6 },
-    { name = "reached", frames = [1, 2], ticks = 12 },
-]
-
-[[sheets]]
-source = "goal.svg"
-out = "sprites/goal.json"
-frame = [32, 64]
-origin = [16, 64]
-animations = [{ name = "glow", frames = [0, 1], ticks = 16 }]
-
-# Interactive objects.
-[[sheets]]
-source = "launcher.svg"
-out = "sprites/launcher.json"
-frame = [32, 32]
-origin = [16, 16]
-animations = [
-    { name = "waiting", frames = [0, 0], ticks = 6 },
-    { name = "fire", frames = [1, 2], ticks = 6, repeat = 1 },
-]
-
-[[sheets]]
-source = "crate.svg"
-out = "sprites/crate.json"
-frame = [32, 32]
-origin = [16, 32]
-animations = [
-    { name = "whole", frames = [0, 0], ticks = 6 },
-    { name = "break", frames = [1, 2], ticks = 6, repeat = 1 },
-]
+# The climber, enemies, pickups and objects are pre-rendered from the
+# scripts in art/ at the repository root by tools/render-art.sh.
 
 # Terrain tiles (see terrain.svg for the numbering) and background layers
 # for parallax: sky farthest, then mountains, then hills. Each tiles

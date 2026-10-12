@@ -69,6 +69,30 @@ fn the_player_sheet_covers_every_state() {
     assert!(sheet.frames.iter().all(|f| !f.boxes.is_empty()));
 }
 
+/// The rest of the cast is rendered the same way, with a normal map and
+/// the animations the game plays for each.
+#[test]
+fn the_cast_sheets_are_rendered_with_their_animations() {
+    for (name, animations) in [
+        ("crawler", &["walk", "defeated"][..]),
+        ("flutter", &["fly", "defeated"]),
+        ("gem", &["spin"]),
+        ("relic", &["glint"]),
+        ("checkpoint", &["waiting", "reached"]),
+        ("goal", &["glow"]),
+        ("launcher", &["waiting", "fire"]),
+        ("crate", &["whole", "break"]),
+    ] {
+        let path = content_dir().join(SPRITES).join(format!("{name}.json"));
+        let sprite = SpriteSheet::load(&path).unwrap();
+        let sheet = &sprite.sheet;
+        assert!(sheet.scale > 1 && !sheet.pixel_art, "{name}");
+        assert!(sprite.normals.is_some(), "{name}");
+        let names: Vec<_> = sheet.animations.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, animations, "{name}");
+    }
+}
+
 /// The first level is made by `tools/levels/first.py`; this checks it
 /// hasn't been edited by hand or left behind by a change to the layout.
 #[test]

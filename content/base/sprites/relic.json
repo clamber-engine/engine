@@ -1,75 +1,490 @@
 {
   "frames": [
     {
-      "filename": "relic 0",
+      "filename": "relic glint 0",
       "frame": {
-        "x": 0,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 2,
+        "y": 2,
+        "w": 79,
+        "h": 80
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 15,
+        "y": 15,
+        "w": 79,
+        "h": 80
       },
       "sourceSize": {
-        "w": 16,
-        "h": 16
+        "w": 110,
+        "h": 110
       },
-      "duration": 333,
-      "ticks": 20
+      "duration": 33,
+      "ticks": 2
     },
     {
-      "filename": "relic 1",
+      "filename": "relic glint 1",
       "frame": {
-        "x": 16,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 83,
+        "y": 2,
+        "w": 79,
+        "h": 80
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 16,
-        "h": 16
+        "x": 16,
+        "y": 14,
+        "w": 79,
+        "h": 80
       },
       "sourceSize": {
-        "w": 16,
-        "h": 16
+        "w": 110,
+        "h": 110
       },
-      "duration": 333,
-      "ticks": 20
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 2",
+      "frame": {
+        "x": 164,
+        "y": 2,
+        "w": 78,
+        "h": 79
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 16,
+        "y": 14,
+        "w": 78,
+        "h": 79
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 3",
+      "frame": {
+        "x": 244,
+        "y": 2,
+        "w": 76,
+        "h": 79
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 13,
+        "w": 76,
+        "h": 79
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 4",
+      "frame": {
+        "x": 322,
+        "y": 2,
+        "w": 74,
+        "h": 80
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18,
+        "y": 12,
+        "w": 74,
+        "h": 80
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 5",
+      "frame": {
+        "x": 398,
+        "y": 2,
+        "w": 74,
+        "h": 80
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18,
+        "y": 12,
+        "w": 74,
+        "h": 80
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 6",
+      "frame": {
+        "x": 474,
+        "y": 2,
+        "w": 74,
+        "h": 80
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18,
+        "y": 12,
+        "w": 74,
+        "h": 80
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 7",
+      "frame": {
+        "x": 550,
+        "y": 2,
+        "w": 76,
+        "h": 79
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 13,
+        "w": 76,
+        "h": 79
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 8",
+      "frame": {
+        "x": 628,
+        "y": 2,
+        "w": 78,
+        "h": 79
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 16,
+        "y": 14,
+        "w": 78,
+        "h": 79
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 9",
+      "frame": {
+        "x": 708,
+        "y": 2,
+        "w": 79,
+        "h": 80
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 16,
+        "y": 14,
+        "w": 79,
+        "h": 80
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 10",
+      "frame": {
+        "x": 789,
+        "y": 2,
+        "w": 79,
+        "h": 80
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15,
+        "y": 15,
+        "w": 79,
+        "h": 80
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 11",
+      "frame": {
+        "x": 870,
+        "y": 2,
+        "w": 79,
+        "h": 80
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15,
+        "y": 16,
+        "w": 79,
+        "h": 80
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 12",
+      "frame": {
+        "x": 951,
+        "y": 2,
+        "w": 78,
+        "h": 79
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 16,
+        "y": 17,
+        "w": 78,
+        "h": 79
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 13",
+      "frame": {
+        "x": 1031,
+        "y": 2,
+        "w": 76,
+        "h": 79
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 18,
+        "w": 76,
+        "h": 79
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 14",
+      "frame": {
+        "x": 1109,
+        "y": 2,
+        "w": 74,
+        "h": 80
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18,
+        "y": 18,
+        "w": 74,
+        "h": 80
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 15",
+      "frame": {
+        "x": 1185,
+        "y": 2,
+        "w": 72,
+        "h": 80
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 19,
+        "y": 18,
+        "w": 72,
+        "h": 80
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 16",
+      "frame": {
+        "x": 1259,
+        "y": 2,
+        "w": 74,
+        "h": 80
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18,
+        "y": 18,
+        "w": 74,
+        "h": 80
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 17",
+      "frame": {
+        "x": 1335,
+        "y": 2,
+        "w": 76,
+        "h": 79
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 18,
+        "w": 76,
+        "h": 79
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 18",
+      "frame": {
+        "x": 1413,
+        "y": 2,
+        "w": 78,
+        "h": 79
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 16,
+        "y": 17,
+        "w": 78,
+        "h": 79
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "relic glint 19",
+      "frame": {
+        "x": 1493,
+        "y": 2,
+        "w": 79,
+        "h": 80
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15,
+        "y": 16,
+        "w": 79,
+        "h": 80
+      },
+      "sourceSize": {
+        "w": 110,
+        "h": 110
+      },
+      "duration": 33,
+      "ticks": 2
     }
   ],
   "meta": {
-    "app": "clamber-art",
+    "app": "clamber render-art",
     "image": "relic.png",
     "format": "RGBA8888",
     "size": {
-      "w": 32,
-      "h": 16
+      "w": 1574,
+      "h": 84
     },
     "scale": "1",
     "frameTags": [
       {
         "name": "glint",
         "from": 0,
-        "to": 1,
+        "to": 19,
         "direction": "forward"
       }
     ],
     "clamber": {
       "origin": {
-        "x": 8,
-        "y": 8
+        "x": 55,
+        "y": 55
       },
-      "pixelArt": true
+      "scale": 5,
+      "normals": "relic-normals.png"
     }
   }
 }

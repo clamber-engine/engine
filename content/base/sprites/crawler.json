@@ -1,104 +1,684 @@
 {
   "frames": [
     {
-      "filename": "crawler 0",
+      "filename": "crawler walk 0",
       "frame": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 2,
+        "y": 2,
+        "w": 111,
+        "h": 86
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 41,
+        "y": 37,
+        "w": 111,
+        "h": 86
       },
       "sourceSize": {
-        "w": 24,
-        "h": 24
+        "w": 180,
+        "h": 130
       },
-      "duration": 167,
-      "ticks": 10
+      "duration": 33,
+      "ticks": 2
     },
     {
-      "filename": "crawler 1",
+      "filename": "crawler walk 1",
       "frame": {
-        "x": 24,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 115,
+        "y": 2,
+        "w": 110,
+        "h": 90
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 41,
+        "y": 32,
+        "w": 110,
+        "h": 90
       },
       "sourceSize": {
-        "w": 24,
-        "h": 24
+        "w": 180,
+        "h": 130
       },
-      "duration": 167,
-      "ticks": 10
+      "duration": 33,
+      "ticks": 2
     },
     {
-      "filename": "crawler 2",
+      "filename": "crawler walk 2",
       "frame": {
-        "x": 48,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 227,
+        "y": 2,
+        "w": 112,
+        "h": 89
       },
       "rotated": false,
-      "trimmed": false,
+      "trimmed": true,
       "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 24
+        "x": 41,
+        "y": 33,
+        "w": 112,
+        "h": 89
       },
       "sourceSize": {
-        "w": 24,
-        "h": 24
+        "w": 180,
+        "h": 130
       },
-      "duration": 100,
-      "ticks": 6
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler walk 3",
+      "frame": {
+        "x": 341,
+        "y": 2,
+        "w": 116,
+        "h": 84
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 37,
+        "w": 116,
+        "h": 84
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler walk 4",
+      "frame": {
+        "x": 459,
+        "y": 2,
+        "w": 120,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 42,
+        "y": 39,
+        "w": 120,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler walk 5",
+      "frame": {
+        "x": 581,
+        "y": 2,
+        "w": 120,
+        "h": 81
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 41,
+        "y": 42,
+        "w": 120,
+        "h": 81
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler walk 6",
+      "frame": {
+        "x": 703,
+        "y": 2,
+        "w": 118,
+        "h": 84
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 41,
+        "y": 38,
+        "w": 118,
+        "h": 84
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler walk 7",
+      "frame": {
+        "x": 823,
+        "y": 2,
+        "w": 119,
+        "h": 84
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 38,
+        "y": 38,
+        "w": 119,
+        "h": 84
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler walk 8",
+      "frame": {
+        "x": 944,
+        "y": 2,
+        "w": 118,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 38,
+        "y": 39,
+        "w": 118,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler walk 9",
+      "frame": {
+        "x": 1064,
+        "y": 2,
+        "w": 114,
+        "h": 84
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 40,
+        "y": 37,
+        "w": 114,
+        "h": 84
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler defeated 0",
+      "frame": {
+        "x": 1180,
+        "y": 2,
+        "w": 115,
+        "h": 84
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 41,
+        "y": 39,
+        "w": 115,
+        "h": 84
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler defeated 1",
+      "frame": {
+        "x": 1297,
+        "y": 2,
+        "w": 127,
+        "h": 72
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 38,
+        "y": 51,
+        "w": 127,
+        "h": 72
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler defeated 2",
+      "frame": {
+        "x": 1426,
+        "y": 2,
+        "w": 144,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 63,
+        "w": 144,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler defeated 3",
+      "frame": {
+        "x": 1572,
+        "y": 2,
+        "w": 159,
+        "h": 49
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 74,
+        "w": 159,
+        "h": 49
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler defeated 4",
+      "frame": {
+        "x": 1733,
+        "y": 2,
+        "w": 163,
+        "h": 45
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 78,
+        "w": 163,
+        "h": 45
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler defeated 5",
+      "frame": {
+        "x": 2,
+        "y": 94,
+        "w": 163,
+        "h": 45
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 78,
+        "w": 163,
+        "h": 45
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler defeated 6",
+      "frame": {
+        "x": 167,
+        "y": 94,
+        "w": 162,
+        "h": 46
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18,
+        "y": 79,
+        "w": 162,
+        "h": 46
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler defeated 7",
+      "frame": {
+        "x": 331,
+        "y": 94,
+        "w": 163,
+        "h": 45
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 82,
+        "w": 163,
+        "h": 45
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler defeated 8",
+      "frame": {
+        "x": 496,
+        "y": 94,
+        "w": 163,
+        "h": 45
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 84,
+        "w": 163,
+        "h": 45
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "crawler defeated 9",
+      "frame": {
+        "x": 661,
+        "y": 94,
+        "w": 163,
+        "h": 44
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 86,
+        "w": 163,
+        "h": 44
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
     }
   ],
   "meta": {
-    "app": "clamber-art",
+    "app": "clamber render-art",
     "image": "crawler.png",
     "format": "RGBA8888",
     "size": {
-      "w": 72,
-      "h": 24
+      "w": 1898,
+      "h": 142
     },
     "scale": "1",
     "frameTags": [
       {
         "name": "walk",
         "from": 0,
-        "to": 1,
+        "to": 9,
         "direction": "forward"
       },
       {
         "name": "defeated",
-        "from": 2,
-        "to": 2,
-        "direction": "forward"
+        "from": 10,
+        "to": 19,
+        "direction": "forward",
+        "repeat": "1"
+      }
+    ],
+    "slices": [
+      {
+        "name": "hurtbox",
+        "keys": [
+          {
+            "frame": 0,
+            "bounds": {
+              "x": 43,
+              "y": 53,
+              "w": 108,
+              "h": 68
+            }
+          },
+          {
+            "frame": 1,
+            "bounds": {
+              "x": 43,
+              "y": 51,
+              "w": 107,
+              "h": 69
+            }
+          },
+          {
+            "frame": 2,
+            "bounds": {
+              "x": 43,
+              "y": 51,
+              "w": 107,
+              "h": 69
+            }
+          },
+          {
+            "frame": 3,
+            "bounds": {
+              "x": 44,
+              "y": 51,
+              "w": 106,
+              "h": 68
+            }
+          },
+          {
+            "frame": 4,
+            "bounds": {
+              "x": 44,
+              "y": 51,
+              "w": 107,
+              "h": 68
+            }
+          },
+          {
+            "frame": 5,
+            "bounds": {
+              "x": 43,
+              "y": 53,
+              "w": 108,
+              "h": 68
+            }
+          },
+          {
+            "frame": 6,
+            "bounds": {
+              "x": 43,
+              "y": 51,
+              "w": 107,
+              "h": 69
+            }
+          },
+          {
+            "frame": 7,
+            "bounds": {
+              "x": 40,
+              "y": 51,
+              "w": 111,
+              "h": 69
+            }
+          },
+          {
+            "frame": 8,
+            "bounds": {
+              "x": 39,
+              "y": 51,
+              "w": 112,
+              "h": 68
+            }
+          },
+          {
+            "frame": 9,
+            "bounds": {
+              "x": 42,
+              "y": 51,
+              "w": 110,
+              "h": 68
+            }
+          },
+          {
+            "frame": 10,
+            "bounds": {
+              "x": 43,
+              "y": 53,
+              "w": 108,
+              "h": 68
+            }
+          },
+          {
+            "frame": 11,
+            "bounds": {
+              "x": 40,
+              "y": 61,
+              "w": 115,
+              "h": 60
+            }
+          },
+          {
+            "frame": 12,
+            "bounds": {
+              "x": 32,
+              "y": 69,
+              "w": 127,
+              "h": 52
+            }
+          },
+          {
+            "frame": 13,
+            "bounds": {
+              "x": 22,
+              "y": 77,
+              "w": 144,
+              "h": 44
+            }
+          },
+          {
+            "frame": 14,
+            "bounds": {
+              "x": 19,
+              "y": 79,
+              "w": 149,
+              "h": 42
+            }
+          },
+          {
+            "frame": 15,
+            "bounds": {
+              "x": 19,
+              "y": 79,
+              "w": 149,
+              "h": 42
+            }
+          },
+          {
+            "frame": 16,
+            "bounds": {
+              "x": 19,
+              "y": 81,
+              "w": 149,
+              "h": 42
+            }
+          },
+          {
+            "frame": 17,
+            "bounds": {
+              "x": 19,
+              "y": 83,
+              "w": 149,
+              "h": 42
+            }
+          },
+          {
+            "frame": 18,
+            "bounds": {
+              "x": 19,
+              "y": 85,
+              "w": 149,
+              "h": 42
+            }
+          },
+          {
+            "frame": 19,
+            "bounds": {
+              "x": 19,
+              "y": 87,
+              "w": 149,
+              "h": 42
+            }
+          }
+        ]
       }
     ],
     "clamber": {
       "origin": {
-        "x": 12,
-        "y": 24
+        "x": 90,
+        "y": 120
       },
-      "pixelArt": true
+      "scale": 5,
+      "normals": "crawler-normals.png"
     }
   }
 }
