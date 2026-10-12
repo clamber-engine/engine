@@ -8,8 +8,8 @@ CI runs them on every pull request.
 | 1. Unit | Functions against hand-written expectations | Exact | Next to the code |
 | 2. Format | Scenario and trace parsers against fixtures | Exact | `crates/trace/tests/` |
 | 3. Determinism | An engine run against a second run of itself | Byte-identical | `crates/sim/tests/determinism.rs` |
-| 4. Golden | Engine traces against the engine's own committed traces | Byte-identical | `tests/golden/` |
-| 5. Conformance | Engine traces against reference traces from `spec` | Per-metric tolerances | `tests/conformance.rs` |
+| 4. Golden | Engine traces against the engine's own committed traces | Byte-identical | `tests/golden/`, checked by `crates/conformance/tests/golden.rs` |
+| 5. Conformance | Engine traces against reference traces from `spec` | Per-metric tolerances | `crates/conformance/tests/conformance.rs` |
 
 ## 1. Unit tests
 
@@ -32,8 +32,9 @@ leaking into the simulation shows up here first.
 
 ## 4. Golden traces (self-regression)
 
-For every scenario, the engine's own trace is committed to
-`tests/golden/<id>.trace`. Any change to engine behavior changes a golden
+For every scenario, and every whole-level playthrough in
+`tests/playthrough/`, the engine's own trace on the `default` preset is
+committed to `tests/golden/<id>.trace`. Any change to engine behavior changes a golden
 trace, so behavior never changes silently, even for scenarios that have no
 reference trace yet.
 
@@ -56,8 +57,9 @@ For every scenario in `spec/scenarios/` that has a reference trace in
    traces (definitions in `spec/traces/METRICS.md`)
 4. reports pass or fail per metric, with the first divergence for curves
 
-Each scenario shows up as its own named test, so `cargo test run-jump`
-runs one.
+Each scenario shows up as its own named test, `conformance::<id>`, so
+`cargo test --test conformance run-jump` runs one. Scenarios without a
+reference trace show up as ignored.
 
 ### The ratchet
 
@@ -75,16 +77,17 @@ expected_failures = ["airtime", "curve y,vy from jump_start"]
   remove it from the list. Progress gets locked in and can't silently slip
   back.
 
-`cargo run -p clamber-trace -- report` prints a conformance summary
+`cargo run --bin clamber-trace -- report` prints a conformance summary
 (passing metrics per scenario) for tracking progress.
 
 ## Tools
 
-`clamber-trace` (in `crates/trace`) is a small CLI built on the same code
-the tests use:
+`clamber-trace` (in `crates/conformance`, built on the formats in
+`crates/trace`) is a small CLI built on the same code the tests use:
 
 ```
 clamber-trace record <scenario.scn> -o out.trace   # run the engine headlessly
+                                                   # (--level, --preset to override)
 clamber-trace diff <reference.trace> <candidate.trace> --scenario <scenario.scn>
 clamber-trace report                                # conformance summary
 ```

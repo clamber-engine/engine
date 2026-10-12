@@ -31,6 +31,25 @@ impl Decimal {
         Decimal(i128::try_from(n).expect("count fits in i128") * ONE)
     }
 
+    /// The binary fixed-point number `bits / 2^frac_bits`, rounded to the
+    /// nearest [`MAX_PLACES`]-place decimal (ties away from zero). Exact
+    /// whenever `frac_bits` is at most `MAX_PLACES`.
+    pub fn from_binary(bits: i64, frac_bits: u32) -> Decimal {
+        // The fraction times ONE (under 2^80) must fit in a u128.
+        assert!(frac_bits <= 48, "at most 48 fractional bits");
+        let magnitude = bits.unsigned_abs();
+        let int = i128::from(magnitude >> frac_bits);
+        let frac = u128::from(magnitude & ((1u64 << frac_bits) - 1));
+        let scaled = if frac_bits == 0 {
+            0
+        } else {
+            let half = 1u128 << (frac_bits - 1);
+            (frac * ONE.unsigned_abs() + half) >> frac_bits
+        };
+        let value = int * ONE + scaled as i128;
+        Decimal(if bits < 0 { -value } else { value })
+    }
+
     pub fn abs(self) -> Decimal {
         Decimal(self.0.abs())
     }
@@ -172,6 +191,25 @@ mod tests {
         }
         assert_eq!(d("1.500").to_string(), "1.5");
         assert_eq!(d("-0").to_string(), "0");
+    }
+
+    #[test]
+    fn converts_binary_fixed_point() {
+        assert_eq!(Decimal::from_binary(0, 32), Decimal::ZERO);
+        assert_eq!(Decimal::from_binary(7, 0), d("7"));
+        assert_eq!(Decimal::from_binary(9 << 30, 32), d("2.25"));
+        assert_eq!(Decimal::from_binary(-(1 << 28), 32), d("-0.0625"));
+        assert_eq!(
+            Decimal::from_binary(-(84 << 32) - (1 << 31), 32),
+            d("-84.5")
+        );
+        // 2^-24 is exact; 2^-32 rounds to 24 places.
+        assert_eq!(Decimal::from_binary(1, 24), d("0.000000059604644775390625"));
+        assert_eq!(Decimal::from_binary(1, 32), d("0.000000000232830643653870"));
+        assert_eq!(
+            Decimal::from_binary(-1, 32),
+            d("-0.00000000023283064365387")
+        );
     }
 
     #[test]

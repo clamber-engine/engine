@@ -248,6 +248,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "clamber-conformance"
+version = "0.1.0"
+dependencies = [
+ "clamber-level",
+ "clamber-sim",
+ "clamber-trace",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "clamber-fixed"
 version = "0.1.0"
 

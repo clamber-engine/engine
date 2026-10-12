@@ -11,11 +11,13 @@
 //! Rendering and audio read a world; they never change it.
 //!
 //! [`Script`] and [`run`] drive a world headlessly from recorded input,
-//! for tests, traces and the `clamber-sim` command.
+//! for tests and the `clamber-sim` command, and [`record`] writes what
+//! happens as a trace (`spec/traces/FORMAT.md`).
 
 mod archetype;
 mod flow;
 mod player;
+mod record;
 mod script;
 mod things;
 mod world;
@@ -26,6 +28,7 @@ pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };
 pub use player::{Facing, HALF_WIDTH, HEIGHT, Player, ROLL, SWAP_FRAMES, State};
+pub use record::record;
 pub use script::{InputFrame, Script};
 pub use things::{DEFEATED_FRAMES, LAUNCH_REST};
 pub use world::{Event, Phase, Thing, World, generic_feel, run, step};

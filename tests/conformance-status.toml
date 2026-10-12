@@ -1,0 +1,10 @@
+# Conformance metrics expected to fail today (TESTING.md, "The ratchet").
+# Every metric not listed must pass, and every listed one must still fail.
+# Add an entry only together with an open issue that tracks fixing it,
+# linked in a comment next to the entry:
+#
+# [run-jump-flat]
+# expected_failures = ["airtime", "curve y,vy from jump_start"]  # #NN
+#
+# Labels are written as `clamber-trace diff` prints them. No spec scenario
+# has a reference trace yet, so nothing is listed.

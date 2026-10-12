@@ -1,16 +1,23 @@
-//! `clamber-trace`: compare traces and summarise conformance.
+//! `clamber-trace`: record engine traces, compare traces and summarise
+//! conformance.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use clamber_conformance::PRESET;
 use clamber_trace::report::{self, Status};
 use clamber_trace::{Scenario, Trace, compare};
 
 const USAGE: &str = "\
 usage:
+  clamber-trace record <scenario.scn> [-o <out.trace>] [--level <file.level>]
+                       [--preset <id>]
   clamber-trace diff <reference.trace> <candidate.trace> --scenario <scenario.scn>
   clamber-trace report [--spec <dir>] [--candidates <dir>]
 
+record  runs the engine headlessly with the scenario's inputs and writes
+        its trace (default: to stdout). The level defaults to
+        content/test/<id>.level and the preset to `default`
 diff    compares two traces on the scenario's [metrics]; exits 1 if any fail
 report  compares each candidate trace (default tests/golden) against the
         spec's reference traces (default spec) and prints passing metrics
@@ -27,6 +34,7 @@ enum Failure {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
+        Some("record") => record(&args[1..]),
         Some("diff") => diff(&args[1..]),
         Some("report") => report(&args[1..]),
         Some("help" | "-h" | "--help") => {
@@ -50,6 +58,7 @@ fn main() -> ExitCode {
 }
 
 /// Splits `args` into positionals and the values of the given `--options`.
+/// `-o` is short for `--out`.
 fn parse_args<'a>(
     args: &'a [String],
     options: &[&str],
@@ -58,8 +67,9 @@ fn parse_args<'a>(
     let mut values = vec![None; options.len()];
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
+        let arg = if arg == "-o" { "--out" } else { arg.as_str() };
         let Some(name) = arg.strip_prefix("--") else {
-            positional.push(arg.as_str());
+            positional.push(arg);
             continue;
         };
         let (name, inline) = match name.split_once('=') {
@@ -79,6 +89,27 @@ fn parse_args<'a>(
         values[i] = Some(value);
     }
     Ok((positional, values))
+}
+
+fn record(args: &[String]) -> Result<ExitCode, Failure> {
+    let (positional, values) = parse_args(args, &["out", "level", "preset"])?;
+    let [scenario] = positional[..] else {
+        return Err(Failure::Usage("record takes one scenario".into()));
+    };
+    let scenario =
+        Scenario::load(Path::new(scenario)).map_err(|e| Failure::Error(e.to_string()))?;
+    let level = match values[1] {
+        Some(level) => PathBuf::from(level),
+        None => clamber_conformance::test_level(Path::new(""), &scenario.id),
+    };
+    let preset = values[2].unwrap_or(PRESET);
+    let trace = clamber_conformance::record(&scenario, &level, preset).map_err(Failure::Error)?;
+    match values[0] {
+        Some(out) => std::fs::write(out, trace.to_string())
+            .map_err(|e| Failure::Error(format!("can't write {out}: {e}")))?,
+        None => print!("{trace}"),
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn diff(args: &[String]) -> Result<ExitCode, Failure> {

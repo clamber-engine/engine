@@ -1,8 +1,8 @@
 //! Conformance summary across every scenario in the spec.
 //!
-//! Until the engine can run scenarios headlessly, the candidate for each
-//! scenario is its committed golden trace (`tests/golden/<id>.trace`),
-//! which is byte-identical to what the engine records.
+//! The candidate for each scenario is its committed golden trace
+//! (`tests/golden/<id>.trace`), which the golden test keeps
+//! byte-identical to what the engine records.
 
 use std::io;
 use std::path::{Path, PathBuf};

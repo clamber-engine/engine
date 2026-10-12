@@ -182,9 +182,49 @@ fn report_summarises_each_scenario() {
 #[test]
 fn report_on_the_pinned_spec() {
     // Runs from the workspace root with the defaults, as
-    // `cargo run -p clamber-trace -- report` does.
+    // `cargo run --bin clamber-trace -- report` does.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let out = run(&root, &["report"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert!(stdout(&out).contains("run-jump-flat"));
+}
+
+#[test]
+fn record_matches_the_golden_trace() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let out = run(&root, &["record", "spec/scenarios/walk-off-ledge.scn"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let golden = fs::read_to_string(root.join("tests/golden/walk-off-ledge.trace")).unwrap();
+    assert_eq!(stdout(&out), golden);
+
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("record");
+    fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("out.trace");
+    let out = run(
+        &root,
+        &[
+            "record",
+            "spec/scenarios/walk-off-ledge.scn",
+            "-o",
+            file.to_str().unwrap(),
+            "--preset",
+            "floaty",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = fs::read_to_string(&file).unwrap();
+    assert!(text.contains("# preset: floaty\n"));
+    assert_ne!(text, golden);
+
+    let out = run(
+        &root,
+        &[
+            "record",
+            "spec/scenarios/walk-off-ledge.scn",
+            "--preset",
+            "nope",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(stderr(&out), "clamber-trace: no preset named `nope`\n");
 }
