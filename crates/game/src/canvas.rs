@@ -1,5 +1,10 @@
-//! A software framebuffer at the game's internal resolution, and integer
-//! scaling of it onto the window for when there's no GPU to draw it.
+//! A software framebuffer at a whole number of pixels per view unit, and
+//! integer scaling of it onto the window for when there's no GPU to draw
+//! it.
+
+use clamber_sprite::RgbaImage;
+
+use crate::surface::{Quad, Surface};
 
 /// A colour as `0x00RRGGBB`, the layout the window surface takes.
 pub type Color = u32;
@@ -9,28 +14,37 @@ pub const fn rgb(r: u8, g: u8, b: u8) -> Color {
     (r as u32) << 16 | (g as u32) << 8 | b as u32
 }
 
-/// An image in screen pixels, drawn into each frame.
+/// An image in screen pixels, drawn into each frame: the software
+/// [`Surface`], at a whole number of pixels per view unit.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Canvas {
     pub width: u32,
     pub height: u32,
+    /// Pixels per view unit, at least 1.
+    pub scale: u32,
     /// Row by row from the top left.
     pub pixels: Vec<Color>,
 }
 
 impl Canvas {
+    /// A canvas of `width` by `height` pixels, one per view unit.
     pub fn new(width: u32, height: u32) -> Canvas {
+        Canvas::scaled((width, height), 1)
+    }
+
+    /// A canvas showing `view` units at `scale` pixels each.
+    pub fn scaled(view: (u32, u32), scale: u32) -> Canvas {
+        let scale = scale.max(1);
+        let (width, height) = (view.0 * scale, view.1 * scale);
         Canvas {
             width,
             height,
+            scale,
             pixels: vec![0; (width * height) as usize],
         }
     }
 
-    pub fn clear(&mut self, color: Color) {
-        self.pixels.fill(color);
-    }
-
+    /// The pixel at `(x, y)`, in pixels.
     pub fn get(&self, x: i32, y: i32) -> Option<Color> {
         self.index(x, y).map(|i| self.pixels[i])
     }
@@ -40,31 +54,21 @@ impl Canvas {
         inside.then(|| (y as u32 * self.width + x as u32) as usize)
     }
 
-    /// Sets one pixel; off-canvas pixels are ignored.
-    pub fn plot(&mut self, x: i32, y: i32, color: Color) {
+    fn set(&mut self, x: i32, y: i32, color: Color) {
         if let Some(i) = self.index(x, y) {
             self.pixels[i] = color;
         }
     }
 
     /// Mixes `color` into one pixel, `alpha` from 0 (no change) to 255.
-    pub fn blend(&mut self, x: i32, y: i32, color: Color, alpha: u8) {
+    fn blend(&mut self, x: i32, y: i32, color: Color, alpha: u8) {
         if let Some(i) = self.index(x, y) {
             self.pixels[i] = mix(self.pixels[i], color, alpha);
         }
     }
 
-    /// Mixes `color` into every pixel at `alpha`, to dim what's under
-    /// a menu.
-    pub fn shade(&mut self, color: Color, alpha: u8) {
-        for pixel in &mut self.pixels {
-            *pixel = mix(*pixel, color, alpha);
-        }
-    }
-
-    /// Fills the rectangle from `(x, y)`, `w` by `h`, clipped to the
-    /// canvas.
-    pub fn fill_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
+    /// Fills the pixels from `(x, y)`, `w` by `h`, clipped to the canvas.
+    fn fill_pixels(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
         let (x0, x1) = (x.max(0), (x + w).min(self.width as i32));
         let (y0, y1) = (y.max(0), (y + h).min(self.height as i32));
         if x0 >= x1 {
@@ -76,30 +80,170 @@ impl Canvas {
         }
     }
 
-    /// The outline of a rectangle, one pixel thick, inside its bounds.
-    pub fn stroke_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
-        if w <= 0 || h <= 0 {
+    /// Draws a pixel-art quad: each pixel takes the texel under its
+    /// centre, with the edges snapped to whole pixels.
+    fn sharp_quad(&mut self, quad: &Quad) {
+        let s = self.scale as f32;
+        let snap = |v: f32| (v * s + 0.5).floor() as i32;
+        let [l, t, r, b] = quad.dst.map(snap);
+        if r <= l || b <= t {
             return;
         }
-        self.fill_rect(x, y, w, 1, color);
-        self.fill_rect(x, y + h - 1, w, 1, color);
-        self.fill_rect(x, y, 1, h, color);
-        self.fill_rect(x + w - 1, y, 1, h, color);
+        let image = &quad.texture.levels[0];
+        let src = quad.src;
+        let size = quad.flip.size((src.w as f32, src.h as f32));
+        let (xs, ys) = (
+            l.max(0)..r.min(self.width as i32),
+            t.max(0)..b.min(self.height as i32),
+        );
+        for y in ys {
+            let v = (y - t) as f32 + 0.5;
+            for x in xs.clone() {
+                let u = (x - l) as f32 + 0.5;
+                let at = (u * size.0 / (r - l) as f32, v * size.1 / (b - t) as f32);
+                let (sx, sy) = quad.flip.source(at, (src.w as f32, src.h as f32));
+                let sx = (sx.floor() as u32).min(src.w - 1);
+                let sy = (sy.floor() as u32).min(src.h - 1);
+                let [r, g, b, a] = image.get(src.x + sx, src.y + sy);
+                let (r, g, b) = match quad.flash {
+                    Some([fr, fg, fb, _]) => (fr, fg, fb),
+                    None => (r, g, b),
+                };
+                match a {
+                    0 => {}
+                    255 => self.set(x, y, rgb(r, g, b)),
+                    a => self.blend(x, y, rgb(r, g, b), a),
+                }
+            }
+        }
     }
 
-    /// A one-pixel line between two points in screen coordinates, clipped
-    /// to the canvas first so far-off geometry costs nothing.
-    pub fn line(&mut self, a: (f64, f64), b: (f64, f64), color: Color) {
+    /// Draws a smooth quad: each pixel whose centre is inside it takes the
+    /// texture filtered bilinearly from the mipmap nearest its size.
+    fn smooth_quad(&mut self, quad: &Quad) {
+        let s = self.scale as f32;
+        let [l, t, r, b] = quad.dst.map(|v| v * s);
+        if r <= l || b <= t {
+            return;
+        }
+        let src = quad.src;
+        let size = quad.flip.size((src.w as f32, src.h as f32));
+        let per_pixel = (size.0 / (r - l)).max(size.1 / (b - t));
+        let texture = &quad.texture;
+        let level = match per_pixel > 1.0 {
+            true => (per_pixel.log2().round() as usize).min(texture.levels.len() - 1),
+            false => 0,
+        };
+        let image = &texture.levels[level];
+        let shrink = (1u32 << level) as f32;
+        // The source rectangle at this level, which samples stay within.
+        let lo = (src.x as f32 / shrink, src.y as f32 / shrink);
+        let hi = (
+            ((src.x + src.w) as f32 / shrink).max(lo.0 + 1.0),
+            ((src.y + src.h) as f32 / shrink).max(lo.1 + 1.0),
+        );
+        let pixel = |v: f32| (v - 0.5).ceil() as i32;
+        let xs = pixel(l).max(0)..pixel(r).min(self.width as i32);
+        let ys = pixel(t).max(0)..pixel(b).min(self.height as i32);
+        for y in ys {
+            let v = (y as f32 + 0.5 - t) / (b - t) * size.1;
+            for x in xs.clone() {
+                let u = (x as f32 + 0.5 - l) / (r - l) * size.0;
+                let (sx, sy) = quad.flip.source((u, v), (src.w as f32, src.h as f32));
+                let at = ((src.x as f32 + sx) / shrink, (src.y as f32 + sy) / shrink);
+                let [r, g, b, a] = bilinear(image, at, lo, hi);
+                if a <= 0.0 {
+                    continue;
+                }
+                let (r, g, b) = match quad.flash {
+                    Some([fr, fg, fb, _]) => {
+                        let c = |v: u8| v as f32 * a / 255.0;
+                        (c(fr), c(fg), c(fb))
+                    }
+                    None => (r, g, b),
+                };
+                if let Some(i) = self.index(x, y) {
+                    self.pixels[i] = over(self.pixels[i], [r, g, b, a]);
+                }
+            }
+        }
+    }
+}
+
+/// `image` sampled at `at` in texels, mixing the four nearest texels
+/// within `lo` to `hi`, premultiplied by alpha, from 0 to 255.
+fn bilinear(image: &RgbaImage, at: (f32, f32), lo: (f32, f32), hi: (f32, f32)) -> [f32; 4] {
+    let x = at.0.clamp(lo.0 + 0.5, hi.0 - 0.5) - 0.5;
+    let y = at.1.clamp(lo.1 + 0.5, hi.1 - 0.5) - 0.5;
+    let (x0, y0) = (x.floor(), y.floor());
+    let (fx, fy) = (x - x0, y - y0);
+    let last = (hi.0 - 1.0, hi.1 - 1.0);
+    let texel = |tx: f32, ty: f32| {
+        let [r, g, b, a] = image.get(tx.min(last.0) as u32, ty.min(last.1) as u32);
+        let a = a as f32;
+        [
+            r as f32 * a / 255.0,
+            g as f32 * a / 255.0,
+            b as f32 * a / 255.0,
+            a,
+        ]
+    };
+    let (p, q) = (texel(x0, y0), texel(x0 + 1.0, y0));
+    let (m, n) = (texel(x0, y0 + 1.0), texel(x0 + 1.0, y0 + 1.0));
+    std::array::from_fn(|i| {
+        let top = p[i] + (q[i] - p[i]) * fx;
+        let bottom = m[i] + (n[i] - m[i]) * fx;
+        top + (bottom - top) * fy
+    })
+}
+
+/// A premultiplied colour, channels from 0 to 255, over an opaque one.
+fn over(under: Color, [r, g, b, a]: [f32; 4]) -> Color {
+    let keep = 1.0 - a / 255.0;
+    let channel = |shift: u32, top: f32| {
+        let u = ((under >> shift) & 0xff) as f32;
+        ((top + u * keep).round().clamp(0.0, 255.0) as u32) << shift
+    };
+    channel(16, r) | channel(8, g) | channel(0, b)
+}
+
+impl Surface for Canvas {
+    fn view(&self) -> (u32, u32) {
+        (self.width / self.scale, self.height / self.scale)
+    }
+
+    fn clear(&mut self, color: Color) {
+        self.pixels.fill(color);
+    }
+
+    fn fill_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
+        let s = self.scale as i32;
+        self.fill_pixels(x * s, y * s, w * s, h * s, color);
+    }
+
+    fn shade(&mut self, color: Color, alpha: u8) {
+        for pixel in &mut self.pixels {
+            *pixel = mix(*pixel, color, alpha);
+        }
+    }
+
+    /// Steps along the line a pixel at a time, filling a unit square's
+    /// worth of pixels from each, after clipping it to the canvas so
+    /// far-off geometry costs nothing.
+    fn line(&mut self, a: (f64, f64), b: (f64, f64), color: Color) {
+        let s = self.scale as f64;
+        let (a, b) = ((a.0 * s, a.1 * s), (b.0 * s, b.1 * s));
         let Some((a, b)) = clip(a, b, (self.width as f64, self.height as f64)) else {
             return;
         };
+        let brush = self.scale as i32;
         let (x0, y0) = (a.0.floor() as i32, a.1.floor() as i32);
         let (x1, y1) = (b.0.floor() as i32, b.1.floor() as i32);
         let (dx, dy) = ((x1 - x0).abs(), -(y1 - y0).abs());
         let (sx, sy) = ((x1 - x0).signum(), (y1 - y0).signum());
         let (mut x, mut y, mut err) = (x0, y0, dx + dy);
         loop {
-            self.plot(x, y, color);
+            self.fill_pixels(x, y, brush, brush, color);
             if (x, y) == (x1, y1) {
                 break;
             }
@@ -115,12 +259,13 @@ impl Canvas {
         }
     }
 
-    /// Fills a simple polygon given in screen coordinates (any winding),
-    /// mixing `color` in at `alpha`. A pixel is inside when its centre is.
-    pub fn fill_polygon(&mut self, points: &[(f64, f64)], color: Color, alpha: u8) {
+    /// A pixel is inside when its centre is.
+    fn fill_polygon(&mut self, points: &[(f64, f64)], color: Color, alpha: u8) {
         if points.len() < 3 {
             return;
         }
+        let s = self.scale as f64;
+        let points: Vec<_> = points.iter().map(|p| (p.0 * s, p.1 * s)).collect();
         let top = points.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
         let bottom = points.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
         let y0 = (top - 0.5).ceil().max(0.0) as i32;
@@ -143,6 +288,17 @@ impl Canvas {
                     self.blend(x, y, color, alpha);
                 }
             }
+        }
+    }
+
+    fn quad(&mut self, quad: &Quad) {
+        if quad.src.w == 0 || quad.src.h == 0 {
+            return;
+        }
+        if quad.texture.pixel_art {
+            self.sharp_quad(quad);
+        } else {
+            self.smooth_quad(quad);
         }
     }
 }

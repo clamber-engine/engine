@@ -97,7 +97,8 @@
       "origin": {
         "x": 12,
         "y": 24
-      }
+      },
+      "pixelArt": true
     }
   }
 }

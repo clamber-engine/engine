@@ -98,7 +98,8 @@
       "origin": {
         "x": 16,
         "y": 16
-      }
+      },
+      "pixelArt": true
     }
   }
 }

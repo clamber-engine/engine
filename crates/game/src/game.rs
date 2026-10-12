@@ -11,6 +11,7 @@ use crate::canvas::{Canvas, Color, rgb};
 use crate::cast::{Cast, Poses};
 use crate::hud::draw_hud;
 use crate::layers::LayerArt;
+use crate::surface::Surface;
 
 const SKY: Color = rgb(0x2a, 0x34, 0x4a);
 const SOLID: Color = rgb(0x6b, 0x74, 0x80);
@@ -114,7 +115,7 @@ impl Game {
 
     /// Draws the world, and the HUD over it, `alpha` of the way from the
     /// state before the last step to the state after it.
-    pub fn draw(&self, canvas: &mut Canvas, alpha: f64) {
+    pub fn draw(&self, canvas: &mut dyn Surface, alpha: f64) {
         let origin = self.camera.top_left(alpha);
         let to_screen = |p: (f64, f64)| (p.0 - origin.0, p.1 - origin.1);
         canvas.clear(SKY);
@@ -161,10 +162,11 @@ impl Game {
                 continue;
             }
             let (x, y) = to_screen(point(thing.pos));
-            let (x, y) = (x.round() as i32, y.round() as i32);
             if self.cast.has_kind(&thing.kind) {
-                self.cast.draw_thing(canvas, thing, pose, x, y);
+                self.cast
+                    .draw_thing(canvas, thing, pose, x as f32, y as f32);
             }
+            let (x, y) = (x.round() as i32, y.round() as i32);
             if self.debug || !self.cast.has_kind(&thing.kind) {
                 let half = ENTITY_BOX / 2;
                 canvas.stroke_rect(x - half, y - half, ENTITY_BOX, ENTITY_BOX, ENTITY);
@@ -179,16 +181,18 @@ impl Game {
 
     /// The player's sprite, or without one, its body box coloured by
     /// state.
-    fn draw_player(&self, canvas: &mut Canvas, alpha: f64, origin: (f64, f64)) {
+    fn draw_player(&self, canvas: &mut dyn Surface, alpha: f64, origin: (f64, f64)) {
         let player = &self.world.player;
         let (from, to) = (point(self.previous), point(player.pos));
-        let x = (from.0 + (to.0 - from.0) * alpha - origin.0).round() as i32;
-        let y = (from.1 + (to.1 - from.1) * alpha - origin.1).round() as i32;
+        let x = from.0 + (to.0 - from.0) * alpha - origin.0;
+        let y = from.1 + (to.1 - from.1) * alpha - origin.1;
         if self.cast.has_player() {
+            let (x, y) = (x as f32, y as f32);
             self.cast
                 .draw_player(canvas, &self.world, &self.poses.player, x, y);
             return;
         }
+        let (x, y) = (x.round() as i32, y.round() as i32);
         let half = HALF_WIDTH.floor() as i32;
         let height = HEIGHT.floor() as i32;
         // Rolling bodies are drawn crouched so the state reads at a glance.
@@ -226,7 +230,7 @@ fn state_color(state: State) -> Color {
     }
 }
 
-fn outline(canvas: &mut Canvas, points: &[(f64, f64)], color: Color) {
+fn outline(canvas: &mut dyn Surface, points: &[(f64, f64)], color: Color) {
     for (i, &a) in points.iter().enumerate() {
         canvas.line(a, points[(i + 1) % points.len()], color);
     }
@@ -313,8 +317,8 @@ mod tests {
             image
         };
         let mut art = LayerArt::default();
-        art.insert("far.png", fill(4, 4, [1, 2, 3, 255]));
-        art.insert("near.png", fill(30, 30, [4, 5, 6, 255]));
+        art.insert("far.png", fill(4, 4, [1, 2, 3, 255]), false);
+        art.insert("near.png", fill(30, 30, [4, 5, 6, 255]), false);
         let world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
         let mut game = Game::new(world).with_art(art);
         assert!(!game.debug);

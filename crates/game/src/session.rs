@@ -11,7 +11,7 @@ use clamber_input::{Action, Event, Frame, Input, Settings};
 use clamber_sim::{InputFrame, Outcome};
 
 use crate::camera::VIEW;
-use crate::canvas::{Canvas, Color, rgb};
+use crate::canvas::{Color, rgb};
 use crate::controls::{Controls, Request};
 use crate::feels::Feels;
 use crate::game::Game;
@@ -20,6 +20,7 @@ use crate::menu::{Choice, Menu};
 use crate::prefs::{Display, Prefs};
 use crate::report;
 use crate::sound::{Cue, cues};
+use crate::surface::Surface;
 use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred, text_size};
 
 const TITLE: Color = rgb(0xf0, 0xc8, 0x40);
@@ -364,7 +365,7 @@ impl Session {
 
     /// Draws the screen. During play, `alpha` is how far to draw between
     /// the last two states; behind a menu the level stands still.
-    pub fn draw(&self, canvas: &mut Canvas, alpha: f64) {
+    pub fn draw(&self, canvas: &mut dyn Surface, alpha: f64) {
         let playing = self.screen == Screen::Playing;
         self.game.draw(canvas, if playing { alpha } else { 1.0 });
         if playing {
@@ -415,7 +416,7 @@ impl Session {
 
     /// The movement screen: the presets, the one being played, and what
     /// the selected one is like.
-    fn draw_movement(&self, canvas: &mut Canvas, menu: &Menu<usize>, centre: i32) {
+    fn draw_movement(&self, canvas: &mut dyn Surface, menu: &Menu<usize>, centre: i32) {
         let presets = self.feels.presets();
         draw_text_centred(canvas, centre, 30, "MOVEMENT", HEADING);
         let playing = &self.game.world.feel.preset;
@@ -444,7 +445,7 @@ impl Session {
     }
 
     /// The level's time and what was collected, centred on `centre_x`.
-    fn draw_results(&self, canvas: &mut Canvas, centre_x: i32, top: i32) {
+    fn draw_results(&self, canvas: &mut dyn Surface, centre_x: i32, top: i32) {
         let world = &self.game.world;
         let time = format!("TIME {}", clock_time(world.frame));
         draw_text_centred(canvas, centre_x, top, &time, HEADING);

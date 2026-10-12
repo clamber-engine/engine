@@ -34,6 +34,8 @@ fn reads_every_part() {
     assert_eq!(l.layers[0].parallax, v(0.25, 0.5));
     assert_eq!(l.layers[2].depth, Depth::Front);
     assert_eq!(l.layers[2].offset, v(0.0, -32.0));
+    assert_eq!((l.layers[0].scale, l.layers[0].pixel_art), (1, false));
+    assert_eq!((l.layers[1].scale, l.layers[1].pixel_art), (4, true));
     let LayerContent::Tiles(tiles) = &l.layers[1].content else {
         panic!("expected tiles");
     };
@@ -170,6 +172,10 @@ fn format_errors() {
         "x.level: format: version 2 isn't supported; this engine reads 1"
     );
     assert!(level_err("[[collision]]\nshape = \"circle\"\n").contains("circle"));
+    assert!(
+        level_err("[[layers]]\nname = \"sky\"\nimage = \"sky.png\"\nscale = 0\n")
+            .contains("layers[0].scale: must be at least 1")
+    );
     assert!(
         level_err("[[collision]]\nshape = \"rect\"\nrect = [0, 0, 1, 1]\nsurface = \"lava\"\n")
             .contains("collision[0].surface: unknown surface `lava`")

@@ -2,7 +2,8 @@
 
 use clamber_sim::{RELIC, World};
 
-use crate::canvas::{Canvas, Color, rgb};
+use crate::canvas::{Color, rgb};
+use crate::surface::Surface;
 use crate::text::{ADVANCE, draw_text};
 
 const MARGIN: i32 = 6;
@@ -16,7 +17,7 @@ pub(crate) const COUNT: Color = rgb(0xf4, 0xf0, 0xe8);
 
 /// Draws the HUD along the top left of the canvas: lives, gems, and
 /// relics out of the level's total when it has any.
-pub fn draw_hud(canvas: &mut Canvas, world: &World) {
+pub fn draw_hud(canvas: &mut dyn Surface, world: &World) {
     let flow = &world.flow;
     let relics = relic_total(world);
     let mut items = vec![
@@ -54,6 +55,7 @@ mod tests {
     use clamber_sim::generic_feel;
 
     use super::*;
+    use crate::canvas::Canvas;
 
     fn world(entities: &str) -> World {
         let src = format!(

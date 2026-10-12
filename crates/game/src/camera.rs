@@ -6,7 +6,8 @@
 use clamber_level::{CameraRule, Fixed, Level, Rect, Vec2};
 use clamber_sim::{Facing, HEIGHT, World};
 
-/// The view's size in pixels: the game's internal resolution.
+/// The view's size in world units. It's drawn at any size, so the
+/// window's resolution doesn't change how much of the world is seen.
 pub const VIEW: (u32, u32) = (384, 216);
 
 /// How fast the look-ahead offset moves to where it's headed, px/frame.
@@ -95,15 +96,13 @@ impl Camera {
         };
     }
 
-    /// The view's top-left corner in world pixels, `alpha` of the way from
-    /// the previous update to the last, snapped to whole pixels.
+    /// The view's top-left corner in world units, `alpha` of the way from
+    /// the previous update to the last. It isn't snapped to whole units,
+    /// so the view scrolls smoothly at any resolution.
     pub fn top_left(&self, alpha: f64) -> (f64, f64) {
         let x = lerp(self.previous.0, self.centre.0, alpha);
         let y = lerp(self.previous.1, self.centre.1, alpha);
-        (
-            (x - VIEW.0 as f64 / 2.0).round(),
-            (y - VIEW.1 as f64 / 2.0).round(),
-        )
+        (x - VIEW.0 as f64 / 2.0, y - VIEW.1 as f64 / 2.0)
     }
 }
 
@@ -307,5 +306,6 @@ mod tests {
         assert_eq!(camera.top_left(0.0).0, 2000.0 - 192.0);
         assert_eq!(camera.top_left(0.5).0, 2005.0 - 192.0);
         assert_eq!(camera.top_left(1.0).0, 2010.0 - 192.0);
+        assert_eq!(camera.top_left(0.25).0, 2002.5 - 192.0);
     }
 }

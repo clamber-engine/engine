@@ -20,14 +20,11 @@ use std::path::Path;
 use clamber_sim::{CHECKPOINT, Facing, Outcome, Phase, State, Thing, World};
 use clamber_sprite::{Playback, SpriteSheet};
 
-use crate::canvas::Canvas;
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
+use crate::surface::Surface;
 
 /// The sheet the player is drawn with.
 pub const PLAYER: &str = "player";
-
-/// Side of each atlas page, px.
-const PAGE_SIZE: u32 = 512;
 
 /// The sprite sheets the player and entities are drawn with.
 #[derive(Clone, Debug)]
@@ -42,31 +39,31 @@ pub struct Cast {
 impl Default for Cast {
     /// No sheets: everything is drawn as markers.
     fn default() -> Cast {
-        Cast::new(Vec::new()).expect("nothing to pack")
+        Cast::new(Vec::new())
     }
 }
 
 impl Cast {
     /// Sheets by name: [`PLAYER`], or an entity kind.
-    pub fn new(sheets: Vec<(String, SpriteSheet)>) -> Result<Cast, String> {
+    pub fn new(sheets: Vec<(String, SpriteSheet)>) -> Cast {
         let mut builder = SpriteBankBuilder::new();
         let ids: Vec<_> = sheets
             .into_iter()
             .map(|(name, sheet)| (name, builder.add(&sheet)))
             .collect();
-        let bank = builder.build(PAGE_SIZE).map_err(|e| e.to_string())?;
+        let bank = builder.build();
         let mut kinds: BTreeMap<_, _> = ids.into_iter().collect();
         let player = kinds.remove(PLAYER);
         let alternates = player.map_or_else(Vec::new, |id| {
             let names = bank.sheet(id).palettes.keys();
             names.filter_map(|name| bank.palette(id, name)).collect()
         });
-        Ok(Cast {
+        Cast {
             bank,
             player,
             alternates,
             kinds,
-        })
+        }
     }
 
     /// Reads every sheet in `dir`, each named after its metadata file.
@@ -86,7 +83,7 @@ impl Cast {
             let sheet = SpriteSheet::load(&path).map_err(|e| e.to_string())?;
             sheets.push((name.into_owned(), sheet));
         }
-        Cast::new(sheets)
+        Ok(Cast::new(sheets))
     }
 
     /// Whether the player has a sheet to be drawn with.
@@ -100,7 +97,14 @@ impl Cast {
     }
 
     /// Draws the player in `pose` with its feet at `(x, y)`.
-    pub fn draw_player(&self, canvas: &mut Canvas, world: &World, pose: &Pose, x: i32, y: i32) {
+    pub fn draw_player(
+        &self,
+        canvas: &mut dyn Surface,
+        world: &World,
+        pose: &Pose,
+        x: f32,
+        y: f32,
+    ) {
         let Some(id) = self.player else {
             return;
         };
@@ -118,7 +122,7 @@ impl Cast {
     }
 
     /// Draws `thing` in `pose` with its origin at `(x, y)`.
-    pub fn draw_thing(&self, canvas: &mut Canvas, thing: &Thing, pose: &Pose, x: i32, y: i32) {
+    pub fn draw_thing(&self, canvas: &mut dyn Surface, thing: &Thing, pose: &Pose, x: f32, y: f32) {
         if let Some(&id) = self.kinds.get(&thing.kind) {
             let sprite = Sprite {
                 flip_x: thing.facing == Facing::Left,
@@ -128,7 +132,7 @@ impl Cast {
         }
     }
 
-    fn sprite(&self, id: SheetId, pose: &Pose, x: i32, y: i32) -> Sprite {
+    fn sprite(&self, id: SheetId, pose: &Pose, x: f32, y: f32) -> Sprite {
         let sheet = self.bank.sheet(id);
         let frame = match sheet.animations.get(pose.animation) {
             Some(animation) => pose.playback.frame(animation),
@@ -242,6 +246,7 @@ mod tests {
     use clamber_sprite::{Image, Palette, Pixels, Sheet};
 
     use super::*;
+    use crate::canvas::Canvas;
     use crate::canvas::{Color, rgb};
 
     /// Two animations of 1x1 frames: `idle` shows red then green, two
@@ -260,6 +265,7 @@ mod tests {
                 { "name": "walk", "from": 2, "to": 2, "direction": "forward" }
             ],
             "clamber": {
+                "pixelArt": true,
                 "palettes": { "alt": ["#00000000", "#ffffff", "#00ff00", "#0000ff"] }
             }
         }
@@ -311,13 +317,12 @@ mod tests {
             (PLAYER.to_string(), sheet()),
             (CHECKPOINT.to_string(), sheet()),
         ])
-        .unwrap()
     }
 
     /// The two pixels right of `(x, y)` after drawing the player there.
     fn player_pixels(cast: &Cast, world: &World, pose: &Pose) -> [Color; 2] {
         let mut canvas = Canvas::new(4, 1);
-        cast.draw_player(&mut canvas, world, pose, 1, 0);
+        cast.draw_player(&mut canvas, world, pose, 1.0, 0.0);
         [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()]
     }
 
@@ -348,7 +353,7 @@ mod tests {
         assert_eq!(player_pixels(&cast, &world, &pose), [R, 0]);
         world.player.facing = Facing::Left;
         let mut canvas = Canvas::new(4, 1);
-        cast.draw_player(&mut canvas, &world, &pose, 2, 0);
+        cast.draw_player(&mut canvas, &world, &pose, 2.0, 0.0);
         assert_eq!(canvas.pixels, [0, R, 0, 0], "mirrored about the origin");
         world.player.facing = Facing::Right;
         world.player.character = 1;
@@ -372,17 +377,17 @@ mod tests {
         // The test sheet has no `reached`, so pretend `walk` is it.
         let mut renamed = sheet();
         renamed.sheet.animations[1].name = "reached".into();
-        let cast = Cast::new(vec![(CHECKPOINT.to_string(), renamed)]).unwrap();
+        let cast = Cast::new(vec![(CHECKPOINT.to_string(), renamed)]);
         world.flow.checkpoints.push(0);
         poses.update(&cast, &world);
         assert_eq!(poses.things[0].animation, 1);
         let mut canvas = Canvas::new(2, 1);
         let thing = world.things[0].clone();
-        cast.draw_thing(&mut canvas, &thing, &poses.things[0], 0, 0);
+        cast.draw_thing(&mut canvas, &thing, &poses.things[0], 0.0, 0.0);
         assert_eq!(canvas.pixels[0], B);
         // Without a sheet, nothing's drawn.
         let mut canvas = Canvas::new(2, 1);
-        cast.draw_thing(&mut canvas, &world.things[1], &poses.things[1], 0, 0);
+        cast.draw_thing(&mut canvas, &world.things[1], &poses.things[1], 0.0, 0.0);
         assert_eq!(canvas.pixels, [0, 0]);
     }
 
@@ -390,7 +395,7 @@ mod tests {
     fn hurts_while_losing_a_life() {
         let mut sheet = sheet();
         sheet.sheet.animations[1].name = "hurt".into();
-        let cast = Cast::new(vec![(PLAYER.to_string(), sheet)]).unwrap();
+        let cast = Cast::new(vec![(PLAYER.to_string(), sheet)]);
         let mut world = world();
         let mut poses = Poses::new(&cast, &world);
         world.flow.outcome = Outcome::Dying(10);

@@ -65,6 +65,13 @@ pub struct Layer {
     /// level's origin. With a parallax of 1 that's its place in the world.
     pub offset: Vec2,
     pub content: LayerContent,
+    /// Texels of the layer's image or tileset per world unit, at least 1:
+    /// art drawn at a higher resolution covers the same part of the
+    /// world. Tile sizes, margins and spacing stay in texels.
+    pub scale: u32,
+    /// Draw the image with sharp texel edges at any size, rather than
+    /// filtered smoothly with mipmaps.
+    pub pixel_art: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
@@ -332,6 +339,14 @@ struct LayerFile {
     #[serde(default)]
     repeat: [bool; 2],
     tiles: Option<TilesFile>,
+    #[serde(default = "one")]
+    scale: u32,
+    #[serde(default)]
+    pixel_art: bool,
+}
+
+fn one() -> u32 {
+    1
 }
 
 fn back() -> Depth {
@@ -575,6 +590,9 @@ impl Reader<'_> {
     }
 
     fn layer(&self, at: &str, l: LayerFile) -> Result<Layer, LevelError> {
+        if l.scale == 0 {
+            return Err(self.err(&format!("{at}.scale"), "must be at least 1"));
+        }
         let content = match (l.image, l.tiles) {
             (Some(path), None) => LayerContent::Image {
                 path,
@@ -616,6 +634,8 @@ impl Reader<'_> {
             parallax: l.parallax.map_or(Vec2::ints(1, 1), v2),
             offset: l.offset.map_or(Vec2::default(), v2),
             content,
+            scale: l.scale,
+            pixel_art: l.pixel_art,
         })
     }
 
@@ -903,6 +923,12 @@ impl Level {
             lt.insert("parallax".into(), pair(l.parallax));
             if l.offset != Vec2::default() {
                 lt.insert("offset".into(), pair(l.offset));
+            }
+            if l.scale != 1 {
+                lt.insert("scale".into(), l.scale.into());
+            }
+            if l.pixel_art {
+                lt.insert("pixel_art".into(), Value::Boolean(true));
             }
             match &l.content {
                 LayerContent::Image {

@@ -329,6 +329,7 @@ mod tests {
 
     use super::*;
     use crate::canvas::rgb;
+    use crate::surface::Surface;
 
     #[test]
     fn captures_a_run_to_the_goal() {

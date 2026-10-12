@@ -4,6 +4,7 @@
 //! bottom. Its PNG is written as it is (indexed if asked), with Aseprite
 //! "array" JSON beside it: a frame tag per animation, the sheet's origin
 //! in `meta.clamber.origin`, and palette swaps in `meta.clamber.palettes`.
+//! The placeholder art is pixel art, so sheets say `meta.clamber.pixelArt`.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -148,7 +149,10 @@ pub fn build(spec: &SheetSpec, image: &RgbaImage) -> Result<Vec<Output>, String>
         (encode_png(image), BTreeMap::new())
     };
 
-    let mut clamber = json!({ "origin": { "x": spec.origin[0], "y": spec.origin[1] } });
+    let mut clamber = json!({
+        "origin": { "x": spec.origin[0], "y": spec.origin[1] },
+        "pixelArt": true,
+    });
     if !palettes.is_empty() {
         clamber["palettes"] = json!(palettes);
     }

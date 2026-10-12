@@ -6,7 +6,8 @@
 //! symbols stand for HUD icons: `♥` (lives), `◆` (gems) and `★` (relics).
 //! The font is a placeholder, like the rest of the art for now.
 
-use crate::canvas::{Canvas, Color, rgb};
+use crate::canvas::{Color, rgb};
+use crate::surface::Surface;
 
 /// A glyph's size in pixels.
 pub const GLYPH: (i32, i32) = (5, 7);
@@ -101,17 +102,23 @@ pub fn text_size(text: &str) -> (i32, i32) {
 
 /// Draws `text` with its top left at `(x, y)` and its shadow under it.
 /// `\n` starts a new line.
-pub fn draw_text(canvas: &mut Canvas, x: i32, y: i32, text: &str, color: Color) {
+pub fn draw_text(canvas: &mut dyn Surface, x: i32, y: i32, text: &str, color: Color) {
     draw_plain(canvas, x + 1, y + 1, text, SHADOW);
     draw_plain(canvas, x, y, text, color);
 }
 
 /// Draws `text` centred on `centre_x`, its top at `y`.
-pub fn draw_text_centred(canvas: &mut Canvas, centre_x: i32, y: i32, text: &str, color: Color) {
+pub fn draw_text_centred(
+    canvas: &mut dyn Surface,
+    centre_x: i32,
+    y: i32,
+    text: &str,
+    color: Color,
+) {
     draw_text(canvas, centre_x - text_size(text).0 / 2, y, text, color);
 }
 
-fn draw_plain(canvas: &mut Canvas, x: i32, y: i32, text: &str, color: Color) {
+fn draw_plain(canvas: &mut dyn Surface, x: i32, y: i32, text: &str, color: Color) {
     for (row, line) in text.lines().enumerate() {
         let top = y + row as i32 * LINE;
         for (col, c) in line.chars().enumerate() {
@@ -128,6 +135,7 @@ fn draw_plain(canvas: &mut Canvas, x: i32, y: i32, text: &str, color: Color) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::canvas::Canvas;
 
     const WHITE: Color = rgb(255, 255, 255);
 

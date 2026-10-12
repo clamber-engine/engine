@@ -1,54 +1,37 @@
-//! Sprites drawn from atlas pages.
+//! Sprites drawn from their sheets' textures.
 //!
-//! Sheets are packed into two sets of pages: full-colour frames, and
-//! palette indices for indexed sheets. Indexed frames are coloured as they
-//! are drawn from a table with one row per palette, so palette swaps and
-//! hit flashes cost no extra image memory. This is the same split a GPU
-//! path would use: index pages plus a palette texture.
+//! Each sheet is one [`Texture`], filtered smoothly unless it's pixel art,
+//! and drawn at its own number of texels per world unit, so sheets made at
+//! any resolution are the same size in the world. An indexed sheet gets a
+//! texture for each of its palettes, coloured when it's added, so palette
+//! swaps cost nothing to draw; hit flashes recolour as they're drawn.
 
-use std::collections::HashMap;
+use std::sync::Arc;
 
-use clamber_sprite::{
-    Atlas, AtlasBuilder, AtlasError, Image, Pixels, Rect, Rgba, Sheet, SpriteSheet,
-};
+use clamber_sprite::{Image, Rgba, Sheet, SpriteSheet};
 
-use crate::canvas::{Canvas, rgb};
-
-/// Entries in each palette row; index images can't address more.
-const PALETTE_WIDTH: usize = 256;
+use crate::surface::{Flip, Quad, Surface, Texture};
 
 /// A sheet added to a [`SpriteBank`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SheetId(usize);
 
-/// A row of the palette table.
+/// One of a sheet's named palettes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PaletteId(usize);
-
-/// Where a frame's pixels are: an entry in one of the two atlases.
-#[derive(Clone, Copy, Debug)]
-enum Source {
-    Rgba(usize),
-    Indexed(usize),
-}
 
 #[derive(Clone, Debug)]
 struct Entry {
     sheet: Sheet,
-    /// One per sheet frame.
-    sources: Vec<Source>,
-    /// The image's own palette, for indexed sheets.
-    palette: Option<PaletteId>,
-    /// The sheet's named palettes.
+    /// The sheet's image, then one per named palette.
+    textures: Vec<Arc<Texture>>,
+    /// The sheet's named palettes, by their index in `textures`.
     named: Vec<(String, PaletteId)>,
 }
 
-/// Collects sheets to pack into a [`SpriteBank`].
+/// Collects sheets for a [`SpriteBank`].
 #[derive(Default)]
 pub struct SpriteBankBuilder {
-    rgba: AtlasBuilder<Rgba>,
-    indexed: AtlasBuilder<u8>,
-    palettes: Vec<Rgba>,
     sheets: Vec<Entry>,
 }
 
@@ -58,81 +41,53 @@ impl SpriteBankBuilder {
     }
 
     pub fn add(&mut self, sprite: &SpriteSheet) -> SheetId {
-        // Frames that share pixels in the sheet share them in the atlas.
-        let mut packed: HashMap<Rect, Source> = HashMap::new();
+        let pixel_art = sprite.sheet.pixel_art;
         let mut entry = Entry {
             sheet: sprite.sheet.clone(),
-            sources: Vec::with_capacity(sprite.sheet.frames.len()),
-            palette: None,
+            textures: vec![Texture::new(sprite.image.to_rgba(), pixel_art)],
             named: Vec::new(),
         };
-        for frame in &sprite.sheet.frames {
-            let source = *packed
-                .entry(frame.rect)
-                .or_insert_with(|| match &sprite.image {
-                    Image::Rgba(pixels) => Source::Rgba(self.rgba.add(pixels, frame.rect)),
-                    Image::Indexed { indices, .. } => {
-                        Source::Indexed(self.indexed.add(indices, frame.rect))
-                    }
-                });
-            entry.sources.push(source);
-        }
-        if let Image::Indexed { palette, .. } = &sprite.image {
-            entry.palette = Some(self.add_palette(&palette.0));
+        if let Image::Indexed { indices, .. } = &sprite.image {
             for (name, palette) in &sprite.sheet.palettes {
-                let id = self.add_palette(&palette.0);
-                entry.named.push((name.clone(), id));
+                entry
+                    .named
+                    .push((name.clone(), PaletteId(entry.textures.len())));
+                entry
+                    .textures
+                    .push(Texture::new(palette.apply(indices), pixel_art));
             }
         }
         self.sheets.push(entry);
         SheetId(self.sheets.len() - 1)
     }
 
-    /// Adds a palette row; entries past the colours given are transparent.
-    fn add_palette(&mut self, colors: &[Rgba]) -> PaletteId {
-        let id = PaletteId(self.palettes.len() / PALETTE_WIDTH);
-        let mut row = [[0; 4]; PALETTE_WIDTH];
-        let n = colors.len().min(PALETTE_WIDTH);
-        row[..n].copy_from_slice(&colors[..n]);
-        self.palettes.extend_from_slice(&row);
-        id
-    }
-
-    /// Packs everything added onto pages of `page_size` square.
-    pub fn build(self, page_size: u32) -> Result<SpriteBank, AtlasError> {
-        Ok(SpriteBank {
-            rgba: self.rgba.build(page_size, 1)?,
-            indexed: self.indexed.build(page_size, 1)?,
-            palettes: self.palettes,
+    pub fn build(self) -> SpriteBank {
+        SpriteBank {
             sheets: self.sheets,
-        })
+        }
     }
 }
 
-/// Sprite sheets packed for drawing.
-#[derive(Clone, Debug)]
+/// Sprite sheets ready to draw.
+#[derive(Clone, Debug, Default)]
 pub struct SpriteBank {
-    rgba: Atlas<Rgba>,
-    indexed: Atlas<u8>,
-    /// The palette table, [`PALETTE_WIDTH`] colours per row.
-    palettes: Vec<Rgba>,
     sheets: Vec<Entry>,
 }
 
 /// One sprite to draw.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Sprite {
     pub sheet: SheetId,
     /// Index into the sheet's frames.
     pub frame: usize,
-    /// Where the frame's origin goes, in canvas pixels.
-    pub x: i32,
-    pub y: i32,
+    /// Where the frame's origin goes, in view units.
+    pub x: f32,
+    pub y: f32,
     /// Mirror left to right about the origin, as for facing left.
     pub flip_x: bool,
     /// Mirror top to bottom about the origin.
     pub flip_y: bool,
-    /// A palette for indexed sheets instead of the image's own.
+    /// One of an indexed sheet's named palettes instead of its own.
     pub palette: Option<PaletteId>,
     /// Draw every visible pixel in this colour, keeping its alpha.
     pub flash: Option<Rgba>,
@@ -140,7 +95,7 @@ pub struct Sprite {
 
 impl Sprite {
     /// A frame drawn as it is in the sheet, with its origin at `(x, y)`.
-    pub fn new(sheet: SheetId, frame: usize, x: i32, y: i32) -> Sprite {
+    pub fn new(sheet: SheetId, frame: usize, x: f32, y: f32) -> Sprite {
         Sprite {
             sheet,
             frame,
@@ -165,108 +120,44 @@ impl SpriteBank {
         named.iter().find(|(n, _)| n == name).map(|&(_, id)| id)
     }
 
-    /// The atlas pages, full-colour and indexed, for inspection and for
-    /// uploading to a GPU.
-    pub fn pages(&self) -> (&[Pixels<Rgba>], &[Pixels<u8>]) {
-        (&self.rgba.pages, &self.indexed.pages)
-    }
-
-    pub fn draw(&self, canvas: &mut Canvas, sprite: &Sprite) {
+    pub fn draw(&self, surface: &mut dyn Surface, sprite: &Sprite) {
         let entry = &self.sheets[sprite.sheet.0];
         let frame = &entry.sheet.frames[sprite.frame];
-        let flash = |c: Rgba| match sprite.flash {
-            Some([r, g, b, _]) => [r, g, b, c[3]],
-            None => c,
-        };
-        let (w, h) = (frame.rect.w as i32, frame.rect.h as i32);
+        let texture = sprite
+            .palette
+            .and_then(|p| entry.textures.get(p.0))
+            .unwrap_or(&entry.textures[0]);
+        let scale = entry.sheet.scale as f32;
+        let (w, h) = (frame.rect.w as f32 / scale, frame.rect.h as f32 / scale);
+        let offset = (frame.offset.0 as f32 / scale, frame.offset.1 as f32 / scale);
         let left = match sprite.flip_x {
-            false => sprite.x + frame.offset.0,
-            true => sprite.x - frame.offset.0 - w,
+            false => sprite.x + offset.0,
+            true => sprite.x - offset.0 - w,
         };
         let top = match sprite.flip_y {
-            false => sprite.y + frame.offset.1,
-            true => sprite.y - frame.offset.1 - h,
+            false => sprite.y + offset.1,
+            true => sprite.y - offset.1 - h,
         };
-        let flip = Flip {
-            x: sprite.flip_x,
-            y: sprite.flip_y,
-            diagonal: false,
-        };
-        match entry.sources[sprite.frame] {
-            Source::Rgba(i) => {
-                let at = self.rgba.entries[i];
-                blit(
-                    canvas,
-                    &self.rgba.pages[at.page],
-                    at.rect,
-                    (left, top),
-                    flip,
-                    flash,
-                );
-            }
-            Source::Indexed(i) => {
-                let at = self.indexed.entries[i];
-                let row = sprite.palette.or(entry.palette).map_or(0, |p| p.0);
-                let colors = &self.palettes[row * PALETTE_WIDTH..][..PALETTE_WIDTH];
-                blit(
-                    canvas,
-                    &self.indexed.pages[at.page],
-                    at.rect,
-                    (left, top),
-                    flip,
-                    |i| flash(colors[i as usize]),
-                );
-            }
-        }
-    }
-}
-
-/// How an image is turned as it's drawn: mirrored left to right, then
-/// top to bottom, then across its leading diagonal (swapping x and y).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Flip {
-    pub x: bool,
-    pub y: bool,
-    pub diagonal: bool,
-}
-
-/// Draws `rect` of `page` with its top left at `at`, turned as asked,
-/// colouring each pixel with `color` and mixing by its alpha.
-pub(crate) fn blit<P: Copy>(
-    canvas: &mut Canvas,
-    page: &Pixels<P>,
-    rect: Rect,
-    at: (i32, i32),
-    flip: Flip,
-    color: impl Fn(P) -> Rgba,
-) {
-    let (w, h) = (rect.w as i32, rect.h as i32);
-    let (out_w, out_h) = if flip.diagonal { (h, w) } else { (w, h) };
-    let xs = (-at.0).max(0)..out_w.min(canvas.width as i32 - at.0);
-    let ys = (-at.1).max(0)..out_h.min(canvas.height as i32 - at.1);
-    for dy in ys {
-        for dx in xs.clone() {
-            let (mx, my) = if flip.diagonal { (dy, dx) } else { (dx, dy) };
-            let sx = if flip.x { w - 1 - mx } else { mx };
-            let sy = if flip.y { h - 1 - my } else { my };
-            let i =
-                (rect.y as i32 + sy) as usize * page.width as usize + (rect.x as i32 + sx) as usize;
-            let [r, g, b, a] = color(page.data[i]);
-            match a {
-                0 => {}
-                255 => canvas.plot(at.0 + dx, at.1 + dy, rgb(r, g, b)),
-                a => canvas.blend(at.0 + dx, at.1 + dy, rgb(r, g, b), a),
-            }
-        }
+        surface.quad(&Quad {
+            texture: texture.clone(),
+            src: frame.rect,
+            dst: [left, top, left + w, top + h],
+            flip: Flip {
+                x: sprite.flip_x,
+                y: sprite.flip_y,
+                diagonal: false,
+            },
+            flash: sprite.flash,
+        });
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use clamber_sprite::Palette;
+    use clamber_sprite::{Palette, Pixels};
 
     use super::*;
-    use crate::canvas::Color;
+    use crate::canvas::{Canvas, Color, rgb};
 
     const SHEET: &str = r##"{
         "frames": [
@@ -279,6 +170,7 @@ mod tests {
             "image": "test.png",
             "clamber": {
                 "origin": { "x": 2, "y": 2 },
+                "pixelArt": true,
                 "palettes": { "alt": ["#000000", "#00ff00", "#0000ff", "#ffffff"] }
             }
         }
@@ -324,7 +216,7 @@ mod tests {
             let (bank, id) = bank(&sheet);
             // Origin (2, 2), trimmed to start one pixel in: offset (-1, -2).
             #[rustfmt::skip]
-            assert_eq!(draw(&bank, Sprite::new(id, 0, 3, 3)), [
+            assert_eq!(draw(&bank, Sprite::new(id, 0, 3.0, 3.0)), [
                 [BG, BG, BG, BG, BG, BG],
                 [BG, BG, R, B, BG, BG],
                 [BG, BG, W, R, R, BG],
@@ -336,7 +228,7 @@ mod tests {
     fn bank(sheet: &SpriteSheet) -> (SpriteBank, SheetId) {
         let mut builder = SpriteBankBuilder::new();
         let id = builder.add(sheet);
-        (builder.build(16).unwrap(), id)
+        (builder.build(), id)
     }
 
     #[test]
@@ -344,7 +236,7 @@ mod tests {
         let (bank, id) = bank(&indexed());
         let sprite = Sprite {
             flip_x: true,
-            ..Sprite::new(id, 0, 3, 3)
+            ..Sprite::new(id, 0, 3.0, 3.0)
         };
         #[rustfmt::skip]
         assert_eq!(draw(&bank, sprite), [
@@ -355,7 +247,7 @@ mod tests {
         ]);
         let sprite = Sprite {
             flip_y: true,
-            ..Sprite::new(id, 0, 3, 1)
+            ..Sprite::new(id, 0, 3.0, 1.0)
         };
         #[rustfmt::skip]
         assert_eq!(draw(&bank, sprite), [
@@ -373,7 +265,7 @@ mod tests {
         assert_eq!(bank.palette(id, "missing"), None);
         let sprite = Sprite {
             palette: Some(alt),
-            ..Sprite::new(id, 0, 3, 3)
+            ..Sprite::new(id, 0, 3.0, 3.0)
         };
         let white = rgb(255, 255, 255);
         // Index 0 is opaque black in `alt`, so the whole frame shows.
@@ -384,7 +276,7 @@ mod tests {
         ]);
         let sprite = Sprite {
             flash: Some([0, 255, 0, 255]),
-            ..Sprite::new(id, 0, 3, 3)
+            ..Sprite::new(id, 0, 3.0, 3.0)
         };
         let half_green = rgb(4, 132, 4);
         #[rustfmt::skip]
@@ -398,28 +290,40 @@ mod tests {
     fn clips_to_the_canvas() {
         let (bank, id) = bank(&rgba());
         #[rustfmt::skip]
-        assert_eq!(draw(&bank, Sprite::new(id, 0, 0, 1)), [
+        assert_eq!(draw(&bank, Sprite::new(id, 0, 0.0, 1.0)), [
             [R, R, BG, BG, BG, BG],
             [BG, BG, BG, BG, BG, BG],
             [BG, BG, BG, BG, BG, BG],
             [BG, BG, BG, BG, BG, BG],
         ]);
-        let far = draw(&bank, Sprite::new(id, 0, 100, -100));
+        let far = draw(&bank, Sprite::new(id, 0, 100.0, -100.0));
         assert!(far.iter().flatten().all(|&c| c == BG));
     }
 
     #[test]
-    fn packs_shared_frames_once() {
-        let (bank, id) = bank(&indexed());
-        let (rgba, indexed) = bank.pages();
-        assert!(rgba.is_empty());
-        assert_eq!(indexed.len(), 1);
-        // Frames 0 and 2 share pixels, so the page holds two images.
-        let used = indexed[0].data.iter().filter(|&&i| i != 0).count();
-        assert_eq!(used, 5 + 1);
-        assert_eq!(
-            draw(&bank, Sprite::new(id, 2, 0, 0)),
-            draw(&bank, Sprite::new(id, 0, -1, 0))
-        );
+    fn draws_sheets_at_their_scale_the_same_size_in_the_world() {
+        // Four texels per unit: the frame is 2 by 1 units, origin at the
+        // bottom left of its 8 by 4 texels.
+        let json = r#"{
+            "frames": [{ "frame": { "x": 0, "y": 0, "w": 8, "h": 4 }, "ticks": 1 }],
+            "meta": { "image": "hd.png", "clamber": { "origin": { "x": 0, "y": 4 }, "scale": 4 } }
+        }"#;
+        let sheet = Sheet::from_json_str(json, "test").unwrap();
+        let mut image = Pixels::new(8, 4);
+        image.data = vec![RED; 32];
+        let (bank, id) = bank(&SpriteSheet::new(sheet, Image::Rgba(image)).unwrap());
+        #[rustfmt::skip]
+        assert_eq!(draw(&bank, Sprite::new(id, 0, 1.0, 3.0)), [
+            [BG, BG, BG, BG, BG, BG],
+            [BG, BG, BG, BG, BG, BG],
+            [BG, R, R, BG, BG, BG],
+            [BG, BG, BG, BG, BG, BG],
+        ]);
+        // At three pixels a unit it covers 6 by 3 pixels.
+        let mut canvas = Canvas::scaled((6, 4), 3);
+        canvas.clear(BG);
+        bank.draw(&mut canvas, &Sprite::new(id, 0, 1.0, 3.0));
+        let red = canvas.pixels.iter().filter(|&&c| c == R).count();
+        assert_eq!(red, 6 * 3);
     }
 }

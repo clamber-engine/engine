@@ -8,6 +8,7 @@
 //! - **Image layers** become image layers, keeping parallax, offset and
 //!   repeat.
 //! - **Group layers** are flattened, combining their offsets and parallax.
+//! - Tile and image layers are drawn as pixel art, one texel per world unit.
 //! - A layer property `depth` (`"back"` or `"front"`, default back) puts the
 //!   layer behind or in front of entities.
 //! - **Objects** are read by class (called type in older Tiled versions):
@@ -340,6 +341,7 @@ impl Out<'_> {
             if offset != (0.0, 0.0) {
                 t.insert("offset".into(), floats(&[offset.0, offset.1]));
             }
+            t.insert("pixel_art".into(), Value::Boolean(true));
             t
         };
         match l.kind.as_str() {

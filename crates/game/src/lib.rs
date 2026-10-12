@@ -2,16 +2,18 @@
 //!
 //! The simulation runs at exactly 60 Hz ([`Clock`]) and the screen is
 //! drawn between its last two states, so motion stays smooth at any
-//! refresh rate. Drawing is software rendering into a [`Canvas`] at a
-//! fixed internal resolution ([`VIEW`]), which the GPU scales onto the
-//! window at its shape ([`Gpu`]), in step with the display's refresh
-//! unless vsync is turned off; without a GPU, it's scaled by whole
-//! pixels ([`present`]). The window's size and how often it's drawn
-//! come from [`display`]. Level layers are drawn with
-//! parallax from a [`LayerArt`], and sprites from atlas pages by a
-//! [`SpriteBank`], indexed sheets through a palette table. A [`Cast`]
-//! draws the player and entities from their sheets, animated by what
-//! they're doing.
+//! refresh rate. Everything is drawn on a [`Surface`] in view units: the
+//! camera always sees [`VIEW`] units of the world, at whatever size it's
+//! shown. The GPU draws a frame's [`DrawList`] at the window's own
+//! resolution, at its shape ([`Gpu`]), in step with the display's
+//! refresh unless vsync is turned off. Without a GPU, a [`Canvas`] draws
+//! in software at a whole number of pixels per unit ([`present`]); tests
+//! and captures use one too. The window's size and how often it's drawn
+//! come from [`display`]. Images are [`Texture`]s, filtered smoothly from
+//! mipmaps unless they're pixel art. Level layers are drawn with parallax
+//! from a [`LayerArt`], and sprites by a [`SpriteBank`], each sheet at
+//! its own texels per world unit. A [`Cast`] draws the player and
+//! entities from their sheets, animated by what they're doing.
 //!
 //! A [`Session`] puts the title, pause, level complete and game over
 //! screens around the level, with [`Menu`]s driven by neutral actions,
@@ -46,6 +48,7 @@ pub mod report;
 mod session;
 mod sound;
 mod sprites;
+mod surface;
 mod text;
 
 use std::path::{Path, PathBuf};
@@ -66,6 +69,7 @@ pub use prefs::{Display, Prefs};
 pub use session::{Item, Screen, Session, Setting, clock_time};
 pub use sound::{Audio, Cue, DEFAULT_SOUNDS, SoundList, cues};
 pub use sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
+pub use surface::{DrawList, Drawn, Flip, Quad, Surface, Texture, triangulate};
 pub use text::{ADVANCE, GLYPH, LINE, SHADOW, draw_text, draw_text_centred, text_size};
 
 /// The level played when none is given, relative to the content folder.

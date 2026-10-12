@@ -479,6 +479,7 @@
         "x": 12,
         "y": 32
       },
+      "pixelArt": true,
       "palettes": {
         "alt": [
           "#00000000",

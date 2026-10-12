@@ -6,7 +6,8 @@
 
 use clamber_input::{Action, Frame};
 
-use crate::canvas::{Canvas, Color, rgb};
+use crate::canvas::{Color, rgb};
+use crate::surface::Surface;
 use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred, text_size};
 
 const ITEM: Color = rgb(0xa8, 0xb0, 0xbc);
@@ -99,7 +100,7 @@ impl<T: Copy> Menu<T> {
 
     /// Draws the items centred on `centre_x` from `top` down, with a
     /// marker beside the selected one.
-    pub fn draw(&self, canvas: &mut Canvas, centre_x: i32, top: i32) {
+    pub fn draw(&self, canvas: &mut dyn Surface, centre_x: i32, top: i32) {
         for (i, (label, _)) in self.items.iter().enumerate() {
             let y = top + i as i32 * (LINE + SPACING);
             let color = match (self.available(i), i == self.selected) {
@@ -121,6 +122,7 @@ mod tests {
     use clamber_input::Actions;
 
     use super::*;
+    use crate::canvas::Canvas;
 
     fn press(action: Action) -> Frame {
         Frame::after(Actions::NONE, action.into())

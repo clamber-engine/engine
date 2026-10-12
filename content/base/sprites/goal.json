@@ -68,7 +68,8 @@
       "origin": {
         "x": 16,
         "y": 64
-      }
+      },
+      "pixelArt": true
     }
   }
 }

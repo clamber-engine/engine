@@ -12,8 +12,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clamber_game::{
-    Canvas, Cast, Clock, Feels, Game, Gpu, LayerArt, Prefs, SPRITES, Screen, Session, VIEW,
-    content_dir, display, encode_gif, encode_png, keys, present, report, rgb,
+    Canvas, Cast, Clock, DrawList, Feels, Fit, Game, Gpu, LayerArt, Prefs, SPRITES, Screen,
+    Session, VIEW, content_dir, display, encode_gif, encode_png, keys, present, report, rgb,
 };
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
@@ -189,6 +189,7 @@ fn play(options: Options) -> Result<(), String> {
         title: format!("Clamber: {}", title(&session.game.world.level, &level_path)),
         session,
         canvas: Game::canvas(),
+        list: DrawList::new(VIEW),
         #[cfg(feature = "gamepad")]
         gamepads: clamber_input::Gamepads::new()
             .map_err(|e| report::warn(format!("no gamepads: {e}")))
@@ -351,14 +352,17 @@ struct Shown {
 enum Output {
     Gpu(Box<Gpu>),
     /// Without a GPU that can draw to the window: no vsync, and only
-    /// whole-number scales.
+    /// whole-number scales, drawn at that scale.
     Software(softbuffer::Surface<Arc<Window>, Arc<Window>>),
 }
 
 struct App {
     title: String,
     session: Session,
+    /// What's drawn without a GPU, at the scale it's shown at.
     canvas: Canvas,
+    /// What's drawn with one.
+    list: DrawList,
     #[cfg(feature = "gamepad")]
     gamepads: Option<clamber_input::Gamepads>,
     /// The output, kept open while the game runs, and what plays on it.
@@ -405,7 +409,6 @@ impl App {
         let gpu = Gpu::new(
             window.clone(),
             event_loop.owned_display_handle(),
-            VIEW,
             prefs.vsync,
         );
         let output = match gpu {
@@ -551,13 +554,16 @@ impl App {
             return Ok(());
         }
         self.drawn = Instant::now();
-        self.session.draw(&mut self.canvas, self.clock.alpha());
+        let alpha = self.clock.alpha();
 
         let Some(shown) = &mut self.window else {
             return Ok(());
         };
         match &mut shown.output {
-            Output::Gpu(gpu) => gpu.present(&self.canvas),
+            Output::Gpu(gpu) => {
+                self.session.draw(&mut self.list, alpha);
+                gpu.present(&self.list)
+            }
             Output::Software(surface) => {
                 let size = shown.window.inner_size();
                 let (Some(w), Some(h)) =
@@ -565,6 +571,11 @@ impl App {
                 else {
                     return Ok(());
                 };
+                let scale = Fit::new(VIEW, (size.width, size.height)).scale;
+                if self.canvas.scale != scale {
+                    self.canvas = Canvas::scaled(VIEW, scale);
+                }
+                self.session.draw(&mut self.canvas, alpha);
                 surface.resize(w, h).map_err(|e| e.to_string())?;
                 let mut buffer = surface.buffer_mut().map_err(|e| e.to_string())?;
                 present(&self.canvas, &mut buffer, size.width, size.height, BORDER);

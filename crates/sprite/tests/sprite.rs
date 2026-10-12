@@ -152,6 +152,22 @@ fn metadata_errors() {
         .contains("meta.clamber.palettes.p: bad color `#12`")
     );
     assert!(sheet_err(&sheet_with(FRAME, r#", "clamber": { "orign": {} }"#)).contains("orign"));
+    assert!(
+        sheet_err(&sheet_with(FRAME, r#", "clamber": { "scale": 0 }"#))
+            .contains("meta.clamber.scale must be at least 1")
+    );
+}
+
+#[test]
+fn scale_and_pixel_art_default_to_plain_texels_filtered_smoothly() {
+    let plain = Sheet::from_json_str(&sheet_with(FRAME, ""), "test").unwrap();
+    assert_eq!((plain.scale, plain.pixel_art), (1, false));
+    let hd = Sheet::from_json_str(
+        &sheet_with(FRAME, r#", "clamber": { "scale": 5, "pixelArt": true }"#),
+        "test",
+    )
+    .unwrap();
+    assert_eq!((hd.scale, hd.pixel_art), (5, true));
 }
 
 #[test]

@@ -10,6 +10,11 @@
 //!   no `origin` slice. Defaults to the top left of the frame.
 //! - `meta.clamber.palettes`: named palettes for palette swaps, each a list
 //!   of `#rrggbb` or `#rrggbbaa` colors in index order.
+//! - `meta.clamber.scale`: texels per world unit, a whole number, so art
+//!   drawn at a higher resolution covers the same part of the world.
+//!   Defaults to 1. Frame rectangles, origins and slices stay in texels.
+//! - `meta.clamber.pixelArt`: `true` to draw the sheet with sharp texel
+//!   edges at any size. Otherwise it's filtered smoothly, with mipmaps.
 //!
 //! Slices carry per-frame geometry. A slice key applies from its frame
 //! until the slice's next key; a key with zero width or height means the
@@ -41,6 +46,10 @@ pub struct Sheet {
     /// By name, in the order the file lists them.
     pub animations: Vec<Animation>,
     pub palettes: BTreeMap<String, Palette>,
+    /// Texels per world unit, at least 1.
+    pub scale: u32,
+    /// Drawn with sharp texel edges rather than filtered smoothly.
+    pub pixel_art: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,11 +146,14 @@ struct Meta {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct Extensions {
     origin: Option<Point>,
     #[serde(default)]
     palettes: BTreeMap<String, Vec<String>>,
+    scale: Option<u32>,
+    #[serde(default)]
+    pixel_art: bool,
 }
 
 #[derive(Deserialize)]
@@ -231,6 +243,11 @@ fn parse(file: File) -> Result<Sheet, String> {
     }
 
     let ext = meta.clamber;
+    let scale = ext.as_ref().and_then(|e| e.scale).unwrap_or(1);
+    if scale == 0 {
+        return Err("meta.clamber.scale must be at least 1".into());
+    }
+    let pixel_art = ext.as_ref().is_some_and(|e| e.pixel_art);
     let default_origin = ext
         .as_ref()
         .and_then(|e| e.origin)
@@ -361,6 +378,8 @@ fn parse(file: File) -> Result<Sheet, String> {
         frames,
         animations,
         palettes,
+        scale,
+        pixel_art,
     })
 }
 

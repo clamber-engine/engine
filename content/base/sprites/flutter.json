@@ -120,7 +120,8 @@
       "origin": {
         "x": 12,
         "y": 12
-      }
+      },
+      "pixelArt": true
     }
   }
 }

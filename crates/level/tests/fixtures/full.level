@@ -28,6 +28,8 @@ repeat = [true, false]
 [[layers]]
 name = "ground tiles"
 depth = "back"
+scale = 4
+pixel_art = true
 tiles = { tileset = "tiles/ground.png", tile_size = [16, 16], columns = 4, data = [0, 1, 2, 3, 2147483653, 0, 0, 0] }
 
 [[layers]]

@@ -10,7 +10,8 @@
 
 use clamber_input::{Action, Device, Frame, Input, MAX_PLAYERS, Remapped, Settings};
 
-use crate::canvas::{Canvas, Color, rgb};
+use crate::canvas::{Color, rgb};
+use crate::surface::Surface;
 use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred, text_size};
 
 const HEADING: Color = rgb(0xf4, 0xf0, 0xe8);
@@ -206,7 +207,7 @@ impl Controls {
 
     /// Draws the screen across the canvas's width, centred on
     /// `centre_x`, with `input`'s bindings.
-    pub fn draw(&self, canvas: &mut Canvas, centre_x: i32, input: &Input) {
+    pub fn draw(&self, canvas: &mut dyn Surface, centre_x: i32, input: &Input) {
         draw_text_centred(canvas, centre_x, TOP, "CONTROLS", HEADING);
         let bindings = &input.settings().players[self.player];
         let remap = input.remapping();
@@ -350,6 +351,7 @@ mod tests {
     use clamber_input::{Actions, Event, Key, PadId, PadInput};
 
     use super::*;
+    use crate::canvas::Canvas;
 
     fn press(action: Action) -> Frame {
         Frame::after(Actions::NONE, action.into())
