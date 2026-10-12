@@ -9,10 +9,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clamber_game::{Canvas, Clock, Game, Session, VIEW, content_dir, keys, present, rgb};
-use clamber_input::{Event, Input, Key, Settings};
+use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
 use clamber_pack::Pack;
-use clamber_sim::{InputFrame, World, generic_feel};
+use clamber_sim::{World, generic_feel};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -23,10 +23,12 @@ use winit::window::{Fullscreen, Window, WindowId};
 const USAGE: &str = "\
 usage:
   clamber-game [<file.level>] [--pack <pack.toml>] [--preset <id>]
+               [--settings <input.toml>]
 
 Plays the level, or the bundled one if none is given, from the title
-screen. Without --pack, a
-single character plays with the preset's world physics.
+screen. Without --pack, a single character plays with the preset's
+world physics. Controls are read from, and saved by the controls screen
+to, --settings or the per-user settings file.
 
   Z, Space       jump; pick in menus
   Enter, Escape  pause; back in menus
@@ -43,6 +45,7 @@ struct Options {
     level: Option<PathBuf>,
     pack: Option<String>,
     preset: Option<String>,
+    settings: Option<String>,
 }
 
 fn parse(args: &[String]) -> Option<Options> {
@@ -50,12 +53,14 @@ fn parse(args: &[String]) -> Option<Options> {
         level: None,
         pack: None,
         preset: None,
+        settings: None,
     };
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         let slot = match arg.as_str() {
             "--pack" => &mut options.pack,
             "--preset" => &mut options.preset,
+            "--settings" => &mut options.settings,
             _ if arg.starts_with('-') || options.level.is_some() => return None,
             _ => {
                 options.level = Some(PathBuf::from(arg));
@@ -110,13 +115,20 @@ fn play(options: Options) -> Result<(), String> {
         }
     };
     let world = World::new(Arc::new(level), Arc::new(feel));
+    let mut session = Session::new(Game::new(world));
+    session.settings_path = options
+        .settings
+        .map(PathBuf::from)
+        .or_else(clamber_game::settings_path);
+    if let Some(path) = &session.settings_path {
+        session.input.set_settings(load_settings(path));
+    }
 
     let event_loop = EventLoop::new().map_err(|e| e.to_string())?;
     let mut app = App {
-        title: format!("Clamber: {}", title(&world.level, &level_path)),
-        session: Session::new(Game::new(world)),
+        title: format!("Clamber: {}", title(&session.game.world.level, &level_path)),
+        session,
         canvas: Game::canvas(),
-        input: Input::new(Settings::builtin()),
         #[cfg(feature = "gamepad")]
         gamepads: clamber_input::Gamepads::new()
             .map_err(|e| eprintln!("warning: no gamepads: {e}"))
@@ -129,6 +141,26 @@ fn play(options: Options) -> Result<(), String> {
     };
     event_loop.run_app(&mut app).map_err(|e| e.to_string())?;
     app.error.map_or(Ok(()), Err)
+}
+
+/// The settings in `path`, or the defaults when there's no such file or
+/// it can't be read.
+fn load_settings(path: &Path) -> Settings {
+    let src = match std::fs::read_to_string(path) {
+        Ok(src) => src,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Settings::builtin(),
+        Err(e) => {
+            eprintln!(
+                "warning: {}: {e}; using the default controls",
+                path.display()
+            );
+            return Settings::builtin();
+        }
+    };
+    Settings::from_toml_str(&src, &path.display().to_string()).unwrap_or_else(|e| {
+        eprintln!("warning: {e}; using the default controls");
+        Settings::builtin()
+    })
 }
 
 fn title(level: &Level, path: &Path) -> String {
@@ -148,7 +180,6 @@ struct App {
     title: String,
     session: Session,
     canvas: Canvas,
-    input: Input,
     #[cfg(feature = "gamepad")]
     gamepads: Option<clamber_input::Gamepads>,
     /// Keys down now, to release them all when the window loses focus.
@@ -209,7 +240,7 @@ impl App {
             } else {
                 self.held.remove(&key);
             }
-            self.input.handle(Event::Key { key, down });
+            self.session.handle(Event::Key { key, down });
         }
     }
 
@@ -222,11 +253,10 @@ impl App {
             #[cfg(feature = "gamepad")]
             if let Some(pads) = &mut self.gamepads {
                 for event in pads.poll() {
-                    self.input.handle(event);
+                    self.session.handle(event);
                 }
             }
-            let players = self.input.tick();
-            self.session.step(&InputFrame { players });
+            self.session.tick();
             if self.session.quit {
                 return Ok(());
             }
@@ -267,7 +297,7 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } => self.key(event),
             WindowEvent::Focused(false) => {
                 for key in std::mem::take(&mut self.held) {
-                    self.input.handle(Event::Key { key, down: false });
+                    self.session.handle(Event::Key { key, down: false });
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -306,6 +336,8 @@ mod tests {
         let o = parse(&args("a.level --preset fast")).unwrap();
         assert_eq!(o.level, Some(PathBuf::from("a.level")));
         assert_eq!(o.preset.as_deref(), Some("fast"));
+        let o = parse(&args("--settings my.toml")).unwrap();
+        assert_eq!(o.settings.as_deref(), Some("my.toml"));
         assert!(parse(&args("")).unwrap().level.is_none());
         assert!(parse(&args("a.level b.level")).is_none());
         assert!(parse(&args("--pack")).is_none());

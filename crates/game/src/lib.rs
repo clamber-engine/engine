@@ -8,7 +8,9 @@
 //! pages by a [`SpriteBank`], indexed sheets through a palette table.
 //!
 //! A [`Session`] puts the title, pause, level complete and game over
-//! screens around the level, with [`Menu`]s driven by neutral actions.
+//! screens around the level, with [`Menu`]s driven by neutral actions,
+//! and a [`Controls`] screen for remapping each player's bindings and
+//! saving them to their settings file ([`settings_path`]).
 //!
 //! Everything here except the window itself works headlessly, so a
 //! [`Session`] or [`Game`] can be stepped and drawn in tests and captures.
@@ -16,6 +18,7 @@
 mod camera;
 mod canvas;
 mod clock;
+mod controls;
 mod game;
 mod hud;
 pub mod keys;
@@ -29,6 +32,7 @@ use std::path::{Path, PathBuf};
 pub use camera::{Camera, VIEW};
 pub use canvas::{Canvas, Color, Fit, present, rgb};
 pub use clock::Clock;
+pub use controls::{Controls, Request, Row, TIMEOUT};
 pub use game::Game;
 pub use hud::draw_hud;
 pub use menu::{Choice, Menu};
@@ -55,4 +59,25 @@ pub fn content_dir() -> PathBuf {
         .flatten()
         .find(|dir| dir.is_dir())
         .unwrap_or_else(|| PathBuf::from("content"))
+}
+
+/// The input settings file: `Clamber/input.toml` in the platform's
+/// per-user settings folder. `None` when the environment doesn't say
+/// where that is.
+pub fn settings_path() -> Option<PathBuf> {
+    let var = |name| {
+        std::env::var_os(name)
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+    };
+    let dir = if cfg!(windows) {
+        var("APPDATA")?.join("Clamber")
+    } else if cfg!(target_os = "macos") {
+        var("HOME")?.join("Library/Application Support/Clamber")
+    } else {
+        var("XDG_CONFIG_HOME")
+            .or_else(|| Some(var("HOME")?.join(".config")))?
+            .join("clamber")
+    };
+    Some(dir.join("input.toml"))
 }

@@ -1,15 +1,18 @@
-//! The screens around a level: title, pause, level complete and game
-//! over, and moving between them and play.
+//! The screens around a level: title, pause, controls, level complete
+//! and game over, and moving between them and play.
 //!
 //! Menus read the same neutral actions as play, from every player at
 //! once, so a keyboard or a gamepad alone can drive them (see
 //! [`Menu`]).
 
-use clamber_input::{Action, Frame};
+use std::path::{Path, PathBuf};
+
+use clamber_input::{Action, Event, Frame, Input, Settings};
 use clamber_sim::{InputFrame, Outcome};
 
 use crate::camera::VIEW;
 use crate::canvas::{Canvas, Color, rgb};
+use crate::controls::{Controls, Request};
 use crate::game::Game;
 use crate::hud::{COUNT, GEM, RELIC_ICON, relic_total};
 use crate::menu::{Choice, Menu};
@@ -32,6 +35,8 @@ pub enum Item {
     Resume,
     /// Start the level over.
     Restart,
+    /// The controls screen.
+    Controls,
     /// Back to the title screen.
     ToTitle,
     /// Close the game.
@@ -46,17 +51,24 @@ pub enum Screen {
     Paused(Menu<Item>),
     Complete(Menu<Item>),
     GameOver(Menu<Item>),
+    /// The controls screen, and the screen to go back to.
+    Controls(Controls, Box<Screen>),
 }
 
 impl Screen {
     pub fn title() -> Screen {
-        Screen::Title(Menu::new([("Start", Item::Start), ("Quit", Item::Quit)]))
+        Screen::Title(Menu::new([
+            ("Start", Item::Start),
+            ("Controls", Item::Controls),
+            ("Quit", Item::Quit),
+        ]))
     }
 
     fn paused() -> Screen {
         Screen::Paused(Menu::new([
             ("Resume", Item::Resume),
             ("Restart level", Item::Restart),
+            ("Controls", Item::Controls),
             ("Quit", Item::ToTitle),
         ]))
     }
@@ -80,18 +92,41 @@ impl Screen {
 pub struct Session {
     pub game: Game,
     pub screen: Screen,
+    /// The players' devices and bindings, which the controls screen
+    /// changes.
+    pub input: Input,
+    /// Where the controls screen saves the input settings, if anywhere.
+    pub settings_path: Option<PathBuf>,
     /// Quit was picked on the title screen; the window should close.
     pub quit: bool,
 }
 
 impl Session {
-    /// Starts at the title screen, with `game`'s level behind it.
+    /// Starts at the title screen, with `game`'s level behind it and the
+    /// default bindings.
     pub fn new(game: Game) -> Session {
         Session {
             game,
             screen: Screen::title(),
+            input: Input::new(Settings::builtin()),
+            settings_path: None,
             quit: false,
         }
+    }
+
+    /// Records a device event. A press that finishes a remap shows on
+    /// the controls screen.
+    pub fn handle(&mut self, event: Event) {
+        let remapped = self.input.handle(event);
+        if let (Some(remapped), Screen::Controls(controls, _)) = (remapped, &mut self.screen) {
+            controls.remapped(remapped);
+        }
+    }
+
+    /// Ends a logic frame of device input and steps with it.
+    pub fn tick(&mut self) {
+        let players = self.input.tick();
+        self.step(&InputFrame { players });
     }
 
     /// Advances one logic frame: plays the level, or works the menu
@@ -102,6 +137,27 @@ impl Session {
             return;
         }
         let frame = everyone(input);
+        if let Screen::Controls(controls, _) = &mut self.screen {
+            match controls.update(&frame, &mut self.input) {
+                Some(Request::Save) => {
+                    let result = match &self.settings_path {
+                        Some(path) => save(self.input.settings(), path),
+                        None => Err("no settings file".to_string()),
+                    };
+                    controls.saved(result);
+                }
+                Some(Request::Back) => {
+                    let Screen::Controls(_, from) =
+                        std::mem::replace(&mut self.screen, Screen::Playing)
+                    else {
+                        unreachable!()
+                    };
+                    self.screen = *from;
+                }
+                None => {}
+            }
+            return;
+        }
         let (Screen::Title(menu)
         | Screen::Paused(menu)
         | Screen::Complete(menu)
@@ -120,6 +176,10 @@ impl Session {
             Item::Start | Item::Restart => {
                 self.game.restart();
                 self.screen = Screen::Playing;
+            }
+            Item::Controls => {
+                let from = std::mem::replace(&mut self.screen, Screen::Playing);
+                self.screen = Screen::Controls(Controls::new(), Box::new(from));
             }
             Item::ToTitle => self.screen = Screen::title(),
             Item::Quit => self.quit = true,
@@ -152,6 +212,10 @@ impl Session {
         let centre = VIEW.0 as i32 / 2;
         let (menu, top) = match &self.screen {
             Screen::Playing => return,
+            Screen::Controls(controls, _) => {
+                controls.draw(canvas, centre, &self.input);
+                return;
+            }
             Screen::Title(menu) => {
                 draw_text_centred(canvas, centre, 60, "CLAMBER", TITLE);
                 let name = &self.game.world.level.name;
@@ -205,6 +269,17 @@ impl Session {
     }
 }
 
+/// Writes the input settings to `path`, creating its folder. Returns
+/// where it went, for showing.
+fn save(settings: &Settings, path: &Path) -> Result<String, String> {
+    let shown = path.display().to_string();
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{shown}: {e}"))?;
+    }
+    std::fs::write(path, settings.to_toml_string()).map_err(|e| format!("{shown}: {e}"))?;
+    Ok(shown)
+}
+
 /// Every player's input as one, for menus anyone can drive.
 fn everyone(input: &InputFrame) -> Frame {
     input.players.iter().fold(Frame::default(), |all, f| Frame {
@@ -225,7 +300,7 @@ pub fn clock_time(frames: u32) -> String {
 mod tests {
     use std::sync::Arc;
 
-    use clamber_input::Actions;
+    use clamber_input::{Actions, Key};
     use clamber_level::Level;
     use clamber_sim::{World, generic_feel};
 
@@ -280,9 +355,91 @@ mod tests {
         assert_eq!(s.screen, Screen::Playing);
 
         let mut s = session(LEVEL);
-        s.step(&press(Action::Down));
+        s.step(&press(Action::Up));
         s.step(&press(Action::Jump));
         assert!(s.quit);
+    }
+
+    /// Goes from the selected item of a menu to the controls screen.
+    fn open_controls(s: &mut Session) {
+        while !matches!(&s.screen, Screen::Title(m) | Screen::Paused(m) if m.current() == Item::Controls)
+        {
+            s.step(&press(Action::Down));
+        }
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Controls(..)));
+    }
+
+    #[test]
+    fn remaps_from_the_title_and_goes_back() {
+        let mut s = session(LEVEL);
+        open_controls(&mut s);
+        // Remap left on the keyboard: the screen starts there.
+        s.step(&press(Action::Jump));
+        s.handle(Event::Key {
+            key: Key::KeyQ,
+            down: true,
+        });
+        let Screen::Controls(controls, _) = &s.screen else {
+            panic!()
+        };
+        assert_eq!(controls.status(), Some("left: Q"));
+        let bindings = &s.input.settings().players[0];
+        assert_eq!(bindings.key_action(Key::KeyQ), Some(Action::Left));
+        s.tick();
+        assert!(matches!(s.screen, Screen::Controls(..)), "Q was swallowed");
+
+        s.step(&press(Action::Pause));
+        let Screen::Title(menu) = &s.screen else {
+            panic!("back to the title")
+        };
+        assert_eq!(menu.current(), Item::Controls);
+    }
+
+    #[test]
+    fn opens_controls_from_pause_and_returns_there() {
+        let mut s = session(LEVEL);
+        s.step(&press(Action::Jump));
+        s.step(&press(Action::Pause));
+        open_controls(&mut s);
+        let mut canvas = Game::canvas();
+        s.draw(&mut canvas, 1.0);
+        assert!(canvas.pixels.contains(&HEADING));
+        s.step(&press(Action::Pause));
+        assert!(matches!(s.screen, Screen::Paused(_)));
+        s.step(&press(Action::Pause));
+        assert_eq!(s.screen, Screen::Playing);
+    }
+
+    #[test]
+    fn saves_the_settings_file() {
+        let dir = std::env::temp_dir().join(format!("clamber-session-{}", std::process::id()));
+        let path = dir.join("nested").join("input.toml");
+        let mut s = session(LEVEL);
+        s.settings_path = Some(path.clone());
+        open_controls(&mut s);
+        s.step(&press(Action::Jump));
+        s.handle(Event::Key {
+            key: Key::KeyQ,
+            down: true,
+        });
+        // From left, up past the player row to Back, then Save.
+        for _ in 0..3 {
+            s.step(&press(Action::Up));
+        }
+        s.step(&press(Action::Jump));
+        let saved = std::fs::read_to_string(&path).expect("saved");
+        let read = Settings::from_toml_str(&saved, "saved").unwrap();
+        assert_eq!(&read, s.input.settings());
+        assert_eq!(read.players[0].key_action(Key::KeyQ), Some(Action::Left));
+        std::fs::remove_dir_all(dir).unwrap();
+
+        s.settings_path = None;
+        s.step(&press(Action::Jump));
+        let Screen::Controls(controls, _) = &s.screen else {
+            panic!()
+        };
+        assert_eq!(controls.status(), Some("Can't save: no settings file"));
     }
 
     #[test]
