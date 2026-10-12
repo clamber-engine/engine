@@ -12,10 +12,14 @@
 //!   limit, and crossfades between tracks. The game controls it through an
 //!   [`AudioHandle`]; a track that's already playing carries on when asked
 //!   for again, so music continues across level sections.
+//! - With the `output` feature, [`Output`] plays the mixer on the default
+//!   sound device and reopens it when the device goes away.
 
 mod decode;
 mod mixer;
 mod music;
+#[cfg(feature = "output")]
+mod output;
 mod sound;
 
 use std::fmt;
@@ -23,6 +27,8 @@ use std::fmt;
 pub use decode::Input;
 pub use mixer::{AudioHandle, Category, Mixer, Play, VoiceId, mixer};
 pub use music::{LoopPoints, Looping, Music};
+#[cfg(feature = "output")]
+pub use output::Output;
 pub use sound::Sound;
 
 /// Audio that couldn't be loaded or played.

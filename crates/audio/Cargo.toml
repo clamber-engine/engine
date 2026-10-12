@@ -5,9 +5,19 @@ edition.workspace = true
 publish = false
 description = "Audio: decoding, preloaded effects, looping music, mixing"
 
+[features]
+# Sound output through cpal. Off by default because on Linux it links
+# ALSA, which needs the system's development package to build.
+output = ["dep:cpal"]
+
 [dependencies]
+cpal = { version = "0.18.2", optional = true }
 serde = { version = "1.0.229", features = ["derive"] }
 symphonia = { version = "0.6.1", features = ["mp3"] }
 
 [dev-dependencies]
 serde_json = "1.0.154"
+
+[[example]]
+name = "play"
+required-features = ["output"]
