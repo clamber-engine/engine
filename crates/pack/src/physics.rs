@@ -51,14 +51,22 @@ params! {
     GroundDeceleration => "ground_deceleration",
     /// Speed lost per frame on the ground with no direction pressed.
     GroundFriction => "ground_friction",
-    /// Running speed reached by acceleration alone.
+    /// Running speed (action held) reached by acceleration alone.
     TopSpeed => "top_speed",
+    /// Walking speed (action not held) reached by acceleration alone.
+    WalkSpeed => "walk_speed",
     /// Horizontal speed gained or lost per frame in the air.
     AirAcceleration => "air_acceleration",
     /// Upward speed at the start of a jump.
     JumpSpeed => "jump_speed",
     /// Releasing jump cuts upward speed down to this.
     JumpReleaseSpeed => "jump_release_speed",
+    /// A jump pressed up to this many frames before it's possible, such
+    /// as just before landing, still happens. Whole frames.
+    JumpBuffer => "jump_buffer",
+    /// A jump still works for this many frames after walking off a
+    /// ledge. Whole frames.
+    CoyoteTime => "coyote_time",
     /// Speed lost per frame while rolling with no direction pressed.
     RollFriction => "roll_friction",
     /// Speed lost per frame while rolling and pressing against the motion.

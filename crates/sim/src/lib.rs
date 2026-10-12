@@ -16,7 +16,7 @@ mod script;
 mod world;
 
 pub use clamber_fixed::Fixed;
-pub use player::{Facing, HALF_WIDTH, HEIGHT, Player};
+pub use player::{Facing, HALF_WIDTH, HEIGHT, Player, ROLL, SWAP_FRAMES, State};
 pub use script::{InputFrame, Script};
 pub use world::{Event, Thing, World, generic_feel, run, step};
 

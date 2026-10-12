@@ -7,7 +7,7 @@ use clamber_fixed::Fixed;
 use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Feel, Physics, Presets};
 
-use crate::player::{Facing, Player};
+use crate::player::{Facing, Player, ROLL};
 use crate::script::{InputFrame, Script};
 
 /// Something that happened during a step. Names follow
@@ -20,6 +20,28 @@ pub enum Event {
     LeaveGround,
     /// Facing direction changed.
     Turn,
+    /// A jump began.
+    JumpStart,
+    /// Jump was let go while still rising.
+    JumpRelease,
+    /// A roll began.
+    RollStart,
+    /// A roll ended.
+    RollEnd,
+}
+
+impl Event {
+    pub fn name(self) -> &'static str {
+        match self {
+            Event::Land => "land",
+            Event::LeaveGround => "leave_ground",
+            Event::Turn => "turn",
+            Event::JumpStart => "jump_start",
+            Event::JumpRelease => "jump_release",
+            Event::RollStart => "roll_start",
+            Event::RollEnd => "roll_end",
+        }
+    }
 }
 
 /// One of the level's entities, as it is now.
@@ -119,6 +141,10 @@ impl World {
             Facing::Left => 0,
             Facing::Right => 1,
         });
+        out.push(p.state as u8);
+        out.push(p.jump_buffer.age().map_or(0, |age| age.saturating_add(1)));
+        out.push(p.coyote.map_or(0, |n| n.saturating_add(1)));
+        out.push(p.swap);
 
         count(&mut out, self.things.len());
         for t in &self.things {
@@ -139,9 +165,13 @@ impl World {
 pub fn step(world: &mut World, input: &InputFrame) {
     world.events.clear();
     let physics = world.player_physics();
-    world
-        .player
-        .update(&world.level, &physics, &input.players[0], &mut world.events);
+    world.player.update(
+        &world.level,
+        &world.feel,
+        &physics,
+        &input.players[0],
+        &mut world.events,
+    );
     world.frame += 1;
 }
 
@@ -154,7 +184,8 @@ pub fn run(world: &mut World, script: &Script, mut after_step: impl FnMut(&World
 }
 
 /// The feel for playing without a pack: one character that moves exactly
-/// as the preset's world physics say. `None` if there's no such preset.
+/// as the preset's world physics say and can roll. `None` if there's no
+/// such preset.
 pub fn generic_feel(preset: &str) -> Option<Feel> {
     let world = Presets::builtin().world(preset)?;
     Some(Feel {
@@ -162,7 +193,7 @@ pub fn generic_feel(preset: &str) -> Option<Feel> {
         world,
         roster: vec![CharacterFeel {
             physics: world,
-            abilities: BTreeMap::new(),
+            abilities: BTreeMap::from([(ROLL.to_string(), BTreeMap::new())]),
         }],
     })
 }

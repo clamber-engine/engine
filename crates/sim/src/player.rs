@@ -1,14 +1,15 @@
-//! The player's body: position, velocity and contact with the level.
+//! The player: its body, its movement states and contact with the level.
 //!
-//! Movement here is the minimum the core needs to be exercised: walking
-//! under the physics in effect, gravity, landing, following slopes, and
-//! stopping at walls and ceilings. The movement state machine (jumps,
-//! running, rolls) builds on it.
+//! Each step reads one [`Frame`] of input and moves through the states in
+//! [`State`]: standing, walking and running on the ground, rolling,
+//! jumping and falling, and swapping to the next roster character.
+//! Collision keeps the body on slopes and one-way platforms and stops it
+//! at walls and ceilings.
 
 use clamber_fixed::Fixed;
-use clamber_input::{Action, Frame};
+use clamber_input::{Action, Frame, JumpBuffer};
 use clamber_level::{Dir, Hit, Level, Vec2};
-use clamber_pack::{Param, Physics};
+use clamber_pack::{Feel, Param, Physics};
 
 use crate::world::Event;
 
@@ -22,11 +23,51 @@ pub const HEIGHT: Fixed = Fixed::from_int(32);
 /// How far a grounded body follows the ground up or down in one step, px.
 const STEP: Fixed = Fixed::from_int(8);
 
+/// The ability a character needs to roll.
+pub const ROLL: &str = "roll";
+
+/// How long swapping to the next character takes, in frames.
+pub const SWAP_FRAMES: u8 = 10;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Facing {
     Left,
     #[default]
     Right,
+}
+
+/// What the player is doing. Names follow `spec/traces/VOCABULARY.md`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum State {
+    /// Grounded, not moving horizontally.
+    #[default]
+    Idle,
+    /// Grounded, moving, action not held.
+    Walk,
+    /// Grounded, moving, action held.
+    Run,
+    /// Rolling along the ground on its own momentum.
+    Roll,
+    /// Airborne and rising after a jump.
+    Jump,
+    /// Airborne otherwise.
+    Fall,
+    /// Switching to the next roster character; control is suspended.
+    Swap,
+}
+
+impl State {
+    pub fn name(self) -> &'static str {
+        match self {
+            State::Idle => "idle",
+            State::Walk => "walk",
+            State::Run => "run",
+            State::Roll => "roll",
+            State::Jump => "jump",
+            State::Fall => "fall",
+            State::Swap => "swap",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -40,6 +81,14 @@ pub struct Player {
     /// The collider being stood on, if any.
     pub ground: Option<usize>,
     pub facing: Facing,
+    pub state: State,
+    /// A recent jump press waiting until a jump is possible.
+    pub jump_buffer: JumpBuffer,
+    /// Frames since walking off a ledge, while a jump is still allowed
+    /// for that reason.
+    pub coyote: Option<u8>,
+    /// Frames of swapping left.
+    pub swap: u8,
 }
 
 impl Player {
@@ -52,11 +101,18 @@ impl Player {
             vel: Vec2::default(),
             ground: None,
             facing: Facing::Right,
+            state: State::Idle,
+            jump_buffer: JumpBuffer::new(0),
+            coyote: None,
+            swap: 0,
         };
         player.ground = level
             .collision
             .cast(pos, Dir::Down, Fixed::ZERO)
             .map(|hit| hit.collider);
+        if !player.grounded() {
+            player.state = State::Fall;
+        }
         player
     }
 
@@ -64,24 +120,89 @@ impl Player {
         self.ground.is_some()
     }
 
-    /// Advances the body one step under `physics`.
+    /// Advances the player one step under `physics`, the physics in
+    /// effect where it is. `feel` says which characters there are and
+    /// what each can do.
     pub fn update(
         &mut self,
         level: &Level,
+        feel: &Feel,
         physics: &Physics,
         input: &Frame,
         events: &mut Vec<Event>,
     ) {
+        self.swap = self.swap.saturating_sub(1);
+        // While swapping, nothing is pressed or held.
+        let input = if self.swap > 0 {
+            &Frame::default()
+        } else {
+            input
+        };
         let held = |a| input.held.contains(a);
+        let pressed = |a| input.pressed.contains(a);
         let dir = match (held(Action::Left), held(Action::Right)) {
             (true, false) => -1,
             (false, true) => 1,
             _ => 0,
         };
 
-        let facing = match dir {
-            -1 => Facing::Left,
-            1 => Facing::Right,
+        self.jump_buffer
+            .set_window(frames(physics[Param::JumpBuffer]));
+        self.jump_buffer.update(pressed(Action::Jump));
+
+        if self.grounded()
+            && self.state != State::Roll
+            && pressed(Action::Swap)
+            && feel.roster.len() > 1
+        {
+            self.character = (self.character + 1) % feel.roster.len();
+            self.swap = SWAP_FRAMES;
+            self.jump_buffer.take();
+        }
+
+        let can_jump = self.swap == 0 && (self.grounded() || self.coyote.is_some());
+        if can_jump && self.jump_buffer.take() {
+            if self.state == State::Roll {
+                events.push(Event::RollEnd);
+            }
+            self.vel.y = -physics[Param::JumpSpeed];
+            if !held(Action::Jump) {
+                // A buffered tap that's already over makes a short hop.
+                self.vel.y = self.vel.y.max(-physics[Param::JumpReleaseSpeed]);
+            }
+            self.ground = None;
+            self.coyote = None;
+            self.state = State::Jump;
+            events.push(Event::JumpStart);
+        } else if self.state == State::Jump
+            && input.released.contains(Action::Jump)
+            && self.vel.y.is_negative()
+        {
+            self.vel.y = self.vel.y.max(-physics[Param::JumpReleaseSpeed]);
+            events.push(Event::JumpRelease);
+        }
+
+        let roll_input = held(Action::Down)
+            && held(Action::Action)
+            && (pressed(Action::Down) || pressed(Action::Action));
+        if roll_input
+            && self.grounded()
+            && self.swap == 0
+            && self.state != State::Roll
+            && self.vel.x.abs() >= physics[Param::RollMinSpeed]
+            && feel.roster[self.character].abilities.contains_key(ROLL)
+        {
+            self.state = State::Roll;
+            events.push(Event::RollStart);
+        }
+        let rolling = self.state == State::Roll;
+
+        // A roll keeps facing the way it goes.
+        let facing = match (rolling, dir) {
+            (true, _) if self.vel.x.is_negative() => Facing::Left,
+            (true, _) => Facing::Right,
+            (false, -1) => Facing::Left,
+            (false, 1) => Facing::Right,
             _ => self.facing,
         };
         if facing != self.facing {
@@ -89,7 +210,16 @@ impl Player {
             events.push(Event::Turn);
         }
 
-        self.vel.x = horizontal_speed(self.vel.x, dir, self.grounded(), physics);
+        self.vel.x = if rolling {
+            roll_speed(self.vel.x, dir, physics)
+        } else {
+            let cap = if held(Action::Action) {
+                physics[Param::TopSpeed]
+            } else {
+                physics[Param::WalkSpeed]
+            };
+            horizontal_speed(self.vel.x, dir, self.grounded(), cap, physics)
+        };
         self.move_horizontally(level);
 
         if self.grounded() {
@@ -97,6 +227,41 @@ impl Player {
         } else {
             self.vel.y = (self.vel.y + physics[Param::Gravity]).min(physics[Param::MaxFallSpeed]);
             self.move_vertically(level, events);
+        }
+
+        self.coyote = if self.grounded() {
+            None
+        } else if events.contains(&Event::LeaveGround) {
+            Some(1)
+        } else {
+            self.coyote.map(|n| n.saturating_add(1))
+        }
+        .filter(|&n| n <= frames(physics[Param::CoyoteTime]));
+
+        if rolling && (!self.grounded() || self.vel.x.abs() < physics[Param::RollMinSpeed]) {
+            events.push(Event::RollEnd);
+        }
+        self.state = self.next_state(held(Action::Action), events);
+    }
+
+    /// The state after this step's movement.
+    fn next_state(&self, running: bool, events: &[Event]) -> State {
+        if self.swap > 0 {
+            State::Swap
+        } else if self.state == State::Roll && !events.contains(&Event::RollEnd) {
+            State::Roll
+        } else if self.grounded() {
+            if self.vel.x == Fixed::ZERO {
+                State::Idle
+            } else if running {
+                State::Run
+            } else {
+                State::Walk
+            }
+        } else if self.state == State::Jump && self.vel.y.is_negative() {
+            State::Jump
+        } else {
+            State::Fall
         }
     }
 
@@ -152,6 +317,8 @@ impl Player {
 
     fn move_vertically(&mut self, level: &Level, events: &mut Vec<Event>) {
         if self.vel.y.is_negative() {
+            // One-way platforms aren't found going up, so jumps pass
+            // through them from below.
             let head = Vec2::new(self.pos.x, self.pos.y - HEIGHT);
             match level.collision.cast(head, Dir::Up, -self.vel.y) {
                 Some(hit) => {
@@ -174,43 +341,65 @@ impl Player {
     }
 }
 
+/// A whole number of frames from a parameter, clamped to what fits.
+fn frames(value: Fixed) -> u8 {
+    value.floor().clamp(0, u8::MAX.into()) as u8
+}
+
 /// Edges steeper than 45 degrees block; shallower ones are walked on.
 fn is_wall(hit: &Hit) -> bool {
     let (a, b) = hit.edge;
     (b.y - a.y).abs() > (b.x - a.x).abs()
 }
 
-/// The horizontal speed after one step of pressing `dir` (-1, 0 or 1).
-fn horizontal_speed(vx: Fixed, dir: i32, grounded: bool, physics: &Physics) -> Fixed {
-    let top = physics[Param::TopSpeed];
+/// `vx` moved toward zero by `amount`, without reversing it.
+fn slow_down(vx: Fixed, amount: Fixed) -> Fixed {
+    if vx.abs() <= amount {
+        Fixed::ZERO
+    } else if vx.is_negative() {
+        vx + amount
+    } else {
+        vx - amount
+    }
+}
+
+/// The horizontal speed after one step of pressing `dir` (-1, 0 or 1),
+/// where acceleration stops at `cap`.
+fn horizontal_speed(vx: Fixed, dir: i32, grounded: bool, cap: Fixed, physics: &Physics) -> Fixed {
+    let friction = physics[Param::GroundFriction];
     if dir == 0 {
-        if !grounded {
-            return vx;
-        }
-        // Friction never reverses the motion.
-        let friction = physics[Param::GroundFriction];
-        return if vx.abs() <= friction {
-            Fixed::ZERO
-        } else if vx.is_negative() {
-            vx + friction
+        return if grounded {
+            slow_down(vx, friction)
         } else {
-            vx - friction
+            vx
         };
     }
     // Work as if pressing right, then mirror.
-    let (v, flip) = if dir < 0 { (-vx, true) } else { (vx, false) };
+    let v = if dir < 0 { -vx } else { vx };
     let v = if !grounded {
-        v + physics[Param::AirAcceleration]
+        // Air control doesn't pass the cap, but keeps speed beyond it.
+        (v + physics[Param::AirAcceleration]).min(cap.max(v))
     } else if v.is_negative() {
         v + physics[Param::GroundDeceleration]
+    } else if v > cap {
+        // Faster than the cap, say after letting go of run: ease down.
+        (v - friction).max(cap)
     } else {
-        v + physics[Param::GroundAcceleration]
+        (v + physics[Param::GroundAcceleration]).min(cap)
     };
-    // Acceleration alone doesn't pass top speed, but doesn't take away
-    // speed gained some other way either.
-    let limit = top.max(if flip { -vx } else { vx });
-    let v = v.min(limit);
-    if flip { -v } else { v }
+    if dir < 0 { -v } else { v }
+}
+
+/// The speed after one step of rolling while pressing `dir`. A roll never
+/// speeds up; pressing against it brakes harder.
+fn roll_speed(vx: Fixed, dir: i32, physics: &Physics) -> Fixed {
+    let against = (dir < 0 && vx > Fixed::ZERO) || (dir > 0 && vx.is_negative());
+    let param = if against {
+        Param::RollDeceleration
+    } else {
+        Param::RollFriction
+    };
+    slow_down(vx, physics[param])
 }
 
 #[cfg(test)]
@@ -226,17 +415,17 @@ mod tests {
     }
 
     #[test]
-    fn accelerates_to_top_speed_and_stops_with_friction() {
+    fn accelerates_to_the_cap_and_stops_with_friction() {
         let p = physics();
         let top = p[Param::TopSpeed];
         let mut v = Fixed::ZERO;
         for _ in 0..1000 {
-            v = horizontal_speed(v, 1, true, &p);
+            v = horizontal_speed(v, 1, true, top, &p);
         }
         assert_eq!(v, top);
-        assert_eq!(horizontal_speed(-v, -1, true, &p), -top);
+        assert_eq!(horizontal_speed(-v, -1, true, top, &p), -top);
         for _ in 0..1000 {
-            v = horizontal_speed(v, 0, true, &p);
+            v = horizontal_speed(v, 0, true, top, &p);
         }
         assert_eq!(v, Fixed::ZERO);
     }
@@ -244,16 +433,42 @@ mod tests {
     #[test]
     fn turning_uses_deceleration() {
         let p = physics();
-        let v = horizontal_speed(fx(2.0), -1, true, &p);
+        let top = p[Param::TopSpeed];
+        let v = horizontal_speed(fx(2.0), -1, true, top, &p);
         assert_eq!(v, fx(2.0) - p[Param::GroundDeceleration]);
         // in the air, momentum is kept with nothing pressed
-        assert_eq!(horizontal_speed(fx(2.0), 0, false, &p), fx(2.0));
+        assert_eq!(horizontal_speed(fx(2.0), 0, false, top, &p), fx(2.0));
     }
 
     #[test]
-    fn speed_from_elsewhere_is_kept() {
+    fn speed_over_the_cap_is_kept_in_the_air_and_eased_on_the_ground() {
         let p = physics();
-        let fast = p[Param::TopSpeed] + fx(3.0);
-        assert_eq!(horizontal_speed(fast, 1, true, &p), fast);
+        let walk = p[Param::WalkSpeed];
+        let fast = p[Param::TopSpeed];
+        assert_eq!(horizontal_speed(fast, 1, false, walk, &p), fast);
+        assert_eq!(
+            horizontal_speed(fast, 1, true, walk, &p),
+            fast - p[Param::GroundFriction]
+        );
+        let eased = horizontal_speed(walk + fx(0.01), 1, true, walk, &p);
+        assert_eq!(eased, walk);
+    }
+
+    #[test]
+    fn rolls_only_slow_down() {
+        let p = physics();
+        let v = fx(4.0);
+        assert_eq!(roll_speed(v, 1, &p), v - p[Param::RollFriction]);
+        assert_eq!(roll_speed(v, 0, &p), v - p[Param::RollFriction]);
+        assert_eq!(roll_speed(v, -1, &p), v - p[Param::RollDeceleration]);
+        assert_eq!(roll_speed(-v, 1, &p), -v + p[Param::RollDeceleration]);
+        assert_eq!(roll_speed(fx(0.01), 0, &p), Fixed::ZERO);
+    }
+
+    #[test]
+    fn frame_counts_from_params() {
+        assert_eq!(frames(fx(5.75)), 5);
+        assert_eq!(frames(fx(-1.0)), 0);
+        assert_eq!(frames(fx(1000.0)), 255);
     }
 }

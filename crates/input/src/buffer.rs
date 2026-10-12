@@ -21,6 +21,18 @@ impl JumpBuffer {
         JumpBuffer { window, age: None }
     }
 
+    /// Changes how long presses stay buffered, for example when the
+    /// physics in effect change. A buffered press older than the new
+    /// window is dropped at the next [`update`](Self::update).
+    pub fn set_window(&mut self, window: u8) {
+        self.window = window;
+    }
+
+    /// Frames since the buffered press, if one is buffered.
+    pub fn age(&self) -> Option<u8> {
+        self.age
+    }
+
     /// Advances one frame. Call once per logic frame, before asking
     /// whether a jump is buffered, with whether jump was pressed this frame.
     pub fn update(&mut self, pressed: bool) {

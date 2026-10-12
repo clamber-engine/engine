@@ -110,6 +110,7 @@ fn simulate(options: &Options) -> Result<(), String> {
     println!("vel     {} {}", p.vel.x, p.vel.y);
     println!("ground  {}", p.grounded());
     println!("facing  {:?}", p.facing);
+    println!("state   {}", p.state.name());
     println!("digest  {:016x}", fnv1a(&world.state_bytes()));
     Ok(())
 }

@@ -58,6 +58,11 @@ impl Fixed {
         (scaled.is_finite() && (-LIMIT..LIMIT).contains(&scaled)).then_some(Fixed(scaled as i64))
     }
 
+    /// The largest integer not above the value.
+    pub const fn floor(self) -> i64 {
+        self.0 >> FRAC_BITS
+    }
+
     pub fn is_negative(self) -> bool {
         self.0 < 0
     }
@@ -184,6 +189,13 @@ mod tests {
             assert_eq!(Fixed::from_f64(x), None, "{x}");
         }
         assert!(Fixed::from_f64(-(2f64.powi(31))).is_some());
+    }
+
+    #[test]
+    fn floors() {
+        assert_eq!(f(2.75).floor(), 2);
+        assert_eq!(f(-2.25).floor(), -3);
+        assert_eq!(Fixed::from_int(-4).floor(), -4);
     }
 
     #[test]

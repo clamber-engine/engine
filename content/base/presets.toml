@@ -6,7 +6,8 @@
 # `{ scale = <factor> }` to multiply what the base preset gives.
 #
 # Units: pixels and frames at 60 Hz. Speeds are px/frame, accelerations
-# px/frame², and +y points down.
+# px/frame², and +y points down. `jump_buffer` and `coyote_time` are whole
+# frames.
 #
 # `default` is the root every other preset builds on, so it sets every
 # movement parameter. These are Clamber's own values, chosen for feel.
@@ -18,13 +19,16 @@ description = "Clamber's standard feel."
 [presets.default.world]
 gravity = 0.25
 max_fall_speed = 12
-ground_acceleration = 0.0625
+ground_acceleration = 0.09375
 ground_deceleration = 0.375
-ground_friction = 0.0625
+ground_friction = 0.09375
 top_speed = 5
-air_acceleration = 0.0625
+walk_speed = 2.5
+air_acceleration = 0.078125
 jump_speed = 6
 jump_release_speed = 3
+jump_buffer = 5
+coyote_time = 5
 roll_friction = 0.03125
 roll_deceleration = 0.125
 roll_min_speed = 0.75
