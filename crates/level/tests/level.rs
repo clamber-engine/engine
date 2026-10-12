@@ -219,6 +219,35 @@ fn format_errors() {
 }
 
 #[test]
+fn imports_tiled_flips_in_clamber_order() {
+    // Tiled swaps x and y before mirroring; Clamber mirrors first.
+    let (h, v, d) = (0x8000_0000u32, 0x4000_0000u32, 0x2000_0000u32);
+    let data = [d | 1, d | h | 1, d | v | 1, d | h | v | 1, h | 1, v | 1];
+    let map = format!(
+        r#"{{ "type": "map", "orientation": "orthogonal", "infinite": false,
+            "width": 6, "height": 1, "tilewidth": 8, "tileheight": 8,
+            "tilesets": [ {{ "firstgid": 1, "name": "t", "image": "t.png",
+                "imagewidth": 8, "imageheight": 8, "tilewidth": 8, "tileheight": 8,
+                "tilecount": 1, "columns": 1, "margin": 0, "spacing": 0 }} ],
+            "layers": [ {{ "type": "tilelayer", "id": 1, "name": "t", "x": 0, "y": 0,
+                "width": 6, "height": 1, "data": {data:?} }},
+                {{ "type": "objectgroup", "id": 2, "name": "things", "objects": [
+                    {{ "id": 1, "name": "", "class": "start", "point": true, "x": 4, "y": 4,
+                       "width": 0, "height": 0, "rotation": 0 }} ] }} ] }}"#
+    );
+    let l = tiled::import(&map, "flips.json", |_| Err("none".into())).unwrap();
+    let LayerContent::Tiles(t) = &l.layers[0].content else {
+        panic!("expected tiles");
+    };
+    let flags: Vec<u32> = t.tiles.iter().map(|t| t.0 & !1).collect();
+    let (x, y, diagonal) = (Tile::FLIP_X, Tile::FLIP_Y, Tile::FLIP_DIAGONAL);
+    assert_eq!(
+        flags,
+        [diagonal, diagonal | y, diagonal | x, diagonal | x | y, x, y]
+    );
+}
+
+#[test]
 fn imports_tiled_map() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/tiled/map.json");
     let l = tiled::import_file(&path).unwrap();

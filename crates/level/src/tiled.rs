@@ -35,7 +35,7 @@ use serde::Deserialize;
 use serde_json::Value as Json;
 use toml::{Table, Value};
 
-use crate::level::{FORMAT, Level, LevelError};
+use crate::level::{FORMAT, Level, LevelError, Tile};
 
 #[derive(Deserialize)]
 struct Map {
@@ -382,6 +382,7 @@ impl Out<'_> {
                         }
                         if id >= ts.firstgid && id < end {
                             used = true;
+                            let flags = flips(flags);
                             tiles.push(Value::Integer(i64::from(flags | (id - ts.firstgid + 1))));
                         } else {
                             tiles.push(Value::Integer(0));
@@ -597,6 +598,19 @@ impl Out<'_> {
 }
 
 /// A property list as a table, in order.
+/// A tile's flip bits in Clamber's order. Tiled uses the same bits but
+/// swaps x and y first and mirrors after; mirroring first means the two
+/// mirrors trade places when the tile is also swapped.
+fn flips(flags: u32) -> u32 {
+    let mirrors = Tile::FLIP_X | Tile::FLIP_Y;
+    let one_mirror = (flags & mirrors).count_ones() == 1;
+    if flags & Tile::FLIP_DIAGONAL != 0 && one_mirror {
+        flags ^ mirrors
+    } else {
+        flags
+    }
+}
+
 fn props(list: &[Property]) -> Table {
     list.iter()
         .filter_map(|p| json_to_toml(&p.value).map(|v| (p.name.clone(), v)))
