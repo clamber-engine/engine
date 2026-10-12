@@ -34,9 +34,47 @@ jobs:
           git config --global url."git@github.com:clamber-engine/spec".insteadOf "https://github.com/clamber-engine/spec"
           git submodule update --init
 
+      # System libraries for optional features: gamepads (libudev), audio
+      # output (ALSA), and windowing (X11/Wayland, xkbcommon).
+      - name: System libraries
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libudev-dev libasound2-dev libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev
+
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --all-features --locked
+
+  # A playable Windows build, downloadable from the run's Artifacts, once
+  # the game crate exists.
+  windows-build:
+    runs-on: windows-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for the game crate
+        id: game
+        shell: bash
+        run: |
+          if [ -f crates/game/Cargo.toml ]; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Build
+        if: steps.game.outputs.exists == 'true'
+        run: cargo build --release --locked -p clamber-game --all-features
+      - name: Package
+        if: steps.game.outputs.exists == 'true'
+        shell: bash
+        run: |
+          mkdir -p dist/clamber
+          cp target/release/*.exe dist/clamber/
+          cp -r content dist/clamber/
+          [ -f PLAYING.md ] && cp PLAYING.md dist/clamber/ || true
+      - name: Upload
+        if: steps.game.outputs.exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: clamber-windows
+          path: dist/clamber
+          retention-days: 14
