@@ -54,6 +54,14 @@ impl Canvas {
         }
     }
 
+    /// Mixes `color` into every pixel at `alpha`, to dim what's under
+    /// a menu.
+    pub fn shade(&mut self, color: Color, alpha: u8) {
+        for pixel in &mut self.pixels {
+            *pixel = mix(*pixel, color, alpha);
+        }
+    }
+
     /// Fills the rectangle from `(x, y)`, `w` by `h`, clipped to the
     /// canvas.
     pub fn fill_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {

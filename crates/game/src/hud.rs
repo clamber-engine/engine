@@ -10,20 +10,15 @@ const MARGIN: i32 = 6;
 const GAP: i32 = 10;
 
 const LIFE: Color = rgb(0xe8, 0x50, 0x60);
-const GEM: Color = rgb(0x5a, 0xd8, 0xe8);
-const RELIC_ICON: Color = rgb(0xf0, 0xc8, 0x40);
+pub(crate) const GEM: Color = rgb(0x5a, 0xd8, 0xe8);
+pub(crate) const RELIC_ICON: Color = rgb(0xf0, 0xc8, 0x40);
 pub(crate) const COUNT: Color = rgb(0xf4, 0xf0, 0xe8);
 
 /// Draws the HUD along the top left of the canvas: lives, gems, and
 /// relics out of the level's total when it has any.
 pub fn draw_hud(canvas: &mut Canvas, world: &World) {
     let flow = &world.flow;
-    let relics = world
-        .level
-        .entities
-        .iter()
-        .filter(|e| e.kind == RELIC)
-        .count();
+    let relics = relic_total(world);
     let mut items = vec![
         ('♥', LIFE, flow.lives.to_string()),
         ('◆', GEM, flow.gems.to_string()),
@@ -39,6 +34,16 @@ pub fn draw_hud(canvas: &mut Canvas, world: &World) {
         draw_text(canvas, x, MARGIN, &count, COUNT);
         x += count.chars().count() as i32 * ADVANCE + GAP;
     }
+}
+
+/// How many relics the level has to find.
+pub(crate) fn relic_total(world: &World) -> usize {
+    world
+        .level
+        .entities
+        .iter()
+        .filter(|e| e.kind == RELIC)
+        .count()
 }
 
 #[cfg(test)]

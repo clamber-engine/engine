@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
-use clamber_game::{Canvas, Clock, Game, VIEW, content_dir, keys, present, rgb};
+use clamber_game::{Canvas, Clock, Game, Session, VIEW, content_dir, keys, present, rgb};
 use clamber_input::{Event, Input, Key, Settings};
 use clamber_level::Level;
 use clamber_pack::Pack;
@@ -24,11 +24,14 @@ const USAGE: &str = "\
 usage:
   clamber-game [<file.level>] [--pack <pack.toml>] [--preset <id>]
 
-Plays the level, or the bundled one if none is given. Without --pack, a
+Plays the level, or the bundled one if none is given, from the title
+screen. Without --pack, a
 single character plays with the preset's world physics.
 
-  F1   collision and region view
-  F11  fullscreen";
+  Z, Space       jump; pick in menus
+  Enter, Escape  pause; back in menus
+  F1             collision and region view
+  F11            fullscreen";
 
 /// Around the scaled view when the window's shape doesn't match it.
 const BORDER: u32 = rgb(0, 0, 0);
@@ -111,7 +114,7 @@ fn play(options: Options) -> Result<(), String> {
     let event_loop = EventLoop::new().map_err(|e| e.to_string())?;
     let mut app = App {
         title: format!("Clamber: {}", title(&world.level, &level_path)),
-        game: Game::new(world),
+        session: Session::new(Game::new(world)),
         canvas: Game::canvas(),
         input: Input::new(Settings::builtin()),
         #[cfg(feature = "gamepad")]
@@ -143,7 +146,7 @@ struct Screen {
 
 struct App {
     title: String,
-    game: Game,
+    session: Session,
     canvas: Canvas,
     input: Input,
     #[cfg(feature = "gamepad")]
@@ -188,7 +191,7 @@ impl App {
         let down = event.state == ElementState::Pressed;
         if down && !event.repeat {
             match code {
-                KeyCode::F1 => self.game.debug = !self.game.debug,
+                KeyCode::F1 => self.session.game.debug = !self.session.game.debug,
                 KeyCode::F11 => {
                     if let Some(screen) = &self.window {
                         let full = screen.window.fullscreen().is_some();
@@ -223,9 +226,12 @@ impl App {
                 }
             }
             let players = self.input.tick();
-            self.game.step(&InputFrame { players });
+            self.session.step(&InputFrame { players });
+            if self.session.quit {
+                return Ok(());
+            }
         }
-        self.game.draw(&mut self.canvas, self.clock.alpha());
+        self.session.draw(&mut self.canvas, self.clock.alpha());
 
         let Some(screen) = &mut self.window else {
             return Ok(());
@@ -267,6 +273,8 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 if let Err(e) = self.frame() {
                     self.fail(event_loop, e);
+                } else if self.session.quit {
+                    event_loop.exit();
                 }
             }
             _ => {}

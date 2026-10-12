@@ -1,7 +1,7 @@
 //! A level being played: the world, its camera, and drawing both.
 
 use clamber_level::{Area, Shape, Vec2};
-use clamber_sim::{Facing, FlowEvent, HALF_WIDTH, HEIGHT, InputFrame, Outcome, State, World, step};
+use clamber_sim::{Facing, FlowEvent, HALF_WIDTH, HEIGHT, InputFrame, State, World, step};
 
 use crate::camera::{Camera, VIEW, point};
 use crate::canvas::{Canvas, Color, rgb};
@@ -41,17 +41,18 @@ impl Game {
         }
     }
 
-    /// Advances one logic frame. After the last life is lost, the level
-    /// starts over.
+    /// Starts the level over, keeping the debug view setting.
+    pub fn restart(&mut self) {
+        let world = World::new(self.world.level.clone(), self.world.feel.clone());
+        *self = Game {
+            debug: self.debug,
+            ..Game::new(world)
+        };
+    }
+
+    /// Advances one logic frame. Once the level is complete or over, the
+    /// world stays as it is until [`restart`](Game::restart).
     pub fn step(&mut self, input: &InputFrame) {
-        if self.world.flow.outcome == Outcome::GameOver {
-            let world = World::new(self.world.level.clone(), self.world.feel.clone());
-            *self = Game {
-                debug: self.debug,
-                ..Game::new(world)
-            };
-            return;
-        }
         self.previous = self.world.player.pos;
         step(&mut self.world, input);
         if self.world.flow.events.contains(&FlowEvent::Respawn) {
@@ -175,7 +176,7 @@ mod tests {
     use std::sync::Arc;
 
     use clamber_level::Level;
-    use clamber_sim::generic_feel;
+    use clamber_sim::{Outcome, generic_feel};
 
     use super::*;
 
@@ -242,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn starts_over_after_the_last_life() {
+    fn restarts_after_the_last_life() {
         // Nothing to stand on, so every life falls out of the level.
         let src = LEVEL.replace("rect = [0, 300, 1000, 100]", "rect = [0, 0, 10, 10]");
         let level = Level::from_toml_str(&src, "test").unwrap();
@@ -261,7 +262,10 @@ mod tests {
             }
         }
         assert!(respawned);
+        let frame = game.world.frame;
         game.step(&idle);
+        assert_eq!(game.world.frame, frame, "stays over");
+        game.restart();
         assert_eq!(game.world.frame, 0);
         assert_eq!(game.world.flow.lives, clamber_sim::START_LIVES);
         assert!(!game.debug, "keeps the debug view setting");

@@ -1,0 +1,146 @@
+//! A list of choices navigated with neutral actions, so the same menu
+//! works from a keyboard or a gamepad alone: Up and Down move the
+//! selection (wrapping around), Jump confirms and Pause goes back.
+
+use clamber_input::{Action, Frame};
+
+use crate::canvas::{Canvas, Color, rgb};
+use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred, text_size};
+
+const ITEM: Color = rgb(0xa8, 0xb0, 0xbc);
+const SELECTED: Color = rgb(0xf4, 0xf0, 0xe8);
+const MARKER: Color = rgb(0xf0, 0xc8, 0x40);
+
+/// Extra space between items, beyond a line of text.
+const SPACING: i32 = 3;
+
+/// What a frame of input did to a menu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Choice<T> {
+    /// The selected item was confirmed.
+    Picked(T),
+    /// Pause was pressed: leave the menu without picking.
+    Back,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Menu<T> {
+    pub items: Vec<(String, T)>,
+    pub selected: usize,
+}
+
+impl<T: Copy> Menu<T> {
+    /// A menu with the first item selected.
+    pub fn new(items: impl IntoIterator<Item = (impl Into<String>, T)>) -> Menu<T> {
+        Menu {
+            items: items.into_iter().map(|(l, t)| (l.into(), t)).collect(),
+            selected: 0,
+        }
+    }
+
+    pub fn current(&self) -> T {
+        self.items[self.selected].1
+    }
+
+    /// Applies one frame of input: moves on Up or Down, and reports a
+    /// pick on Jump or leaving on Pause. Only presses count, so holding
+    /// a button does nothing more.
+    pub fn update(&mut self, frame: &Frame) -> Option<Choice<T>> {
+        let pressed = frame.pressed;
+        if pressed.contains(Action::Pause) {
+            return Some(Choice::Back);
+        }
+        if pressed.contains(Action::Jump) {
+            return Some(Choice::Picked(self.current()));
+        }
+        let n = self.items.len();
+        if pressed.contains(Action::Up) && !pressed.contains(Action::Down) {
+            self.selected = (self.selected + n - 1) % n;
+        } else if pressed.contains(Action::Down) && !pressed.contains(Action::Up) {
+            self.selected = (self.selected + 1) % n;
+        }
+        None
+    }
+
+    /// Height of the drawn items, px.
+    pub fn height(&self) -> i32 {
+        self.items.len() as i32 * (LINE + SPACING) - SPACING
+    }
+
+    /// Draws the items centred on `centre_x` from `top` down, with a
+    /// marker beside the selected one.
+    pub fn draw(&self, canvas: &mut Canvas, centre_x: i32, top: i32) {
+        for (i, (label, _)) in self.items.iter().enumerate() {
+            let y = top + i as i32 * (LINE + SPACING);
+            if i == self.selected {
+                draw_text_centred(canvas, centre_x, y, label, SELECTED);
+                let left = centre_x - text_size(label).0 / 2;
+                draw_text(canvas, left - 2 * ADVANCE, y, ">", MARKER);
+            } else {
+                draw_text_centred(canvas, centre_x, y, label, ITEM);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clamber_input::Actions;
+
+    use super::*;
+
+    fn press(action: Action) -> Frame {
+        Frame::after(Actions::NONE, action.into())
+    }
+
+    fn menu() -> Menu<u8> {
+        Menu::new([("One", 1), ("Two", 2), ("Three", 3)])
+    }
+
+    #[test]
+    fn moves_and_wraps() {
+        let mut menu = menu();
+        assert_eq!(menu.update(&press(Action::Down)), None);
+        assert_eq!(menu.current(), 2);
+        menu.update(&press(Action::Down));
+        menu.update(&press(Action::Down));
+        assert_eq!(menu.current(), 1, "wraps past the bottom");
+        menu.update(&press(Action::Up));
+        assert_eq!(menu.current(), 3, "wraps past the top");
+    }
+
+    #[test]
+    fn picks_and_goes_back() {
+        let mut menu = menu();
+        menu.update(&press(Action::Down));
+        assert_eq!(menu.update(&press(Action::Jump)), Some(Choice::Picked(2)));
+        assert_eq!(menu.update(&press(Action::Pause)), Some(Choice::Back));
+    }
+
+    #[test]
+    fn holding_does_nothing_more() {
+        let mut menu = menu();
+        let down = Actions::from(Action::Down);
+        menu.update(&Frame::after(Actions::NONE, down));
+        for _ in 0..30 {
+            assert_eq!(menu.update(&Frame::after(down, down)), None);
+        }
+        assert_eq!(menu.current(), 2);
+        let jump = Actions::from(Action::Jump);
+        assert_eq!(menu.update(&Frame::after(jump, jump)), None);
+    }
+
+    #[test]
+    fn marks_the_selected_item() {
+        let mut menu = menu();
+        let mut canvas = Canvas::new(100, 60);
+        menu.draw(&mut canvas, 50, 10);
+        assert!(canvas.pixels.contains(&SELECTED));
+        assert!(canvas.pixels.contains(&MARKER));
+        let first = canvas.clone();
+        menu.update(&press(Action::Down));
+        menu.draw(&mut canvas, 50, 10);
+        assert_ne!(canvas, first);
+        assert_eq!(menu.height(), 3 * LINE + 2 * SPACING);
+    }
+}

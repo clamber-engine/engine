@@ -7,8 +7,11 @@
 //! window with no filtering ([`present`]). Sprites are drawn from atlas
 //! pages by a [`SpriteBank`], indexed sheets through a palette table.
 //!
+//! A [`Session`] puts the title, pause, level complete and game over
+//! screens around the level, with [`Menu`]s driven by neutral actions.
+//!
 //! Everything here except the window itself works headlessly, so a
-//! [`Game`] can be stepped and drawn in tests and captures.
+//! [`Session`] or [`Game`] can be stepped and drawn in tests and captures.
 
 mod camera;
 mod canvas;
@@ -16,6 +19,8 @@ mod clock;
 mod game;
 mod hud;
 pub mod keys;
+mod menu;
+mod session;
 mod sprites;
 mod text;
 
@@ -26,6 +31,8 @@ pub use canvas::{Canvas, Color, Fit, present, rgb};
 pub use clock::Clock;
 pub use game::Game;
 pub use hud::draw_hud;
+pub use menu::{Choice, Menu};
+pub use session::{Item, Screen, Session, clock_time};
 pub use sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
 pub use text::{ADVANCE, GLYPH, LINE, SHADOW, draw_text, draw_text_centred, text_size};
 
