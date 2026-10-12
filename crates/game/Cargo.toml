@@ -1,0 +1,18 @@
+[package]
+name = "clamber-game"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+description = "The Clamber game: a window, the simulation at 60 Hz, rendering and input"
+
+[features]
+gamepad = ["clamber-input/gamepad"]
+
+[dependencies]
+clamber-fixed = { path = "../fixed" }
+clamber-input = { path = "../input" }
+clamber-level = { path = "../level" }
+clamber-pack = { path = "../pack" }
+clamber-sim = { path = "../sim" }
+softbuffer = "0.4.8"
+winit = "0.30.13"

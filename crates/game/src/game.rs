@@ -1,0 +1,226 @@
+//! A level being played: the world, its camera, and drawing both.
+
+use clamber_level::{Area, Shape, Vec2};
+use clamber_sim::{Facing, HALF_WIDTH, HEIGHT, InputFrame, State, World, step};
+
+use crate::camera::{Camera, VIEW, point};
+use crate::canvas::{Canvas, Color, rgb};
+
+const SKY: Color = rgb(0x2a, 0x34, 0x4a);
+const SOLID: Color = rgb(0x6b, 0x74, 0x80);
+const EDGE: Color = rgb(0xc8, 0xd0, 0xd8);
+const ONE_WAY: Color = rgb(0x6c, 0xd4, 0x8a);
+const HAZARD: Color = rgb(0xe0, 0x5a, 0x4a);
+const REGION: Color = rgb(0xd8, 0xb0, 0x4a);
+const WATER: Color = rgb(0x3a, 0x7a, 0xd8);
+const ENTITY: Color = rgb(0xd0, 0x6a, 0xd8);
+const EYE: Color = rgb(0x10, 0x10, 0x18);
+
+/// Size of the box marking an entity until entities have sprites, px.
+const ENTITY_BOX: i32 = 12;
+
+pub struct Game {
+    pub world: World,
+    pub camera: Camera,
+    /// The player's position before the last step, for interpolation.
+    previous: Vec2,
+    /// Draw collision geometry, regions and entity markers.
+    pub debug: bool,
+}
+
+impl Game {
+    /// Starts playing `world`. The debug view starts on when the level
+    /// has no layers, since there'd be nothing else to see.
+    pub fn new(world: World) -> Game {
+        Game {
+            camera: Camera::new(&world),
+            previous: world.player.pos,
+            debug: world.level.layers.is_empty(),
+            world,
+        }
+    }
+
+    /// Advances one logic frame.
+    pub fn step(&mut self, input: &InputFrame) {
+        self.previous = self.world.player.pos;
+        step(&mut self.world, input);
+        self.camera.update(&self.world);
+    }
+
+    /// A new canvas the size of the view.
+    pub fn canvas() -> Canvas {
+        Canvas::new(VIEW.0, VIEW.1)
+    }
+
+    /// Draws the world `alpha` of the way from the state before the last
+    /// step to the state after it.
+    pub fn draw(&self, canvas: &mut Canvas, alpha: f64) {
+        let origin = self.camera.top_left(alpha);
+        let to_screen = |p: (f64, f64)| (p.0 - origin.0, p.1 - origin.1);
+        canvas.clear(SKY);
+
+        let level = &self.world.level;
+        if self.debug {
+            for region in &level.regions {
+                let points = match &region.area {
+                    Area::Rect(r) => r.corners(),
+                    Area::Polygon(points) => points.clone(),
+                };
+                let points: Vec<_> = points.into_iter().map(|p| to_screen(point(p))).collect();
+                let color = if region.water { WATER } else { REGION };
+                canvas.fill_polygon(&points, color, if region.water { 96 } else { 24 });
+                outline(canvas, &points, color);
+            }
+            for collider in &level.collision.colliders {
+                let hazard = level
+                    .surfaces
+                    .get(&collider.surface)
+                    .is_some_and(|s| s.hazard);
+                match &collider.shape {
+                    Shape::Solid(points) => {
+                        let points: Vec<_> = points.iter().map(|&p| to_screen(point(p))).collect();
+                        canvas.fill_polygon(&points, SOLID, 255);
+                        outline(canvas, &points, if hazard { HAZARD } else { EDGE });
+                    }
+                    Shape::Segment { a, b, one_way } => {
+                        let color = match (hazard, one_way) {
+                            (true, _) => HAZARD,
+                            (false, true) => ONE_WAY,
+                            (false, false) => EDGE,
+                        };
+                        canvas.line(to_screen(point(*a)), to_screen(point(*b)), color);
+                    }
+                    _ => {}
+                }
+            }
+            for thing in self.world.things.iter().filter(|t| t.active) {
+                let (x, y) = to_screen(point(thing.pos));
+                let (x, y) = (x.round() as i32, y.round() as i32);
+                let half = ENTITY_BOX / 2;
+                canvas.stroke_rect(x - half, y - half, ENTITY_BOX, ENTITY_BOX, ENTITY);
+                canvas.plot(x, y, ENTITY);
+            }
+        }
+
+        self.draw_player(canvas, alpha, origin);
+    }
+
+    /// The player as its body box, coloured by state, until it has
+    /// sprites.
+    fn draw_player(&self, canvas: &mut Canvas, alpha: f64, origin: (f64, f64)) {
+        let player = &self.world.player;
+        let (from, to) = (point(self.previous), point(player.pos));
+        let x = (from.0 + (to.0 - from.0) * alpha - origin.0).round() as i32;
+        let y = (from.1 + (to.1 - from.1) * alpha - origin.1).round() as i32;
+        let half = HALF_WIDTH.floor() as i32;
+        let height = HEIGHT.floor() as i32;
+        // Rolling bodies are drawn crouched so the state reads at a glance.
+        let height = if player.state == State::Roll {
+            height / 2
+        } else {
+            height
+        };
+        canvas.fill_rect(
+            x - half,
+            y - height,
+            half * 2,
+            height,
+            state_color(player.state),
+        );
+        let eye = match player.facing {
+            Facing::Left => x - half + 2,
+            Facing::Right => x + half - 5,
+        };
+        canvas.fill_rect(eye, y - height + 4, 3, 3, EYE);
+    }
+}
+
+fn state_color(state: State) -> Color {
+    match state {
+        State::Idle => rgb(0xf0, 0xe6, 0xd2),
+        State::Walk => rgb(0xf0, 0xd0, 0x8a),
+        State::Run => rgb(0xf0, 0xa0, 0x50),
+        State::Roll => rgb(0xe0, 0x70, 0x40),
+        State::Jump => rgb(0x8a, 0xd0, 0xf0),
+        State::Fall => rgb(0x60, 0x9c, 0xe0),
+        State::Swap => rgb(0xc0, 0x90, 0xf0),
+    }
+}
+
+fn outline(canvas: &mut Canvas, points: &[(f64, f64)], color: Color) {
+    for (i, &a) in points.iter().enumerate() {
+        canvas.line(a, points[(i + 1) % points.len()], color);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use clamber_level::Level;
+    use clamber_sim::generic_feel;
+
+    use super::*;
+
+    const LEVEL: &str = r#"
+        format = 1
+        size = [1000, 400]
+        start = [500, 300]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 300, 1000, 100]
+
+        [[entities]]
+        type = "marker"
+        at = [560, 280]
+    "#;
+
+    fn game() -> Game {
+        let level = Level::from_toml_str(LEVEL, "test").unwrap();
+        Game::new(World::new(
+            Arc::new(level),
+            Arc::new(generic_feel("default").unwrap()),
+        ))
+    }
+
+    #[test]
+    fn draws_the_level_and_player_in_view() {
+        let game = game();
+        assert!(game.debug);
+        let mut canvas = Game::canvas();
+        game.draw(&mut canvas, 1.0);
+        let (left, top) = game.camera.top_left(1.0);
+        let at = |x: f64, y: f64| canvas.get((x - left) as i32, (y - top) as i32);
+        assert_eq!(at(500.0, 290.0), Some(state_color(State::Idle)));
+        assert_eq!(at(500.0, 350.0), Some(SOLID));
+        assert_eq!(at(500.0, 300.0), Some(EDGE));
+        assert_eq!(at(560.0, 280.0), Some(ENTITY));
+        assert_eq!(at(400.0, 250.0), Some(SKY));
+    }
+
+    #[test]
+    fn hides_debug_geometry_when_asked() {
+        let mut game = game();
+        game.debug = false;
+        let mut canvas = Game::canvas();
+        game.draw(&mut canvas, 1.0);
+        let (left, top) = game.camera.top_left(1.0);
+        let at = |x: f64, y: f64| canvas.get((x - left) as i32, (y - top) as i32);
+        assert_eq!(at(500.0, 350.0), Some(SKY));
+        assert_eq!(at(500.0, 290.0), Some(state_color(State::Idle)));
+    }
+
+    #[test]
+    fn steps_the_world_and_camera() {
+        let mut game = game();
+        let input = InputFrame::single(clamber_input::Frame::after(
+            clamber_input::Actions::NONE,
+            clamber_input::Action::Right.into(),
+        ));
+        game.step(&input);
+        assert_eq!(game.world.frame, 1);
+        assert!(game.world.player.pos.x > game.previous.x);
+        assert!(game.camera.centre.0 > game.camera.previous.0);
+    }
+}

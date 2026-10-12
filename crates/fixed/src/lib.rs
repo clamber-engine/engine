@@ -8,7 +8,8 @@
 //!
 //! Floating point is only accepted at the edges, when reading
 //! hand-written content ([`Fixed::from_f64`]), and is rounded the same way
-//! everywhere.
+//! everywhere. Presentation, which never feeds back into the simulation,
+//! may read values as floats ([`Fixed::to_f64`]).
 
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
@@ -56,6 +57,13 @@ impl Fixed {
         // i64::MAX isn't representable as f64; 2^63 is the first value past it.
         const LIMIT: f64 = 9_223_372_036_854_775_808.0;
         (scaled.is_finite() && (-LIMIT..LIMIT).contains(&scaled)).then_some(Fixed(scaled as i64))
+    }
+
+    /// The value as a float, for drawing and other presentation only;
+    /// nothing the simulation computes may depend on it. Exact within
+    /// ±2^21; beyond that, the nearest float.
+    pub fn to_f64(self) -> f64 {
+        self.0 as f64 / ONE as f64
     }
 
     /// The largest integer not above the value.
@@ -196,6 +204,12 @@ mod tests {
         assert_eq!(f(2.75).floor(), 2);
         assert_eq!(f(-2.25).floor(), -3);
         assert_eq!(Fixed::from_int(-4).floor(), -4);
+    }
+
+    #[test]
+    fn converts_to_floats() {
+        assert_eq!(f(-2.25).to_f64(), -2.25);
+        assert_eq!(Fixed::from_bits(1).to_f64(), 2f64.powi(-32));
     }
 
     #[test]
