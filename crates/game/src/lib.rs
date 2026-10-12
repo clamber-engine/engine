@@ -6,7 +6,9 @@
 //! fixed internal resolution ([`VIEW`]), scaled by whole pixels onto the
 //! window with no filtering ([`present`]). Level layers are drawn with
 //! parallax from a [`LayerArt`], and sprites from atlas pages by a
-//! [`SpriteBank`], indexed sheets through a palette table.
+//! [`SpriteBank`], indexed sheets through a palette table. A [`Cast`]
+//! draws the player and entities from their sheets, animated by what
+//! they're doing.
 //!
 //! A [`Session`] puts the title, pause, level complete and game over
 //! screens around the level, with [`Menu`]s driven by neutral actions,
@@ -21,6 +23,7 @@
 
 mod camera;
 mod canvas;
+mod cast;
 mod clock;
 mod controls;
 mod game;
@@ -37,6 +40,7 @@ use std::path::{Path, PathBuf};
 
 pub use camera::{Camera, VIEW};
 pub use canvas::{Canvas, Color, Fit, present, rgb};
+pub use cast::{Cast, PLAYER, Pose, Poses};
 pub use clock::Clock;
 pub use controls::{Controls, Request, Row, TIMEOUT};
 pub use game::Game;
@@ -50,6 +54,10 @@ pub use text::{ADVANCE, GLYPH, LINE, SHADOW, draw_text, draw_text_centred, text_
 
 /// The level played when none is given, relative to the content folder.
 pub const DEFAULT_LEVEL: &str = "levels/sandbox.level";
+
+/// The player's and entities' sprite sheets, relative to the content
+/// folder.
+pub const SPRITES: &str = "base/sprites";
 
 /// The content folder: next to the executable for a packaged build,
 /// otherwise the working directory's, otherwise the source tree's.

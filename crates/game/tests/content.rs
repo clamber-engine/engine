@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use clamber_audio::{Input, Sound};
-use clamber_game::{Cue, DEFAULT_LEVEL, DEFAULT_SOUNDS, Game, LayerArt, SoundList, content_dir};
+use clamber_game::{
+    Cast, Cue, DEFAULT_LEVEL, DEFAULT_SOUNDS, Game, LayerArt, SPRITES, SoundList, content_dir,
+};
 use clamber_level::Level;
 use clamber_sim::{InputFrame, World, generic_feel};
 
@@ -11,7 +13,8 @@ use clamber_sim::{InputFrame, World, generic_feel};
 fn the_default_level_loads_and_plays() {
     let level = Level::load(&content_dir().join(DEFAULT_LEVEL)).unwrap();
     let world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
-    let mut game = Game::new(world);
+    let cast = Cast::load(&content_dir().join(SPRITES)).unwrap();
+    let mut game = Game::new(world).with_cast(cast);
     for _ in 0..120 {
         game.step(&InputFrame::default());
     }

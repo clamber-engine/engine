@@ -7,6 +7,7 @@ use clamber_sim::{Facing, FlowEvent, HALF_WIDTH, HEIGHT, InputFrame, State, Worl
 
 use crate::camera::{Camera, VIEW, point};
 use crate::canvas::{Canvas, Color, rgb};
+use crate::cast::{Cast, Poses};
 use crate::hud::draw_hud;
 use crate::layers::LayerArt;
 
@@ -20,7 +21,7 @@ const WATER: Color = rgb(0x3a, 0x7a, 0xd8);
 const ENTITY: Color = rgb(0xd0, 0x6a, 0xd8);
 const EYE: Color = rgb(0x10, 0x10, 0x18);
 
-/// Size of the box marking an entity until entities have sprites, px.
+/// Size of the box marking an entity that has no sprite, px.
 const ENTITY_BOX: i32 = 12;
 
 pub struct Game {
@@ -32,18 +33,25 @@ pub struct Game {
     pub debug: bool,
     /// The images the level's layers draw.
     art: Arc<LayerArt>,
+    /// The sprites the player and entities are drawn with.
+    cast: Arc<Cast>,
+    /// Where each actor is in its animation.
+    poses: Poses,
 }
 
 impl Game {
     /// Starts playing `world`. The debug view starts on when the level
     /// has no layers, since there'd be nothing else to see.
     pub fn new(world: World) -> Game {
+        let cast = Arc::new(Cast::default());
         Game {
             camera: Camera::new(&world),
             previous: world.player.pos,
             debug: world.level.layers.is_empty(),
+            poses: Poses::new(&cast, &world),
             world,
             art: Arc::default(),
+            cast,
         }
     }
 
@@ -55,12 +63,24 @@ impl Game {
         }
     }
 
+    /// Draws the player and entities with `cast`'s sprites, and those
+    /// without one as markers.
+    pub fn with_cast(self, cast: Cast) -> Game {
+        Game {
+            poses: Poses::new(&cast, &self.world),
+            cast: Arc::new(cast),
+            ..self
+        }
+    }
+
     /// Starts the level over, keeping the debug view setting.
     pub fn restart(&mut self) {
         let world = World::new(self.world.level.clone(), self.world.feel.clone());
         *self = Game {
             debug: self.debug,
             art: self.art.clone(),
+            poses: Poses::new(&self.cast, &world),
+            cast: self.cast.clone(),
             ..Game::new(world)
         };
     }
@@ -77,6 +97,7 @@ impl Game {
         } else {
             self.camera.update(&self.world);
         }
+        self.poses.update(&self.cast, &self.world);
     }
 
     /// A new canvas the size of the view.
@@ -126,9 +147,18 @@ impl Game {
                     _ => {}
                 }
             }
-            for thing in self.world.things.iter().filter(|t| t.active) {
-                let (x, y) = to_screen(point(thing.pos));
-                let (x, y) = (x.round() as i32, y.round() as i32);
+        }
+
+        for (thing, pose) in self.world.things.iter().zip(&self.poses.things) {
+            if !thing.active {
+                continue;
+            }
+            let (x, y) = to_screen(point(thing.pos));
+            let (x, y) = (x.round() as i32, y.round() as i32);
+            if self.cast.has_kind(&thing.kind) {
+                self.cast.draw_thing(canvas, thing, pose, x, y);
+            }
+            if self.debug || !self.cast.has_kind(&thing.kind) {
                 let half = ENTITY_BOX / 2;
                 canvas.stroke_rect(x - half, y - half, ENTITY_BOX, ENTITY_BOX, ENTITY);
                 canvas.plot(x, y, ENTITY);
@@ -140,13 +170,18 @@ impl Game {
         draw_hud(canvas, &self.world);
     }
 
-    /// The player as its body box, coloured by state, until it has
-    /// sprites.
+    /// The player's sprite, or without one, its body box coloured by
+    /// state.
     fn draw_player(&self, canvas: &mut Canvas, alpha: f64, origin: (f64, f64)) {
         let player = &self.world.player;
         let (from, to) = (point(self.previous), point(player.pos));
         let x = (from.0 + (to.0 - from.0) * alpha - origin.0).round() as i32;
         let y = (from.1 + (to.1 - from.1) * alpha - origin.1).round() as i32;
+        if self.cast.has_player() {
+            self.cast
+                .draw_player(canvas, &self.world, &self.poses.player, x, y);
+            return;
+        }
         let half = HALF_WIDTH.floor() as i32;
         let height = HEIGHT.floor() as i32;
         // Rolling bodies are drawn crouched so the state reads at a glance.
@@ -282,6 +317,30 @@ mod tests {
         assert_eq!(at(400.0, 250.0), Some(rgb(1, 2, 3)));
         assert_eq!(at(500.0, 290.0), Some(state_color(State::Idle)));
         assert_eq!(at(545.0, 255.0), Some(rgb(4, 5, 6)));
+    }
+
+    #[test]
+    fn draws_sprites_with_a_cast_and_markers_without() {
+        let cast = Cast::load(&crate::content_dir().join(crate::SPRITES)).unwrap();
+        let mut game = game().with_cast(cast);
+        game.debug = false;
+        let mut canvas = Game::canvas();
+        game.draw(&mut canvas, 1.0);
+        let (left, top) = game.camera.top_left(1.0);
+        let at = |x: f64, y: f64| canvas.get((x - left) as i32, (y - top) as i32);
+        // The sprite covers the middle of the body, but not in its box
+        // colour.
+        let body = at(500.0, 290.0).unwrap();
+        assert_ne!(body, SKY);
+        assert_ne!(body, state_color(State::Idle));
+        // `marker` has no sheet, so it's still a box.
+        assert_eq!(at(560.0, 280.0), Some(ENTITY));
+        for _ in 0..60 {
+            game.step(&InputFrame::default());
+        }
+        assert_ne!(game.poses.player, Poses::default().player, "animates");
+        game.restart();
+        assert_eq!(game.poses, Poses::new(&game.cast, &game.world));
     }
 
     #[test]
