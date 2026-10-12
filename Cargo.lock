@@ -244,13 +244,16 @@ version = "0.1.0"
 name = "clamber-game"
 version = "0.1.0"
 dependencies = [
+ "clamber-audio",
  "clamber-fixed",
  "clamber-input",
  "clamber-level",
  "clamber-pack",
  "clamber-sim",
  "clamber-sprite",
+ "serde",
  "softbuffer",
+ "toml",
  "winit",
 ]
 

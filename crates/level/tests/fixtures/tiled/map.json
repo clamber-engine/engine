@@ -3,6 +3,7 @@
   "width": 4, "height": 3, "tilewidth": 16, "tileheight": 16,
   "properties": [
     { "name": "name", "type": "string", "value": "From Tiled" },
+    { "name": "music", "type": "string", "value": "theme.ogg" },
     { "name": "camera.look_ahead_x", "type": "float", "value": 40 }
   ],
   "tilesets": [

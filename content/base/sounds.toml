@@ -1,0 +1,7 @@
+# The sound effect for each cue in play. Paths are relative to this file;
+# a cue without a file is silent.
+#
+# Cues: jump, land, roll, collect, checkpoint, hurt, complete, game_over,
+# pause.
+
+[effects]

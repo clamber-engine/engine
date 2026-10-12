@@ -28,7 +28,9 @@ usage:
 Plays the level, or the bundled one if none is given, from the title
 screen. Without --pack, a single character plays with the preset's
 world physics. Controls are read from, and saved by the controls screen
-to, --settings or the per-user settings file.
+to, --settings or the per-user settings file. With sound (the `audio`
+feature), the level's music plays, and effects from the content folder's
+base/sounds.toml.
 
   Z, Space       jump; pick in menus
   Enter, Escape  pause; back in menus
@@ -40,6 +42,10 @@ const BORDER: u32 = rgb(0, 0, 0);
 
 /// The window starts at this multiple of the view.
 const START_SCALE: u32 = 3;
+
+/// Sound effects playing at once, at most.
+#[cfg(feature = "audio")]
+const MAX_VOICES: usize = 16;
 
 struct Options {
     level: Option<PathBuf>,
@@ -115,6 +121,8 @@ fn play(options: Options) -> Result<(), String> {
             generic_feel(preset).ok_or_else(|| format!("no preset named `{preset}`"))?
         }
     };
+    #[cfg(feature = "audio")]
+    let audio = open_audio(&level, level_path.parent().unwrap_or(Path::new("")));
     let world = World::new(Arc::new(level), Arc::new(feel));
     let mut session = Session::new(Game::new(world).with_art(art));
     session.settings_path = options
@@ -134,6 +142,8 @@ fn play(options: Options) -> Result<(), String> {
         gamepads: clamber_input::Gamepads::new()
             .map_err(|e| eprintln!("warning: no gamepads: {e}"))
             .ok(),
+        #[cfg(feature = "audio")]
+        audio,
         held: BTreeSet::new(),
         clock: Clock::new(),
         last: Instant::now(),
@@ -142,6 +152,27 @@ fn play(options: Options) -> Result<(), String> {
     };
     event_loop.run_app(&mut app).map_err(|e| e.to_string())?;
     app.error.map_or(Ok(()), Err)
+}
+
+/// Sound output, playing `level`'s music (relative to `dir`) and the
+/// bundled sound effects. Without a sound device, or with sounds that
+/// can't be read, the game plays on with what there is.
+#[cfg(feature = "audio")]
+fn open_audio(level: &Level, dir: &Path) -> Option<(clamber_audio::Output, clamber_game::Audio)> {
+    use clamber_game::{Audio, DEFAULT_SOUNDS, SoundList};
+
+    let warn = |w: String| eprintln!("warning: {w}");
+    let (handle, mixer) = clamber_audio::mixer(MAX_VOICES);
+    let output = clamber_audio::Output::open(mixer)
+        .map_err(|e| warn(format!("{e}; playing without sound")))
+        .ok()?;
+    let sounds = SoundList::load(&content_dir().join(DEFAULT_SOUNDS)).unwrap_or_else(|e| {
+        warn(format!("{e}; playing without sound effects"));
+        SoundList::default()
+    });
+    let mut audio = Audio::new(handle, output.rate(), &sounds, warn);
+    audio.set_music(level.music.as_ref(), dir);
+    Some((output, audio))
 }
 
 /// The settings in `path`, or the defaults when there's no such file or
@@ -183,6 +214,9 @@ struct App {
     canvas: Canvas,
     #[cfg(feature = "gamepad")]
     gamepads: Option<clamber_input::Gamepads>,
+    /// The output, kept open while the game runs, and what plays on it.
+    #[cfg(feature = "audio")]
+    audio: Option<(clamber_audio::Output, clamber_game::Audio)>,
     /// Keys down now, to release them all when the window loses focus.
     held: BTreeSet<Key>,
     clock: Clock,
@@ -258,6 +292,10 @@ impl App {
                 }
             }
             self.session.tick();
+            #[cfg(feature = "audio")]
+            if let Some((_, audio)) = &mut self.audio {
+                audio.update(&self.session, |w| eprintln!("warning: {w}"));
+            }
             if self.session.quit {
                 return Ok(());
             }

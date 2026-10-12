@@ -16,6 +16,7 @@ use crate::controls::{Controls, Request};
 use crate::game::Game;
 use crate::hud::{COUNT, GEM, RELIC_ICON, relic_total};
 use crate::menu::{Choice, Menu};
+use crate::sound::{Cue, cues};
 use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred, text_size};
 
 const TITLE: Color = rgb(0xf0, 0xc8, 0x40);
@@ -99,6 +100,8 @@ pub struct Session {
     pub settings_path: Option<PathBuf>,
     /// Quit was picked on the title screen; the window should close.
     pub quit: bool,
+    /// What made a sound during the last step, in order.
+    pub cues: Vec<Cue>,
 }
 
 impl Session {
@@ -111,6 +114,7 @@ impl Session {
             input: Input::new(Settings::builtin()),
             settings_path: None,
             quit: false,
+            cues: Vec::new(),
         }
     }
 
@@ -132,6 +136,7 @@ impl Session {
     /// Advances one logic frame: plays the level, or works the menu
     /// that's showing.
     pub fn step(&mut self, input: &InputFrame) {
+        self.cues.clear();
         if self.screen == Screen::Playing {
             self.play(input);
             return;
@@ -189,13 +194,25 @@ impl Session {
     fn play(&mut self, input: &InputFrame) {
         if everyone(input).pressed.contains(Action::Pause) {
             self.screen = Screen::paused();
+            self.cues.push(Cue::Pause);
             return;
         }
         self.game.step(input);
+        self.cues.extend(cues(&self.game.world));
         match self.game.world.flow.outcome {
             Outcome::Complete => self.screen = Screen::complete(),
             Outcome::GameOver => self.screen = Screen::game_over(),
             _ => {}
+        }
+    }
+
+    /// Whether the level's music should be playing: during play, and
+    /// on through pausing it.
+    pub fn music_on(&self) -> bool {
+        match &self.screen {
+            Screen::Playing | Screen::Paused(_) => true,
+            Screen::Controls(_, from) => matches!(**from, Screen::Paused(_)),
+            Screen::Title(_) | Screen::Complete(_) | Screen::GameOver(_) => false,
         }
     }
 

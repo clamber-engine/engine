@@ -6,14 +6,20 @@ publish = false
 description = "The Clamber game: a window, the simulation at 60 Hz, rendering and input"
 
 [features]
+# Sound output. Off by default because on Linux it links ALSA, which
+# needs the system's development package to build.
+audio = ["clamber-audio/output"]
 gamepad = ["clamber-input/gamepad"]
 
 [dependencies]
+clamber-audio = { path = "../audio" }
 clamber-fixed = { path = "../fixed" }
 clamber-input = { path = "../input" }
 clamber-level = { path = "../level" }
 clamber-pack = { path = "../pack" }
 clamber-sim = { path = "../sim" }
 clamber-sprite = { path = "../sprite" }
+serde = { version = "1.0.229", features = ["derive"] }
 softbuffer = "0.4.8"
+toml = "1.1.8"
 winit = "0.30.13"

@@ -7,6 +7,11 @@ start = [40, 500]
 [camera]
 look_ahead = [48, 0]
 
+[music]
+file = "music/everything.ogg"
+loop_start = 44100
+loop_length = 88200
+
 [surfaces.ice]
 physics = { ground_friction = { scale = 0.05 } }
 

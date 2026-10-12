@@ -13,6 +13,9 @@
 //! and a [`Controls`] screen for remapping each player's bindings and
 //! saving them to their settings file ([`settings_path`]).
 //!
+//! What happens in play becomes [`Cue`]s, which [`Audio`] plays from a
+//! [`SoundList`], along with the level's music while it's being played.
+//!
 //! Everything here except the window itself works headlessly, so a
 //! [`Session`] or [`Game`] can be stepped and drawn in tests and captures.
 
@@ -26,6 +29,7 @@ pub mod keys;
 mod layers;
 mod menu;
 mod session;
+mod sound;
 mod sprites;
 mod text;
 
@@ -40,6 +44,7 @@ pub use hud::draw_hud;
 pub use layers::LayerArt;
 pub use menu::{Choice, Menu};
 pub use session::{Item, Screen, Session, clock_time};
+pub use sound::{Audio, Cue, DEFAULT_SOUNDS, SoundList, cues};
 pub use sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
 pub use text::{ADVANCE, GLYPH, LINE, SHADOW, draw_text, draw_text_centred, text_size};
 

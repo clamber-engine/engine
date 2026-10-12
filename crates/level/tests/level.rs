@@ -56,6 +56,11 @@ fn reads_every_part() {
         Shape::Segment { one_way: true, .. }
     ));
     assert_eq!(l.collision.colliders[4].surface, "hazard");
+
+    let music = l.music.unwrap();
+    assert_eq!(music.file, "music/everything.ogg");
+    assert_eq!(music.loop_start, Some(44100));
+    assert_eq!(music.loop_length, Some(88200));
 }
 
 #[test]
@@ -209,6 +214,11 @@ fn format_errors() {
         level_err("[[entities]]\ntype = \"Big Thing\"\nat = [0, 0]\n").contains("entities[0].type")
     );
     assert!(level_err("[[entities]]\ntype = \"a\"\nat = [5e9, 0]\n").contains("out of range"));
+    assert!(
+        level_err("[music]\nfile = \"a.ogg\"\nloop_length = 10\n")
+            .contains("music.loop_length: needs `loop_start`")
+    );
+    assert!(level_err("[music]\nfile = \"\"\n").contains("music.file: is empty"));
     let outside = Level::from_toml_str("format = 1\nsize = [10, 10]\nstart = [10, 0]", "x.level");
     assert!(
         outside
@@ -255,6 +265,7 @@ fn imports_tiled_map() {
     assert_eq!(l.size, v(64.0, 48.0));
     assert_eq!(l.start, v(8.0, 32.0));
     assert_eq!(l.camera.rule.look_ahead, Some(v(40.0, 0.0)));
+    assert_eq!(l.music.as_ref().unwrap().file, "theme.ogg");
 
     // layers: the image, then the tile layer split per tileset
     let names: Vec<_> = l.layers.iter().map(|l| l.name.as_str()).collect();

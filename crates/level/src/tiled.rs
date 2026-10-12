@@ -27,7 +27,8 @@
 //!     has a size) as parameters.
 //!   - objects without a class on a layer named `collision` are `solid`.
 //! - Map properties `name` and `camera.look_ahead_x`/`_y` set the level's
-//!   name and look-ahead.
+//!   name and look-ahead, and `music` (a file, relative to the map) its
+//!   music.
 
 use std::path::Path;
 
@@ -243,6 +244,11 @@ pub fn import(
     let props = props(&map.properties);
     if let Some(Value::String(name)) = props.get("name") {
         level.insert("name".into(), Value::String(name.clone()));
+    }
+    if let Some(Value::String(file)) = props.get("music") {
+        let mut music = Table::new();
+        music.insert("file".into(), Value::String(file.clone()));
+        level.insert("music".into(), Value::Table(music));
     }
     let size = [
         f64::from(map.width * map.tilewidth),

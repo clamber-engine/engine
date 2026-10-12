@@ -37,6 +37,21 @@ pub struct Level {
     pub camera: Camera,
     /// Built-in surfaces with the level's own on top.
     pub surfaces: BTreeMap<String, Surface>,
+    /// What plays during the level.
+    pub music: Option<Track>,
+}
+
+/// A music track. Loop points are for formats without loop tags; without
+/// them the file's `LOOPSTART`/`LOOPLENGTH` tags apply, or the whole track
+/// loops.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Track {
+    /// Relative to the level file.
+    pub file: String,
+    /// Where the loop starts, in frames at the file's sample rate.
+    pub loop_start: Option<u64>,
+    /// The loop's length in frames; without it the loop runs to the end.
+    pub loop_length: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -294,6 +309,15 @@ struct File {
     camera: Option<CameraFile>,
     #[serde(default)]
     surfaces: BTreeMap<String, SurfaceFile>,
+    music: Option<TrackFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TrackFile {
+    file: String,
+    loop_start: Option<u64>,
+    loop_length: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -501,6 +525,8 @@ impl Reader<'_> {
         };
         rule.limits.get_or_insert(bounds);
 
+        let music = f.music.map(|m| self.track("music", m)).transpose()?;
+
         Ok(Level {
             name: f.name,
             size,
@@ -511,6 +537,24 @@ impl Reader<'_> {
             regions,
             camera: Camera { rule },
             surfaces,
+            music,
+        })
+    }
+
+    fn track(&self, at: &str, m: TrackFile) -> Result<Track, LevelError> {
+        if m.file.is_empty() {
+            return Err(self.err(&format!("{at}.file"), "is empty"));
+        }
+        if m.loop_length.is_some() && m.loop_start.is_none() {
+            return Err(self.err(&format!("{at}.loop_length"), "needs `loop_start`"));
+        }
+        if m.loop_length == Some(0) {
+            return Err(self.err(&format!("{at}.loop_length"), "must be positive"));
+        }
+        Ok(Track {
+            file: m.file,
+            loop_start: m.loop_start,
+            loop_length: m.loop_length,
         })
     }
 
@@ -815,6 +859,18 @@ impl Level {
         let camera = camera_table(&camera);
         if !camera.is_empty() {
             t.insert("camera".into(), Value::Table(camera));
+        }
+
+        if let Some(m) = &self.music {
+            let mut mt = Table::new();
+            mt.insert("file".into(), Value::String(m.file.clone()));
+            for (key, n) in [("loop_start", m.loop_start), ("loop_length", m.loop_length)] {
+                if let Some(n) = n {
+                    let n = i64::try_from(n).unwrap_or(i64::MAX);
+                    mt.insert(key.into(), Value::Integer(n));
+                }
+            }
+            t.insert("music".into(), Value::Table(mt));
         }
 
         let builtin = builtin_surfaces();

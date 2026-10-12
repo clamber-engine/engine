@@ -12,6 +12,7 @@
 //! - **regions**: areas with water, wind, darkness, physics overrides and
 //!   camera rules
 //! - **camera** rules for the whole level: limits and look-ahead
+//! - **music**: a track to play, with optional loop points
 //!
 //! Maps made in Tiled can be imported ([`tiled`]).
 
@@ -25,5 +26,5 @@ pub use collision::{Collider, Collision, Dir, Hit, Shape};
 pub use geom::{Area, Rect, Vec2};
 pub use level::{
     Camera, CameraRule, Depth, Entity, FORMAT, Layer, LayerContent, Level, LevelError, Region,
-    Surface, Tile, TileLayer, Tileset, builtin_surfaces,
+    Surface, Tile, TileLayer, Tileset, Track, builtin_surfaces,
 };
