@@ -8,27 +8,9 @@
 # characters, between the feet). Animations name a first and last frame
 # and how many 60 Hz ticks each frame shows. Sprites face right.
 
-# The climber, enemies, pickups and objects are pre-rendered from the
-# scripts in art/ at the repository root by tools/render-art.sh.
-
-# Terrain tiles (see terrain.svg for the numbering) and background layers
-# for parallax: sky farthest, then mountains, then hills. Each tiles
-# horizontally.
-[[images]]
-source = "terrain.svg"
-out = "tiles/terrain.png"
-
-[[images]]
-source = "sky.svg"
-out = "backgrounds/sky.png"
-
-[[images]]
-source = "mountains.svg"
-out = "backgrounds/mountains.png"
-
-[[images]]
-source = "hills.svg"
-out = "backgrounds/hills.png"
+# The climber, enemies, pickups and objects, the terrain tiles and the
+# background layers are pre-rendered from the scripts in art/ at the
+# repository root by tools/render-art.sh.
 
 # Sound effects, one per cue in sounds.toml. Each is a sequence of tones:
 # `wave` (square, triangle, saw or noise), a frequency in Hz sweeping

@@ -99,6 +99,24 @@ def lights(scene):
     area("rim", (2.5, 6.0, 5.0), 1200, 3.0, "#ffffff")
 
 
+def suns(scene):
+    """The same three-point lighting as `lights`, from the same directions,
+    but from far away: it falls alike everywhere, so tiles lit by it meet
+    without seams and wide scenes are lit evenly."""
+    def sun(name, direction, strength, angle, color):
+        data = bpy.data.lights.new(name, "SUN")
+        data.energy = strength
+        data.angle = math.radians(angle)
+        data.color = linear(color)
+        light = bpy.data.objects.new(name, data)
+        light.rotation_euler = Vector(direction).to_track_quat("-Z", "Y").to_euler()
+        scene.collection.objects.link(light)
+
+    sun("key", (3.0, 7.0, -4.9), 4.3, 12, "#fff1dc")
+    sun("fill", (-6.0, 6.0, 0.1), 1.0, 20, "#d4e2ff")
+    sun("rim", (-2.5, -6.0, -3.4), 2.0, 12, "#ffffff")
+
+
 def aim(obj, target):
     """Points `obj`'s -Z axis (where lights and cameras look) at `target`."""
     direction = target - Vector(obj.location)
@@ -149,6 +167,58 @@ def glow(name, color, strength):
     socket = shader.inputs["Emission Strength"]
     socket.default_value = strength
     return mat, socket
+
+
+def hazy(name, haze, color=None, fog=None, roughness=0.8):
+    """A painted material seen through air of the colour `haze`: `fog` (0
+    to 1) of what's seen is the haze. `color` and `fog` are an `#rrggbb`
+    colour and a number for the whole material, or None to take them from
+    the mesh's `tint` and `fog` attributes, per vertex (see `paint`)."""
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    shader = nodes["Principled BSDF"]
+    shader.inputs["Roughness"].default_value = roughness
+    if color is None:
+        attribute = nodes.new("ShaderNodeAttribute")
+        attribute.attribute_name = "tint"
+        links.new(attribute.outputs["Color"], shader.inputs["Base Color"])
+    else:
+        shader.inputs["Base Color"].default_value = (*linear(color), 1.0)
+    air = nodes.new("ShaderNodeEmission")
+    air.inputs["Color"].default_value = (*linear(haze), 1.0)
+    mix = nodes.new("ShaderNodeMixShader")
+    if fog is None:
+        attribute = nodes.new("ShaderNodeAttribute")
+        attribute.attribute_name = "fog"
+        links.new(attribute.outputs["Fac"], mix.inputs["Fac"])
+    else:
+        mix.inputs["Fac"].default_value = fog
+    output = nodes["Material Output"]
+    links.new(shader.outputs["BSDF"], mix.inputs[1])
+    links.new(air.outputs["Emission"], mix.inputs[2])
+    links.new(mix.outputs["Shader"], output.inputs["Surface"])
+    return mat
+
+
+def paint(obj, color, fog=None):
+    """Sets `obj`'s `tint` and `fog` attributes, for `hazy` materials:
+    `color(x, y, z)` gives an `#rrggbb` colour or linear RGB for a vertex
+    where it is in the world, `fog(x, y, z)` a number; either can be a
+    constant instead."""
+    mesh = obj.data
+    to_world = obj.matrix_world
+    points = [to_world @ v.co for v in mesh.vertices]
+
+    def each(f):
+        return [f(*p) if callable(f) else f for p in points]
+
+    colors = mesh.color_attributes.new("tint", "FLOAT_COLOR", "POINT")
+    for item, c in zip(colors.data, each(color)):
+        item.color = (*(linear(c) if isinstance(c, str) else c), 1.0)
+    fogs = mesh.attributes.new("fog", "FLOAT", "POINT")
+    for item, f in zip(fogs.data, each(fog or 0.0)):
+        item.value = f
 
 
 def recolor(colors):
@@ -465,7 +535,7 @@ class Rig:
 # Rendering sheets.
 
 
-def _render(scene, path):
+def render(scene, path):
     """Renders the current frame: an `Image`."""
     scene.render.filepath = path
     bpy.ops.render.render(write_still=True)
@@ -492,6 +562,24 @@ class Image:
         w = self.w - x if w is None else w
         start = 4 * (y * self.w + x)
         return self.data[start : start + 4 * w]
+
+    def extrude(self, rect, pad):
+        """Repeats the texels along the edges of `rect`, `(x, y, w, h)`,
+        `pad` texels outwards, so filtering at its edges doesn't take in
+        what's around it."""
+        x, y, w, h = rect
+        for row in range(y, y + h):
+            start = 4 * (row * self.w + x)
+            left, right = self.data[start : start + 4], self.data[start + 4 * (w - 1) : start + 4 * w]
+            self.data[start - 4 * pad : start] = left * pad
+            self.data[start + 4 * w : start + 4 * (w + pad)] = right * pad
+        line = 4 * (w + 2 * pad)
+        for row, source in [(y - 1 - i, y) for i in range(pad)] + [
+            (y + h + i, y + h - 1) for i in range(pad)
+        ]:
+            src = 4 * (source * self.w + x - pad)
+            dst = 4 * (row * self.w + x - pad)
+            self.data[dst : dst + line] = self.data[src : src + line]
 
     def paste(self, src, rect, at):
         """Copies `rect` of `src`, `(x, y, w, h)`, to `at` in this image."""
@@ -698,7 +786,14 @@ def render_sheet(scene, cam, rig, out, frame, origin, animations, pose, variants
 
 def _render_frame(scene, n, path):
     scene.frame_set(n)
-    return _render(scene, path)
+    return render(scene, path)
+
+
+def args():
+    """The content folder and whether to render quickly, from the command
+    line `tools/render-art.sh` gives: `-- <content folder> [--quick]`."""
+    given = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
+    return [a for a in given if not a.startswith("--")][0], "--quick" in given
 
 
 def run(name, build, pose, frame, origin, animations, variants=None, hurtbox=None):
@@ -706,9 +801,7 @@ def run(name, build, pose, frame, origin, animations, variants=None, hurtbox=Non
     (`-- <content folder> [--quick]`) to `sprites/<name>.json`. `build()`
     makes the model and returns its `Rig`; `pose(rig, name, i, count)` poses
     it. `hurtbox(rig)` picks the parts the `hurtbox` slice surrounds."""
-    args = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
-    quick = "--quick" in args
-    content = [a for a in args if not a.startswith("--")][0]
+    content, quick = args()
     scene = reset()
     lights(scene)
     cam = camera(scene, frame, origin)

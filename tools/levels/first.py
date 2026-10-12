@@ -9,7 +9,7 @@ match. Edit the layout below, then run:
 
 Rows count down from the top of the level; a ground height is the row
 whose top edge is the ground's surface. Tile numbers are terrain.png's
-(see content/base/art/terrain.svg), plus one.
+(see art/terrain.py), plus one.
 """
 
 import os
@@ -17,6 +17,10 @@ import sys
 
 T = 16
 ROWS = 60
+# Texels per world unit in the art (see art/), and around each tile in
+# terrain.png.
+SCALE = 5
+PAD = 4
 BASE = 46
 
 # Tiles, as numbered in level data (the tileset's index plus one).
@@ -457,14 +461,14 @@ def write(c, path):
     w("[[layers]]")
     w('name = "sky"')
     w('image = "../backgrounds/sky.png"')
-    w("pixel_art = true")
+    w(f"scale = {SCALE}")
     w("parallax = [0.05, 0]")
     w("repeat = [true, false]")
     w("")
     w("[[layers]]")
     w('name = "mountains"')
     w('image = "../backgrounds/mountains.png"')
-    w("pixel_art = true")
+    w(f"scale = {SCALE}")
     w("parallax = [0.2, 0]")
     w("offset = [0, 56]")
     w("repeat = [true, false]")
@@ -472,7 +476,7 @@ def write(c, path):
     w("[[layers]]")
     w('name = "hills"')
     w('image = "../backgrounds/hills.png"')
-    w("pixel_art = true")
+    w(f"scale = {SCALE}")
     w("parallax = [0.4, 0]")
     w("offset = [0, 96]")
     w("repeat = [true, false]")
@@ -480,11 +484,14 @@ def write(c, path):
     w("[[layers]]")
     w('name = "terrain"')
     w(f"offset = [0, {top * T}]")
-    w("pixel_art = true")
+    w(f"scale = {SCALE}")
     w("")
     w("[layers.tiles]")
     w('tileset = "../tiles/terrain.png"')
-    w(f"tile_size = [{T}, {T}]")
+    w('normals = "../tiles/terrain-normals.png"')
+    w(f"tile_size = [{T * SCALE}, {T * SCALE}]")
+    w(f"margin = {PAD}")
+    w(f"spacing = {2 * PAD}")
     w(f"columns = {cols}")
     w("data = [")
     for row in grid[top:]:

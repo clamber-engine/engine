@@ -6,9 +6,9 @@ use clamber_audio::{Input, Sound};
 use clamber_game::{
     Cast, Cue, DEFAULT_LEVEL, DEFAULT_SOUNDS, Game, LayerArt, SPRITES, SoundList, content_dir,
 };
-use clamber_level::Level;
+use clamber_level::{LayerContent, Level};
 use clamber_sim::{Archetypes, InputFrame, World, generic_feel};
-use clamber_sprite::SpriteSheet;
+use clamber_sprite::{SpriteSheet, decode_png};
 
 #[test]
 fn the_default_level_loads_and_plays() {
@@ -90,6 +90,32 @@ fn the_cast_sheets_are_rendered_with_their_animations() {
         assert!(sprite.normals.is_some(), "{name}");
         let names: Vec<_> = sheet.animations.iter().map(|a| a.name.as_str()).collect();
         assert_eq!(names, animations, "{name}");
+    }
+}
+
+/// The first level's terrain and backgrounds are rendered by
+/// `tools/render-art.sh` at the sprites' scale: the tiles with a normal
+/// map, and each background as wide as the view, so it tiles across it.
+#[test]
+fn the_first_level_is_drawn_with_rendered_art() {
+    let path = content_dir().join(DEFAULT_LEVEL);
+    let level = Level::load(&path).unwrap();
+    let dir = path.parent().unwrap();
+    let player = SpriteSheet::load(&content_dir().join(SPRITES).join("player.json")).unwrap();
+    for layer in &level.layers {
+        assert!(!layer.pixel_art, "{}", layer.name);
+        assert_eq!(layer.scale, player.sheet.scale, "{}", layer.name);
+        match &layer.content {
+            LayerContent::Tiles(tiles) => {
+                assert!(tiles.tileset.normals.is_some(), "{}", layer.name);
+                assert_eq!(tiles.tileset.tile_width, 16 * layer.scale);
+            }
+            LayerContent::Image { path, .. } => {
+                let bytes = std::fs::read(dir.join(path)).unwrap();
+                let image = decode_png(&bytes).unwrap();
+                assert_eq!(image.width(), 384 * layer.scale, "{}", layer.name);
+            }
+        }
     }
 }
 
