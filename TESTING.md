@@ -7,7 +7,7 @@ CI runs them on every pull request.
 |---|---|---|---|
 | 1. Unit | Functions against hand-written expectations | Exact | Next to the code |
 | 2. Format | Scenario and trace parsers against fixtures | Exact | `crates/trace/tests/` |
-| 3. Determinism | An engine run against a second run of itself | Byte-identical | `tests/determinism.rs` |
+| 3. Determinism | An engine run against a second run of itself | Byte-identical | `crates/sim/tests/determinism.rs` |
 | 4. Golden | Engine traces against the engine's own committed traces | Byte-identical | `tests/golden/` |
 | 5. Conformance | Engine traces against reference traces from `spec` | Per-metric tolerances | `tests/conformance.rs` |
 

@@ -1,0 +1,13 @@
+[package]
+name = "clamber-sim"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+description = "The deterministic simulation core: fixed-step world and headless runner"
+
+[dependencies]
+clamber-fixed = { path = "../fixed" }
+clamber-input = { path = "../input" }
+clamber-level = { path = "../level" }
+clamber-pack = { path = "../pack" }
+clamber-trace = { path = "../trace" }
