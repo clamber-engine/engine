@@ -8,6 +8,18 @@ importer that can convert data from game cartridges you legally own into
 Clamber's formats, locally, for personal play. Converted data is never
 distributed with or by this project.
 
+## Latest gameplay
+
+Generated automatically by CI from the newest commit on `main` (see #24).
+Placeholder art; nothing here is final.
+
+![Latest gameplay](https://github.com/clamber-engine/engine/blob/media/latest.gif?raw=true)
+
+| | |
+|---|---|
+| ![](https://github.com/clamber-engine/engine/blob/media/shot-1.png?raw=true) | ![](https://github.com/clamber-engine/engine/blob/media/shot-2.png?raw=true) |
+| ![](https://github.com/clamber-engine/engine/blob/media/shot-3.png?raw=true) | ![](https://github.com/clamber-engine/engine/blob/media/shot-4.png?raw=true) |
+
 ## Status
 
 Early setup. See `CONTRIBUTING.md` before contributing; this project

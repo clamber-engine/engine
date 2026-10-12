@@ -78,3 +78,37 @@ jobs:
           name: clamber-windows
           path: dist/clamber
           retention-days: 14
+
+  # Screenshots and a gameplay GIF of the newest main, published to the
+  # `media` branch for the README, once tools/capture.sh exists.
+  media:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    needs: [firewall, test]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for the capture script
+        id: capture
+        run: |
+          if [ -f tools/capture.sh ]; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+      - name: System libraries (incl. software Vulkan)
+        if: steps.capture.outputs.exists == 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libudev-dev libasound2-dev libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev mesa-vulkan-drivers
+      - name: Capture
+        if: steps.capture.outputs.exists == 'true'
+        run: bash tools/capture.sh "$RUNNER_TEMP/media"
+      - name: Publish to the media branch
+        if: steps.capture.outputs.exists == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP/media"
+          printf 'Captured from %s (%s)\n' "${GITHUB_SHA::7}" "$(date -u +%Y-%m-%dT%H:%MZ)" > README.md
+          git init -q -b media
+          git add -A
+          git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" commit -q -m "Media for ${GITHUB_SHA::7}"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" media
