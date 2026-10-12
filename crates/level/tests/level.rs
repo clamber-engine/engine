@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use clamber_level::{Area, Depth, Dir, Fixed, LayerContent, Level, Rect, Shape, Tile, Vec2, tiled};
+use clamber_level::{
+    Area, Depth, Dir, Fixed, LayerContent, Level, Lighting, Rect, Shape, Tile, Vec2, tiled,
+};
 use clamber_pack::{Adjust, Param};
 
 fn f(x: f64) -> Fixed {
@@ -58,6 +60,30 @@ fn reads_every_part() {
         Shape::Segment { one_way: true, .. }
     ));
     assert_eq!(l.collision.colliders[4].surface, "hazard");
+
+    let LayerContent::Image { normals, .. } = &l.layers[0].content else {
+        panic!("expected an image");
+    };
+    assert_eq!(normals.as_deref(), Some("bg/sky-normals.png"));
+    assert_eq!(
+        tiles.tileset.normals.as_deref(),
+        Some("tiles/ground-normals.png")
+    );
+    let LayerContent::Image { normals, .. } = &l.layers[2].content else {
+        panic!("expected an image");
+    };
+    assert_eq!(*normals, None);
+
+    assert_eq!(l.lighting.ambient, [0x40, 0x48, 0x58]);
+    assert_eq!(l.lighting.key.direction, [1.0, -2.0, 1.0]);
+    assert_eq!(l.lighting.key.intensity, 0.75);
+    assert_eq!(l.lighting.key.color, Lighting::default().key.color);
+    assert_eq!(l.lights.len(), 2);
+    assert_eq!(l.lights[0].at, v(320.0, 470.0));
+    assert_eq!(l.lights[0].color, [0xff, 0xc0, 0x70]);
+    assert_eq!((l.lights[0].radius, l.lights[0].intensity), (f(96.0), 1.5));
+    assert_eq!(l.lights[1].color, [0xff; 3]);
+    assert_eq!(l.lights[1].intensity, 1.0);
 
     let music = l.music.unwrap();
     assert_eq!(music.file, "music/everything.ogg");
@@ -225,6 +251,26 @@ fn format_errors() {
             .contains("music.loop_length: needs `loop_start`")
     );
     assert!(level_err("[music]\nfile = \"\"\n").contains("music.file: is empty"));
+    assert!(
+        level_err("[lighting]\nambient = \"grey\"\n")
+            .contains("lighting.ambient: `grey` isn't a `#rrggbb` colour")
+    );
+    assert!(
+        level_err("[lighting]\nkey = { direction = [0, 0, 0] }\n")
+            .contains("lighting.key.direction: can't be all zero")
+    );
+    assert!(
+        level_err("[[lights]]\nat = [5, 5]\nradius = 0\n")
+            .contains("lights[0].radius: must be positive")
+    );
+    assert!(
+        level_err("[[lights]]\nat = [5, 5]\nradius = 9\nintensity = -1\n")
+            .contains("lights[0].intensity: can't be negative")
+    );
+    assert!(
+        level_err("[[layers]]\nname = \"t\"\nnormals = \"n.png\"\ntiles = { tileset = \"t.png\", tile_size = [8, 8], columns = 1, data = [0] }\n")
+            .contains("layers[0].normals: is for image layers")
+    );
     let outside = Level::from_toml_str("format = 1\nsize = [10, 10]\nstart = [10, 0]", "x.level");
     assert!(
         outside

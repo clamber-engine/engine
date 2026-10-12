@@ -39,6 +39,59 @@ pub struct Level {
     pub surfaces: BTreeMap<String, Surface>,
     /// What plays during the level.
     pub music: Option<Track>,
+    /// How art with normal maps is shaded.
+    pub lighting: Lighting,
+    /// Point lights placed in the level.
+    pub lights: Vec<Light>,
+}
+
+/// A colour as red, green and blue, written `#rrggbb`.
+pub type Rgb = [u8; 3];
+
+/// The light every lit thing in a level gets, whatever its place. Art
+/// that has no normal map is drawn as it is, unlit.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Lighting {
+    /// Light from everywhere, so nothing is darker than this.
+    pub ambient: Rgb,
+    /// A distant light, like the sun.
+    pub key: KeyLight,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct KeyLight {
+    /// Towards the light: x right, y down, z out of the screen towards
+    /// the viewer. Not all zero; its length doesn't matter.
+    pub direction: [f64; 3],
+    pub color: Rgb,
+    /// Multiplies `color`, at least 0.
+    pub intensity: f64,
+}
+
+impl Default for Lighting {
+    /// Light from above left and in front, with enough ambient that a
+    /// surface facing the viewer is shown at about its own colour.
+    fn default() -> Lighting {
+        Lighting {
+            ambient: [0xbf; 3],
+            key: KeyLight {
+                direction: [-1.0, -1.0, 2.0],
+                color: [0xff; 3],
+                intensity: 0.3125,
+            },
+        }
+    }
+}
+
+/// A light at a point in the level, fading out to nothing at `radius`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Light {
+    pub at: Vec2,
+    pub color: Rgb,
+    /// How far it reaches, in world units, more than 0.
+    pub radius: Fixed,
+    /// Multiplies `color` at the light's centre, at least 0.
+    pub intensity: f64,
 }
 
 /// A music track. Loop points are for formats without loop tags; without
@@ -89,6 +142,9 @@ pub enum LayerContent {
     /// path is relative to the level file, as are tileset images.
     Image {
         path: String,
+        /// A normal map laid out like the image, to shade it by the
+        /// level's lights.
+        normals: Option<String>,
         repeat_x: bool,
         repeat_y: bool,
     },
@@ -108,6 +164,9 @@ pub struct TileLayer {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tileset {
     pub image: String,
+    /// A normal map laid out like the image, to shade the tiles by the
+    /// level's lights.
+    pub normals: Option<String>,
     pub tile_width: u32,
     pub tile_height: u32,
     /// Pixels around the outside of the image, and between tiles.
@@ -317,6 +376,38 @@ struct File {
     #[serde(default)]
     surfaces: BTreeMap<String, SurfaceFile>,
     music: Option<TrackFile>,
+    lighting: Option<LightingFile>,
+    #[serde(default)]
+    lights: Vec<LightFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LightingFile {
+    ambient: Option<String>,
+    key: Option<KeyLightFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KeyLightFile {
+    direction: Option<[N; 3]>,
+    color: Option<String>,
+    intensity: Option<N>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LightFile {
+    at: [N; 2],
+    #[serde(default = "white")]
+    color: String,
+    radius: N,
+    intensity: Option<N>,
+}
+
+fn white() -> String {
+    "#ffffff".into()
 }
 
 #[derive(Deserialize)]
@@ -336,6 +427,7 @@ struct LayerFile {
     parallax: Option<[N; 2]>,
     offset: Option<[N; 2]>,
     image: Option<String>,
+    normals: Option<String>,
     #[serde(default)]
     repeat: [bool; 2],
     tiles: Option<TilesFile>,
@@ -357,6 +449,7 @@ fn back() -> Depth {
 #[serde(deny_unknown_fields)]
 struct TilesFile {
     tileset: String,
+    normals: Option<String>,
     tile_size: [u32; 2],
     #[serde(default)]
     margin: u32,
@@ -541,6 +634,16 @@ impl Reader<'_> {
         rule.limits.get_or_insert(bounds);
 
         let music = f.music.map(|m| self.track("music", m)).transpose()?;
+        let lighting = match f.lighting {
+            Some(l) => self.lighting("lighting", l)?,
+            None => Lighting::default(),
+        };
+        let lights = f
+            .lights
+            .into_iter()
+            .enumerate()
+            .map(|(i, l)| self.light(&format!("lights[{i}]"), l))
+            .collect::<Result<_, _>>()?;
 
         Ok(Level {
             name: f.name,
@@ -553,6 +656,54 @@ impl Reader<'_> {
             camera: Camera { rule },
             surfaces,
             music,
+            lighting,
+            lights,
+        })
+    }
+
+    fn color(&self, at: &str, c: &str) -> Result<Rgb, LevelError> {
+        parse_rgb(c).ok_or_else(|| self.err(at, format!("`{c}` isn't a `#rrggbb` colour")))
+    }
+
+    fn intensity(&self, at: &str, n: Option<N>, default: f64) -> Result<f64, LevelError> {
+        match n {
+            Some(n) if n.0 < Fixed::ZERO => Err(self.err(at, "can't be negative")),
+            Some(n) => Ok(n.0.to_f64()),
+            None => Ok(default),
+        }
+    }
+
+    fn lighting(&self, at: &str, l: LightingFile) -> Result<Lighting, LevelError> {
+        let mut lighting = Lighting::default();
+        if let Some(c) = &l.ambient {
+            lighting.ambient = self.color(&format!("{at}.ambient"), c)?;
+        }
+        if let Some(k) = l.key {
+            let key = &mut lighting.key;
+            if let Some(d) = k.direction {
+                if d.iter().all(|n| n.0 == Fixed::ZERO) {
+                    return Err(self.err(&format!("{at}.key.direction"), "can't be all zero"));
+                }
+                key.direction = d.map(|n| n.0.to_f64());
+            }
+            if let Some(c) = &k.color {
+                key.color = self.color(&format!("{at}.key.color"), c)?;
+            }
+            key.intensity =
+                self.intensity(&format!("{at}.key.intensity"), k.intensity, key.intensity)?;
+        }
+        Ok(lighting)
+    }
+
+    fn light(&self, at: &str, l: LightFile) -> Result<Light, LevelError> {
+        if l.radius.0 <= Fixed::ZERO {
+            return Err(self.err(&format!("{at}.radius"), "must be positive"));
+        }
+        Ok(Light {
+            at: v2(l.at),
+            color: self.color(&format!("{at}.color"), &l.color)?,
+            radius: l.radius.0,
+            intensity: self.intensity(&format!("{at}.intensity"), l.intensity, 1.0)?,
         })
     }
 
@@ -596,10 +747,17 @@ impl Reader<'_> {
         let content = match (l.image, l.tiles) {
             (Some(path), None) => LayerContent::Image {
                 path,
+                normals: l.normals,
                 repeat_x: l.repeat[0],
                 repeat_y: l.repeat[1],
             },
             (None, Some(t)) => {
+                if l.normals.is_some() {
+                    return Err(self.err(
+                        &format!("{at}.normals"),
+                        "is for image layers; give tiles' normals in `tiles`",
+                    ));
+                }
                 let at = format!("{at}.tiles");
                 if t.tile_size[0] == 0 || t.tile_size[1] == 0 {
                     return Err(self.err(&format!("{at}.tile_size"), "must be positive"));
@@ -617,6 +775,7 @@ impl Reader<'_> {
                 LayerContent::Tiles(TileLayer {
                     tileset: Tileset {
                         image: t.tileset,
+                        normals: t.normals,
                         tile_width: t.tile_size[0],
                         tile_height: t.tile_size[1],
                         margin: t.margin,
@@ -778,6 +937,21 @@ impl Reader<'_> {
     }
 }
 
+/// A `#rrggbb` colour.
+fn parse_rgb(s: &str) -> Option<Rgb> {
+    let hex = s.strip_prefix('#').filter(|h| h.len() == 6)?;
+    let channel = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
+    Some([channel(0)?, channel(2)?, channel(4)?])
+}
+
+fn rgb_value([r, g, b]: Rgb) -> Value {
+    Value::String(format!("#{r:02x}{g:02x}{b:02x}"))
+}
+
+fn float(x: f64) -> Value {
+    num(Fixed::from_f64(x).unwrap_or(Fixed::ZERO))
+}
+
 fn is_name(s: &str) -> bool {
     !s.is_empty()
         && s.bytes()
@@ -893,6 +1067,30 @@ impl Level {
             t.insert("music".into(), Value::Table(mt));
         }
 
+        if self.lighting != Lighting::default() {
+            let (l, key) = (&self.lighting, &self.lighting.key);
+            let mut kt = Table::new();
+            kt.insert(
+                "direction".into(),
+                Value::Array(key.direction.iter().map(|&d| float(d)).collect()),
+            );
+            kt.insert("color".into(), rgb_value(key.color));
+            kt.insert("intensity".into(), float(key.intensity));
+            let mut lt = Table::new();
+            lt.insert("ambient".into(), rgb_value(l.ambient));
+            lt.insert("key".into(), Value::Table(kt));
+            t.insert("lighting".into(), Value::Table(lt));
+        }
+        let lights = self.lights.iter().map(|l| {
+            let mut lt = Table::new();
+            lt.insert("at".into(), pair(l.at));
+            lt.insert("color".into(), rgb_value(l.color));
+            lt.insert("radius".into(), num(l.radius));
+            lt.insert("intensity".into(), float(l.intensity));
+            Value::Table(lt)
+        });
+        insert_array(&mut t, "lights", lights);
+
         let builtin = builtin_surfaces();
         let mut surfaces = Table::new();
         for (name, s) in &self.surfaces {
@@ -933,10 +1131,14 @@ impl Level {
             match &l.content {
                 LayerContent::Image {
                     path,
+                    normals,
                     repeat_x,
                     repeat_y,
                 } => {
                     lt.insert("image".into(), Value::String(path.clone()));
+                    if let Some(n) = normals {
+                        lt.insert("normals".into(), Value::String(n.clone()));
+                    }
                     let repeat = vec![Value::Boolean(*repeat_x), Value::Boolean(*repeat_y)];
                     lt.insert("repeat".into(), Value::Array(repeat));
                 }
@@ -944,6 +1146,9 @@ impl Level {
                     let mut tt = Table::new();
                     let ts = &tl.tileset;
                     tt.insert("tileset".into(), Value::String(ts.image.clone()));
+                    if let Some(n) = &ts.normals {
+                        tt.insert("normals".into(), Value::String(n.clone()));
+                    }
                     let size = vec![ts.tile_width.into(), ts.tile_height.into()];
                     tt.insert("tile_size".into(), Value::Array(size));
                     tt.insert("margin".into(), ts.margin.into());

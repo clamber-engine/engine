@@ -1,8 +1,10 @@
 //! Draws a frame's [`DrawList`] through the GPU at the window's own
 //! resolution: the view scaled to fit at its own shape, letterboxed in
 //! black, with smoothly filtered textures drawn from their mipmaps and
-//! pixel art kept sharp, and edges smoothed by multisampling. Frames are
-//! presented in step with the display's refresh when vsync is on.
+//! pixel art kept sharp, and edges smoothed by multisampling. Quads with
+//! normal maps are lit in the shader just as the software canvas lights
+//! them. Frames are presented in step with the display's refresh when
+//! vsync is on.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,12 +15,16 @@ use winit::window::Window;
 use crate::canvas::Color;
 use crate::display::letterbox;
 use crate::report;
-use crate::surface::{DrawList, Drawn, Quad, Texture, triangulate};
+use crate::surface::{
+    DrawList, Drawn, LIGHT_HEIGHT, Lighting, MAX_LIGHTS, Quad, Texture, triangulate,
+};
 
 /// Every vertex is in view units, and samples its texture within
 /// `bounds` so filtering doesn't reach into neighbouring frames. Colours
 /// are premultiplied by alpha; `flash` replaces a texel's colour with the
-/// vertex colour, keeping its alpha.
+/// vertex colour, keeping its alpha. `lit` says whether to light the
+/// texel by its normal (`w`), and how the quad is flipped (`xyz`, see
+/// [`crate::surface::normal`]); [`Lighting::at`] is the same sum.
 const SHADER: &str = "
 struct View {
     size: vec2<f32>,
@@ -28,9 +34,27 @@ struct View {
     unused: f32,
 }
 
+struct Light {
+    // x, y and radius.
+    place: vec4<f32>,
+    color: vec4<f32>,
+}
+
+struct Lighting {
+    ambient: vec4<f32>,
+    // w is how far in front point lights are.
+    key_direction: vec4<f32>,
+    key: vec4<f32>,
+    // x is how many lights there are.
+    count: vec4<f32>,
+    lights: array<Light, 16>,
+}
+
 @group(0) @binding(0) var<uniform> view: View;
+@group(0) @binding(1) var<uniform> lighting: Lighting;
 @group(1) @binding(0) var image: texture_2d<f32>;
 @group(1) @binding(1) var sampling: sampler;
+@group(1) @binding(2) var normals: texture_2d<f32>;
 
 struct In {
     @location(0) position: vec2<f32>,
@@ -38,6 +62,7 @@ struct In {
     @location(2) color: vec4<f32>,
     @location(3) bounds: vec4<f32>,
     @location(4) flash: f32,
+    @location(5) lit: vec4<f32>,
 }
 
 struct Out {
@@ -46,6 +71,8 @@ struct Out {
     @location(1) color: vec4<f32>,
     @location(2) bounds: vec4<f32>,
     @location(3) flash: f32,
+    @location(4) at: vec2<f32>,
+    @location(5) lit: vec4<f32>,
 }
 
 @vertex
@@ -57,7 +84,31 @@ fn vertex(in: In) -> Out {
     out.color = in.color;
     out.bounds = in.bounds;
     out.flash = in.flash;
+    out.at = in.position;
+    out.lit = in.lit;
     return out;
+}
+
+fn light(n: vec3<f32>, at: vec2<f32>) -> vec3<f32> {
+    var sum = lighting.ambient.rgb
+        + lighting.key.rgb * max(dot(n, lighting.key_direction.xyz), 0.0);
+    let count = u32(lighting.count.x);
+    for (var i = 0u; i < count; i++) {
+        let l = lighting.lights[i];
+        let d = vec3<f32>(l.place.xy - at, lighting.key_direction.w);
+        let reach = clamp(1.0 - length(d.xy) / l.place.z, 0.0, 1.0);
+        sum += l.color.rgb * reach * reach * max(dot(n, normalize(d)), 0.0);
+    }
+    return sum;
+}
+
+// A texel of a normal map, premultiplied, in view axes, flipped.
+fn normal(encoded: vec4<f32>, flip: vec3<f32>) -> vec3<f32> {
+    var n = encoded.rgb / encoded.a * 2.0 - 1.0;
+    n.y = -n.y;
+    n.x = select(n.x, -n.x, flip.x > 0.5);
+    n.y = select(n.y, -n.y, flip.y > 0.5);
+    return select(n, n.yxz, flip.z > 0.5);
 }
 
 fn decode(c: vec3<f32>) -> vec3<f32> {
@@ -66,7 +117,15 @@ fn decode(c: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fragment(in: Out) -> @location(0) vec4<f32> {
-    let texel = textureSample(image, sampling, clamp(in.uv, in.bounds.xy, in.bounds.zw));
+    let uv = clamp(in.uv, in.bounds.xy, in.bounds.zw);
+    var texel = textureSample(image, sampling, uv);
+    let encoded = textureSample(normals, sampling, uv);
+    if in.lit.w > 0.5 && encoded.a > 0.0 {
+        let n = normal(encoded, in.lit.xyz);
+        if dot(n, n) > 0.0 {
+            texel = vec4<f32>(texel.rgb * light(normalize(n), in.at), texel.a);
+        }
+    }
     let flashed = vec4<f32>(in.color.rgb * texel.a, texel.a);
     let out = mix(texel * in.color, flashed, in.flash);
     if view.linear_out > 0.5 && out.a > 0.0 {
@@ -209,10 +268,15 @@ fn open_device(
 
 /// A texture on the GPU, ready to draw with.
 struct Loaded {
-    bind_group: wgpu::BindGroup,
+    view: wgpu::TextureView,
+    pixel_art: bool,
     /// The last frame it was drawn in.
     used: u64,
 }
+
+/// What a batch draws with: a texture by [`Texture::id`], and its normal
+/// map's, or `None` for solid shapes.
+type Batch = Option<(u64, Option<u64>)>;
 
 /// Draws lists into textures of one format.
 struct Painter {
@@ -222,14 +286,19 @@ struct Painter {
     format: wgpu::TextureFormat,
     samples: u32,
     view: wgpu::Buffer,
+    lighting: wgpu::Buffer,
     view_group: wgpu::BindGroup,
     texture_layout: wgpu::BindGroupLayout,
     smooth: wgpu::Sampler,
     sharp: wgpu::Sampler,
     /// One white texel, for solid shapes.
     white: wgpu::BindGroup,
+    /// One texel, for textures without a normal map.
+    flat: wgpu::TextureView,
     /// By [`Texture::id`].
     textures: HashMap<u64, Loaded>,
+    /// Textures paired with their normal maps, by what a batch draws with.
+    groups: HashMap<(u64, Option<u64>), wgpu::BindGroup>,
     /// Textures too large for this GPU, already warned about.
     too_large: Vec<u64>,
     vertices: wgpu::Buffer,
@@ -238,8 +307,11 @@ struct Painter {
     frame: u64,
 }
 
-/// Floats per vertex: position, uv, colour, bounds and flash.
-const FLOATS: usize = 13;
+/// Floats per vertex: position, uv, colour, bounds, flash and lit.
+const FLOATS: usize = 17;
+
+/// Bytes of the lighting uniform: four vectors, then each light's two.
+const LIGHTING_BYTES: u64 = (4 + 2 * MAX_LIGHTS as u64) * 16;
 
 impl Painter {
     fn new(
@@ -262,8 +334,8 @@ impl Painter {
         });
         let view_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("view"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
+            entries: &[0, 1].map(|binding| wgpu::BindGroupLayoutEntry {
+                binding,
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
@@ -271,7 +343,7 @@ impl Painter {
                     min_binding_size: None,
                 },
                 count: None,
-            }],
+            }),
         });
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("texture"),
@@ -292,6 +364,16 @@ impl Painter {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -300,7 +382,8 @@ impl Painter {
             immediate_size: 0,
         });
         let attributes = wgpu::vertex_attr_array![
-            0 => Float32x2, 1 => Float32x2, 2 => Float32x4, 3 => Float32x4, 4 => Float32
+            0 => Float32x2, 1 => Float32x2, 2 => Float32x4, 3 => Float32x4, 4 => Float32,
+            5 => Float32x4
         ];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("draw"),
@@ -340,13 +423,25 @@ impl Painter {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let lighting = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("lighting"),
+            size: LIGHTING_BYTES,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let view_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("view"),
             layout: &view_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: view.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: view.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: lighting.as_entire_binding(),
+                },
+            ],
         });
         let sampler = |label, filter, mipmap_filter| {
             device.create_sampler(&wgpu::SamplerDescriptor {
@@ -370,16 +465,16 @@ impl Painter {
         let vertices = vertex_buffer(&device, 1 << 16);
         let mut texel = clamber_sprite::Pixels::new(1, 1);
         texel.data[0] = [255; 4];
-        let white = upload(
-            &device,
-            &queue,
-            &texture_layout,
-            &sharp,
-            &Texture::new(texel, true),
-        )
-        .expect("one texel fits");
+        let white = upload(&device, &queue, &Texture::new(texel.clone(), true));
+        let white = white.expect("one texel fits");
+        let flat = upload(&device, &queue, &Texture::new(texel, true));
+        let flat = flat.expect("one texel fits");
+        let white = bind(&device, &texture_layout, &white, &flat, &sharp);
         Painter {
             white,
+            flat,
+            lighting,
+            groups: HashMap::new(),
             device,
             queue,
             pipeline,
@@ -408,21 +503,11 @@ impl Painter {
         if self.too_large.contains(&texture.id()) {
             return false;
         }
-        let sampler = if texture.pixel_art {
-            &self.sharp
-        } else {
-            &self.smooth
-        };
-        match upload(
-            &self.device,
-            &self.queue,
-            &self.texture_layout,
-            sampler,
-            texture,
-        ) {
-            Some(bind_group) => {
+        match upload(&self.device, &self.queue, texture) {
+            Some(view) => {
                 let loaded = Loaded {
-                    bind_group,
+                    view,
+                    pixel_art: texture.pixel_art,
                     used: frame,
                 };
                 self.textures.insert(texture.id(), loaded);
@@ -438,6 +523,29 @@ impl Painter {
                 false
             }
         }
+    }
+
+    /// Makes sure there's a bind group for `batch`, whose textures are
+    /// loaded.
+    fn group(&mut self, (texture, normals): (u64, Option<u64>)) {
+        if self.groups.contains_key(&(texture, normals)) {
+            return;
+        }
+        let image = &self.textures[&texture];
+        let normals_view = normals.map_or(&self.flat, |n| &self.textures[&n].view);
+        let sampler = if image.pixel_art {
+            &self.sharp
+        } else {
+            &self.smooth
+        };
+        let group = bind(
+            &self.device,
+            &self.texture_layout,
+            &image.view,
+            normals_view,
+            sampler,
+        );
+        self.groups.insert((texture, normals), group);
     }
 
     /// Draws `list` into `target`, letterboxed in black.
@@ -461,13 +569,20 @@ impl Painter {
                 } => mesh.polygon(points, *color, *alpha),
                 Drawn::Quad(quad) => {
                     if self.load(&quad.texture) {
-                        mesh.quad(quad);
+                        let normals = quad.normals.as_ref().filter(|n| self.load(n));
+                        let normals = normals.map(|n| n.id());
+                        self.group((quad.texture.id(), normals));
+                        mesh.quad(quad, normals);
                     }
                 }
             }
         }
         let frame = self.frame;
         self.textures.retain(|_, t| t.used + UNUSED_FRAMES >= frame);
+        let textures = &self.textures;
+        self.groups.retain(|(texture, normals), _| {
+            textures.contains_key(texture) && normals.is_none_or(|n| textures.contains_key(&n))
+        });
 
         let bytes: Vec<u8> = mesh.floats.iter().flat_map(|f| f.to_le_bytes()).collect();
         if bytes.len() as u64 > self.vertices.size() {
@@ -481,6 +596,8 @@ impl Painter {
             .flat_map(|f| f.to_le_bytes())
             .collect();
         self.queue.write_buffer(&self.view, 0, &uniform);
+        self.queue
+            .write_buffer(&self.lighting, 0, &lighting_bytes(&list.lighting));
 
         let size = (target.width(), target.height());
         if self.samples > 1 && self.multisampled.as_ref().is_none_or(|m| m.1 != size) {
@@ -528,9 +645,9 @@ impl Painter {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.view_group, &[]);
             pass.set_vertex_buffer(0, self.vertices.slice(..));
-            for (texture, range) in &mesh.batches {
-                let group = match texture {
-                    Some(id) => &self.textures[id].bind_group,
+            for (batch, range) in &mesh.batches {
+                let group = match batch {
+                    Some(key) => &self.groups[key],
                     None => &self.white,
                 };
                 pass.set_bind_group(1, group, &[]);
@@ -541,15 +658,60 @@ impl Painter {
     }
 }
 
-/// Puts `texture` on the GPU, premultiplied by alpha, drawn with
-/// `sampler`, or `None` if it's too large for it.
+/// The lighting uniform's bytes, as the shader lays it out.
+fn lighting_bytes(lighting: &Lighting) -> Vec<u8> {
+    let rgb = |c: [f32; 3]| [c[0], c[1], c[2], 0.0];
+    let [x, y, z] = lighting.key_direction;
+    let count = lighting.lights.len().min(MAX_LIGHTS);
+    let mut floats = Vec::with_capacity(LIGHTING_BYTES as usize / 4);
+    floats.extend(rgb(lighting.ambient));
+    floats.extend([x, y, z, LIGHT_HEIGHT]);
+    floats.extend(rgb(lighting.key));
+    floats.extend([count as f32, 0.0, 0.0, 0.0]);
+    for l in &lighting.lights[..count] {
+        floats.extend([l.at.0, l.at.1, l.radius, 0.0]);
+        floats.extend(rgb(l.color));
+    }
+    floats.resize(LIGHTING_BYTES as usize / 4, 0.0);
+    floats.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+/// A bind group drawing `image`, lit by `normals`, sampled with
+/// `sampler`.
+fn bind(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    image: &wgpu::TextureView,
+    normals: &wgpu::TextureView,
+    sampler: &wgpu::Sampler,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(image),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(normals),
+            },
+        ],
+    })
+}
+
+/// Puts `texture` on the GPU, premultiplied by alpha, or `None` if it's
+/// too large for it.
 fn upload(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    layout: &wgpu::BindGroupLayout,
-    sampler: &wgpu::Sampler,
     texture: &Texture,
-) -> Option<wgpu::BindGroup> {
+) -> Option<wgpu::TextureView> {
     let max = device.limits().max_texture_dimension_2d;
     if texture.width().max(texture.height()) > max {
         return None;
@@ -601,20 +763,7 @@ fn upload(
             },
         );
     }
-    Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&gpu.create_view(&Default::default())),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(sampler),
-            },
-        ],
-    }))
+    Some(gpu.create_view(&Default::default()))
 }
 
 fn vertex_buffer(device: &wgpu::Device, size: u64) -> wgpu::Buffer {
@@ -630,8 +779,8 @@ fn vertex_buffer(device: &wgpu::Device, size: u64) -> wgpu::Buffer {
 #[derive(Default)]
 struct Mesh {
     floats: Vec<f32>,
-    /// Vertex ranges by texture, `None` for solid shapes.
-    batches: Vec<(Option<u64>, std::ops::Range<u32>)>,
+    /// Vertex ranges by what they draw with.
+    batches: Vec<(Batch, std::ops::Range<u32>)>,
 }
 
 /// Where a vertex samples from, and the bounds samples stay within.
@@ -642,28 +791,30 @@ const SOLID: Sample = ((0.5, 0.5), [0.0, 0.0, 1.0, 1.0]);
 impl Mesh {
     fn vertex(
         &mut self,
-        texture: Option<u64>,
+        batch: Batch,
         at: (f32, f32),
         sample: Sample,
         color: [f32; 4],
         flash: f32,
+        lit: [f32; 4],
     ) {
         let n = (self.floats.len() / FLOATS) as u32;
         match self.batches.last_mut() {
-            Some((t, range)) if *t == texture => range.end = n + 1,
-            _ => self.batches.push((texture, n..n + 1)),
+            Some((b, range)) if *b == batch => range.end = n + 1,
+            _ => self.batches.push((batch, n..n + 1)),
         }
         let (uv, bounds) = sample;
         self.floats.extend([at.0, at.1, uv.0, uv.1]);
         self.floats.extend(color);
         self.floats.extend(bounds);
         self.floats.push(flash);
+        self.floats.extend(lit);
     }
 
     fn solid(&mut self, points: [(f32, f32); 3], color: Color, alpha: u8) {
         let color = premultiplied(color, alpha);
         for p in points {
-            self.vertex(None, p, SOLID, color, 0.0);
+            self.vertex(None, p, SOLID, color, 0.0, [0.0; 4]);
         }
     }
 
@@ -702,7 +853,9 @@ impl Mesh {
         }
     }
 
-    fn quad(&mut self, quad: &Quad) {
+    /// Draws `quad`, lit by the normal map with id `normals` if it has
+    /// one on the GPU.
+    fn quad(&mut self, quad: &Quad, normals: Option<u64>) {
         let texture = &quad.texture;
         let size = (texture.width() as f32, texture.height() as f32);
         let src = quad.src;
@@ -735,7 +888,14 @@ impl Mesh {
             let uv = ((x + sx) / size.0, (y + sy) / size.1);
             ((l + (r - l) * cx, t + (b - t) * cy), (uv, bounds))
         };
-        let id = Some(texture.id());
+        let batch = Some((texture.id(), normals));
+        let on = |b: bool| if b { 1.0 } else { 0.0 };
+        let lit = [
+            on(quad.flip.x),
+            on(quad.flip.y),
+            on(quad.flip.diagonal),
+            on(normals.is_some() && quad.flash.is_none()),
+        ];
         for (cx, cy) in [
             (0.0, 0.0),
             (1.0, 0.0),
@@ -745,7 +905,7 @@ impl Mesh {
             (0.0, 1.0),
         ] {
             let (at, sample) = corner(cx, cy);
-            self.vertex(id, at, sample, color, flash);
+            self.vertex(batch, at, sample, color, flash, lit);
         }
     }
 }
@@ -897,6 +1057,7 @@ mod tests {
                 ..Flip::default()
             },
             flash: None,
+            normals: None,
         };
         let mut list = DrawList::new((2, 1));
         list.quad(&quad(true));
@@ -915,5 +1076,72 @@ mod tests {
         assert_eq!(out[7], RED);
         let purple = out[3];
         assert!(purple >> 16 > 0x20 && purple & 0xff > 0x20, "{purple:06x}");
+    }
+
+    #[test]
+    fn lights_quads_as_the_canvas_does() {
+        let fill = |c: [u8; 4]| {
+            let mut image = Pixels::new(4, 2);
+            image.data.fill(c);
+            image
+        };
+        // Facing up and towards the viewer, stored y up.
+        let normals = fill([128, 218, 218, 255]);
+        let lighting = Lighting {
+            ambient: [0.25, 0.25, 0.25],
+            key_direction: [0.0, -1.0, 0.0],
+            key: [0.5, 0.0, 0.0],
+            lights: vec![crate::surface::PointLight {
+                at: (1.0, 2.5),
+                radius: 3.0,
+                color: [0.0, 0.0, 30.0],
+            }],
+        };
+        let mut list = DrawList::new((4, 2));
+        list.light(&lighting);
+        for flip_y in [false, true] {
+            list.quad(&Quad {
+                texture: Texture::new(fill([200, 200, 200, 255]), false),
+                src: Rect {
+                    x: 0,
+                    y: 0,
+                    w: 4,
+                    h: 2,
+                },
+                dst: [0.0, if flip_y { 1.0 } else { 0.0 }, 4.0, 2.0],
+                flip: Flip {
+                    y: flip_y,
+                    ..Flip::default()
+                },
+                flash: None,
+                normals: Some(Texture::new(normals.clone(), false)),
+            });
+        }
+        let Some(out) = paint(&list, 8, 4) else {
+            return;
+        };
+        let mut canvas = crate::Canvas::scaled((4, 2), 2);
+        canvas.light(&lighting);
+        for item in &list.items {
+            let Drawn::Quad(quad) = item else { continue };
+            canvas.quad(quad);
+        }
+        for (i, (&gpu, &cpu)) in out.iter().zip(&canvas.pixels).enumerate() {
+            let channels = |c: u32| [c >> 16, c >> 8 & 0xff, c & 0xff];
+            let near = channels(gpu)
+                .iter()
+                .zip(channels(cpu))
+                .all(|(&a, b)| a.abs_diff(b) <= 3);
+            assert!(
+                near,
+                "pixel {i}: {gpu:06x} on the GPU, {cpu:06x} in software"
+            );
+        }
+        // Lit red from above on the top half; turned over, the bottom
+        // half faces down and gets none, but the light below it is blue.
+        let top = canvas.get(0, 0).unwrap();
+        let bottom = canvas.get(2, 3).unwrap();
+        assert!(top >> 16 > bottom >> 16, "{top:06x} {bottom:06x}");
+        assert!(bottom & 0xff > top & 0xff, "{top:06x} {bottom:06x}");
     }
 }

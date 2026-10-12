@@ -7,7 +7,8 @@
 //!
 //! Indexed PNGs stay indexed ([`Image::Indexed`]) so palettes can be
 //! swapped for character variants and hit flashes ([`Palette`]); other
-//! sheets can name whole alternative images instead. Frames
+//! sheets can name whole alternative images instead, and any sheet a
+//! normal map for lighting. Frames
 //! from many sheets are packed into texture pages with [`AtlasBuilder`].
 //! [`Playback`] steps through an animation one logic frame at a time.
 
@@ -35,6 +36,8 @@ pub struct SpriteSheet {
     pub image: Image,
     /// The sheet's named variants, each the size of `image`.
     pub variants: BTreeMap<String, Image>,
+    /// The sheet's normal map, the size of `image`.
+    pub normals: Option<Image>,
 }
 
 impl SpriteSheet {
@@ -58,13 +61,18 @@ impl SpriteSheet {
         for (name, file) in &sheet.variants {
             variants.insert(name.clone(), read(file)?);
         }
+        let normals = sheet.normals.as_deref().map(read).transpose()?;
         SpriteSheet::new(sheet, image)
             .and_then(|s| s.with_variants(variants))
+            .and_then(|s| match normals {
+                Some(normals) => s.with_normals(normals),
+                None => Ok(s),
+            })
             .map_err(|m| err(json, m))
     }
 
     /// Pairs metadata with its image, checking that every frame fits.
-    /// It has no variant images yet.
+    /// It has no variant images or normal map yet.
     pub fn new(sheet: Sheet, image: Image) -> Result<SpriteSheet, String> {
         let (w, h) = (image.width(), image.height());
         if let Some(i) = sheet.frames.iter().position(|f| !f.rect.fits(w, h)) {
@@ -77,6 +85,7 @@ impl SpriteSheet {
             sheet,
             image,
             variants: BTreeMap::new(),
+            normals: None,
         })
     }
 
@@ -100,6 +109,24 @@ impl SpriteSheet {
             }
         }
         self.variants = variants;
+        Ok(self)
+    }
+
+    /// Adds the sheet's normal map, checking that the sheet names one and
+    /// that it's the size of its image.
+    pub fn with_normals(mut self, normals: Image) -> Result<SpriteSheet, String> {
+        if self.sheet.normals.is_none() {
+            return Err("the metadata doesn't name a normal map".into());
+        }
+        let size = (self.image.width(), self.image.height());
+        let (w, h) = (normals.width(), normals.height());
+        if (w, h) != size {
+            return Err(format!(
+                "the normal map is {w}x{h}, but the sheet image is {}x{}",
+                size.0, size.1
+            ));
+        }
+        self.normals = Some(normals);
         Ok(self)
     }
 }

@@ -19,6 +19,11 @@
 //!   metadata file and laid out like the sheet's own, such as a costume
 //!   in other colours. They stand in for palettes on sheets that aren't
 //!   indexed; a name can't be both a palette and a variant.
+//! - `meta.clamber.normals`: a normal map, relative to the metadata file
+//!   and laid out like the sheet's image, so the sheet is shaded by the
+//!   scene's lights. Each texel is a normal with x right, y up and z
+//!   towards the viewer, stored as `0.5 + 0.5 * n` in red, green and
+//!   blue. Variants share it. Without one the sheet is drawn unlit.
 //!
 //! Slices carry per-frame geometry. A slice key applies from its frame
 //! until the slice's next key; a key with zero width or height means the
@@ -52,6 +57,8 @@ pub struct Sheet {
     pub palettes: BTreeMap<String, Palette>,
     /// Alternative images by name, relative to the metadata file.
     pub variants: BTreeMap<String, String>,
+    /// The normal map image, relative to the metadata file.
+    pub normals: Option<String>,
     /// Texels per world unit, at least 1.
     pub scale: u32,
     /// Drawn with sharp texel edges rather than filtered smoothly.
@@ -159,6 +166,7 @@ struct Extensions {
     palettes: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     variants: BTreeMap<String, String>,
+    normals: Option<String>,
     scale: Option<u32>,
     #[serde(default)]
     pixel_art: bool,
@@ -369,7 +377,8 @@ fn parse(file: File) -> Result<Sheet, String> {
         });
     }
 
-    let (raw_palettes, variants) = ext.map_or_else(Default::default, |e| (e.palettes, e.variants));
+    let (raw_palettes, variants, normals) =
+        ext.map_or_else(Default::default, |e| (e.palettes, e.variants, e.normals));
     if let Some(name) = variants.keys().find(|n| raw_palettes.contains_key(*n)) {
         return Err(format!(
             "meta.clamber.variants.{name}: also the name of a palette"
@@ -393,6 +402,7 @@ fn parse(file: File) -> Result<Sheet, String> {
         animations,
         palettes,
         variants,
+        normals,
         scale,
         pixel_art,
     })

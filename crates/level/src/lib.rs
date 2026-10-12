@@ -14,6 +14,8 @@
 //!   camera rules
 //! - **camera** rules for the whole level: limits and look-ahead
 //! - **music**: a track to play, with optional loop points
+//! - **lighting**: an ambient colour and a key light, and point lights,
+//!   which shade layers and sprites that have normal maps
 //!
 //! Maps made in Tiled can be imported ([`tiled`]).
 
@@ -26,6 +28,6 @@ pub use clamber_fixed::Fixed;
 pub use collision::{Collider, Collision, Dir, Hit, Shape};
 pub use geom::{Area, Rect, Vec2};
 pub use level::{
-    Camera, CameraRule, Depth, Entity, FORMAT, Layer, LayerContent, Level, LevelError, Region,
-    Surface, Tile, TileLayer, Tileset, Track, builtin_surfaces,
+    Camera, CameraRule, Depth, Entity, FORMAT, KeyLight, Layer, LayerContent, Level, LevelError,
+    Light, Lighting, Region, Rgb, Surface, Tile, TileLayer, Tileset, Track, builtin_surfaces,
 };

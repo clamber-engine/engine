@@ -11,7 +11,7 @@ use crate::canvas::{Canvas, Color, rgb};
 use crate::cast::{Cast, Poses};
 use crate::hud::draw_hud;
 use crate::layers::LayerArt;
-use crate::surface::Surface;
+use crate::surface::{Lighting, PointLight, Surface};
 
 const SKY: Color = rgb(0x2a, 0x34, 0x4a);
 const SOLID: Color = rgb(0x6b, 0x74, 0x80);
@@ -121,6 +121,7 @@ impl Game {
         canvas.clear(SKY);
 
         let level = &self.world.level;
+        canvas.light(&lighting(level, origin, canvas.view()));
         self.art.draw(canvas, level, Depth::Back, origin);
         if self.debug {
             for region in &level.regions {
@@ -236,6 +237,30 @@ fn outline(canvas: &mut dyn Surface, points: &[(f64, f64)], color: Color) {
     }
 }
 
+/// `level`'s lighting for a view whose top left is at `origin`, `view`
+/// units across, with the point lights that reach into it.
+fn lighting(level: &clamber_level::Level, origin: (f64, f64), view: (u32, u32)) -> Lighting {
+    let lights = level
+        .lights
+        .iter()
+        .filter_map(|l| {
+            let (x, y) = point(l.at);
+            let (x, y) = ((x - origin.0) as f32, (y - origin.1) as f32);
+            let radius = l.radius.to_f64() as f32;
+            let reaches = x + radius > 0.0
+                && y + radius > 0.0
+                && x - radius < view.0 as f32
+                && y - radius < view.1 as f32;
+            reaches.then(|| PointLight {
+                at: (x, y),
+                radius,
+                color: l.color.map(|c| (c as f64 / 255.0 * l.intensity) as f32),
+            })
+        })
+        .collect();
+    Lighting::new(&level.lighting, lights)
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -330,6 +355,57 @@ mod tests {
         assert_eq!(at(400.0, 250.0), Some(rgb(1, 2, 3)));
         assert_eq!(at(500.0, 290.0), Some(state_color(State::Idle)));
         assert_eq!(at(545.0, 255.0), Some(rgb(4, 5, 6)));
+    }
+
+    #[test]
+    fn lights_layers_that_have_normal_maps() {
+        let lit = r##"
+            [lighting]
+            ambient = "#808080"
+            key = { intensity = 0 }
+
+            [[lights]]
+            at = [400, 250]
+            radius = 60
+
+            [[lights]]
+            at = [5000, 250]
+            radius = 60
+
+            [[layers]]
+            name = "wall"
+            image = "wall.png"
+            normals = "wall-normals.png"
+            parallax = [0, 0]
+            repeat = [true, true]
+        "##;
+        let level = Level::from_toml_str(&format!("{LEVEL}{lit}"), "test").unwrap();
+        let fill = |c: [u8; 4]| {
+            let mut image = clamber_sprite::RgbaImage::new(4, 4);
+            image.data.fill(c);
+            image
+        };
+        let mut art = LayerArt::default();
+        art.insert("wall.png", fill([100, 100, 100, 255]), false);
+        // Every texel faces the viewer.
+        art.insert("wall-normals.png", fill([128, 128, 255, 255]), false);
+        let world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
+        let game = Game::new(world).with_art(art);
+        let mut canvas = Game::canvas();
+        game.draw(&mut canvas, 1.0);
+        let (left, top) = game.camera.top_left(1.0);
+        let at = |x: f64, y: f64| canvas.get((x - left) as i32, (y - top) as i32).unwrap();
+        // Under the light: half from the ambient and all of the light's.
+        let under = at(400.0, 250.0) >> 16;
+        assert!((148..=151).contains(&under), "{under}");
+        // Out of its reach: only the ambient.
+        assert_eq!(at(600.0, 250.0), rgb(50, 50, 50));
+        let lighting = lighting(&game.world.level, (left, top), VIEW);
+        assert_eq!(lighting.lights.len(), 1, "the far light is left out");
+        assert_eq!(
+            lighting.lights[0].at,
+            ((400.0 - left) as f32, (250.0 - top) as f32)
+        );
     }
 
     #[test]

@@ -9,6 +9,11 @@
 //!
 //! [`Texture`]s are drawn smoothly, filtered from mipmaps, unless they're
 //! pixel art, which keeps sharp texel edges at any size.
+//!
+//! A quad with a normal map is lit: its colour is multiplied by the light
+//! falling on each texel's normal under the surface's [`Lighting`], an
+//! ambient colour, a key light and point lights. Both surfaces shade the
+//! same way, so captures look like the game.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -40,6 +45,9 @@ pub trait Surface {
 
     /// Draws part of a texture.
     fn quad(&mut self, quad: &Quad);
+
+    /// Lights the quads with normal maps drawn from now on.
+    fn light(&mut self, lighting: &Lighting);
 
     /// The outline of a rectangle, one unit thick, inside its bounds.
     fn stroke_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
@@ -170,6 +178,106 @@ pub struct Quad {
     pub flip: Flip,
     /// Draw every visible texel in this colour, keeping its alpha.
     pub flash: Option<Rgba>,
+    /// A normal map laid out like `texture`, to light it by. Flashes
+    /// aren't lit.
+    pub normals: Option<Arc<Texture>>,
+}
+
+/// The most point lights that shade a frame.
+pub const MAX_LIGHTS: usize = 16;
+
+/// How far in front of what they light point lights are, in view units,
+/// so a surface facing the viewer is lit even right under one.
+pub const LIGHT_HEIGHT: f32 = 24.0;
+
+/// The light that quads with normal maps are drawn in, in view units.
+/// Colours are from 0 to 1 for each of red, green and blue, already
+/// multiplied by their intensity, so they can be more than 1.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Lighting {
+    pub ambient: [f32; 3],
+    /// Towards the key light, of length 1: x right, y down and z towards
+    /// the viewer.
+    pub key_direction: [f32; 3],
+    pub key: [f32; 3],
+    /// At most [`MAX_LIGHTS`]; any more are left out.
+    pub lights: Vec<PointLight>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PointLight {
+    pub at: (f32, f32),
+    /// Where its light has faded to nothing.
+    pub radius: f32,
+    pub color: [f32; 3],
+}
+
+impl Default for Lighting {
+    /// The default level lighting, with no point lights.
+    fn default() -> Lighting {
+        Lighting::new(&clamber_level::Lighting::default(), Vec::new())
+    }
+}
+
+impl Lighting {
+    /// A level's ambient and key lights, with point lights already in
+    /// view units.
+    pub fn new(level: &clamber_level::Lighting, mut lights: Vec<PointLight>) -> Lighting {
+        let color = |c: [u8; 3], times: f64| c.map(|v| (v as f64 / 255.0 * times) as f32);
+        let [x, y, z] = level.key.direction;
+        let length = (x * x + y * y + z * z).sqrt().max(f64::MIN_POSITIVE);
+        lights.truncate(MAX_LIGHTS);
+        Lighting {
+            ambient: color(level.ambient, 1.0),
+            key_direction: [x, y, z].map(|v| (v / length) as f32),
+            key: color(level.key.color, level.key.intensity),
+            lights,
+        }
+    }
+
+    /// The light falling at `at` on a surface facing `normal`, a unit
+    /// vector in view axes: what to multiply its colour by.
+    pub fn at(&self, normal: [f32; 3], at: (f32, f32)) -> [f32; 3] {
+        let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let key = dot(normal, self.key_direction).max(0.0);
+        let mut light = std::array::from_fn(|i| self.ambient[i] + self.key[i] * key);
+        for l in &self.lights {
+            let d = [l.at.0 - at.0, l.at.1 - at.1, LIGHT_HEIGHT];
+            let reach = (1.0 - d[0].hypot(d[1]) / l.radius).clamp(0.0, 1.0);
+            if reach == 0.0 {
+                continue;
+            }
+            let facing = (dot(normal, d) / dot(d, d).sqrt()).max(0.0);
+            for (out, c) in light.iter_mut().zip(l.color) {
+                *out += c * reach * reach * facing;
+            }
+        }
+        light
+    }
+}
+
+/// The normal in view axes of a texel of a normal map, from its colour
+/// premultiplied by alpha with channels from 0 to 1, drawn with `flip`:
+/// `None` where it's transparent.
+pub fn normal(encoded: [f32; 4], flip: Flip) -> Option<[f32; 3]> {
+    let [r, g, b, a] = encoded;
+    if a <= 0.0 {
+        return None;
+    }
+    // Stored with y up; the view's y is down.
+    let decode = |c: f32| c / a * 2.0 - 1.0;
+    let (mut x, mut y, z) = (decode(r), -decode(g), decode(b));
+    if flip.x {
+        x = -x;
+    }
+    if flip.y {
+        y = -y;
+    }
+    if flip.diagonal {
+        (x, y) = (y, x);
+    }
+    let length = (x * x + y * y + z * z).sqrt();
+    (length > 0.0).then(|| [x / length, y / length, z / length])
 }
 
 /// Something recorded in a [`DrawList`], in view units.
@@ -205,6 +313,8 @@ pub struct DrawList {
     pub background: Color,
     /// In drawing order.
     pub items: Vec<Drawn>,
+    /// The lighting the frame's lit quads are drawn in.
+    pub lighting: Lighting,
 }
 
 impl DrawList {
@@ -213,6 +323,7 @@ impl DrawList {
             view,
             background: 0,
             items: Vec::new(),
+            lighting: Lighting::default(),
         }
     }
 }
@@ -269,6 +380,11 @@ impl Surface for DrawList {
 
     fn quad(&mut self, quad: &Quad) {
         self.items.push(Drawn::Quad(quad.clone()));
+    }
+
+    /// One lighting for the whole frame: the last given.
+    fn light(&mut self, lighting: &Lighting) {
+        self.lighting = lighting.clone();
     }
 }
 
@@ -387,6 +503,66 @@ mod tests {
         l.reverse();
         assert_eq!(area(&l, &triangulate(&l)), 3.0);
         assert_eq!(triangulate(&l[..3]).len(), 1);
+    }
+
+    #[test]
+    fn lights_by_the_key_ambient_and_nearby_lights() {
+        let level = clamber_level::Lighting::default();
+        let mut lighting = Lighting::new(&level, Vec::new());
+        // Facing the viewer under the default lights: about as it is.
+        let front = lighting.at([0.0, 0.0, 1.0], (0.0, 0.0));
+        assert!(
+            front.iter().all(|&c| (0.98..1.02).contains(&c)),
+            "{front:?}"
+        );
+        // Facing away from the key light: ambient only.
+        let away = lighting.at([1.0, 0.0, 0.0], (0.0, 0.0));
+        assert_eq!(away, lighting.ambient);
+
+        lighting.lights.push(PointLight {
+            at: (100.0, 0.0),
+            radius: 50.0,
+            color: [2.0, 0.0, 0.0],
+        });
+        assert_eq!(
+            lighting.at([1.0, 0.0, 0.0], (0.0, 0.0)),
+            away,
+            "out of reach"
+        );
+        let near = lighting.at([1.0, 0.0, 0.0], (75.0, 0.0));
+        // Halfway in, with the light 25 across and 24 out.
+        let expected = 2.0 * 0.5 * 0.5 * 25.0 / (25.0f32 * 25.0 + 24.0 * 24.0).sqrt();
+        assert!((near[0] - away[0] - expected).abs() < 1e-5, "{near:?}");
+        assert_eq!(near[1..], away[1..]);
+        let many = Lighting::new(&level, vec![lighting.lights[0].clone(); 20]);
+        assert_eq!(many.lights.len(), MAX_LIGHTS);
+    }
+
+    #[test]
+    fn decodes_normals_into_view_axes_and_flips_them() {
+        // Up and to the right, stored y up, at half alpha.
+        let encoded = [0.5, 0.5, 0.25, 0.5];
+        let n = normal(encoded, Flip::default()).unwrap();
+        let s = 0.5f32.sqrt();
+        let close = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-6);
+        assert!(close(n, [s, -s, 0.0]), "{n:?}");
+        let x = Flip {
+            x: true,
+            ..Flip::default()
+        };
+        assert!(close(normal(encoded, x).unwrap(), [-s, -s, 0.0]));
+        let swapped = Flip {
+            diagonal: true,
+            ..Flip::default()
+        };
+        assert!(close(normal(encoded, swapped).unwrap(), [-s, s, 0.0]));
+        let y = Flip {
+            y: true,
+            diagonal: true,
+            ..Flip::default()
+        };
+        assert!(close(normal(encoded, y).unwrap(), [s, s, 0.0]));
+        assert_eq!(normal([0.0; 4], Flip::default()), None);
     }
 
     #[test]

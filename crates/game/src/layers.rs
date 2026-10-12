@@ -3,7 +3,8 @@
 //! A layer's top left is drawn at its offset less the view's top left
 //! scaled by its parallax, so a parallax of 1 moves with the world and 0
 //! stays put on screen. Its image covers one world unit per `scale`
-//! texels, filtered smoothly unless the layer is pixel art.
+//! texels, filtered smoothly unless the layer is pixel art, and is lit by
+//! the level's lights if it has a normal map.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -29,18 +30,22 @@ impl LayerArt {
         let mut art = LayerArt::default();
         let mut images: BTreeMap<&str, RgbaImage> = BTreeMap::new();
         for layer in &level.layers {
-            let path = image_path(layer);
-            if art.get(path, layer.pixel_art).is_some() {
-                continue;
+            for path in [Some(image_path(layer)), normals_path(layer)]
+                .into_iter()
+                .flatten()
+            {
+                if art.get(path, layer.pixel_art).is_some() {
+                    continue;
+                }
+                if !images.contains_key(path) {
+                    let file = dir.join(path);
+                    let err = |e: String| format!("{}: {e}", file.display());
+                    let bytes = std::fs::read(&file).map_err(|e| err(e.to_string()))?;
+                    let image = decode_png(&bytes).map_err(|e| err(e.0))?;
+                    images.insert(path, image.to_rgba());
+                }
+                art.insert(path, images[path].clone(), layer.pixel_art);
             }
-            if !images.contains_key(path) {
-                let file = dir.join(path);
-                let err = |e: String| format!("{}: {e}", file.display());
-                let bytes = std::fs::read(&file).map_err(|e| err(e.to_string()))?;
-                let image = decode_png(&bytes).map_err(|e| err(e.0))?;
-                images.insert(path, image.to_rgba());
-            }
-            art.insert(path, images[path].clone(), layer.pixel_art);
         }
         art.check(level)?;
         Ok(art)
@@ -59,6 +64,21 @@ impl LayerArt {
 
     fn check(&self, level: &Level) -> Result<(), String> {
         for layer in &level.layers {
+            let image = self.get(image_path(layer), layer.pixel_art);
+            let normals = normals_path(layer).and_then(|p| self.get(p, layer.pixel_art));
+            if let (Some(image), Some(normals)) = (image, normals) {
+                let size = |t: &Texture| (t.width(), t.height());
+                if size(image) != size(normals) {
+                    return Err(format!(
+                        "layer `{}`: the normal map is {}x{}, but its image is {}x{}",
+                        layer.name,
+                        normals.width(),
+                        normals.height(),
+                        image.width(),
+                        image.height()
+                    ));
+                }
+            }
             let LayerContent::Tiles(tiles) = &layer.content else {
                 continue;
             };
@@ -87,6 +107,8 @@ impl LayerArt {
             let Some(texture) = self.get(image_path(layer), layer.pixel_art) else {
                 continue;
             };
+            let normals = normals_path(layer).and_then(|p| self.get(p, layer.pixel_art));
+            let art = Art { texture, normals };
             let (offset, parallax) = (point(layer.offset), point(layer.parallax));
             let at = (
                 (offset.0 - origin.0 * parallax.0) as f32,
@@ -96,8 +118,8 @@ impl LayerArt {
             match &layer.content {
                 LayerContent::Image {
                     repeat_x, repeat_y, ..
-                } => draw_image(surface, texture, scale, at, (*repeat_x, *repeat_y)),
-                LayerContent::Tiles(tiles) => draw_tiles(surface, texture, scale, tiles, at),
+                } => draw_image(surface, art, scale, at, (*repeat_x, *repeat_y)),
+                LayerContent::Tiles(tiles) => draw_tiles(surface, art, scale, tiles, at),
             }
         }
     }
@@ -110,9 +132,23 @@ fn image_path(layer: &Layer) -> &str {
     }
 }
 
+/// A layer's image, and its normal map if it has one.
+#[derive(Clone, Copy)]
+struct Art<'a> {
+    texture: &'a Arc<Texture>,
+    normals: Option<&'a Arc<Texture>>,
+}
+
+fn normals_path(layer: &Layer) -> Option<&str> {
+    match &layer.content {
+        LayerContent::Image { normals, .. } => normals.as_deref(),
+        LayerContent::Tiles(tiles) => tiles.tileset.normals.as_deref(),
+    }
+}
+
 fn draw_image(
     surface: &mut dyn Surface,
-    texture: &Arc<Texture>,
+    Art { texture, normals }: Art,
     scale: f32,
     at: (f32, f32),
     repeat: (bool, bool),
@@ -147,6 +183,7 @@ fn draw_image(
                 ],
                 flip: Flip::default(),
                 flash: None,
+                normals: normals.cloned(),
             });
         }
     }
@@ -154,7 +191,7 @@ fn draw_image(
 
 fn draw_tiles(
     surface: &mut dyn Surface,
-    texture: &Arc<Texture>,
+    Art { texture, normals }: Art,
     scale: f32,
     tiles: &TileLayer,
     at: (f32, f32),
@@ -206,6 +243,7 @@ fn draw_tiles(
                 dst: [left, top, right, bottom],
                 flip,
                 flash: None,
+                normals: normals.cloned(),
             });
         }
     }
@@ -419,5 +457,26 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         let err = LayerArt::load(&level(&[1, 0, 0]), &dir).unwrap_err();
         assert!(err.contains("ground.png: "), "{err}");
+    }
+
+    #[test]
+    fn loads_normal_maps_the_size_of_their_images() {
+        let dir = std::env::temp_dir().join(format!("clamber-normals-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("wall.png"), encode_png(&coords(4, 2))).unwrap();
+        let level = level(
+            "[[layers]]\nname = \"wall\"\nimage = \"wall.png\"\nnormals = \"wall-normals.png\"\n",
+        );
+        std::fs::write(dir.join("wall-normals.png"), encode_png(&coords(4, 2))).unwrap();
+        let art = LayerArt::load(&level, &dir).unwrap();
+        assert!(art.get("wall-normals.png", false).is_some());
+
+        std::fs::write(dir.join("wall-normals.png"), encode_png(&coords(2, 2))).unwrap();
+        let err = LayerArt::load(&level, &dir).unwrap_err();
+        assert_eq!(
+            err,
+            "layer `wall`: the normal map is 2x2, but its image is 4x2"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

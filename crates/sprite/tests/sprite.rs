@@ -338,3 +338,42 @@ fn atlas_from_sheet_frames() {
         assert_eq!(atlas.pages[e.page].get(e.rect.x, e.rect.y), i as u8 + 1);
     }
 }
+
+#[test]
+fn loads_a_normal_map_the_size_of_the_sheet() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sprite-normals");
+    std::fs::create_dir_all(&dir).unwrap();
+    let json = include_str!("fixtures/walker.json").replace(
+        r#""clamber": {"#,
+        r#""clamber": { "normals": "walker-normals.png","#,
+    );
+    std::fs::write(dir.join("walker.json"), &json).unwrap();
+    let rows: Vec<Vec<u8>> = (0..16).map(|y| vec![(y % 3) as u8; 64]).collect();
+    std::fs::write(
+        dir.join("walker.png"),
+        indexed_png(64, 16, png::BitDepth::Eight, &rows),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("walker-normals.png"),
+        indexed_png(64, 16, png::BitDepth::Eight, &rows),
+    )
+    .unwrap();
+    let loaded = SpriteSheet::load(&dir.join("walker.json")).unwrap();
+    assert_eq!(loaded.sheet.normals.as_deref(), Some("walker-normals.png"));
+    assert_eq!(loaded.normals.as_ref().map(|n| n.width()), Some(64));
+
+    std::fs::write(
+        dir.join("walker-normals.png"),
+        indexed_png(32, 16, png::BitDepth::Eight, &vec![vec![0; 32]; 16]),
+    )
+    .unwrap();
+    let err = SpriteSheet::load(&dir.join("walker.json")).unwrap_err();
+    assert!(
+        err.message
+            .contains("the normal map is 32x16, but the sheet image is 64x16"),
+        "{err}"
+    );
+    let plain = Sheet::from_json_str(&sheet_with(FRAME, ""), "test").unwrap();
+    assert_eq!(plain.normals, None);
+}

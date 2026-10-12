@@ -12,6 +12,20 @@ file = "music/everything.ogg"
 loop_start = 44100
 loop_length = 88200
 
+[lighting]
+ambient = "#404858"
+key = { direction = [1, -2, 1], intensity = 0.75 }
+
+[[lights]]
+at = [320, 470]
+color = "#ffc070"
+radius = 96
+intensity = 1.5
+
+[[lights]]
+at = [1100, 420.5]
+radius = 40
+
 [surfaces.ice]
 physics = { ground_friction = { scale = 0.05 } }
 
@@ -22,6 +36,7 @@ physics = { top_speed = 1 }
 [[layers]]
 name = "sky"
 image = "bg/sky.png"
+normals = "bg/sky-normals.png"
 parallax = [0.25, 0.5]
 repeat = [true, false]
 
@@ -30,7 +45,7 @@ name = "ground tiles"
 depth = "back"
 scale = 4
 pixel_art = true
-tiles = { tileset = "tiles/ground.png", tile_size = [16, 16], columns = 4, data = [0, 1, 2, 3, 2147483653, 0, 0, 0] }
+tiles = { tileset = "tiles/ground.png", normals = "tiles/ground-normals.png", tile_size = [16, 16], columns = 4, data = [0, 1, 2, 3, 2147483653, 0, 0, 0] }
 
 [[layers]]
 name = "fog"

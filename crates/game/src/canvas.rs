@@ -4,7 +4,7 @@
 
 use clamber_sprite::RgbaImage;
 
-use crate::surface::{Quad, Surface};
+use crate::surface::{Lighting, Quad, Surface, normal};
 
 /// A colour as `0x00RRGGBB`, the layout the window surface takes.
 pub type Color = u32;
@@ -16,7 +16,7 @@ pub const fn rgb(r: u8, g: u8, b: u8) -> Color {
 
 /// An image in screen pixels, drawn into each frame: the software
 /// [`Surface`], at a whole number of pixels per view unit.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Canvas {
     pub width: u32,
     pub height: u32,
@@ -24,6 +24,8 @@ pub struct Canvas {
     pub scale: u32,
     /// Row by row from the top left.
     pub pixels: Vec<Color>,
+    /// What quads with normal maps are lit by.
+    pub lighting: Lighting,
 }
 
 impl Canvas {
@@ -41,6 +43,7 @@ impl Canvas {
             height,
             scale,
             pixels: vec![0; (width * height) as usize],
+            lighting: Lighting::default(),
         }
     }
 
@@ -52,6 +55,17 @@ impl Canvas {
     fn index(&self, x: i32, y: i32) -> Option<usize> {
         let inside = (0..self.width as i32).contains(&x) && (0..self.height as i32).contains(&y);
         inside.then(|| (y as u32 * self.width + x as u32) as usize)
+    }
+
+    /// The light on pixel `(x, y)` of a quad whose normal map there is
+    /// `encoded`, premultiplied, from 0 to 255; white where it's unlit.
+    fn light_at(&self, quad: &Quad, encoded: Option<[f32; 4]>, x: i32, y: i32) -> [f32; 3] {
+        let s = self.scale as f32;
+        let at = ((x as f32 + 0.5) / s, (y as f32 + 0.5) / s);
+        encoded
+            .filter(|_| quad.flash.is_none())
+            .and_then(|e| normal(e.map(|c| c / 255.0), quad.flip))
+            .map_or([1.0; 3], |n| self.lighting.at(n, at))
     }
 
     fn set(&mut self, x: i32, y: i32, color: Color) {
@@ -105,9 +119,16 @@ impl Canvas {
                 let sx = (sx.floor() as u32).min(src.w - 1);
                 let sy = (sy.floor() as u32).min(src.h - 1);
                 let [r, g, b, a] = image.get(src.x + sx, src.y + sy);
+                let encoded = quad.normals.as_ref().map(|n| {
+                    let [r, g, b, a] = n.levels[0].get(src.x + sx, src.y + sy);
+                    let p = |c: u8| c as f32 * a as f32 / 255.0;
+                    [p(r), p(g), p(b), a as f32]
+                });
+                let [lr, lg, lb] = self.light_at(quad, encoded, x, y);
+                let lit = |c: u8, l: f32| (c as f32 * l).round().clamp(0.0, 255.0) as u8;
                 let (r, g, b) = match quad.flash {
                     Some([fr, fg, fb, _]) => (fr, fg, fb),
-                    None => (r, g, b),
+                    None => (lit(r, lr), lit(g, lg), lit(b, lb)),
                 };
                 match a {
                     0 => {}
@@ -155,12 +176,18 @@ impl Canvas {
                 if a <= 0.0 {
                     continue;
                 }
+                let encoded = quad
+                    .normals
+                    .as_ref()
+                    .and_then(|n| n.levels.get(level))
+                    .map(|n| bilinear(n, at, lo, hi));
+                let [lr, lg, lb] = self.light_at(quad, encoded, x, y);
                 let (r, g, b) = match quad.flash {
                     Some([fr, fg, fb, _]) => {
                         let c = |v: u8| v as f32 * a / 255.0;
                         (c(fr), c(fg), c(fb))
                     }
-                    None => (r, g, b),
+                    None => (r * lr, g * lg, b * lb),
                 };
                 if let Some(i) = self.index(x, y) {
                     self.pixels[i] = over(self.pixels[i], [r, g, b, a]);
@@ -289,6 +316,10 @@ impl Surface for Canvas {
                 }
             }
         }
+    }
+
+    fn light(&mut self, lighting: &Lighting) {
+        self.lighting = lighting.clone();
     }
 
     fn quad(&mut self, quad: &Quad) {

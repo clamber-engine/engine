@@ -8,13 +8,13 @@ same three-point lighting, onto a transparent background:
 - once in the model's own colours, and once per named variant (other
   colours for the same model, such as the second roster slot's);
 - once as a normal map: camera-space normals, x right, y up and z towards
-  the camera, each stored as `0.5 + 0.5 * n` in red, green and blue.
-  The game doesn't read normal maps yet, so the metadata doesn't name it.
+  the camera, each stored as `0.5 + 0.5 * n` in red, green and blue,
+  which the game lights the sheet by.
 
 Frames are trimmed to what they show and packed into one image per pass,
 all laid out alike, with the `clamber-sprite` JSON beside them: frame
-tags per animation, the origin, the texel scale, the variants, and a
-`hurtbox` slice per frame around the posed model.
+tags per animation, the origin, the texel scale, the normal map, the
+variants, and a `hurtbox` slice per frame around the posed model.
 
 Distances: one Blender unit is ten world units, so a body 32 units tall is
 3.2 m. Sheets are drawn at `SCALE` texels per world unit.
@@ -592,6 +592,7 @@ def render_sheet(scene, cam, rig, out, frame, origin, animations, pose, variants
     meta["clamber"] = {
         "origin": {"x": origin[0] * SCALE, "y": origin[1] * SCALE},
         "scale": SCALE,
+        "normals": f"{stem}-normals.png",
     }
     if variants:
         meta["clamber"]["variants"] = {v: f"{stem}-{v}.png" for v in variants}

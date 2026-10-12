@@ -2932,6 +2932,7 @@
         "y": 190
       },
       "scale": 5,
+      "normals": "player-normals.png",
       "variants": {
         "alt": "player-alt.png"
       }

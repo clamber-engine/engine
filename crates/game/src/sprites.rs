@@ -5,7 +5,9 @@
 //! any resolution are the same size in the world. An indexed sheet gets a
 //! texture for each of its palettes, coloured when it's added, and any
 //! sheet one for each of its variant images, so palette swaps cost nothing
-//! to draw; hit flashes recolour as they're drawn.
+//! to draw; hit flashes recolour as they're drawn. A sheet's normal map,
+//! if it has one, is a texture too, shared by its palettes and variants,
+//! and lights the sheet whatever colours it's drawn in.
 
 use std::sync::Arc;
 
@@ -29,6 +31,7 @@ struct Entry {
     /// The sheet's named palettes and variants, by their index in
     /// `textures`, in name order.
     named: Vec<(String, PaletteId)>,
+    normals: Option<Arc<Texture>>,
 }
 
 /// Collects sheets for a [`SpriteBank`].
@@ -48,6 +51,10 @@ impl SpriteBankBuilder {
             sheet: sprite.sheet.clone(),
             textures: vec![Texture::new(sprite.image.to_rgba(), pixel_art)],
             named: Vec::new(),
+            normals: sprite
+                .normals
+                .as_ref()
+                .map(|n| Texture::new(n.to_rgba(), pixel_art)),
         };
         if let Image::Indexed { indices, .. } = &sprite.image {
             for (name, palette) in &sprite.sheet.palettes {
@@ -164,6 +171,7 @@ impl SpriteBank {
                 diagonal: false,
             },
             flash: sprite.flash,
+            normals: entry.normals.clone(),
         });
     }
 }
