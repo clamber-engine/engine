@@ -1,11 +1,14 @@
 //! A level being played: the world, its camera, and drawing both.
 
-use clamber_level::{Area, Shape, Vec2};
+use std::sync::Arc;
+
+use clamber_level::{Area, Depth, Shape, Vec2};
 use clamber_sim::{Facing, FlowEvent, HALF_WIDTH, HEIGHT, InputFrame, State, World, step};
 
 use crate::camera::{Camera, VIEW, point};
 use crate::canvas::{Canvas, Color, rgb};
 use crate::hud::draw_hud;
+use crate::layers::LayerArt;
 
 const SKY: Color = rgb(0x2a, 0x34, 0x4a);
 const SOLID: Color = rgb(0x6b, 0x74, 0x80);
@@ -27,6 +30,8 @@ pub struct Game {
     previous: Vec2,
     /// Draw collision geometry, regions and entity markers.
     pub debug: bool,
+    /// The images the level's layers draw.
+    art: Arc<LayerArt>,
 }
 
 impl Game {
@@ -38,6 +43,15 @@ impl Game {
             previous: world.player.pos,
             debug: world.level.layers.is_empty(),
             world,
+            art: Arc::default(),
+        }
+    }
+
+    /// Draws the level's layers with `art`.
+    pub fn with_art(self, art: LayerArt) -> Game {
+        Game {
+            art: Arc::new(art),
+            ..self
         }
     }
 
@@ -46,6 +60,7 @@ impl Game {
         let world = World::new(self.world.level.clone(), self.world.feel.clone());
         *self = Game {
             debug: self.debug,
+            art: self.art.clone(),
             ..Game::new(world)
         };
     }
@@ -69,14 +84,15 @@ impl Game {
         Canvas::new(VIEW.0, VIEW.1)
     }
 
-    /// Draws the world, and the HUD over it, `alpha` of the way from the state before the last
-    /// step to the state after it.
+    /// Draws the world, and the HUD over it, `alpha` of the way from the
+    /// state before the last step to the state after it.
     pub fn draw(&self, canvas: &mut Canvas, alpha: f64) {
         let origin = self.camera.top_left(alpha);
         let to_screen = |p: (f64, f64)| (p.0 - origin.0, p.1 - origin.1);
         canvas.clear(SKY);
 
         let level = &self.world.level;
+        self.art.draw(canvas, level, Depth::Back, origin);
         if self.debug {
             for region in &level.regions {
                 let points = match &region.area {
@@ -120,6 +136,7 @@ impl Game {
         }
 
         self.draw_player(canvas, alpha, origin);
+        self.art.draw(canvas, level, Depth::Front, origin);
         draw_hud(canvas, &self.world);
     }
 
@@ -227,6 +244,44 @@ mod tests {
         let at = |x: f64, y: f64| canvas.get((x - left) as i32, (y - top) as i32);
         assert_eq!(at(500.0, 350.0), Some(SKY));
         assert_eq!(at(500.0, 290.0), Some(state_color(State::Idle)));
+    }
+
+    #[test]
+    fn draws_back_layers_behind_the_player_and_front_ones_over() {
+        let layers = r#"
+            [[layers]]
+            name = "far"
+            image = "far.png"
+            parallax = [0, 0]
+            repeat = [true, true]
+
+            [[layers]]
+            name = "near"
+            depth = "front"
+            image = "near.png"
+            offset = [540, 250]
+        "#;
+        let src = format!("{LEVEL}{layers}");
+        let level = Level::from_toml_str(&src, "test").unwrap();
+        let fill = |w, h, c: [u8; 4]| {
+            let mut image = clamber_sprite::RgbaImage::new(w, h);
+            image.data.fill(c);
+            image
+        };
+        let mut art = LayerArt::default();
+        art.insert("far.png", fill(4, 4, [1, 2, 3, 255]));
+        art.insert("near.png", fill(30, 30, [4, 5, 6, 255]));
+        let world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
+        let mut game = Game::new(world).with_art(art);
+        assert!(!game.debug);
+        game.restart();
+        let mut canvas = Game::canvas();
+        game.draw(&mut canvas, 1.0);
+        let (left, top) = game.camera.top_left(1.0);
+        let at = |x: f64, y: f64| canvas.get((x - left) as i32, (y - top) as i32);
+        assert_eq!(at(400.0, 250.0), Some(rgb(1, 2, 3)));
+        assert_eq!(at(500.0, 290.0), Some(state_color(State::Idle)));
+        assert_eq!(at(545.0, 255.0), Some(rgb(4, 5, 6)));
     }
 
     #[test]

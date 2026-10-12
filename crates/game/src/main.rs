@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
-use clamber_game::{Canvas, Clock, Game, Session, VIEW, content_dir, keys, present, rgb};
+use clamber_game::{Canvas, Clock, Game, LayerArt, Session, VIEW, content_dir, keys, present, rgb};
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
 use clamber_pack::Pack;
@@ -94,6 +94,7 @@ fn play(options: Options) -> Result<(), String> {
         .level
         .unwrap_or_else(|| content_dir().join(clamber_game::DEFAULT_LEVEL));
     let level = Level::load(&level_path).map_err(|e| e.to_string())?;
+    let art = LayerArt::load(&level, level_path.parent().unwrap_or(Path::new("")))?;
     let feel = match &options.pack {
         Some(path) => {
             let src = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
@@ -115,7 +116,7 @@ fn play(options: Options) -> Result<(), String> {
         }
     };
     let world = World::new(Arc::new(level), Arc::new(feel));
-    let mut session = Session::new(Game::new(world));
+    let mut session = Session::new(Game::new(world).with_art(art));
     session.settings_path = options
         .settings
         .map(PathBuf::from)

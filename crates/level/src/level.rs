@@ -46,6 +46,8 @@ pub struct Layer {
     /// How far the layer scrolls per pixel of camera movement: 1 moves
     /// with the world, 0 stays fixed on screen.
     pub parallax: Vec2,
+    /// Where the layer's top left is when the view's top left is at the
+    /// level's origin. With a parallax of 1 that's its place in the world.
     pub offset: Vec2,
     pub content: LayerContent,
 }
@@ -61,6 +63,8 @@ pub enum Depth {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum LayerContent {
+    /// An image, optionally repeated without end along either axis. The
+    /// path is relative to the level file, as are tileset images.
     Image {
         path: String,
         repeat_x: bool,

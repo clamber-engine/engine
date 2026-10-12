@@ -4,8 +4,9 @@
 //! drawn between its last two states, so motion stays smooth at any
 //! refresh rate. Drawing is software rendering into a [`Canvas`] at a
 //! fixed internal resolution ([`VIEW`]), scaled by whole pixels onto the
-//! window with no filtering ([`present`]). Sprites are drawn from atlas
-//! pages by a [`SpriteBank`], indexed sheets through a palette table.
+//! window with no filtering ([`present`]). Level layers are drawn with
+//! parallax from a [`LayerArt`], and sprites from atlas pages by a
+//! [`SpriteBank`], indexed sheets through a palette table.
 //!
 //! A [`Session`] puts the title, pause, level complete and game over
 //! screens around the level, with [`Menu`]s driven by neutral actions,
@@ -22,6 +23,7 @@ mod controls;
 mod game;
 mod hud;
 pub mod keys;
+mod layers;
 mod menu;
 mod session;
 mod sprites;
@@ -35,6 +37,7 @@ pub use clock::Clock;
 pub use controls::{Controls, Request, Row, TIMEOUT};
 pub use game::Game;
 pub use hud::draw_hud;
+pub use layers::LayerArt;
 pub use menu::{Choice, Menu};
 pub use session::{Item, Screen, Session, clock_time};
 pub use sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};

@@ -187,7 +187,11 @@ impl SpriteBank {
             false => sprite.y + frame.offset.1,
             true => sprite.y - frame.offset.1 - h,
         };
-        let flip = (sprite.flip_x, sprite.flip_y);
+        let flip = Flip {
+            x: sprite.flip_x,
+            y: sprite.flip_y,
+            diagonal: false,
+        };
         match entry.sources[sprite.frame] {
             Source::Rgba(i) => {
                 let at = self.rgba.entries[i];
@@ -217,25 +221,37 @@ impl SpriteBank {
     }
 }
 
-/// Draws `rect` of `page` with its top left at `at`, mirrored as asked,
+/// How an image is turned as it's drawn: mirrored left to right, then
+/// top to bottom, then across its leading diagonal (swapping x and y).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Flip {
+    pub x: bool,
+    pub y: bool,
+    pub diagonal: bool,
+}
+
+/// Draws `rect` of `page` with its top left at `at`, turned as asked,
 /// colouring each pixel with `color` and mixing by its alpha.
-fn blit<P: Copy>(
+pub(crate) fn blit<P: Copy>(
     canvas: &mut Canvas,
     page: &Pixels<P>,
     rect: Rect,
     at: (i32, i32),
-    flip: (bool, bool),
+    flip: Flip,
     color: impl Fn(P) -> Rgba,
 ) {
     let (w, h) = (rect.w as i32, rect.h as i32);
-    let xs = (-at.0).max(0)..w.min(canvas.width as i32 - at.0);
-    let ys = (-at.1).max(0)..h.min(canvas.height as i32 - at.1);
+    let (out_w, out_h) = if flip.diagonal { (h, w) } else { (w, h) };
+    let xs = (-at.0).max(0)..out_w.min(canvas.width as i32 - at.0);
+    let ys = (-at.1).max(0)..out_h.min(canvas.height as i32 - at.1);
     for dy in ys {
-        let sy = if flip.1 { h - 1 - dy } else { dy };
-        let row = (rect.y as i32 + sy) as usize * page.width as usize + rect.x as usize;
         for dx in xs.clone() {
-            let sx = if flip.0 { w - 1 - dx } else { dx };
-            let [r, g, b, a] = color(page.data[row + sx as usize]);
+            let (mx, my) = if flip.diagonal { (dy, dx) } else { (dx, dy) };
+            let sx = if flip.x { w - 1 - mx } else { mx };
+            let sy = if flip.y { h - 1 - my } else { my };
+            let i =
+                (rect.y as i32 + sy) as usize * page.width as usize + (rect.x as i32 + sx) as usize;
+            let [r, g, b, a] = color(page.data[i]);
             match a {
                 0 => {}
                 255 => canvas.plot(at.0 + dx, at.1 + dy, rgb(r, g, b)),
