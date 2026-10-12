@@ -20,7 +20,8 @@ use std::path::{Path, PathBuf};
 
 pub use atlas::{Atlas, AtlasBuilder, AtlasError, Placement, pack};
 pub use image::{
-    Image, ImageError, IndexImage, Palette, Pixels, Rect, Rgba, RgbaImage, decode_png, encode_png,
+    Image, ImageError, IndexImage, Palette, Pixels, Rect, Rgba, RgbaImage, decode_png,
+    encode_indexed_png, encode_png,
 };
 pub use playback::Playback;
 pub use sheet::{Animation, Area, AreaKind, Frame, Sheet, SheetError};

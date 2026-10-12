@@ -1,0 +1,229 @@
+# Clamber's placeholder art and sound: the sources, and what
+# `cargo run -p clamber-art` makes from them. Output paths are relative to
+# content/base; sources are relative to this file. Generated files are
+# checked in, and a test fails if they're out of date.
+#
+# Sheets: an SVG laid out as a grid of `frame`-sized frames, numbered left
+# to right and top to bottom. `origin` is the pivot within a frame (for
+# characters, between the feet). Animations name a first and last frame
+# and how many 60 Hz ticks each frame shows. Sprites face right.
+
+# The climber. Animations are named after the player's states, plus
+# `hurt` for losing a life. `alt` recolors it for the second roster slot.
+[[sheets]]
+source = "player.svg"
+out = "sprites/player.json"
+frame = [24, 32]
+origin = [12, 32]
+indexed = true
+palettes.alt = { "#3fa7d6" = "#8cc152", "#2f86b0" = "#5e9c2e", "#f25f5c" = "#ffb400" }
+animations = [
+    { name = "idle", frames = [0, 1], ticks = 30 },
+    { name = "walk", frames = [2, 5], ticks = 8 },
+    { name = "run", frames = [6, 9], ticks = 5 },
+    { name = "roll", frames = [10, 13], ticks = 3 },
+    { name = "jump", frames = [14, 14], ticks = 6 },
+    { name = "fall", frames = [15, 15], ticks = 6 },
+    { name = "swap", frames = [16, 16], ticks = 6 },
+    { name = "hurt", frames = [17, 17], ticks = 6 },
+]
+
+# Enemies.
+[[sheets]]
+source = "crawler.svg"
+out = "sprites/crawler.json"
+frame = [24, 24]
+origin = [12, 24]
+animations = [
+    { name = "walk", frames = [0, 1], ticks = 10 },
+    { name = "defeated", frames = [2, 2], ticks = 6 },
+]
+
+[[sheets]]
+source = "flutter.svg"
+out = "sprites/flutter.json"
+frame = [24, 24]
+origin = [12, 12]
+animations = [
+    { name = "fly", frames = [0, 2], ticks = 4, direction = "pingpong" },
+    { name = "defeated", frames = [3, 3], ticks = 6 },
+]
+
+# Pickups and level flow, named after their entity kinds.
+[[sheets]]
+source = "gem.svg"
+out = "sprites/gem.json"
+frame = [16, 16]
+origin = [8, 8]
+animations = [{ name = "spin", frames = [0, 3], ticks = 8 }]
+
+[[sheets]]
+source = "relic.svg"
+out = "sprites/relic.json"
+frame = [16, 16]
+origin = [8, 8]
+animations = [{ name = "glint", frames = [0, 1], ticks = 20 }]
+
+[[sheets]]
+source = "checkpoint.svg"
+out = "sprites/checkpoint.json"
+frame = [24, 48]
+origin = [8, 48]
+animations = [
+    { name = "waiting", frames = [0, 0], ticks = 6 },
+    { name = "reached", frames = [1, 2], ticks = 12 },
+]
+
+[[sheets]]
+source = "goal.svg"
+out = "sprites/goal.json"
+frame = [32, 64]
+origin = [16, 64]
+animations = [{ name = "glow", frames = [0, 1], ticks = 16 }]
+
+# Interactive objects.
+[[sheets]]
+source = "launcher.svg"
+out = "sprites/launcher.json"
+frame = [32, 32]
+origin = [16, 16]
+animations = [
+    { name = "waiting", frames = [0, 0], ticks = 6 },
+    { name = "fire", frames = [1, 2], ticks = 6, repeat = 1 },
+]
+
+[[sheets]]
+source = "crate.svg"
+out = "sprites/crate.json"
+frame = [32, 32]
+origin = [16, 32]
+animations = [
+    { name = "whole", frames = [0, 0], ticks = 6 },
+    { name = "break", frames = [1, 2], ticks = 6, repeat = 1 },
+]
+
+# Terrain tiles (see terrain.svg for the numbering) and background layers
+# for parallax: sky farthest, then mountains, then hills. Each tiles
+# horizontally.
+[[images]]
+source = "terrain.svg"
+out = "tiles/terrain.png"
+
+[[images]]
+source = "sky.svg"
+out = "backgrounds/sky.png"
+
+[[images]]
+source = "mountains.svg"
+out = "backgrounds/mountains.png"
+
+[[images]]
+source = "hills.svg"
+out = "backgrounds/hills.png"
+
+# Sound effects, one per cue in sounds.toml. Each is a sequence of tones:
+# `wave` (square, triangle, saw or noise), a frequency in Hz sweeping
+# `from` one value `to` another, `length` in seconds, `volume` (0 to 1),
+# `duty` for square waves, and `fade`, the fraction of the tone at its end
+# over which it fades out.
+[[sounds]]
+out = "sounds/jump.wav"
+tones = [{ from = 260, to = 620, length = 0.12, volume = 0.3, fade = 0.6 }]
+
+[[sounds]]
+out = "sounds/land.wav"
+tones = [{ wave = "noise", from = 1800, to = 400, length = 0.06, volume = 0.3 }]
+
+[[sounds]]
+out = "sounds/roll.wav"
+tones = [{ wave = "noise", from = 5000, to = 900, length = 0.2, volume = 0.25 }]
+
+[[sounds]]
+out = "sounds/collect.wav"
+tones = [
+    { from = 988, length = 0.05, volume = 0.25, duty = 0.25, fade = 0.2 },
+    { from = 1319, length = 0.14, volume = 0.25, duty = 0.25 },
+]
+
+[[sounds]]
+out = "sounds/checkpoint.wav"
+tones = [
+    { wave = "triangle", from = 523, length = 0.07, volume = 0.5, fade = 0.2 },
+    { wave = "triangle", from = 659, length = 0.07, volume = 0.5, fade = 0.2 },
+    { wave = "triangle", from = 784, length = 0.07, volume = 0.5, fade = 0.2 },
+    { wave = "triangle", from = 1047, length = 0.25, volume = 0.5 },
+]
+
+[[sounds]]
+out = "sounds/hurt.wav"
+tones = [{ from = 440, to = 110, length = 0.35, volume = 0.3, duty = 0.25 }]
+
+[[sounds]]
+out = "sounds/complete.wav"
+tones = [
+    { from = 523, length = 0.1, volume = 0.25, fade = 0.2 },
+    { from = 659, length = 0.1, volume = 0.25, fade = 0.2 },
+    { from = 784, length = 0.1, volume = 0.25, fade = 0.2 },
+    { from = 1047, length = 0.5, volume = 0.25, fade = 0.8 },
+]
+
+[[sounds]]
+out = "sounds/game_over.wav"
+tones = [
+    { wave = "triangle", from = 392, length = 0.22, volume = 0.5, fade = 0.2 },
+    { wave = "triangle", from = 330, length = 0.22, volume = 0.5, fade = 0.2 },
+    { wave = "triangle", from = 262, length = 0.22, volume = 0.5, fade = 0.2 },
+    { wave = "triangle", from = 196, to = 185, length = 0.7, volume = 0.5 },
+]
+
+[[sounds]]
+out = "sounds/pause.wav"
+tones = [
+    { from = 880, length = 0.04, volume = 0.2, duty = 0.25, fade = 0.2 },
+    { from = 660, length = 0.07, volume = 0.2, duty = 0.25 },
+]
+
+# Music: voices play note patterns on a grid of `steps_per_beat` steps a
+# beat. Each token is a note (`C4` is middle C; `F#3`, `Bb5`), `.` to hold
+# the note before, or `-` for silence. Shorter patterns repeat to fill the
+# longest; the file is one pass, so it loops end to start.
+[[music]]
+out = "music/theme.wav"
+tempo = 128
+steps_per_beat = 2
+
+# Lead
+[[music.voices]]
+wave = "square"
+duty = 0.25
+volume = 0.16
+fade = 0.3
+notes = """
+E5 .  G5 .  C6 .  G5 E5
+A5 .  .  G5 E5 .  C5 .
+F5 .  A5 .  C6 .  A5 F5
+G5 .  .  .  D5 .  -  -
+E5 G5 C6 .  B5 .  G5 .
+A5 .  E5 .  A5 C6 B5 A5
+F5 .  A5 .  G5 .  F5 E5
+D5 .  G5 .  B4 .  D5 .
+"""
+
+# Bass
+[[music.voices]]
+wave = "triangle"
+volume = 0.4
+fade = 0.15
+notes = """
+C3 .  G2 .  C3 .  G2 .
+A2 .  E3 .  A2 .  E3 .
+F2 .  C3 .  F2 .  C3 .
+G2 .  D3 .  G2 .  B2 .
+"""
+
+# Hi-hat
+[[music.voices]]
+wave = "noise"
+volume = 0.05
+fade = 1.0
+notes = "C8 - C8 C8 C8 - C8 C8"

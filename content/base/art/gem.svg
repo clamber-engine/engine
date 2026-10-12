@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="16" viewBox="0 0 64 16" shape-rendering="crispEdges">
+  <!-- The gem, the common pickup, turning: full face, three quarters,
+       edge on, three quarters. 16x16 frames; the origin is the middle
+       (8, 8). -->
+  <path d="M8 1 L14 6 L8 15 L2 6 Z" fill="#3ee0b0" stroke="#1d1a2b" stroke-width="1"/>
+  <path d="M8 2 L13 6 L8 6 Z" fill="#b8f5e3"/>
+  <path d="M2 6 L14 6 L8 15 Z" fill="#22b58c"/>
+  <g transform="translate(16 0)">
+    <path d="M8 1 L12 6 L8 15 L4 6 Z" fill="#3ee0b0" stroke="#1d1a2b" stroke-width="1"/>
+    <path d="M8 2 L11 6 L8 6 Z" fill="#b8f5e3"/>
+    <path d="M4 6 L12 6 L8 15 Z" fill="#22b58c"/>
+  </g>
+  <g transform="translate(32 0)">
+    <path d="M8 1 L9.5 6 L8 15 L6.5 6 Z" fill="#3ee0b0" stroke="#1d1a2b" stroke-width="1"/>
+  </g>
+  <g transform="translate(48 0)">
+    <path d="M8 1 L12 6 L8 15 L4 6 Z" fill="#3ee0b0" stroke="#1d1a2b" stroke-width="1"/>
+    <path d="M8 2 L5 6 L8 6 Z" fill="#b8f5e3"/>
+    <path d="M4 6 L12 6 L8 15 Z" fill="#22b58c"/>
+  </g>
+</svg>

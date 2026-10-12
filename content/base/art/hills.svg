@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="384" height="120" viewBox="0 0 384 120" shape-rendering="crispEdges">
+  <!-- Near hills with round trees. Transparent above; tiles
+       horizontally. -->
+  <defs>
+    <g id="tree">
+      <rect x="-2" y="-4" width="4" height="12" fill="#6e4630"/>
+      <circle cx="0" cy="-12" r="10" fill="#2f7a3d"/>
+      <circle cx="-3" cy="-15" r="5" fill="#3f8f45"/>
+    </g>
+  </defs>
+  <path d="M0 60 C40 30 90 30 130 56 C170 80 210 36 260 40 C310 44 340 76 384 60 L384 120 L0 120 Z" fill="#6fbf73"/>
+  <use href="#tree" x="70" y="40"/>
+  <use href="#tree" x="96" y="42"/>
+  <use href="#tree" x="240" y="46"/>
+  <path d="M0 92 C60 72 120 70 180 88 C240 106 300 72 384 92 L384 120 L0 120 Z" fill="#57a85e"/>
+  <use href="#tree" x="160" y="86"/>
+  <use href="#tree" x="330" y="88"/>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="384" height="160" viewBox="0 0 384 160" shape-rendering="crispEdges">
+  <!-- Distant mountains, two ridges. Transparent above; tiles
+       horizontally (both ends meet at the same height). -->
+  <path d="M0 70 L40 30 L64 52 L110 8 L150 50 L176 36 L230 90 L262 56 L300 20 L344 66 L384 70 L384 160 L0 160 Z" fill="#8e9fd0"/>
+  <path d="M40 30 L52 42 L46 40 L40 44 L34 40 L28 42 Z" fill="#e8eefa"/>
+  <path d="M110 8 L126 23 L118 20 L110 25 L102 21 L94 24 Z" fill="#e8eefa"/>
+  <path d="M300 20 L315 34 L307 31 L300 36 L293 32 L286 33 Z" fill="#e8eefa"/>
+  <path d="M0 110 L50 74 L92 100 L140 66 L196 104 L240 80 L290 112 L334 84 L384 110 L384 160 L0 160 Z" fill="#7486bf"/>
+</svg>

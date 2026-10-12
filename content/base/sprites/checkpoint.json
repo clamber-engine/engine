@@ -1,0 +1,103 @@
+{
+  "frames": [
+    {
+      "filename": "checkpoint 0",
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 48
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 48
+      },
+      "sourceSize": {
+        "w": 24,
+        "h": 48
+      },
+      "duration": 100,
+      "ticks": 6
+    },
+    {
+      "filename": "checkpoint 1",
+      "frame": {
+        "x": 24,
+        "y": 0,
+        "w": 24,
+        "h": 48
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 48
+      },
+      "sourceSize": {
+        "w": 24,
+        "h": 48
+      },
+      "duration": 200,
+      "ticks": 12
+    },
+    {
+      "filename": "checkpoint 2",
+      "frame": {
+        "x": 48,
+        "y": 0,
+        "w": 24,
+        "h": 48
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 48
+      },
+      "sourceSize": {
+        "w": 24,
+        "h": 48
+      },
+      "duration": 200,
+      "ticks": 12
+    }
+  ],
+  "meta": {
+    "app": "clamber-art",
+    "image": "checkpoint.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 72,
+      "h": 48
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "waiting",
+        "from": 0,
+        "to": 0,
+        "direction": "forward"
+      },
+      {
+        "name": "reached",
+        "from": 1,
+        "to": 2,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 8,
+        "y": 48
+      }
+    }
+  }
+}

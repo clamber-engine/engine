@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="32" viewBox="0 0 96 32" shape-rendering="crispEdges">
+  <!-- The crate: breaks open to give up what's inside. 32x32 frames;
+       the middle of its base is the origin (16, 32). 0: whole.
+       1-2: breaking apart. -->
+  <defs>
+    <g id="crate">
+      <rect x="4" y="8" width="24" height="24" fill="#1d1a2b"/>
+      <rect x="5" y="9" width="22" height="22" fill="#c08a52"/>
+      <rect x="5" y="9" width="22" height="3" fill="#7a5230"/>
+      <rect x="5" y="28" width="22" height="3" fill="#7a5230"/>
+      <path d="M7 27 L25 13" stroke="#7a5230" stroke-width="2"/>
+      <rect x="14" y="17" width="4" height="4" fill="#ffd23f"/>
+    </g>
+    <g id="plank">
+      <rect x="-6" y="-2" width="12" height="4" fill="#1d1a2b"/>
+      <rect x="-5" y="-1" width="10" height="2" fill="#c08a52"/>
+    </g>
+  </defs>
+
+  <use href="#crate"/>
+
+  <g transform="translate(32 0)">
+    <use href="#plank" transform="translate(9 14) rotate(-20)"/>
+    <use href="#plank" transform="translate(23 12) rotate(25)"/>
+    <use href="#plank" transform="translate(8 26) rotate(70)"/>
+    <use href="#plank" transform="translate(24 26) rotate(-60)"/>
+    <rect x="13" y="18" width="6" height="6" fill="#ffd23f"/>
+  </g>
+  <g transform="translate(64 0)">
+    <use href="#plank" transform="translate(5 8) rotate(-40)"/>
+    <use href="#plank" transform="translate(27 6) rotate(35)"/>
+    <use href="#plank" transform="translate(4 29) rotate(10)"/>
+    <use href="#plank" transform="translate(28 29) rotate(-15)"/>
+  </g>
+</svg>

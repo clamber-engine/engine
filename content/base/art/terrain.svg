@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="32" viewBox="0 0 128 32" shape-rendering="crispEdges">
+  <!-- Terrain tiles, 16x16, eight to a row. Tile numbers (Tiled's, so
+       the first is 1 in level data):
+         0 grass, left end    1 grass              2 grass, right end
+         3 earth              4 earth with stones   5-7 platform: left,
+                                                    middle, right
+         8 slope up (1:1)     9 slope down (1:1)
+        10-11 slope up (1:2): low half, high half
+        12-13 slope down (1:2): high half, low half
+        14 spikes            15 stone block -->
+  <defs>
+    <g id="earth">
+      <rect width="16" height="16" fill="#8a5a3b"/>
+      <rect x="3" y="9" width="2" height="1" fill="#6e4630"/>
+      <rect x="11" y="4" width="2" height="1" fill="#6e4630"/>
+      <rect x="8" y="13" width="2" height="1" fill="#6e4630"/>
+    </g>
+    <g id="grass">
+      <use href="#earth"/>
+      <rect width="16" height="4" fill="#5bb35b"/>
+      <rect y="4" width="16" height="1" fill="#3f8f45"/>
+      <rect x="2" y="5" width="2" height="1" fill="#3f8f45"/>
+      <rect x="10" y="5" width="3" height="1" fill="#3f8f45"/>
+      <rect x="5" width="2" height="1" fill="#8fd18f"/>
+      <rect x="12" width="2" height="1" fill="#8fd18f"/>
+    </g>
+    <g id="plank">
+      <rect y="0" width="16" height="6" fill="#1d1a2b"/>
+      <rect y="1" width="16" height="4" fill="#c08a52"/>
+      <rect y="4" width="16" height="1" fill="#7a5230"/>
+    </g>
+    <g id="steep">
+      <path d="M0 16 L16 0 L16 16 Z" fill="#8a5a3b"/>
+      <rect x="12" y="11" width="2" height="1" fill="#6e4630"/>
+      <path d="M0 16 L16 0 L16 5 L5 16 Z" fill="#5bb35b"/>
+      <path d="M5 16 L16 5 L16 6 L6 16 Z" fill="#3f8f45"/>
+    </g>
+    <g id="gentle-low">
+      <path d="M0 16 L16 8 L16 16 Z" fill="#8a5a3b"/>
+      <path d="M0 16 L16 8 L16 12 L8 16 Z" fill="#5bb35b"/>
+      <path d="M8 16 L16 12 L16 13 L10 16 Z" fill="#3f8f45"/>
+    </g>
+    <g id="gentle-high">
+      <path d="M0 8 L16 0 L16 16 L0 16 Z" fill="#8a5a3b"/>
+      <rect x="4" y="13" width="2" height="1" fill="#6e4630"/>
+      <path d="M0 8 L16 0 L16 4 L0 12 Z" fill="#5bb35b"/>
+      <path d="M0 12 L16 4 L16 5 L0 13 Z" fill="#3f8f45"/>
+    </g>
+    <path id="spike" d="M0.5 14 L4 3 L7.5 14 Z" fill="#c9c3b5" stroke="#1d1a2b" stroke-width="1"/>
+  </defs>
+
+  <!-- row 0 -->
+  <g>
+    <use href="#grass"/>
+    <rect width="1" height="16" fill="#1d1a2b"/>
+  </g>
+  <use href="#grass" x="16"/>
+  <g transform="translate(32 0)">
+    <use href="#grass"/>
+    <rect x="15" width="1" height="16" fill="#1d1a2b"/>
+  </g>
+  <use href="#earth" x="48"/>
+  <g transform="translate(64 0)">
+    <use href="#earth"/>
+    <ellipse cx="5" cy="5" rx="3" ry="2" fill="#a07a5c"/>
+    <ellipse cx="11" cy="11" rx="2.5" ry="2" fill="#a07a5c"/>
+  </g>
+  <g transform="translate(80 0)">
+    <use href="#plank"/>
+    <rect width="1" height="6" fill="#1d1a2b"/>
+    <rect x="3" y="6" width="3" height="5" fill="#7a5230"/>
+  </g>
+  <use href="#plank" x="96"/>
+  <g transform="translate(112 0)">
+    <use href="#plank"/>
+    <rect x="15" width="1" height="6" fill="#1d1a2b"/>
+    <rect x="10" y="6" width="3" height="5" fill="#7a5230"/>
+  </g>
+
+  <!-- row 1 -->
+  <use href="#steep" y="16"/>
+  <use href="#steep" transform="translate(32 16) scale(-1 1)"/>
+  <use href="#gentle-low" x="32" y="16"/>
+  <use href="#gentle-high" x="48" y="16"/>
+  <use href="#gentle-high" transform="translate(80 16) scale(-1 1)"/>
+  <use href="#gentle-low" transform="translate(96 16) scale(-1 1)"/>
+  <g transform="translate(96 16)">
+    <use href="#spike" x="0"/>
+    <use href="#spike" x="8"/>
+    <rect y="14" width="16" height="2" fill="#1d1a2b"/>
+  </g>
+  <g transform="translate(112 16)">
+    <rect width="16" height="16" fill="#1d1a2b"/>
+    <rect x="1" y="1" width="14" height="14" fill="#8d8a9b"/>
+    <rect x="1" y="1" width="14" height="2" fill="#b3b0bf"/>
+    <rect x="1" y="12" width="14" height="3" fill="#6c6979"/>
+  </g>
+</svg>

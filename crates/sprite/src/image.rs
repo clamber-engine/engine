@@ -257,6 +257,36 @@ pub fn encode_png(image: &RgbaImage) -> Vec<u8> {
     out
 }
 
+/// Encodes palette indices as an 8-bit indexed PNG, with `palette`'s
+/// alpha as its transparency. `palette` has at most 256 colors.
+pub fn encode_indexed_png(indices: &IndexImage, palette: &Palette) -> Vec<u8> {
+    assert!(
+        palette.0.len() <= 256,
+        "a PNG palette has at most 256 colors"
+    );
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, indices.width, indices.height);
+    encoder.set_color(png::ColorType::Indexed);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_palette(
+        palette
+            .0
+            .iter()
+            .flat_map(|c| [c[0], c[1], c[2]])
+            .collect::<Vec<_>>(),
+    );
+    // Trailing opaque entries can be left out of the transparency chunk.
+    let alpha: Vec<u8> = palette.0.iter().map(|c| c[3]).collect();
+    let used = alpha.iter().rposition(|&a| a != 255).map_or(0, |i| i + 1);
+    if used > 0 {
+        encoder.set_trns(alpha[..used].to_vec());
+    }
+    let mut writer = encoder.write_header().expect("PNG header");
+    writer.write_image_data(&indices.data).expect("PNG data");
+    writer.finish().expect("PNG end");
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,5 +322,15 @@ mod tests {
             panic!("expected RGBA");
         };
         assert_eq!(back, img);
+    }
+
+    #[test]
+    fn indexed_round_trip() {
+        let mut indices: IndexImage = Pixels::new(3, 2);
+        indices.set(0, 0, 1);
+        indices.set(2, 1, 2);
+        let palette = Palette(vec![[0, 0, 0, 0], [10, 20, 30, 255], [40, 50, 60, 128]]);
+        let back = decode_png(&encode_indexed_png(&indices, &palette)).unwrap();
+        assert_eq!(back, Image::Indexed { indices, palette });
     }
 }
