@@ -47,6 +47,17 @@ jump_buffer_hold = 0
 roll_friction = 0.03125
 roll_deceleration = 0.125
 roll_min_speed = 0.75
+roll_time = 0
+roll_speed = 0
+roll_slow_speed = 0
+roll_fast_speed = 0
+roll_fast_window = 0
+roll_fast_window_neutral = 0
+roll_carry_time = 0
+roll_stop_time = 0
+roll_stop_slide = 0
+roll_buffer = 0
+roll_air_buffer = 0
 bounce_speed = 6
 
 [presets.snappy]
@@ -82,7 +93,8 @@ air_acceleration = 0.09375
 # Classic 1: the `title-1` values. Filled in so far: horizontal speed,
 # crouching and turns (ground-speed.md, air-control.md), jump input
 # timing (jump-input.md, walk-off.md), the jump arc and landing
-# (jump-arc.md, landing.md), and walking off ledges (walk-off.md). Jump
+# (jump-arc.md, landing.md), walking off ledges (walk-off.md), and rolls
+# (roll-input.md, roll-speed.md, rolling-off-ledges.md). Jump
 # doesn't cut upward speed when let go (`jump_release_speed` equals
 # `jump_speed`); it ends the lighter `held_jump_gravity` instead.
 [presets.classic-1]
@@ -112,6 +124,17 @@ max_fall_speed = 8
 landing_reach = 5
 leave_drop = 3.4375
 leave_fall_speed = 0.00390625
+roll_time = 29
+roll_speed = 3
+roll_slow_speed = 1
+roll_fast_speed = 4
+roll_fast_window = 15
+roll_fast_window_neutral = 14
+roll_carry_time = 3
+roll_stop_time = 17
+roll_stop_slide = 3
+roll_buffer = 19
+roll_air_buffer = 7
 
 [presets.classic-2]
 label = "Classic 2"

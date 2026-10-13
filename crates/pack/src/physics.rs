@@ -126,6 +126,49 @@ params! {
     RollDeceleration => "roll_deceleration",
     /// A roll needs at least this speed to start, and ends below it.
     RollMinSpeed => "roll_min_speed",
+    /// Above 0, rolls are timed: an action press on the ground starts one
+    /// (unless down is held), whatever the speed, and it ends this many
+    /// frames later, or this many frames after landing if it went off a
+    /// ledge. Its speed eases toward a set roll speed by
+    /// `speed_response`, and holding the other way turns it around at
+    /// once. 0: down and action start a roll while moving, and it slows
+    /// under `roll_friction` and `roll_deceleration`. Whole frames.
+    RollTime => "roll_time",
+    /// A timed roll's speed with a direction held as it starts, or
+    /// pressed the way it goes later.
+    RollSpeed => "roll_speed",
+    /// A timed roll's speed with no direction held as it starts.
+    RollSlowSpeed => "roll_slow_speed",
+    /// A timed roll's speed when the player ran (action and one direction
+    /// held) shortly before it started. A fast roll always ends in a stop.
+    RollFastSpeed => "roll_fast_speed",
+    /// A timed roll is fast if the player ran within this many frames
+    /// before it, with a direction held as it starts. Whole frames.
+    RollFastWindow => "roll_fast_window",
+    /// The same with no direction held as it starts. Whole frames.
+    RollFastWindowNeutral => "roll_fast_window_neutral",
+    /// A timed roll with action held all the way through it goes on for
+    /// this many frames more and carries on into running, with no stop.
+    /// Whole frames.
+    RollCarryTime => "roll_carry_time",
+    /// Above 0, a timed roll that doesn't carry on ends in a stop that
+    /// lasts this many frames: the player can't move along the ground,
+    /// but can jump, and can start the next roll on its last frame. A
+    /// roll that starts then doesn't move on that frame. Whole frames.
+    RollStopTime => "roll_stop_time",
+    /// For this many frames at the start of the stop the player still
+    /// slides, slowing by `speed_response` toward 0, and then stands.
+    /// Whole frames.
+    RollStopSlide => "roll_stop_slide",
+    /// An action press during a timed roll or its stop starts the next
+    /// roll as soon as one can start, up to this many frames after the
+    /// press. A roll from a press remembered to the stop's last frame
+    /// lasts one frame longer. Whole frames.
+    RollBuffer => "roll_buffer",
+    /// An action press in the air starts a roll just after landing, up
+    /// to this many frames after the press, if action stays held until
+    /// then. Whole frames.
+    RollAirBuffer => "roll_air_buffer",
     /// Upward speed after an attack lands on something from above.
     BounceSpeed => "bounce_speed",
 }
@@ -147,8 +190,14 @@ impl fmt::Display for Param {
 }
 
 /// A complete set of movement parameters.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Physics([Fixed; Param::COUNT]);
+
+impl Default for Physics {
+    fn default() -> Self {
+        Physics([Fixed::ZERO; Param::COUNT])
+    }
+}
 
 impl Physics {
     pub fn set(&mut self, param: Param, value: Fixed) {

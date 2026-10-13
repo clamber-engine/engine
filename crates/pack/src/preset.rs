@@ -302,6 +302,17 @@ mod tests {
                     | Param::LeaveDrop
                     | Param::LeaveFallSpeed
                     | Param::GroundedTakeoff
+                    | Param::RollTime
+                    | Param::RollSpeed
+                    | Param::RollSlowSpeed
+                    | Param::RollFastSpeed
+                    | Param::RollFastWindow
+                    | Param::RollFastWindowNeutral
+                    | Param::RollCarryTime
+                    | Param::RollStopTime
+                    | Param::RollStopSlide
+                    | Param::RollBuffer
+                    | Param::RollAirBuffer
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

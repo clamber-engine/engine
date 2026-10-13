@@ -15,11 +15,3 @@ expected_failures = [
     "bounce_height",  # #54
     "curve x,y,vy from bounce",  # #54
 ]
-
-[roll-flat]
-expected_failures = [
-    "roll_distance",  # #53
-    "top_speed",  # #53
-    "final_x",  # #53
-    "curve x,vx from roll_start",  # #53
-]

@@ -204,6 +204,25 @@ impl World {
         out.push(p.swap);
         out.extend([p.crouch.held, p.crouch.rising]);
         out.push(p.turn.map_or(0, |n| n.saturating_add(1)));
+        match p.roll {
+            Some(roll) => out.extend([
+                1,
+                roll.left,
+                roll.dir as u8,
+                roll.size as u8,
+                roll.held.into(),
+                roll.carry.into(),
+                roll.still.into(),
+            ]),
+            None => out.push(0),
+        }
+        out.push(p.roll_stop);
+        match p.roll_press {
+            Some((age, window, hold)) => out.extend([1, age, window, hold.into()]),
+            None => out.push(0),
+        }
+        out.push(p.since_run.map_or(0, |n| n.saturating_add(1)));
+        out.extend([p.lone_run, p.roll_jump].map(u8::from));
 
         count(&mut out, self.things.len());
         for t in &self.things {

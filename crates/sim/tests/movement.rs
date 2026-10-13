@@ -8,7 +8,9 @@ use std::ops::{Deref, DerefMut};
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
 use clamber_pack::{CharacterFeel, Feel, Fixed, Param};
-use clamber_sim::{Event, Facing, InputFrame, ROLL, SWAP_FRAMES, State, World, generic_feel, step};
+use clamber_sim::{
+    Event, Facing, InputFrame, ROLL, RollSize, SWAP_FRAMES, State, World, generic_feel, step,
+};
 
 /// Flat ground at y = 400 from x = 0 to 1600, a ledge down to y = 528
 /// beyond it, and a one-way platform at y = 340 over x = 300..400.
@@ -841,4 +843,406 @@ fn classic_walking_off_a_ledge() {
         );
         assert_eq!(fall[n], expected, "L + {n}");
     }
+}
+
+/// One frame of play and where it left the player.
+#[derive(Debug)]
+struct Row {
+    state: State,
+    events: Vec<Event>,
+    x: f64,
+    y: f64,
+    vx: f64,
+    vy: f64,
+    facing: Facing,
+    grounded: bool,
+}
+
+/// Plays `n` frames, holding `held(frame)` on each.
+fn play(w: &mut Play, n: usize, held: impl Fn(usize) -> Vec<Action>) -> Vec<Row> {
+    (0..n)
+        .map(|frame| {
+            let step = hold(w, &held(frame), 1).pop().unwrap();
+            let p = &w.player;
+            Row {
+                state: step.state,
+                events: step.events,
+                x: p.pos.x.to_f64(),
+                y: p.pos.y.to_f64(),
+                vx: p.vel.x.to_f64(),
+                vy: p.vel.y.to_f64(),
+                facing: p.facing,
+                grounded: p.grounded(),
+            }
+        })
+        .collect()
+}
+
+/// The frames with `event`.
+fn frames_with(rows: &[Row], event: Event) -> Vec<usize> {
+    (0..rows.len())
+        .filter(|&i| rows[i].events.contains(&event))
+        .collect()
+}
+
+/// Classic 1 running right at full speed, out of a roll that carried on.
+fn classic_running() -> Play {
+    let mut w = classic();
+    hold(&mut w, &[Action::Action, Action::Right], 100);
+    assert_eq!(w.player.vel.x, Fixed::from_int(3));
+    assert_eq!(w.player.state, State::Run);
+    w
+}
+
+/// Checks a row of spec/behavior/roll-speed.md, "Worked values": a roll
+/// holding `on_s` on its first frame and `then` after.
+fn check_classic_roll(
+    mut w: Play,
+    on_s: &[Action],
+    then: &[Action],
+    first_vx: [f64; 3],
+    vx_on_d: f64,
+    to_d: f64,
+    to_stop: f64,
+) {
+    let x0 = w.player.pos.x.to_f64();
+    let rows = play(&mut w, 33, |f| if f == 0 { on_s } else { then }.to_vec());
+    assert_eq!(rows[0].events, [Event::RollStart]);
+    assert_eq!([rows[0].vx, rows[1].vx, rows[2].vx], first_vx);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [29]);
+    assert_eq!(rows[29].vx, vx_on_d);
+    assert_eq!(rows[29].x - x0, to_d);
+    assert_eq!(rows[32].x - x0, to_stop);
+    assert_eq!(rows[32].vx, 0.0);
+}
+
+#[test]
+fn classic_roll_worked_values() {
+    use Action::{Action as A, Right as R};
+    check_classic_roll(
+        classic(),
+        &[A],
+        &[],
+        [0.125, 0.234375, 0.328125],
+        0.96875,
+        22.78125,
+        25.0234375,
+    );
+    check_classic_roll(
+        classic(),
+        &[A, R],
+        &[R],
+        [0.375, 0.703125, 0.98828125],
+        2.93359375,
+        69.1328125,
+        75.921875,
+    );
+    let mut walking = classic();
+    hold(&mut walking, &[R], 40);
+    assert_eq!(walking.player.vel.x, Fixed::from_int(2));
+    check_classic_roll(
+        walking,
+        &[A, R],
+        &[R],
+        [2.125, 2.234375, 2.328125],
+        2.96875,
+        82.78125,
+        89.64453125,
+    );
+    let mut running = classic_running();
+    hold(&mut running, &[R], 1);
+    assert_eq!(running.player.vel.x.to_f64(), 2.875);
+    check_classic_roll(
+        running,
+        &[A, R],
+        &[R],
+        [3.015625, 3.13671875, 3.2421875],
+        3.96484375,
+        111.94140625,
+        121.11328125,
+    );
+}
+
+#[test]
+fn classic_roll_steering() {
+    use Action::{Action as A, Left as L, Right as R};
+    // spec/behavior/roll-speed.md, "Worked values": reversing.
+    let mut w = classic();
+    hold(&mut w, &[R], 40);
+    let x0 = w.player.pos.x.to_f64();
+    let rows = play(&mut w, 30, |f| if f == 0 { vec![A, R] } else { vec![L] });
+    assert_eq!((rows[0].vx, rows[0].facing), (2.125, Facing::Right));
+    assert_eq!((rows[1].vx, rows[1].facing), (1.484375, Facing::Left));
+    assert_eq!(frames_with(&rows, Event::Turn), [1]);
+    assert_eq!(rows[2].vx, 0.92578125);
+    assert_eq!(rows.iter().position(|r| r.vx < 0.0), Some(5));
+    assert_eq!(rows[29].vx, -2.8828125);
+    assert_eq!(rows[29].x - x0, -49.47265625);
+
+    // Steering a slow roll: Right from S + 10 makes it normal.
+    let mut w = classic();
+    let rows = play(&mut w, 11, |f| match f {
+        0 => vec![A],
+        1..10 => vec![],
+        _ => vec![R],
+    });
+    assert_eq!(rows[9].vx, 0.7265625);
+    assert_eq!(rows[10].vx, 1.0078125);
+}
+
+/// Classic 1 from standing, pressing action alone on `presses` and
+/// holding Right from `right`.
+fn classic_roll_presses(presses: &[usize], right: usize, n: usize) -> Vec<Row> {
+    let mut w = classic();
+    play(&mut w, n, |f| {
+        let mut keys = Vec::new();
+        if presses.contains(&f) {
+            keys.push(Action::Action);
+        }
+        if f >= right {
+            keys.push(Action::Right);
+        }
+        keys
+    })
+}
+
+#[test]
+fn classic_roll_input_worked_example() {
+    // spec/behavior/roll-input.md, "Worked example".
+    let rows = classic_roll_presses(&[10], usize::MAX, 60);
+    assert_eq!(frames_with(&rows, Event::RollStart), [10]);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [39]);
+    assert!(rows[10..39].iter().all(|r| r.state == State::Roll));
+    assert_eq!(
+        [rows[39].state, rows[40].state, rows[41].state],
+        [State::Walk; 3]
+    );
+    assert!(rows[42..57].iter().all(|r| r.state == State::Idle));
+
+    // Right held during the stop moves the player from 57.
+    let rows = classic_roll_presses(&[10], 50, 60);
+    assert!(rows[42..57].iter().all(|r| r.vx == 0.0));
+    assert_eq!(rows[57].vx, 0.25);
+
+    // A press on 37 is remembered to 56, and that roll lasts 30 frames
+    // and doesn't move on its first.
+    let rows = classic_roll_presses(&[10, 37], usize::MAX, 90);
+    assert_eq!(frames_with(&rows, Event::RollStart), [10, 56]);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [39, 86]);
+    assert_eq!((rows[56].vx, rows[56].x), (0.0, rows[55].x));
+    assert!(rows[57].vx > 0.0);
+
+    // One on 36 is ignored.
+    let rows = classic_roll_presses(&[10, 36], usize::MAX, 90);
+    assert_eq!(frames_with(&rows, Event::RollStart), [10]);
+
+    // A new press on 56 starts a roll there, also standing still on it.
+    let rows = classic_roll_presses(&[10, 56], usize::MAX, 90);
+    assert_eq!(frames_with(&rows, Event::RollStart), [10, 56]);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [39, 85]);
+    assert_eq!(rows[56].vx, 0.0);
+}
+
+#[test]
+fn classic_roll_carries_on_into_running() {
+    use Action::{Action as A, Right as R};
+    // spec/behavior/roll-input.md, "How a roll ends" and "Starting the
+    // next roll": action held through D = 29, released on D + 1 and
+    // pressed again on D + 2.
+    let mut w = classic();
+    let rows = play(&mut w, 40, |f| if f == 30 { vec![R] } else { vec![A, R] });
+    assert_eq!(frames_with(&rows, Event::RollStart), [0, 33]);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [32]);
+    assert!(rows[..32].iter().all(|r| r.state == State::Roll));
+    assert_eq!(rows[32].state, State::Run);
+    assert!(rows[32].vx > 2.0);
+}
+
+/// The size of a Classic 1 roll pressed with `on_s` held, after running
+/// and then holding `between` for `k` frames, the last of them without
+/// action.
+fn classic_roll_size(between: &[Action], k: usize, on_s: &[Action]) -> RollSize {
+    let mut w = classic_running();
+    let last: Vec<_> = between
+        .iter()
+        .copied()
+        .filter(|&a| a != Action::Action)
+        .collect();
+    hold(&mut w, between, k - 1);
+    hold(&mut w, &last, 1);
+    let steps = hold(&mut w, on_s, 1);
+    assert_eq!(steps[0].events, [Event::RollStart]);
+    w.player.roll.unwrap().size
+}
+
+#[test]
+fn classic_rolls_are_fast_soon_after_running() {
+    use Action::{Action as A, Right as R};
+    // spec/behavior/roll-speed.md, "Running recently", the table.
+    for (between, on_s, last_fast, otherwise) in [
+        (&[R][..], &[A, R][..], 14, RollSize::Normal),
+        (&[], &[A, R], 14, RollSize::Normal),
+        (&[], &[A], 13, RollSize::Slow),
+        (&[A], &[A], 13, RollSize::Slow),
+    ] {
+        for k in 1..=last_fast {
+            let size = classic_roll_size(between, k, on_s);
+            assert_eq!(size, RollSize::Fast, "{between:?} {k}");
+        }
+        let size = classic_roll_size(between, last_fast + 1, on_s);
+        assert_eq!(size, otherwise, "{between:?}");
+    }
+}
+
+/// Classic 1 standing still with action held and no roll after landing,
+/// then running for `run` frames from standing, holding `after` for
+/// `k` frames, and pressing action alone. Returns the roll's size.
+fn classic_size_after_standing_run(run: usize, after: &[Action], k: usize) -> RollSize {
+    use Action::{Action as A, Jump as J, Right as R};
+    let mut w = classic();
+    hold(&mut w, &[J], 1);
+    hold(&mut w, &[], 2);
+    // Pressed too long before landing to roll on it.
+    let steps = hold(&mut w, &[A], 60);
+    assert!(first(&steps, Event::Land).is_some());
+    assert_eq!(first(&steps, Event::RollStart), None);
+    assert_eq!(w.player.vel.x, Fixed::ZERO);
+    hold(&mut w, &[A, R], run);
+    hold(&mut w, after, k);
+    hold(&mut w, &[], 1);
+    let steps = hold(&mut w, &[A], 1);
+    assert_eq!(steps[0].events, [Event::RollStart]);
+    w.player.roll.unwrap().size
+}
+
+#[test]
+fn classic_a_single_run_from_standing_doesnt_make_a_fast_roll() {
+    use Action::Right as R;
+    // spec/behavior/roll-speed.md, "Running recently", the exception.
+    for k in 0..13 {
+        assert_eq!(classic_size_after_standing_run(1, &[], k), RollSize::Slow);
+    }
+    // A direction held after it, or two running frames, make it fast.
+    assert_eq!(classic_size_after_standing_run(1, &[R], 1), RollSize::Fast);
+    assert_eq!(classic_size_after_standing_run(2, &[], 1), RollSize::Fast);
+}
+
+/// The frame of the first roll in Classic 1, falling to land on `LAND`
+/// and holding action on the frames in `held`.
+fn classic_roll_after_landing(held: std::ops::Range<usize>) -> Option<usize> {
+    let mut w = falling_in(classic, LAND + 1);
+    let rows = play(&mut w, LAND + 10, |f| {
+        if held.contains(&f) {
+            vec![Action::Action]
+        } else {
+            vec![]
+        }
+    });
+    assert_eq!(frames_with(&rows, Event::Land), [LAND]);
+    frames_with(&rows, Event::RollStart).first().copied()
+}
+
+#[test]
+fn classic_roll_presses_around_landing() {
+    // spec/behavior/roll-input.md, "In the air".
+    for early in 0..=6 {
+        let press = LAND - early;
+        assert_eq!(classic_roll_after_landing(press..LAND + 2), Some(LAND + 1));
+        assert_eq!(classic_roll_after_landing(press..LAND + 1), None);
+    }
+    assert_eq!(classic_roll_after_landing(LAND - 7..LAND + 2), None);
+    assert_eq!(
+        classic_roll_after_landing(LAND + 1..LAND + 2),
+        Some(LAND + 1)
+    );
+    assert_eq!(
+        classic_roll_after_landing(LAND + 3..LAND + 4),
+        Some(LAND + 3)
+    );
+}
+
+/// Classic 1 rolling right off the ledge from 30 px before it, holding
+/// action for `action` frames and Right throughout.
+fn classic_roll_off_ledge(action: usize, jump: std::ops::Range<usize>) -> Vec<Row> {
+    let mut w = classic();
+    w.player.pos.x = Fixed::from_int(1570);
+    play(&mut w, 100, |f| {
+        let mut keys = vec![Action::Right];
+        if f < action {
+            keys.push(Action::Action);
+        }
+        if jump.contains(&f) {
+            keys.push(Action::Jump);
+        }
+        keys
+    })
+}
+
+#[test]
+fn classic_rolling_off_a_ledge() {
+    // spec/behavior/rolling-off-ledges.md, "When the roll ends": the roll
+    // lasts to 29 frames after landing, and carries on if action is held.
+    let rows = classic_roll_off_ledge(100, 0..0);
+    let leave = frames_with(&rows, Event::LeaveGround)[0];
+    let land = frames_with(&rows, Event::Land)[0];
+    assert!(rows[leave..land].iter().all(|r| !r.grounded));
+    assert!(rows[..land + 30].iter().all(|r| r.state == State::Roll));
+    assert_eq!(frames_with(&rows, Event::RollEnd), [land + 33]);
+    assert!(rows[leave + 1..land].iter().all(|r| r.vx <= 3.0));
+
+    let rows = classic_roll_off_ledge(1, 0..0);
+    let land = frames_with(&rows, Event::Land)[0];
+    assert_eq!(frames_with(&rows, Event::RollEnd), [land + 30]);
+}
+
+#[test]
+fn classic_jumping_during_a_roll_fall() {
+    // spec/behavior/rolling-off-ledges.md, "Jumping during the fall": `vy`
+    // is 1.75390625 at the end of L + 4, so P = L + 5.
+    let rows = classic_roll_off_ledge(1, 0..0);
+    let leave = frames_with(&rows, Event::LeaveGround)[0];
+    assert_eq!(rows[leave + 4].vy, 1.75390625);
+    let p = leave + 5;
+    let rows = classic_roll_off_ledge(1, p..p + 12);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [p]);
+    assert_eq!(rows[p].state, State::Fall);
+    assert_eq!(frames_with(&rows, Event::JumpStart), [p + 1]);
+    assert_eq!(rows[p + 1].state, State::Jump);
+    for (frame, moved, vy) in [
+        (p, 2.03515625, 2.03515625),
+        (p + 1, 2.31640625, -7.0),
+        (p + 2, -6.71875, -6.71875),
+        (p + 3, -6.4375, -6.4375),
+        (p + 12, -3.75, -3.75),
+    ] {
+        let row = &rows[frame];
+        assert_eq!(
+            (row.y - rows[frame - 1].y, row.vy),
+            (moved, vy),
+            "P + {}",
+            frame - p
+        );
+    }
+}
+
+#[test]
+fn classic_jumping_out_of_a_fast_roll() {
+    use Action::{Action as A, Jump as J, Right as R};
+    // spec/behavior/roll-speed.md, "Jumping out of a roll": `vx` 946/256 on
+    // P - 1, then Right alone (and jump on P).
+    let mut w = classic_running();
+    hold(&mut w, &[R], 1);
+    hold(&mut w, &[A, R], 1);
+    assert_eq!(w.player.roll.unwrap().size, RollSize::Fast);
+    let mut tries = 0;
+    while grains(w.player.vel.x) != 946 {
+        hold(&mut w, &[R], 1);
+        tries += 1;
+        assert!(tries < 28);
+    }
+    let rows = play(&mut w, 3, |f| if f == 0 { vec![J, R] } else { vec![R] });
+    assert_eq!(frames_with(&rows, Event::RollEnd), [0]);
+    assert_eq!(frames_with(&rows, Event::JumpStart), [1]);
+    let vx: Vec<_> = rows.iter().map(|r| (r.vx * 256.0) as i64).collect();
+    assert_eq!(vx, [955, 900, 852]);
 }
