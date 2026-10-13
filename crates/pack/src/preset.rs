@@ -290,7 +290,13 @@ mod tests {
         for &p in Param::ALL {
             let off = matches!(
                 p,
-                Param::SpeedResponse | Param::CrouchStart | Param::CrouchRecovery | Param::TurnTime
+                Param::SpeedResponse
+                    | Param::CrouchStart
+                    | Param::CrouchRecovery
+                    | Param::TurnTime
+                    | Param::JumpDelay
+                    | Param::LandingLockout
+                    | Param::JumpBufferHold
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

@@ -36,6 +36,9 @@ jump_speed = 7.5
 jump_release_speed = 3
 jump_buffer = 5
 coyote_time = 5
+jump_delay = 0
+landing_lockout = 0
+jump_buffer_hold = 0
 roll_friction = 0.03125
 roll_deceleration = 0.125
 roll_min_speed = 0.75
@@ -72,7 +75,8 @@ air_acceleration = 0.09375
 # Don't put values here that don't come from `spec`.
 
 # Classic 1: the `title-1` values. Filled in so far: horizontal speed,
-# crouching and turns (ground-speed.md, air-control.md).
+# crouching and turns (ground-speed.md, air-control.md), and jump input
+# timing (jump-input.md, walk-off.md).
 [presets.classic-1]
 label = "Classic 1"
 description = "Placeholder: partly measured; the rest plays like Default."
@@ -85,6 +89,11 @@ speed_response = 0.125
 crouch_start = 2
 crouch_recovery = 10
 turn_time = 8
+jump_delay = 1
+landing_lockout = 2
+jump_buffer = 12
+jump_buffer_hold = 1
+coyote_time = 0
 
 [presets.classic-2]
 label = "Classic 2"

@@ -217,9 +217,8 @@ fn holding_jump_doesnt_jump_again() {
     assert_eq!(starts, 1);
 }
 
-/// A world with the player falling from high up.
-fn dropped() -> Play {
-    let mut w = world();
+/// `w` with the player falling from high up.
+fn dropped_in(mut w: Play) -> Play {
     w.player.pos.y = Fixed::from_int(200);
     w.player.ground = None;
     w.player.state = State::Fall;
@@ -228,9 +227,13 @@ fn dropped() -> Play {
 
 /// A world with the player falling, landing on the `n`th step from now.
 fn falling(n: usize) -> Play {
-    let mut probe = dropped();
+    falling_in(world, n)
+}
+
+fn falling_in(new: fn() -> Play, n: usize) -> Play {
+    let mut probe = dropped_in(new());
     let land = first(&hold(&mut probe, &[], 120), Event::Land).unwrap();
-    let mut w = dropped();
+    let mut w = dropped_in(new());
     hold(&mut w, &[], land + 1 - n);
     w
 }
@@ -527,4 +530,133 @@ fn classic_turns_take_eight_frames() {
         .collect();
     assert_eq!(turns, [4, 12]);
     assert_eq!(w.player.facing, Facing::Right);
+}
+
+/// The frame of the first jump in Classic 1, falling to land on frame
+/// `LAND` and holding jump on the frames `held` gives.
+fn classic_jump_after_landing(held: impl Fn(usize) -> bool) -> Option<usize> {
+    let mut w = falling_in(classic, LAND + 1);
+    let mut steps = Vec::new();
+    for frame in 0..LAND + 20 {
+        let keys: &[Action] = if held(frame) { &[Action::Jump] } else { &[] };
+        steps.extend(hold(&mut w, keys, 1));
+    }
+    assert_eq!(first(&steps, Event::Land), Some(LAND));
+    first(&steps, Event::JumpStart)
+}
+
+const LAND: usize = 20;
+
+/// The earliest frame a jump can start after landing on `LAND`.
+const EARLIEST: usize = LAND + 3;
+
+#[test]
+fn classic_jump_starts_the_frame_after_the_press() {
+    // spec/behavior/jump-input.md, "On the ground": even a one-frame tap.
+    let mut w = classic();
+    let mut steps = hold(&mut w, &[Action::Jump], 1);
+    steps.extend(hold(&mut w, &[], 2));
+    assert_eq!(first(&steps, Event::JumpStart), Some(1));
+    assert_eq!(all_events(&steps).len(), 1);
+
+    // and on every frame of a roll
+    let mut w = classic();
+    w.player.vel.x = Fixed::from_int(3);
+    w.player.state = State::Roll;
+    let mut steps = hold(&mut w, &[Action::Jump], 1);
+    assert_eq!(steps[0].state, State::Roll);
+    steps.extend(hold(&mut w, &[Action::Jump], 1));
+    assert_eq!(steps[1].events, [Event::RollEnd, Event::JumpStart]);
+}
+
+#[test]
+fn classic_presses_before_landing() {
+    // spec/behavior/jump-input.md, "Pressing before landing": every row of
+    // the table, with the landing frame L = LAND and E = L + 3.
+    let held_from = |p: usize, last: usize| move |f: usize| (p..=last).contains(&f);
+
+    // pressed 1 to 9 frames before L, held through E - 1
+    for before in 1..=9 {
+        let jump = classic_jump_after_landing(held_from(LAND - before, EARLIEST - 1));
+        assert_eq!(
+            jump,
+            Some(EARLIEST),
+            "pressed {before} frames before landing"
+        );
+    }
+    // pressed exactly at E - 12, held through E - 1
+    let jump = classic_jump_after_landing(held_from(EARLIEST - 12, EARLIEST - 1));
+    assert_eq!(jump, Some(EARLIEST));
+    // pressed at E - 13 or earlier, held through landing
+    for press in [EARLIEST - 13, EARLIEST - 15] {
+        let jump = classic_jump_after_landing(held_from(press, LAND + 10));
+        assert_eq!(jump, None, "pressed on {press}");
+    }
+    // pressed in the air, released before E - 1
+    for last in [LAND - 1, LAND, EARLIEST - 2] {
+        let jump = classic_jump_after_landing(held_from(LAND - 5, last));
+        assert_eq!(jump, None, "held until {last}");
+    }
+
+    // held continuously since the jump that took off
+    let mut w = classic();
+    let steps = hold(&mut w, &[Action::Jump], 150);
+    assert!(first(&steps, Event::Land).is_some());
+    let jumps = all_events(&steps)
+        .into_iter()
+        .filter(|&e| e == Event::JumpStart)
+        .count();
+    assert_eq!(jumps, 1);
+}
+
+#[test]
+fn classic_presses_on_or_after_landing() {
+    // spec/behavior/jump-input.md: a press on or after L starts a jump on
+    // max(P + 1, E), even a one-frame tap.
+    for press in LAND..LAND + 6 {
+        let jump = classic_jump_after_landing(|f| f == press);
+        assert_eq!(jump, Some((press + 1).max(EARLIEST)), "pressed on {press}");
+    }
+}
+
+#[test]
+fn classic_jump_input_worked_example() {
+    // spec/behavior/jump-input.md, "Worked example", moved from L = 40 to
+    // L = LAND: pressing 9 frames before landing and holding jumps on
+    // L + 3; pressing 10 frames before doesn't jump.
+    let jump = classic_jump_after_landing(|f| f >= LAND - 9);
+    assert_eq!(jump, Some(LAND + 3));
+    let jump = classic_jump_after_landing(|f| f >= LAND - 10);
+    assert_eq!(jump, None);
+}
+
+#[test]
+fn classic_has_no_grace_after_walking_off() {
+    // spec/behavior/walk-off.md, "Jumping near the edge": a press on the
+    // frame before leaving the ground still jumps; on L or later it
+    // doesn't.
+    let walk_to_edge = || {
+        let mut w = classic();
+        w.player.pos.x = Fixed::from_int(1500);
+        let mut probe = classic();
+        probe.player.pos.x = Fixed::from_int(1500);
+        let leave = first(&hold(&mut probe, &[Action::Right], 120), Event::LeaveGround).unwrap();
+        hold(&mut w, &[Action::Right], leave - 1);
+        w
+    };
+    let mut w = walk_to_edge();
+    let steps = hold(&mut w, &[Action::Right, Action::Jump], 2);
+    assert_eq!(steps[1].events, [Event::JumpStart]);
+
+    for after in 0..3 {
+        let mut w = walk_to_edge();
+        let mut steps = hold(&mut w, &[Action::Right], 1 + after);
+        steps.extend(hold(&mut w, &[Action::Right, Action::Jump], 3));
+        assert_eq!(first(&steps, Event::LeaveGround), Some(1));
+        assert_eq!(
+            first(&steps, Event::JumpStart),
+            None,
+            "pressed {after} after leaving"
+        );
+    }
 }

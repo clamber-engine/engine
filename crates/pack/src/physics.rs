@@ -89,6 +89,17 @@ params! {
     /// A jump still works for this many frames after walking off a
     /// ledge. Whole frames.
     CoyoteTime => "coyote_time",
+    /// A jump starts this many frames after its press at the earliest.
+    /// 0 is on the frame of the press. Whole frames.
+    JumpDelay => "jump_delay",
+    /// After landing, a jump can't start for this many frames after the
+    /// next one. 0 lets a jump start on the frame after landing. Whole
+    /// frames.
+    LandingLockout => "landing_lockout",
+    /// Above 0, a jump pressed in the air is buffered only while jump
+    /// stays held: letting go before the jump is possible forgets it.
+    /// 0 keeps a buffered press for all of `jump_buffer`.
+    JumpBufferHold => "jump_buffer_hold",
     /// Speed lost per frame while rolling with no direction pressed.
     RollFriction => "roll_friction",
     /// Speed lost per frame while rolling and pressing against the motion.

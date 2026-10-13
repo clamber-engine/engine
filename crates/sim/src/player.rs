@@ -96,6 +96,11 @@ pub struct Player {
     /// Frames since walking off a ledge, while a jump is still allowed
     /// for that reason.
     pub coyote: Option<u8>,
+    /// Frames left after landing before a jump can start.
+    pub lockout: u8,
+    /// The buffered jump press was made in the air and is forgotten if
+    /// jump is let go before it's used.
+    pub jump_needs_hold: bool,
     /// Frames of swapping left.
     pub swap: u8,
     /// Crouching, or getting up from a crouch.
@@ -120,6 +125,8 @@ impl Player {
             state: State::Idle,
             jump_buffer: JumpBuffer::new(0),
             coyote: None,
+            lockout: 0,
+            jump_needs_hold: false,
             swap: 0,
             crouch: Crouch::default(),
             turn: None,
@@ -194,9 +201,17 @@ impl Player {
             _ => 0,
         };
 
+        // A press waits out the jump delay in the buffer, however short
+        // the buffer is.
+        let delay = frames(physics[Param::JumpDelay]);
         self.jump_buffer
-            .set_window(frames(physics[Param::JumpBuffer]));
+            .set_window(frames(physics[Param::JumpBuffer]).max(delay));
         self.jump_buffer.update(pressed(Action::Jump));
+        if pressed(Action::Jump) {
+            self.jump_needs_hold = false;
+        }
+        let locked = self.lockout > 0;
+        self.lockout = self.lockout.saturating_sub(1);
 
         if self.grounded()
             && self.state != State::Roll
@@ -208,7 +223,10 @@ impl Player {
             self.jump_buffer.take();
         }
 
-        let can_jump = self.swap == 0 && (self.grounded() || self.coyote.is_some());
+        let can_jump = self.swap == 0
+            && !locked
+            && (self.grounded() || self.coyote.is_some())
+            && self.jump_buffer.age().is_some_and(|age| age >= delay);
         if can_jump && self.jump_buffer.take() {
             if self.state == State::Roll {
                 events.push(Event::RollEnd);
@@ -228,6 +246,11 @@ impl Player {
         {
             self.vel.y = self.vel.y.max(-physics[Param::JumpReleaseSpeed]);
             events.push(Event::JumpRelease);
+        }
+        // Held through the frame before the jump is enough: a press let
+        // go of on the frame it's used still jumps.
+        if self.jump_needs_hold && !held(Action::Jump) {
+            self.jump_buffer.take();
         }
 
         let roll_input = held(Action::Down)
@@ -317,6 +340,15 @@ impl Player {
             self.coyote.map(|n| n.saturating_add(1))
         }
         .filter(|&n| n <= frames(physics[Param::CoyoteTime]));
+
+        if events.contains(&Event::Land) {
+            self.lockout = frames(physics[Param::LandingLockout]);
+        }
+        // A press on a frame that ends on the ground, landing included,
+        // jumps when it can whether or not jump is still held.
+        if self.jump_buffer.age() == Some(0) {
+            self.jump_needs_hold = physics[Param::JumpBufferHold] > Fixed::ZERO && !self.grounded();
+        }
 
         if rolling && (!self.grounded() || self.vel.x.abs() < physics[Param::RollMinSpeed]) {
             events.push(Event::RollEnd);
