@@ -61,6 +61,12 @@ params! {
     WalkSpeed => "walk_speed",
     /// Horizontal speed gained or lost per frame in the air.
     AirAcceleration => "air_acceleration",
+    /// Above 0, horizontal speed eases toward a target instead of using
+    /// the acceleration, deceleration and friction values: every frame,
+    /// on the ground and in the air, it closes this fraction of the gap
+    /// to `walk_speed`, `top_speed` with action held, or 0 with no
+    /// direction. 0 turns easing off.
+    SpeedResponse => "speed_response",
     /// Upward speed at the start of a jump.
     JumpSpeed => "jump_speed",
     /// Releasing jump cuts upward speed down to this.

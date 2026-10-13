@@ -28,8 +28,6 @@ expected_failures = [
 expected_failures = [
     "apex_height",  # #51
     "airtime",  # #51
-    "top_speed",  # #50
-    "frames_to_top",  # #50
     "curve y,vy from jump_start",  # #51
 ]
 
@@ -37,12 +35,10 @@ expected_failures = [
 expected_failures = [
     "apex_height",  # #51
     "airtime",  # #51
-    "final_x",  # #50
-    "curve x,y,vy from jump_start",  # #50, #51
+    "curve x,y,vy from jump_start",  # #51
 ]
 
 [walk-off-ledge]
 expected_failures = [
-    "final_x",  # #50
-    "curve x,y,vy from leave_ground",  # #50, #52
+    "curve x,y,vy from leave_ground",  # #52
 ]

@@ -284,10 +284,12 @@ mod tests {
                 preset.id
             );
         }
-        // The default world has a positive value for every parameter.
+        // The default world has a positive value for every parameter but
+        // the ones where 0 turns something off.
         let world = presets.world(DEFAULT).unwrap();
         for &p in Param::ALL {
-            assert!(world[p] > Fixed::ZERO, "{p}");
+            let off = matches!(p, Param::SpeedResponse);
+            assert!(world[p] > Fixed::ZERO || off, "{p}");
         }
     }
 

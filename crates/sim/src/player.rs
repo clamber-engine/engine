@@ -252,14 +252,22 @@ impl Player {
             events.push(Event::Turn);
         }
 
+        let cap = if held(Action::Action) {
+            physics[Param::TopSpeed]
+        } else {
+            physics[Param::WalkSpeed]
+        };
+        let response = physics[Param::SpeedResponse];
         self.vel.x = if rolling {
             roll_speed(self.vel.x, dir, physics)
-        } else {
-            let cap = if held(Action::Action) {
-                physics[Param::TopSpeed]
-            } else {
-                physics[Param::WalkSpeed]
+        } else if response > Fixed::ZERO {
+            let target = match dir {
+                -1 => -cap,
+                1 => cap,
+                _ => Fixed::ZERO,
             };
+            ease(self.vel.x, target, response)
+        } else {
             horizontal_speed(self.vel.x, dir, self.grounded(), cap, physics)
         };
         let moved = self.move_horizontally(level);
@@ -462,6 +470,25 @@ fn horizontal_speed(vx: Fixed, dir: i32, grounded: bool, cap: Fixed, physics: &P
     if dir < 0 { -v } else { v }
 }
 
+/// The smallest change easing makes to a speed, px per frame.
+pub(crate) const SPEED_GRAIN: Fixed = Fixed::from_ratio_pow2(1, 8);
+
+/// `v` moved toward `target` by `response` of the gap between them,
+/// rounded toward zero to a whole number of [`SPEED_GRAIN`]s. A step that
+/// rounds to nothing closes the gap, so easing always arrives.
+fn ease(v: Fixed, target: Fixed, response: Fixed) -> Fixed {
+    let gap = target - v;
+    let step = gap.checked_mul(response).unwrap_or(gap);
+    let grain = SPEED_GRAIN.to_bits();
+    let whole = step.to_bits().abs() / grain * grain;
+    let step = Fixed::from_bits(if step.is_negative() { -whole } else { whole });
+    if step == Fixed::ZERO {
+        target
+    } else {
+        v + step
+    }
+}
+
 /// The speed after one step of rolling while pressing `dir`. A roll never
 /// speeds up; pressing against it brakes harder.
 fn roll_speed(vx: Fixed, dir: i32, physics: &Physics) -> Fixed {
@@ -535,6 +562,27 @@ mod tests {
         assert_eq!(roll_speed(v, -1, &p), v - p[Param::RollDeceleration]);
         assert_eq!(roll_speed(-v, 1, &p), -v + p[Param::RollDeceleration]);
         assert_eq!(roll_speed(fx(0.01), 0, &p), Fixed::ZERO);
+    }
+
+    #[test]
+    fn easing_closes_part_of_the_gap_in_whole_grains() {
+        let eighth = fx(0.125);
+        let speeds = |from: f64, to: f64, n: usize| {
+            let mut v = fx(from);
+            (0..n)
+                .map(|_| {
+                    v = ease(v, fx(to), eighth);
+                    (v.to_f64() * 256.0) as i64
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(speeds(0.0, 2.0, 4), [64, 120, 169, 211]);
+        // Rounding is toward zero going down too: a gap of -686 grains
+        // steps by -85.
+        assert_eq!(speeds(686.0 / 256.0, 0.0, 1), [686 - 85]);
+        // Within 8 grains, a step rounds to nothing and the gap closes.
+        assert_eq!(speeds(505.0 / 256.0, 2.0, 2), [512, 512]);
+        assert_eq!(speeds(-0.5, -0.5, 1), [-128]);
     }
 
     #[test]
