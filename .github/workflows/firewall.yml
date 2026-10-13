@@ -76,6 +76,7 @@ jobs:
           cp target/release/*.exe dist/clamber/
           cp -r content dist/clamber/
           [ -f PLAYING.md ] && cp PLAYING.md dist/clamber/ || true
+          [ -f content/base/CREDITS.md ] && cp content/base/CREDITS.md dist/clamber/ || true
       - name: Upload
         if: steps.game.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
