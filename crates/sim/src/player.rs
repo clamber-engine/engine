@@ -101,6 +101,13 @@ pub struct Player {
     /// The buffered jump press was made in the air and is forgotten if
     /// jump is let go before it's used.
     pub jump_needs_hold: bool,
+    /// Jump has been held on every frame since it was last pressed.
+    pub jump_held_since_press: bool,
+    /// The jump under way has had jump held on every frame since its
+    /// press, so it uses `held_jump_gravity`.
+    pub jump_hold: bool,
+    /// The jump started this frame on the ground and leaves it next frame.
+    pub takeoff: bool,
     /// Frames of swapping left.
     pub swap: u8,
     /// Crouching, or getting up from a crouch.
@@ -127,6 +134,9 @@ impl Player {
             coyote: None,
             lockout: 0,
             jump_needs_hold: false,
+            jump_held_since_press: false,
+            jump_hold: false,
+            takeoff: false,
             swap: 0,
             crouch: Crouch::default(),
             turn: None,
@@ -160,6 +170,8 @@ impl Player {
         self.vel = vel;
         self.ground = None;
         self.coyote = None;
+        self.jump_hold = false;
+        self.takeoff = false;
         self.state = State::Fall;
     }
 
@@ -168,6 +180,8 @@ impl Player {
         self.vel.y = -speed;
         self.ground = None;
         self.coyote = None;
+        self.jump_hold = false;
+        self.takeoff = false;
         if !events.contains(&Event::Bounce) {
             events.push(Event::Bounce);
         }
@@ -210,6 +224,16 @@ impl Player {
         if pressed(Action::Jump) {
             self.jump_needs_hold = false;
         }
+        self.jump_held_since_press =
+            pressed(Action::Jump) || (self.jump_held_since_press && held(Action::Jump));
+        self.jump_hold &= held(Action::Jump);
+        if self.takeoff {
+            // The jump that started on the ground last frame leaves it.
+            self.takeoff = false;
+            self.ground = None;
+            self.coyote = None;
+            self.state = State::Jump;
+        }
         let locked = self.lockout > 0;
         self.lockout = self.lockout.saturating_sub(1);
 
@@ -236,7 +260,12 @@ impl Player {
                 // A buffered tap that's already over makes a short hop.
                 self.vel.y = self.vel.y.max(-physics[Param::JumpReleaseSpeed]);
             }
-            self.ground = None;
+            self.jump_hold = self.jump_held_since_press;
+            if physics[Param::GroundedTakeoff] > Fixed::ZERO && self.grounded() {
+                self.takeoff = true;
+            } else {
+                self.ground = None;
+            }
             self.coyote = None;
             self.state = State::Jump;
             events.push(Event::JumpStart);
@@ -323,13 +352,16 @@ impl Player {
         if self.grounded() {
             self.follow_ground(level, events);
         } else {
-            let gravity = if self.vel.y.is_negative() {
+            let held_gravity = physics[Param::HeldJumpGravity];
+            let gravity = if self.jump_hold && held_gravity > Fixed::ZERO {
+                held_gravity
+            } else if self.vel.y.is_negative() {
                 physics[Param::Gravity]
             } else {
                 physics[Param::FallGravity]
             };
             self.vel.y = (self.vel.y + gravity).min(physics[Param::MaxFallSpeed]);
-            self.move_vertically(level, moved, events);
+            self.move_vertically(level, moved, physics[Param::LandingReach], events);
         }
 
         self.coyote = if self.grounded() {
@@ -442,25 +474,37 @@ impl Player {
 
     /// Keeps a grounded body on the ground as it moves over slopes and
     /// bumps, or lets it leave the ground when there's none within reach.
+    /// A body taking off keeps its upward speed.
     fn follow_ground(&mut self, level: &Level, events: &mut Vec<Event>) {
         let from = Vec2::new(self.pos.x, self.pos.y - STEP);
         match level.collision.cast(from, Dir::Down, STEP + STEP) {
             Some(hit) => {
                 self.pos.y = hit.point.y;
-                self.vel.y = Fixed::ZERO;
+                if !self.takeoff {
+                    self.vel.y = Fixed::ZERO;
+                }
                 self.ground = Some(hit.collider);
                 self.touched.push(hit.collider);
             }
             None => {
                 self.ground = None;
-                events.push(Event::LeaveGround);
+                if !self.takeoff {
+                    events.push(Event::LeaveGround);
+                }
             }
         }
     }
 
     /// Moves up or down as far as the level allows, after moving `moved`
-    /// sideways.
-    fn move_vertically(&mut self, level: &Level, moved: Fixed, events: &mut Vec<Event>) {
+    /// sideways. Falling, the body lands if it ends less than `reach`
+    /// above the ground.
+    fn move_vertically(
+        &mut self,
+        level: &Level,
+        moved: Fixed,
+        reach: Fixed,
+        events: &mut Vec<Event>,
+    ) {
         if self.vel.y.is_negative() {
             // One-way platforms aren't found going up, so jumps pass
             // through them from below.
@@ -483,21 +527,30 @@ impl Player {
         let feet = self.pos.y;
         let above = moved.max(STEP);
         let from = Vec2::new(self.pos.x, feet - above);
-        let reach = (Fixed::ZERO, Fixed::ZERO);
-        let ground = level
-            .collision
-            .sweep(from, Dir::Down, above + self.vel.y, reach, |hit| {
-                !hit.one_way || hit.point.y >= feet
-            });
+        // Only a body moving down lands short of the ground.
+        let reach = if self.vel.y > Fixed::ZERO {
+            reach
+        } else {
+            Fixed::ZERO
+        };
+        let to = feet + self.vel.y;
+        let ground = level.collision.sweep(
+            from,
+            Dir::Down,
+            above + self.vel.y + reach,
+            (Fixed::ZERO, Fixed::ZERO),
+            |hit| !hit.one_way || hit.point.y >= feet,
+        );
         match ground {
-            Some(hit) => {
+            Some(hit) if hit.point.y <= to || hit.point.y - to < reach => {
                 self.pos.y = hit.point.y;
                 self.vel.y = Fixed::ZERO;
                 self.ground = Some(hit.collider);
+                self.jump_hold = false;
                 self.touched.push(hit.collider);
                 events.push(Event::Land);
             }
-            None => self.pos.y += self.vel.y,
+            _ => self.pos.y += self.vel.y,
         }
     }
 }

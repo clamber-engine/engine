@@ -660,3 +660,153 @@ fn classic_has_no_grace_after_walking_off() {
         );
     }
 }
+
+/// A Classic 1 jump from standing, pressed on step 0 and held for `held`
+/// steps: `y` relative to the start and `vy` after each step, up to and
+/// including the landing.
+fn classic_jump(held: usize) -> Vec<(Step, f64, f64)> {
+    let mut w = classic();
+    let floor = w.player.pos.y;
+    let mut steps = Vec::new();
+    while steps.len() < 200 {
+        let keys: &[Action] = if steps.len() < held {
+            &[Action::Jump]
+        } else {
+            &[]
+        };
+        let step = hold(&mut w, keys, 1).remove(0);
+        let landed = step.events.contains(&Event::Land);
+        let y = (w.player.pos.y - floor).to_f64();
+        steps.push((step, y, w.player.vel.y.to_f64()));
+        if landed {
+            return steps;
+        }
+    }
+    panic!("never landed");
+}
+
+#[test]
+fn classic_jump_takes_off_the_frame_after_it_starts() {
+    // spec/behavior/jump-arc.md, "Take-off frame": on T, `vy` is -7 but
+    // the player is still on the ground.
+    let mut w = classic();
+    let mut steps = hold(&mut w, &[Action::Jump], 2);
+    assert_eq!(steps[1].events, [Event::JumpStart]);
+    assert_ne!(steps[1].state, State::Jump);
+    assert!(w.player.grounded());
+    assert_eq!(w.player.pos.y, Fixed::from_int(400));
+    assert_eq!(w.player.vel.y, Fixed::from_int(-7));
+    steps.extend(hold(&mut w, &[Action::Jump], 1));
+    assert_eq!(steps[2].state, State::Jump);
+    assert!(!w.player.grounded());
+    assert!(steps[2].events.is_empty());
+}
+
+#[test]
+fn classic_jump_held_from_take_off_to_landing() {
+    // spec/behavior/jump-arc.md, "Held from take-off to landing". T is
+    // step 1.
+    let steps = classic_jump(usize::MAX);
+    for (n, y, vy) in [
+        (0, 0.0, -7.0),
+        (1, -6.71875, -6.71875),
+        (2, -13.15625, -6.4375),
+        (5, -30.78125, -5.59375),
+        (10, -54.53125, -4.1875),
+        (20, -80.9375, -1.375),
+        (24, -83.625, -0.25),
+        (25, -83.59375, 0.03125),
+        (30, -79.21875, 1.4375),
+        (40, -49.375, 4.25),
+        (48, -5.25, 6.5),
+        (49, 0.0, 0.0),
+    ] {
+        let (_, sy, svy) = &steps[1 + n];
+        assert_eq!((*sy, *svy), (y, vy), "T + {n}");
+    }
+    assert_eq!(steps.len(), 1 + 50);
+    assert!(steps[50].0.events.contains(&Event::Land));
+}
+
+#[test]
+fn classic_jump_height_and_airtime_by_hold() {
+    // spec/behavior/jump-arc.md, "How long jump is held": `apex_height`
+    // and `airtime` as in spec/traces/METRICS.md, for H frames held from
+    // the press.
+    for (held, apex, airtime) in [
+        (1, 52.5, 31),
+        (2, 52.5, 31),
+        (3, 55.0, 31),
+        (4, 57.34375, 32),
+        (5, 59.5625, 33),
+        (8, 65.71875, 35),
+        (10, 69.3125, 36),
+        (12, 72.53125, 37),
+        (15, 76.5625, 39),
+        (20, 81.28125, 41),
+        (25, 83.46875, 43),
+        (26, 83.625, 44),
+        (30, 83.625, 45),
+        (usize::MAX, 83.625, 49),
+    ] {
+        let steps = classic_jump(held);
+        let top = steps.iter().map(|s| -s.1).fold(0.0, f64::max);
+        assert_eq!(top, apex, "held {held}");
+        // the jump starts on step 1 and lands on the last
+        assert!(steps[1].0.events.contains(&Event::JumpStart));
+        assert_eq!(steps.len() - 2, airtime, "held {held}");
+    }
+}
+
+#[test]
+fn classic_pressing_again_in_the_air_keeps_the_heavier_gravity() {
+    // spec/behavior/jump-arc.md: once let go, gravity is 0.4375 for the
+    // rest of the jump.
+    let mut w = classic();
+    hold(&mut w, &[Action::Jump], 3);
+    hold(&mut w, &[], 1);
+    let vy = w.player.vel.y;
+    hold(&mut w, &[Action::Jump], 1);
+    assert_eq!(w.player.vel.y - vy, Fixed::from_f64(0.4375).unwrap());
+}
+
+#[test]
+fn classic_falls_are_capped_at_8() {
+    let mut w = dropped_in(classic());
+    w.player.pos.y = Fixed::ZERO;
+    let steps = hold(&mut w, &[], 30);
+    assert_eq!(first(&steps, Event::Land), None);
+    assert_eq!(w.player.vel.y, Fixed::from_int(8));
+}
+
+#[test]
+fn classic_lands_from_less_than_5_px_above() {
+    // spec/behavior/landing.md, "Examples": height above the floor before
+    // the frame, the frame's `vy`, and whether it lands.
+    for (height, vy, lands) in [
+        (9.84375, 8.125, true),
+        (11.25, 6.40625, true),
+        (10.4375, 5.4375, false),
+        (12.0625, 6.8125, false),
+        (1.0, -0.0625, false),
+    ] {
+        let mut w = dropped_in(classic());
+        let floor = Fixed::from_int(400);
+        w.player.pos.y = floor - Fixed::from_f64(height).unwrap();
+        w.player.vel.y = Fixed::from_f64(vy - 0.4375).unwrap();
+        let steps = hold(&mut w, &[], 1);
+        assert_eq!(
+            steps[0].events.contains(&Event::Land),
+            lands,
+            "{height}, {vy}"
+        );
+        if lands {
+            assert_eq!(w.player.pos.y, floor);
+            assert_eq!(w.player.vel.y, Fixed::ZERO);
+            assert!(w.player.grounded());
+        } else {
+            let after = Fixed::from_f64(height - vy).unwrap();
+            assert_eq!(floor - w.player.pos.y, after, "{height}, {vy}");
+        }
+    }
+}

@@ -24,20 +24,6 @@ expected_failures = [
     "curve x,vx from roll_start",  # #53
 ]
 
-[run-jump-flat]
-expected_failures = [
-    "apex_height",  # #51
-    "airtime",  # #51
-    "curve y,vy from jump_start",  # #51
-]
-
-[slope-dip]
-expected_failures = [
-    "apex_height",  # #51
-    "airtime",  # #51
-    "curve x,y,vy from jump_start",  # #51
-]
-
 [walk-off-ledge]
 expected_failures = [
     "curve x,y,vy from leave_ground",  # #52

@@ -297,6 +297,9 @@ mod tests {
                     | Param::JumpDelay
                     | Param::LandingLockout
                     | Param::JumpBufferHold
+                    | Param::HeldJumpGravity
+                    | Param::LandingReach
+                    | Param::GroundedTakeoff
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

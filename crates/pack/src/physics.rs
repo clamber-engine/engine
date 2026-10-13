@@ -47,8 +47,16 @@ params! {
     /// Used instead of `gravity` once the body stops rising, so falls can
     /// be quicker than climbs. May be negative.
     FallGravity => "fall_gravity",
+    /// Above 0, the gravity of a jump while jump has been held on every
+    /// frame since its press, rising or falling, used instead of
+    /// `gravity` and `fall_gravity`. Once let go, the jump goes back to
+    /// those for good. 0 turns it off.
+    HeldJumpGravity => "held_jump_gravity",
     /// Downward speed never exceeds this.
     MaxFallSpeed => "max_fall_speed",
+    /// A falling body lands when it ends a frame less than this far above
+    /// the ground, and is placed on it. 0: only on reaching the ground.
+    LandingReach => "landing_reach",
     /// Speed gained per frame when pressing in the direction of motion.
     GroundAcceleration => "ground_acceleration",
     /// Speed lost per frame when pressing against the direction of motion.
@@ -89,6 +97,10 @@ params! {
     /// A jump still works for this many frames after walking off a
     /// ledge. Whole frames.
     CoyoteTime => "coyote_time",
+    /// Above 0, a jump leaves the ground on the frame after it starts:
+    /// on the start frame the body still follows the ground, with its
+    /// upward speed already set. 0 leaves on the start frame.
+    GroundedTakeoff => "grounded_takeoff",
     /// A jump starts this many frames after its press at the earliest.
     /// 0 is on the frame of the press. Whole frames.
     JumpDelay => "jump_delay",

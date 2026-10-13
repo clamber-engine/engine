@@ -21,7 +21,9 @@ description = "Clamber's standard feel."
 [presets.default.world]
 gravity = 0.375
 fall_gravity = 0.5625
+held_jump_gravity = 0
 max_fall_speed = 15
+landing_reach = 0
 ground_acceleration = 0.1875
 ground_deceleration = 0.5
 ground_friction = 0.1875
@@ -36,6 +38,7 @@ jump_speed = 7.5
 jump_release_speed = 3
 jump_buffer = 5
 coyote_time = 5
+grounded_takeoff = 0
 jump_delay = 0
 landing_lockout = 0
 jump_buffer_hold = 0
@@ -75,8 +78,11 @@ air_acceleration = 0.09375
 # Don't put values here that don't come from `spec`.
 
 # Classic 1: the `title-1` values. Filled in so far: horizontal speed,
-# crouching and turns (ground-speed.md, air-control.md), and jump input
-# timing (jump-input.md, walk-off.md).
+# crouching and turns (ground-speed.md, air-control.md), jump input
+# timing (jump-input.md, walk-off.md), and the jump arc and landing
+# (jump-arc.md, landing.md). Jump doesn't cut upward speed when let go
+# (`jump_release_speed` equals `jump_speed`); it ends the lighter
+# `held_jump_gravity` instead.
 [presets.classic-1]
 label = "Classic 1"
 description = "Placeholder: partly measured; the rest plays like Default."
@@ -94,6 +100,14 @@ landing_lockout = 2
 jump_buffer = 12
 jump_buffer_hold = 1
 coyote_time = 0
+jump_speed = 7
+jump_release_speed = 7
+grounded_takeoff = 1
+gravity = 0.4375
+fall_gravity = 0.4375
+held_jump_gravity = 0.28125
+max_fall_speed = 8
+landing_reach = 5
 
 [presets.classic-2]
 label = "Classic 2"
