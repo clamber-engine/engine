@@ -810,3 +810,35 @@ fn classic_lands_from_less_than_5_px_above() {
         }
     }
 }
+
+#[test]
+fn classic_walking_off_a_ledge() {
+    // spec/behavior/walk-off.md, "Falling": `vy` after the frame and the
+    // total fallen below the ledge, by frames after L.
+    let mut w = classic();
+    w.player.pos.x = Fixed::from_int(1500);
+    let ledge = w.player.pos.y;
+    let mut steps = Vec::new();
+    while first(&steps, Event::LeaveGround).is_none() {
+        steps.extend(hold(&mut w, &[Action::Right], 1));
+    }
+    let mut fall = vec![(w.player.vel.y, w.player.pos.y - ledge)];
+    for _ in 0..19 {
+        hold(&mut w, &[Action::Right], 1);
+        fall.push((w.player.vel.y, w.player.pos.y - ledge));
+    }
+    for (n, vy, fallen) in [
+        (0, 0.00390625, 3.4375),
+        (1, 0.44140625, 3.87890625),
+        (2, 0.87890625, 4.7578125),
+        (10, 4.37890625, 27.5390625),
+        (18, 7.87890625, 78.3203125),
+        (19, 8.0, 86.3203125),
+    ] {
+        let expected = (
+            Fixed::from_f64(vy).unwrap(),
+            Fixed::from_f64(fallen).unwrap(),
+        );
+        assert_eq!(fall[n], expected, "L + {n}");
+    }
+}

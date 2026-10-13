@@ -350,7 +350,14 @@ impl Player {
         let moved = self.move_horizontally(level);
 
         if self.grounded() {
-            self.follow_ground(level, events);
+            let drop = physics[Param::LeaveDrop];
+            if self.follow_ground(level, events) && drop > Fixed::ZERO {
+                // There's no ground within a step below, so the drop
+                // can't land.
+                self.vel.y = drop;
+                self.move_vertically(level, moved, Fixed::ZERO, events);
+                self.vel.y = physics[Param::LeaveFallSpeed];
+            }
         } else {
             let held_gravity = physics[Param::HeldJumpGravity];
             let gravity = if self.jump_hold && held_gravity > Fixed::ZERO {
@@ -474,8 +481,9 @@ impl Player {
 
     /// Keeps a grounded body on the ground as it moves over slopes and
     /// bumps, or lets it leave the ground when there's none within reach.
-    /// A body taking off keeps its upward speed.
-    fn follow_ground(&mut self, level: &Level, events: &mut Vec<Event>) {
+    /// A body taking off keeps its upward speed. Returns whether the body
+    /// walked off the ground.
+    fn follow_ground(&mut self, level: &Level, events: &mut Vec<Event>) -> bool {
         let from = Vec2::new(self.pos.x, self.pos.y - STEP);
         match level.collision.cast(from, Dir::Down, STEP + STEP) {
             Some(hit) => {
@@ -485,12 +493,14 @@ impl Player {
                 }
                 self.ground = Some(hit.collider);
                 self.touched.push(hit.collider);
+                false
             }
             None => {
                 self.ground = None;
                 if !self.takeoff {
                     events.push(Event::LeaveGround);
                 }
+                !self.takeoff
             }
         }
     }

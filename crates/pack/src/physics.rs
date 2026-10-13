@@ -57,6 +57,14 @@ params! {
     /// A falling body lands when it ends a frame less than this far above
     /// the ground, and is placed on it. 0: only on reaching the ground.
     LandingReach => "landing_reach",
+    /// Above 0, how far a body that walks off the ground without jumping
+    /// moves down on the frame it leaves, whatever is below; it ends that
+    /// frame falling at `leave_fall_speed`. 0: it doesn't move down until
+    /// the next frame.
+    LeaveDrop => "leave_drop",
+    /// Downward speed at the end of the frame a body walks off the ground,
+    /// when `leave_drop` is above 0.
+    LeaveFallSpeed => "leave_fall_speed",
     /// Speed gained per frame when pressing in the direction of motion.
     GroundAcceleration => "ground_acceleration",
     /// Speed lost per frame when pressing against the direction of motion.
