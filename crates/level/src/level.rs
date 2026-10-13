@@ -1016,6 +1016,11 @@ fn patch(p: &PhysicsPatch) -> Value {
     let mut t = Table::new();
     for (param, adjust) in &p.0 {
         let v = match adjust {
+            Adjust::Set(v) if param.is_step_set() => Value::Array(
+                clamber_pack::physics::steps(*v)
+                    .map(|n| Value::Integer(n.into()))
+                    .collect(),
+            ),
             Adjust::Set(v) => num(*v),
             Adjust::Scale(s) => {
                 let mut scale = Table::new();

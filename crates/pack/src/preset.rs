@@ -265,7 +265,8 @@ mod tests {
         let mut src =
             String::from("[presets.default]\nlabel = \"Default\"\n[presets.default.world]\n");
         for p in Param::ALL {
-            src += &format!("{p} = 1\n");
+            let value = if p.is_step_set() { "[1]" } else { "1" };
+            src += &format!("{p} = {value}\n");
         }
         src
     }
@@ -310,6 +311,18 @@ mod tests {
                     | Param::CrouchStart
                     | Param::CrouchRecovery
                     | Param::TurnTime
+                    | Param::StrideSteps
+                    | Param::WalkStride
+                    | Param::WalkStrideLess
+                    | Param::RunStride
+                    | Param::StrideMin
+                    | Param::WalkTurnSteps
+                    | Param::WalkRunSteps
+                    | Param::RunTurnSteps
+                    | Param::WalkStandSpeed
+                    | Param::RunStandSpeed
+                    | Param::TurnRunSpeed
+                    | Param::RunWalkSpeed
                     | Param::JumpDelay
                     | Param::LandingLockout
                     | Param::JumpBufferHold

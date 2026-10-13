@@ -8,7 +8,7 @@ use clamber_fixed::Fixed;
 use serde::de::DeserializeOwned;
 use toml::{Table, Value};
 
-use crate::physics::{Adjust, Param, ParamsPatch, Patch, PhysicsPatch};
+use crate::physics::{Adjust, MAX_STEP, Param, ParamsPatch, Patch, PhysicsPatch, step_set};
 
 /// A content file that couldn't be loaded.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,7 +102,11 @@ impl Reader<'_> {
             let at = format!("{path}.{key}");
             let param =
                 Param::from_name(key).ok_or_else(|| self.err(&at, "unknown movement parameter"))?;
-            let adjust = self.adjust(&at, value)?;
+            let adjust = if param.is_step_set() {
+                Adjust::Set(self.step_set(&at, value)?)
+            } else {
+                self.adjust(&at, value)?
+            };
             if let Adjust::Set(v) = adjust
                 && v.is_negative()
                 && !param.allows_negative()
@@ -112,6 +116,27 @@ impl Reader<'_> {
             patch.insert(param, adjust);
         }
         Ok(Patch(patch))
+    }
+
+    /// A step set (see [`Param::is_step_set`]): a list of step numbers.
+    pub fn step_set(&self, path: &str, value: &Value) -> Result<Fixed, LoadError> {
+        let steps = value
+            .as_array()
+            .ok_or_else(|| self.err(path, "expected a list of step numbers"))?;
+        let steps = steps
+            .iter()
+            .map(|step| {
+                step.as_integer()
+                    .and_then(|n| u32::try_from(n).ok())
+                    .ok_or(())
+            })
+            .collect::<Result<Vec<_>, ()>>();
+        steps.ok().and_then(step_set).ok_or_else(|| {
+            self.err(
+                path,
+                format!("steps must be whole numbers from 1 to {MAX_STEP}"),
+            )
+        })
     }
 
     /// A table of ability parameters to adjust.
@@ -223,6 +248,24 @@ mod tests {
         assert_eq!(err.message, "w.top_speed: must not be negative");
         let err = R.physics_patch("w", &table("topspeed = 1")).unwrap_err();
         assert_eq!(err.message, "w.topspeed: unknown movement parameter");
+    }
+
+    #[test]
+    fn step_sets() {
+        let table = |src: &str| -> Table { toml::from_str(src).unwrap() };
+        let patch = R
+            .physics_patch("w", &table("walk_turn_steps = [1, 3, 31]"))
+            .unwrap();
+        let Adjust::Set(set) = patch.0[&Param::WalkTurnSteps] else {
+            panic!("not set");
+        };
+        assert_eq!(crate::physics::steps(set).collect::<Vec<_>>(), [1, 3, 31]);
+        for bad in ["[0]", "[32]", "[1.5]", "3", "{ scale = 2 }"] {
+            let err = R
+                .physics_patch("w", &table(&format!("run_turn_steps = {bad}")))
+                .unwrap_err();
+            assert!(err.message.starts_with("w.run_turn_steps: "), "{bad}");
+        }
     }
 
     #[test]

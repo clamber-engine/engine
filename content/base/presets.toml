@@ -36,6 +36,18 @@ speed_response = 0
 crouch_start = 0
 crouch_recovery = 0
 turn_time = 0
+stride_steps = 0
+walk_stride = 0
+walk_stride_less = 0
+run_stride = 0
+stride_min = 0
+walk_turn_steps = []
+walk_run_steps = []
+run_turn_steps = []
+walk_stand_speed = 0
+run_stand_speed = 0
+turn_run_speed = 0
+run_walk_speed = 0
 jump_speed = 7.5
 jump_release_speed = 3
 jump_buffer = 5
@@ -126,10 +138,10 @@ air_acceleration = 0.09375
 # (jump-arc.md, landing.md), walking off ledges (walk-off.md), rolls
 # (roll-input.md, roll-speed.md, rolling-off-ledges.md), bounces off
 # walkers and getting hurt by them (bounce.md, walker-contact.md),
-# knock-out (knock-out.md), steep faces on the ground (steep-faces.md)
-# and rolling into walkers (rolling-into-walkers.md).
-# Still to come: walls in the air (#61) and the delay before a turn
-# (#55). Classic 1
+# knock-out (knock-out.md), steep faces on the ground (steep-faces.md),
+# rolling into walkers (rolling-into-walkers.md), walls in the air
+# (air-walls.md) and when a turn starts while moving: the stride cycle
+# (ground-speed.md, "Standing, walking and running"). Classic 1
 # is the bundled game's starting preset. Jump doesn't cut upward speed
 # when let go (`jump_release_speed` equals `jump_speed`); it ends the
 # lighter `held_jump_gravity` instead.
@@ -157,6 +169,18 @@ speed_response = 0.125
 crouch_start = 2
 crouch_recovery = 10
 turn_time = 8
+stride_steps = 20
+walk_stride = 0.375
+walk_stride_less = 0.125
+run_stride = 0.21875
+stride_min = 0.375
+walk_turn_steps = [1, 3, 6, 8, 11, 14, 16, 19]
+walk_run_steps = [2, 4, 6, 9, 12, 14, 17, 20]
+run_turn_steps = [1, 2, 4, 6, 8, 10, 12, 14, 16]
+walk_stand_speed = 0.1875
+run_stand_speed = 0.5
+turn_run_speed = 2
+run_walk_speed = 2.5
 jump_delay = 1
 landing_lockout = 2
 jump_buffer = 12

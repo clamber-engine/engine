@@ -446,3 +446,13 @@ fn tiled_errors() {
         .contains("object 8: unknown region property `colour`")
     );
 }
+
+#[test]
+fn step_sets_write_as_lists() {
+    let src = "format = 1\nsize = [100, 100]\nstart = [10, 10]\n\
+               [[regions]]\nrect = [0, 0, 5, 5]\nphysics = { run_turn_steps = [2, 4] }\n";
+    let l = Level::from_toml_str(src, "x.level").unwrap();
+    let text = l.to_toml_string();
+    assert!(text.contains("run_turn_steps = [2, 4]"), "{text}");
+    assert_eq!(Level::from_toml_str(&text, "saved").unwrap(), l);
+}

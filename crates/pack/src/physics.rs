@@ -95,6 +95,47 @@ params! {
     /// changes halfway through. A turn, once started, finishes. 0: facing
     /// follows the direction held at once. Whole frames.
     TurnTime => "turn_time",
+    /// Above 0, a grounded player outside a turn is standing, walking or
+    /// running, and walking and running go through a stride cycle of this
+    /// many steps. While walking or running a turn starts only when a step
+    /// in `walk_turn_steps` or `run_turn_steps` ends; standing, it starts
+    /// at once. 0: a turn starts at once whenever the other way is held.
+    /// Needs `turn_time`. Whole steps, up to 31.
+    StrideSteps => "stride_steps",
+    /// While walking, a step ends after this much stride progress per
+    /// px/frame of speed, less `walk_stride_less`, adds up to one step.
+    /// Each binary digit of the factor takes its share of the speed
+    /// rounded down to 1/256 px/frame on its own.
+    WalkStride => "walk_stride",
+    /// Taken off the walking stride progress per frame.
+    WalkStrideLess => "walk_stride_less",
+    /// The same factor as `walk_stride` while running.
+    RunStride => "run_stride",
+    /// Stride progress per frame is never less than this.
+    StrideMin => "stride_min",
+    /// The steps whose end checks for a turn while walking: one starts if
+    /// the other way is held. Otherwise, below `walk_stand_speed`, the
+    /// player stands with no direction held, or starts the stride over
+    /// holding forward. A step set, written as a list of step numbers.
+    WalkTurnSteps => "walk_turn_steps",
+    /// The steps whose end starts running while walking, if action and a
+    /// direction are held and that step's turn check changed nothing. A
+    /// step set.
+    WalkRunSteps => "walk_run_steps",
+    /// The steps whose end checks for a turn while running: one starts if
+    /// the other way is held. Otherwise, below `run_stand_speed`, the
+    /// player stands with no direction held. A step set.
+    RunTurnSteps => "run_turn_steps",
+    /// See `walk_turn_steps`.
+    WalkStandSpeed => "walk_stand_speed",
+    /// See `run_turn_steps`.
+    RunStandSpeed => "run_stand_speed",
+    /// At the end of a turn with forward and action held, the player runs
+    /// from this speed on, and walks below it.
+    TurnRunSpeed => "turn_run_speed",
+    /// Running with action let go and a direction held, the player walks
+    /// below this speed, once the run's first step has ended.
+    RunWalkSpeed => "run_walk_speed",
     /// Upward speed at the start of a jump.
     JumpSpeed => "jump_speed",
     /// Releasing jump cuts upward speed down to this.
@@ -303,6 +344,37 @@ impl Param {
                 | Param::RollAttackOffset
         )
     }
+
+    /// Whether the parameter is a step set: a set of step numbers from 1
+    /// to [`MAX_STEP`], held as a whole number whose bit `n - 1` stands
+    /// for step `n`. Content writes it as a list of step numbers.
+    pub fn is_step_set(self) -> bool {
+        matches!(
+            self,
+            Param::WalkTurnSteps | Param::WalkRunSteps | Param::RunTurnSteps
+        )
+    }
+}
+
+/// The highest step number in a step set.
+pub const MAX_STEP: u32 = 31;
+
+/// The step set holding `steps`, or `None` if one is out of range.
+pub fn step_set(steps: impl IntoIterator<Item = u32>) -> Option<Fixed> {
+    let mut bits = 0;
+    for step in steps {
+        if !(1..=MAX_STEP).contains(&step) {
+            return None;
+        }
+        bits |= 1 << (step - 1);
+    }
+    Some(Fixed::from_int(bits))
+}
+
+/// The step numbers in a step set, in order.
+pub fn steps(set: Fixed) -> impl Iterator<Item = u32> {
+    let bits = set.floor();
+    (1..=MAX_STEP).filter(move |n| bits >> (n - 1) & 1 == 1)
 }
 
 impl fmt::Display for Param {

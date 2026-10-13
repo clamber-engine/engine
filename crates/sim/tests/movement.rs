@@ -9,7 +9,7 @@ use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
 use clamber_pack::{CharacterFeel, Feel, Fixed, Param};
 use clamber_sim::{
-    Event, Facing, InputFrame, ROLL, RollSize, SWAP_FRAMES, State, World, generic_feel, step,
+    Event, Facing, Gait, InputFrame, ROLL, RollSize, SWAP_FRAMES, State, World, generic_feel, step,
 };
 
 /// Flat ground at y = 400 from x = 0 to 1600, a ledge down to y = 528
@@ -532,6 +532,63 @@ fn classic_turns_take_eight_frames() {
         .collect();
     assert_eq!(turns, [4, 12]);
     assert_eq!(w.player.facing, Facing::Right);
+}
+
+/// The frame a turn starts on in Classic 1, holding `before` for `from`
+/// frames from standing still and then `after`.
+fn classic_turn_start(before: &[Action], from: usize, after: &[Action]) -> usize {
+    let mut w = classic();
+    // Action held from before the start, so it doesn't start a roll.
+    w.held = keys(&[Action::Action]);
+    let mut steps = hold(&mut w, before, from);
+    steps.extend(hold(&mut w, after, 40));
+    let facing = first(&steps, Event::Turn).expect("a turn");
+    facing - 4
+}
+
+#[test]
+fn classic_turns_while_walking_wait_for_a_turn_check() {
+    // spec/behavior/ground-speed.md, "Standing, walking and running",
+    // "Example": the stride counter while walking from standing still.
+    let mut w = classic();
+    let mut counter = Vec::new();
+    for _ in 0..9 {
+        hold(&mut w, &[Action::Right], 1);
+        let Gait::Walking(stride) = w.player.gait else {
+            panic!("not walking: {:?}", w.player.gait);
+        };
+        counter.push(grains(stride.left));
+    }
+    assert_eq!(counter, [256, 160, 64, 224, 128, 32, 192, 96, 251]);
+
+    // Left held from frame 3 turns on frame 3; from frame 4, on frame 8;
+    // from frame 9, on frame 16.
+    let right = [Action::Right];
+    let left = [Action::Left];
+    for (from, turn) in [(3, 3), (4, 8), (9, 16)] {
+        assert_eq!(classic_turn_start(&right, from, &left), turn, "{from}");
+    }
+}
+
+#[test]
+fn classic_turns_start_within_a_stride_check() {
+    // spec/behavior/ground-speed.md, "Facing and turns": a turn starts 0
+    // to 7 frames after the other way is first held while walking, and 0
+    // to 12 while running.
+    let walk_delays: Vec<_> = (1..=129)
+        .map(|from| classic_turn_start(&[Action::Right], from, &[Action::Left]) - from)
+        .collect();
+    assert_eq!(walk_delays.iter().max(), Some(&7));
+    assert_eq!(walk_delays.iter().min(), Some(&0));
+
+    // With action held, running starts when step 2 ends, on frame 6.
+    let run = [Action::Right, Action::Action];
+    let back = [Action::Left, Action::Action];
+    let run_delays: Vec<_> = (7..=129)
+        .map(|from| classic_turn_start(&run, from, &back) - from)
+        .collect();
+    assert!(run_delays.iter().all(|&d| d <= 12), "{run_delays:?}");
+    assert!(run_delays.iter().any(|&d| d > 7), "{run_delays:?}");
 }
 
 /// The frame of the first jump in Classic 1, falling to land on frame

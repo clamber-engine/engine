@@ -12,9 +12,11 @@
 //! it: it rises into one-way platforms and through them, and other ground
 //! stops its feet.
 
+use clamber_fixed::FRAC_BITS;
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame, JumpBuffer};
 use clamber_level::{Dir, Hit, Level, Shape, Vec2};
+use clamber_pack::physics::MAX_STEP;
 use clamber_pack::{Feel, Param, Physics};
 
 use crate::columns;
@@ -123,6 +125,9 @@ pub struct Player {
     pub crouch: Crouch,
     /// Frames since the turn under way began, if one is.
     pub turn: Option<u8>,
+    /// Standing, walking or running, outside a turn (`stride_steps`
+    /// above 0).
+    pub gait: Gait,
     /// The timed roll under way, if there is one (`roll_time` above 0).
     pub roll: Option<Roll>,
     /// Which frame of the stop after a timed roll this is, counting from
@@ -188,6 +193,7 @@ impl Player {
             frozen: 0,
             crouch: Crouch::default(),
             turn: None,
+            gait: Gait::Standing,
             roll: None,
             roll_stop: 0,
             stopped: None,
@@ -546,6 +552,15 @@ impl Player {
 
         let turn_time = frames(physics[Param::TurnTime]);
         let slide = frames(physics[Param::RollStopSlide]);
+        // With a stride cycle, whether a turn starts is decided once the
+        // frame's speed is known.
+        let striding = physics[Param::StrideSteps] >= Fixed::ONE
+            && turn_time > 0
+            && self.grounded()
+            && self.roll.is_none()
+            && !rolling
+            && self.roll_stop == 0;
+        let turn_ends = self.turn.is_some_and(|n| n + 1 >= turn_time);
         let facing = if let Some(mut roll) = self.roll {
             if !started {
                 roll.steer(dir, boosted, physics);
@@ -567,7 +582,7 @@ impl Player {
             self.turn = None;
             facing_toward(dir, self.facing)
         } else if turn_time > 0 && self.grounded() {
-            self.turn_on_ground(dir, turn_time)
+            self.turn_on_ground(dir, turn_time, !striding)
         } else {
             self.turn = None;
             facing_toward(dir, self.facing)
@@ -624,6 +639,14 @@ impl Player {
         } else {
             horizontal_speed(self.vel.x, dir, self.grounded(), cap, physics)
         };
+        if !striding {
+            // Where the stride cycle starts after a landing, a roll or its
+            // stop isn't in the spec; the player starts out standing.
+            self.gait = Gait::Standing;
+        } else if self.stride(run_dir, held(Action::Action), turn_ends, physics) {
+            self.facing = facing_of(-direction(self.facing));
+            events.push(Event::Turn);
+        }
         let airborne = !self.grounded();
         if airborne {
             let held_gravity = physics[Param::HeldJumpGravity];
@@ -913,19 +936,13 @@ impl Player {
         }
     }
 
-    /// Goes on with the turn under way, or starts one if `dir` points
-    /// behind the player, and returns the facing for this frame. A turn
-    /// starts at once whether the player is standing or moving; when one
-    /// starts while moving in Classic 1 isn't in the spec yet
-    /// (clamber-engine/spec#12, #55).
-    fn turn_on_ground(&mut self, dir: i32, turn_time: u8) -> Facing {
+    /// Goes on with the turn under way, or, if `start`, starts one if
+    /// `dir` points behind the player, and returns the facing for this
+    /// frame.
+    fn turn_on_ground(&mut self, dir: i32, turn_time: u8, start: bool) -> Facing {
         let mut facing = self.facing;
         self.turn = self.turn.map(|n| n + 1).filter(|&n| n < turn_time);
-        let behind = match facing {
-            Facing::Left => 1,
-            Facing::Right => -1,
-        };
-        if self.turn.is_none() && dir == behind {
+        if start && self.turn.is_none() && dir == -direction(facing) {
             self.turn = Some(0);
         }
         if self.turn == Some(turn_time / 2) {
@@ -935,6 +952,82 @@ impl Player {
             };
         }
         facing
+    }
+
+    /// Goes on through the stride cycle once the frame's speed is known,
+    /// holding `dir`, and starts a turn when one can start. `turn_ends`
+    /// says the turn under way ended this frame. Returns whether facing
+    /// changes now, which only a turn shorter than 2 frames does.
+    fn stride(&mut self, dir: i32, action: bool, turn_ends: bool, physics: &Physics) -> bool {
+        if self.turn.is_some() {
+            return false;
+        }
+        let forward = direction(self.facing);
+        let opposite = dir == -forward;
+        let v = self.vel.x.abs();
+        let steps = physics[Param::StrideSteps]
+            .floor()
+            .clamp(1, MAX_STEP.into()) as u32;
+        let has =
+            |set: Param, step: u32| clamber_pack::physics::steps(physics[set]).any(|n| n == step);
+        let mut turn = false;
+        self.gait = match self.gait {
+            Gait::Walking(mut stride) if !turn_ends => {
+                let rate =
+                    stride_rate(v, physics[Param::WalkStride]) - physics[Param::WalkStrideLess];
+                let ended = stride.advance(rate.max(physics[Param::StrideMin]), steps);
+                let checked = ended.is_some_and(|n| has(Param::WalkTurnSteps, n));
+                if checked && opposite {
+                    turn = true;
+                    Gait::Standing
+                } else if checked && v < physics[Param::WalkStandSpeed] && dir == 0 {
+                    Gait::Standing
+                } else if checked && v < physics[Param::WalkStandSpeed] && dir == forward {
+                    Gait::Walking(Stride::START)
+                } else if ended.is_some_and(|n| has(Param::WalkRunSteps, n)) && action && dir != 0 {
+                    Gait::Running(Stride::START)
+                } else {
+                    Gait::Walking(stride)
+                }
+            }
+            Gait::Running(mut stride) if !turn_ends => {
+                let rate = stride_rate(v, physics[Param::RunStride]);
+                let ended = stride.advance(rate.max(physics[Param::StrideMin]), steps);
+                let checked = ended.is_some_and(|n| has(Param::RunTurnSteps, n));
+                if checked && opposite {
+                    turn = true;
+                    Gait::Standing
+                } else if checked && v < physics[Param::RunStandSpeed] && dir == 0 {
+                    Gait::Standing
+                } else if !action
+                    && dir != 0
+                    && v < physics[Param::RunWalkSpeed]
+                    && stride.first_done
+                {
+                    Gait::Walking(Stride::START)
+                } else {
+                    Gait::Running(stride)
+                }
+            }
+            // Standing, or at the end of a turn.
+            _ => {
+                if opposite {
+                    turn = true;
+                    Gait::Standing
+                } else if dir == 0 {
+                    Gait::Standing
+                } else if turn_ends && action && v >= physics[Param::TurnRunSpeed] {
+                    Gait::Running(Stride::START)
+                } else {
+                    Gait::Walking(Stride::START)
+                }
+            }
+        };
+        if !turn {
+            return false;
+        }
+        self.turn = Some(0);
+        frames(physics[Param::TurnTime]) / 2 == 0
     }
 
     /// The state after this step's movement.
@@ -1327,6 +1420,73 @@ impl Roll {
     }
 }
 
+/// What a grounded player outside a turn is doing, which decides when a
+/// turn can start (`stride_steps` above 0).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Gait {
+    /// A turn starts as soon as the other way is held. The player may
+    /// still be sliding.
+    #[default]
+    Standing,
+    Walking(Stride),
+    Running(Stride),
+}
+
+/// Progress through the stride cycle while walking or running.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Stride {
+    /// The step under way, from 1.
+    pub step: u32,
+    /// How much of it is left, in steps.
+    pub left: Fixed,
+    /// The first step has ended.
+    pub first_done: bool,
+}
+
+impl Stride {
+    /// At the start of the cycle. Nothing more happens on the frame a
+    /// stride starts.
+    const START: Stride = Stride {
+        step: 1,
+        left: Fixed::ONE,
+        first_done: false,
+    };
+
+    /// Goes on by `rate` steps in a cycle of `steps`, and returns the
+    /// step that ended, if one did.
+    fn advance(&mut self, rate: Fixed, steps: u32) -> Option<u32> {
+        self.left -= rate;
+        if self.left > Fixed::ZERO {
+            return None;
+        }
+        self.left += Fixed::ONE;
+        let ended = self.step;
+        self.step = ended % steps + 1;
+        self.first_done |= ended == 1;
+        Some(ended)
+    }
+}
+
+/// Stride progress per frame at speed `v` (not negative) for a stride
+/// factor: each binary digit of `factor` takes its share of `v` rounded
+/// down to a whole [`SPEED_GRAIN`] on its own.
+fn stride_rate(v: Fixed, factor: Fixed) -> Fixed {
+    let grain = SPEED_GRAIN.to_bits();
+    let (v, factor) = (v.to_bits(), factor.to_bits());
+    let total = (0..63)
+        .filter(|bit| factor >> bit & 1 == 1)
+        .map(|bit| {
+            let share = if bit < FRAC_BITS {
+                v >> (FRAC_BITS - bit)
+            } else {
+                v.checked_shl(bit - FRAC_BITS).unwrap_or(i64::MAX)
+            };
+            share / grain * grain
+        })
+        .fold(0i64, i64::saturating_add);
+    Fixed::from_bits(total)
+}
+
 /// Crouching on the ground, from holding down.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Crouch {
@@ -1561,6 +1721,21 @@ mod tests {
         // Within 8 grains, a step rounds to nothing and the gap closes.
         assert_eq!(speeds(505.0 / 256.0, 2.0, 2), [512, 512]);
         assert_eq!(speeds(-0.5, -0.5, 1), [-128]);
+    }
+
+    #[test]
+    fn stride_rates_round_each_share_down() {
+        // spec/behavior/ground-speed.md, "The stride cycle", in 1/256
+        // steps: walking is v/4 + v/8 - 32 and running v/8 + v/16 + v/32,
+        // each share rounded down.
+        let rate = |v: i32, factor: f64| {
+            stride_rate(Fixed::from_ratio_pow2(v, 8), fx(factor)).to_f64() * 256.0
+        };
+        assert_eq!(rate(356, 0.375) - 32.0, 101.0);
+        assert_eq!(rate(512, 0.375) - 32.0, 160.0);
+        assert_eq!(rate(768, 0.21875), 168.0);
+        assert_eq!(rate(7, 0.375), 1.0);
+        assert_eq!(rate(0, 0.375), 0.0);
     }
 
     #[test]
