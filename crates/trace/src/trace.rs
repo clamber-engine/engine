@@ -17,7 +17,8 @@ pub struct Trace {
     /// The `# scenario:` header.
     pub scenario: String,
     pub source: Source,
-    /// Other `# key: value` header lines, in order. Comparisons ignore them.
+    /// Other `# key: value` header lines, in order. Comparisons ignore
+    /// them, except `# title:` (see [`Trace::title`]).
     pub extra: Vec<(String, String)>,
     /// Never empty.
     pub rows: Vec<Row>,
@@ -62,6 +63,14 @@ impl Row {
 }
 
 impl Trace {
+    /// The `# title:` header: the title the trace represents.
+    pub fn title(&self) -> Option<&str> {
+        self.extra
+            .iter()
+            .find(|(key, _)| key == "title")
+            .map(|(_, value)| value.as_str())
+    }
+
     pub fn load(path: &Path) -> Result<Trace, ParseError> {
         let origin = path.display().to_string();
         let text = std::fs::read_to_string(path)

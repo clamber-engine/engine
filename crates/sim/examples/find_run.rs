@@ -1,9 +1,9 @@
 //! Searches for a run from a level's start to its goal that loses no
-//! life, on the default preset, and prints it as scenario `[inputs]`
-//! lines. This is how `tests/playthrough/` runs are recorded:
+//! life, on a preset (`default` if not given), and prints it as scenario
+//! `[inputs]` lines. This is how `tests/playthrough/` runs are recorded:
 //!
 //! ```text
-//! cargo run --release -p clamber-sim --example find_run -- <file.level> [beam width]
+//! cargo run --release -p clamber-sim --example find_run -- <file.level> [beam width] [preset]
 //! ```
 //!
 //! It's a beam search over inputs held for a few frames at a time,
@@ -54,12 +54,17 @@ struct Climb {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(path) = args.first() else {
-        eprintln!("usage: find_run <file.level> [beam width]");
+        eprintln!("usage: find_run <file.level> [beam width] [preset]");
         return ExitCode::from(2);
     };
     let beam = args
         .get(1)
         .map_or(400, |s| s.parse().expect("a beam width"));
+    let preset = args.get(2).map_or("default", String::as_str);
+    let Some(feel) = generic_feel(preset) else {
+        eprintln!("no preset named `{preset}`");
+        return ExitCode::from(2);
+    };
     let level = match Level::load(Path::new(path)) {
         Ok(level) => level,
         Err(e) => {
@@ -69,7 +74,7 @@ fn main() -> ExitCode {
     };
     let climbs = climbs(&level);
     let start_y = level.start.y.to_f64();
-    let world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
+    let world = World::new(Arc::new(level), Arc::new(feel));
     match search(world, beam, |run| score(run, &climbs, start_y)) {
         Some(run) => {
             eprintln!(
@@ -128,7 +133,9 @@ fn score(run: &Run, climbs: &[Climb], start_y: f64) -> f64 {
         }
         base += (c.x0 - from_x) - HEIGHT * (c.floor - from_y);
         if x <= c.x1 {
-            return base + CLIMB * (c.floor - y) + 0.1 * (x - c.x0) + bonus;
+            // Height above the top earns nothing: jumping higher than the
+            // ledge isn't progress until the run lands on it.
+            return base + CLIMB * (c.floor - y.max(c.top)) + 0.1 * (x - c.x0) + bonus;
         }
         base += CLIMB * (c.floor - c.top);
         (from_x, from_y) = (c.x1, c.top);
@@ -193,6 +200,11 @@ fn search(world: World, beam: usize, score: impl Fn(&Run) -> f64) -> Option<Run>
         next.sort_by(|a, b| score(b).total_cmp(&score(a)));
         next.truncate(beam);
         runs = next;
+        let frames = runs[0].held.len();
+        if frames % 600 == 0 {
+            let p = &runs[0].world.player;
+            eprintln!("frame {frames}: best at ({}, {})", p.pos.x, p.pos.y);
+        }
     }
     eprintln!("no run within {LIMIT} frames");
     None

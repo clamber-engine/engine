@@ -172,6 +172,7 @@ impl Pack {
         Ok(Selection {
             feel: Feel {
                 preset: id.to_string(),
+                title: preset.title.clone(),
                 world,
                 roster,
             },
@@ -184,6 +185,9 @@ impl Pack {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Feel {
     pub preset: String,
+    /// The preset's [`Preset::title`](crate::Preset::title): the title
+    /// a trace recorded on this feel represents.
+    pub title: Option<String>,
     pub world: Physics,
     /// By roster slot.
     pub roster: Vec<CharacterFeel>,

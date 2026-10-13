@@ -13,7 +13,7 @@ use std::process::ExitCode;
 use clamber_conformance::{
     CONFORMANCE_PRESET, Case, STATUS_FILE, Status, record, root, spec_cases,
 };
-use clamber_trace::{Trace, compare};
+use clamber_trace::{Trace, compare, title_mismatch};
 
 struct Options {
     filters: Vec<String>,
@@ -76,6 +76,11 @@ fn check(case: &Case, status: &Status) -> Option<Result<(), String>> {
     Some((|| {
         let reference = Trace::load(&reference).map_err(|e| e.to_string())?;
         let candidate = record(scenario, &case.level, CONFORMANCE_PRESET)?;
+        if let Some((r, c)) = title_mismatch(&reference, &candidate) {
+            return Err(format!(
+                "the reference trace is `{r}` but `{CONFORMANCE_PRESET}` holds `{c}` values"
+            ));
+        }
         let outcomes = compare(scenario, &reference, &candidate);
         let problems = status.check(&scenario.id, &outcomes);
         if problems.is_empty() {

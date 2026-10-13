@@ -63,7 +63,7 @@ pub mod scenario;
 pub mod trace;
 pub mod vocab;
 
-pub use compare::{Outcome, compare};
+pub use compare::{Outcome, compare, title_mismatch};
 pub use decimal::Decimal;
 pub use error::ParseError;
 pub use input::Buttons;

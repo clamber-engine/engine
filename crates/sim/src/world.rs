@@ -326,9 +326,11 @@ pub fn run(world: &mut World, script: &Script, mut after_step: impl FnMut(&World
 /// as the preset's world physics say and can roll. `None` if there's no
 /// such preset.
 pub fn generic_feel(preset: &str) -> Option<Feel> {
-    let world = Presets::builtin().world(preset)?;
+    let presets = Presets::builtin();
+    let world = presets.world(preset)?;
     Some(Feel {
         preset: preset.to_string(),
+        title: presets.get(preset)?.title.clone(),
         world,
         roster: vec![CharacterFeel {
             physics: world,

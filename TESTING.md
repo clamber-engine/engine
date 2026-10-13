@@ -34,7 +34,8 @@ leaking into the simulation shows up here first.
 
 For every scenario, and every whole-level playthrough in
 `tests/playthrough/`, the engine's own trace on the `default` preset is
-committed to `tests/golden/<id>.trace`. Any change to engine behavior changes a golden
+committed to `tests/golden/<id>.trace`. (Playthroughs for other presets,
+in `tests/playthrough/<preset>/`, are only checked to reach the goal.) Any change to engine behavior changes a golden
 trace, so behavior never changes silently, even for scenarios that have no
 reference trace yet.
 
@@ -53,7 +54,10 @@ For every scenario in `spec/scenarios/` that has a reference trace in
 
 1. builds the scenario's test level from `content/test/<id>.level`
 2. runs the engine headlessly with the scenario's inputs, on the
-   `classic-1` preset (the reference traces were measured on `title-1`)
+   `classic-1` preset (the reference traces were measured on `title-1`,
+   and `classic-1` says so with `title = "title-1"`, so its traces carry
+   a `# title: title-1` line; a trace whose title differs from the
+   reference's is a title mismatch and isn't compared)
 3. computes every metric in the scenario's `[metrics]` section for both
    traces (definitions in `spec/traces/METRICS.md`)
 4. reports pass or fail per metric, with the first divergence for curves

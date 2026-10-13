@@ -810,7 +810,7 @@ mod tests {
                 "Classic 3"
             ]
         );
-        assert_eq!(menu.unavailable, [3, 4, 5]);
+        assert_eq!(menu.unavailable, [4, 5]);
         assert_eq!(menu.current(), 0, "starts on the preset being played");
 
         // Up wraps to Classic 3, which can't be picked.

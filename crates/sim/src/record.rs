@@ -19,13 +19,18 @@ use crate::world::{Event, World, run};
 /// state as having stood idle for any number of frames, so the usual
 /// scenario `start:` needs no settling time.
 ///
-/// `preset` is written to the header for reference only.
+/// The feel's preset is written to the header for reference only. Its
+/// title, if it has one, is written as `# title:`: the title whose
+/// measured values the run used, which comparisons check.
 pub fn record(
     level: Arc<Level>,
     feel: Arc<Feel>,
     scenario: &Scenario,
 ) -> Result<Trace, ArchetypeError> {
-    let preset = feel.preset.clone();
+    let mut extra = vec![("preset".to_string(), feel.preset.clone())];
+    if let Some(title) = &feel.title {
+        extra.push(("title".to_string(), title.clone()));
+    }
     let mut world = World::try_new(level, feel)?;
     let start = world.player.pos;
     let mut rows = Vec::with_capacity(scenario.frames as usize);
@@ -51,7 +56,7 @@ pub fn record(
     Ok(Trace {
         scenario: scenario.id.clone(),
         source: Source::Engine,
-        extra: vec![("preset".to_string(), preset)],
+        extra,
         rows,
     })
 }
@@ -103,6 +108,20 @@ mod tests {
         let level = Level::from_toml_str(FLAT, "test").unwrap();
         let feel = generic_feel("default").unwrap();
         record(Arc::new(level), Arc::new(feel), scenario).unwrap()
+    }
+
+    #[test]
+    fn records_the_title_a_preset_holds() {
+        let level = Level::from_toml_str(FLAT, "test").unwrap();
+        let feel = generic_feel("classic-1").unwrap();
+        let trace = record(Arc::new(level), Arc::new(feel), &scenario("0-9 R", 10)).unwrap();
+        assert_eq!(
+            trace.extra,
+            [
+                ("preset".into(), "classic-1".into()),
+                ("title".into(), "title-1".into())
+            ]
+        );
     }
 
     #[test]

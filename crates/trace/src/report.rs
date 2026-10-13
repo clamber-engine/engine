@@ -7,7 +7,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::{Outcome, Scenario, Trace, compare};
+use crate::{Outcome, Scenario, Trace, compare, title_mismatch};
 
 #[derive(Debug)]
 pub struct Entry {
@@ -25,6 +25,11 @@ pub enum Status {
     NoCandidate,
     /// A file failed to parse or doesn't belong to the scenario.
     Invalid(String),
+    /// The traces represent different titles, so they aren't compared.
+    TitleMismatch {
+        reference: String,
+        candidate: String,
+    },
     Compared(Vec<Outcome>),
 }
 
@@ -79,7 +84,13 @@ fn status(path: &Path, id: &str, spec: &Path, candidates: &Path) -> Status {
         Ok(trace)
     };
     match (load(&reference), load(&candidate)) {
-        (Ok(r), Ok(c)) => Status::Compared(compare(&scenario, &r, &c)),
+        (Ok(r), Ok(c)) => match title_mismatch(&r, &c) {
+            Some((reference, candidate)) => Status::TitleMismatch {
+                reference: reference.to_string(),
+                candidate: candidate.to_string(),
+            },
+            None => Status::Compared(compare(&scenario, &r, &c)),
+        },
         (Err(e), _) | (_, Err(e)) => Status::Invalid(e),
     }
 }

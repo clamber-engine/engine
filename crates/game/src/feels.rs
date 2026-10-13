@@ -3,8 +3,11 @@
 
 use std::sync::Arc;
 
-use clamber_pack::{Feel, Pack, Presets, preset::DEFAULT};
+use clamber_pack::{Feel, Pack, Presets};
 use clamber_sim::generic_feel;
+
+/// The preset the bundled game starts on, with its generic character.
+pub const STARTING_PRESET: &str = "classic-1";
 
 #[derive(Clone, Debug, Default)]
 pub struct Feels {
@@ -34,9 +37,11 @@ impl Feels {
     }
 
     /// The preset played when none is chosen: the pack's own, or
-    /// `default`.
+    /// [`STARTING_PRESET`].
     pub fn designed_for(&self) -> &str {
-        self.pack.as_ref().map_or(DEFAULT, |pack| &pack.preset)
+        self.pack
+            .as_ref()
+            .map_or(STARTING_PRESET, |pack| &pack.preset)
     }
 
     /// The feel under preset `id`, and warnings to show about it.
@@ -69,11 +74,11 @@ mod tests {
     #[test]
     fn generic_feels_come_from_the_builtin_presets() {
         let feels = Feels::generic();
-        assert_eq!(feels.designed_for(), DEFAULT);
-        let (feel, warnings) = feels.feel("snappy").unwrap();
-        assert_eq!(feel, generic_feel("snappy").unwrap());
-        assert!(warnings.is_empty());
-        let (_, warnings) = feels.feel("classic-1").unwrap();
+        assert_eq!(feels.designed_for(), "classic-1");
+        let (feel, warnings) = feels.feel(STARTING_PRESET).unwrap();
+        assert_eq!(feel, generic_feel(STARTING_PRESET).unwrap());
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let (_, warnings) = feels.feel("classic-2").unwrap();
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert_eq!(
             feels.feel("nope").unwrap_err(),

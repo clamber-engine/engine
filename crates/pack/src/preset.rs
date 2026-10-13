@@ -34,6 +34,11 @@ pub struct Preset {
     pub description: Option<String>,
     /// Exists so it can be chosen, but its values aren't final yet.
     pub placeholder: bool,
+    /// The title (`spec/TITLES.md`) whose measured values this preset
+    /// holds, if any. Not inherited: a preset that builds on one with a
+    /// title plays differently, so it represents no title unless it says
+    /// so.
+    pub title: Option<String>,
     /// `None` only for [`DEFAULT`].
     pub base: Option<String>,
     pub world: PhysicsPatch,
@@ -49,6 +54,7 @@ struct RawPreset {
     description: Option<String>,
     #[serde(default)]
     placeholder: bool,
+    title: Option<String>,
     base: Option<String>,
     #[serde(default)]
     world: Table,
@@ -196,6 +202,9 @@ fn read_preset(reader: &Reader, id: &str, value: &toml::Value) -> Result<Preset,
         None => Some(DEFAULT.to_string()),
     };
 
+    if let Some(title) = &raw.title {
+        reader.id(&format!("{path}.title"), title)?;
+    }
     let world = reader.physics_patch(&format!("{path}.world"), &raw.world)?;
 
     let mut slots = BTreeMap::new();
@@ -214,6 +223,7 @@ fn read_preset(reader: &Reader, id: &str, value: &toml::Value) -> Result<Preset,
         label: raw.label,
         description: raw.description,
         placeholder: raw.placeholder,
+        title: raw.title,
         base,
         world,
         slots,
@@ -279,7 +289,13 @@ mod tests {
             assert!(presets.world(&preset.id).is_some());
             assert_eq!(
                 preset.placeholder,
-                preset.id.starts_with("classic-"),
+                ["classic-2", "classic-3"].contains(&preset.id.as_str()),
+                "{}",
+                preset.id
+            );
+            assert_eq!(
+                preset.title.as_deref(),
+                (preset.id == "classic-1").then_some("title-1"),
                 "{}",
                 preset.id
             );

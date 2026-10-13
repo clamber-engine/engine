@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use clamber_conformance::PRESET;
 use clamber_trace::report::{self, Status};
-use clamber_trace::{Scenario, Trace, compare};
+use clamber_trace::{Scenario, Trace, compare, title_mismatch};
 
 const USAGE: &str = "\
 usage:
@@ -18,7 +18,8 @@ usage:
 record  runs the engine headlessly with the scenario's inputs and writes
         its trace (default: to stdout). The level defaults to
         content/test/<id>.level and the preset to `default`
-diff    compares two traces on the scenario's [metrics]; exits 1 if any fail
+diff    compares two traces on the scenario's [metrics]; exits 1 if any fail,
+        or 3 without comparing if the traces' `# title:` lines differ
 report  compares each candidate trace (default tests/golden) against the
         spec's reference traces (default spec) and prints passing metrics
         per scenario
@@ -141,6 +142,13 @@ fn diff(args: &[String]) -> Result<ExitCode, Failure> {
         println!("{}: no [metrics]; nothing to compare", scenario.id);
         return Ok(ExitCode::SUCCESS);
     }
+    if let Some((r, c)) = title_mismatch(&reference, &candidate) {
+        println!(
+            "{}: title mismatch (reference `{r}`, candidate `{c}`); not compared",
+            scenario.id
+        );
+        return Ok(ExitCode::from(3));
+    }
     let outcomes = compare(&scenario, &reference, &candidate);
     for outcome in &outcomes {
         println!("{outcome}");
@@ -205,6 +213,10 @@ fn report(args: &[String]) -> Result<ExitCode, Failure> {
                 invalid += 1;
                 format!("error: {e}")
             }
+            Status::TitleMismatch {
+                reference,
+                candidate,
+            } => format!("title mismatch (reference `{reference}`, candidate `{candidate}`)"),
             Status::Compared(outcomes) => {
                 compared += 1;
                 let ok = outcomes.iter().filter(|o| o.pass).count();

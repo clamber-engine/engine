@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use clamber_trace::trace::{Facing, Source};
-use clamber_trace::{Buttons, Decimal, Event, Row, State, Trace};
+use clamber_trace::{Buttons, Decimal, Event, Row, State, Trace, title_mismatch};
 
 fn fixture(path: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -203,4 +203,27 @@ fn missing_file_is_an_error_not_a_panic() {
     let e = Trace::load(&fixture("valid/does-not-exist.trace")).unwrap_err();
     assert_eq!(e.line, 0);
     assert!(e.message.starts_with("can't read file"));
+}
+
+#[test]
+fn traces_of_different_titles_mismatch() {
+    let trace = |title: Option<&str>| {
+        let header = title.map_or(String::new(), |t| format!("# title: {t}\n"));
+        Trace::parse(
+            &format!(
+                "# clamber-trace v1\n# scenario: s\n# source: engine\n{header}\
+                 frame\tinput\tx\ty\tvx\tvy\tstate\tground\tfacing\tevents\n\
+                 0\t.\t0\t0\t0\t0\tidle\t1\tR\t\n"
+            ),
+            "test",
+        )
+        .unwrap()
+    };
+    let (one, two, none) = (trace(Some("title-1")), trace(Some("title-2")), trace(None));
+    assert_eq!(one.title(), Some("title-1"));
+    assert_eq!(none.title(), None);
+    assert_eq!(title_mismatch(&one, &two), Some(("title-1", "title-2")));
+    assert_eq!(title_mismatch(&one, &one), None);
+    assert_eq!(title_mismatch(&one, &none), None);
+    assert_eq!(title_mismatch(&none, &two), None);
 }

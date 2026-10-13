@@ -63,6 +63,19 @@ pub struct Divergence {
     pub tol: Decimal,
 }
 
+/// Both traces' titles, if both have one and they differ. Such traces
+/// represent different titles and aren't compared: that is neither a pass
+/// nor a fail.
+pub fn title_mismatch<'a>(
+    reference: &'a Trace,
+    candidate: &'a Trace,
+) -> Option<(&'a str, &'a str)> {
+    match (reference.title(), candidate.title()) {
+        (Some(r), Some(c)) if r != c => Some((r, c)),
+        _ => None,
+    }
+}
+
 /// Runs every comparison in the scenario's `[metrics]` section, in order.
 pub fn compare(scenario: &Scenario, reference: &Trace, candidate: &Trace) -> Vec<Outcome> {
     scenario

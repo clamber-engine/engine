@@ -91,16 +91,21 @@ jump_release_speed = 2.5
 air_acceleration = 0.09375
 
 # The Classic presets are filled in from measured values in
-# `spec/behavior/`. Until all of a preset's values are in, it is marked
+# `spec/behavior/`. Until a preset's core movement is in, it is marked
 # as a placeholder, and what isn't filled in yet plays like Default.
-# Don't put values here that don't come from `spec`.
+# Don't put values here that don't come from `spec`. `title` names the
+# title (`spec/TITLES.md`) whose measured values a preset holds; traces
+# recorded on it say so in their `# title:` line.
 
 # Classic 1: the `title-1` values. Filled in so far: horizontal speed,
 # crouching and turns (ground-speed.md, air-control.md), jump input
 # timing (jump-input.md, walk-off.md), the jump arc and landing
 # (jump-arc.md, landing.md), walking off ledges (walk-off.md), and rolls
 # (roll-input.md, roll-speed.md, rolling-off-ledges.md), and bounces off
-# walkers (bounce.md, walker-contact.md). Jump doesn't cut upward speed
+# walkers (bounce.md, walker-contact.md). Still to come: steep faces
+# (#57), getting hurt by walkers (#58), the rest of walker.md (#59),
+# rolling into walkers (#60) and the delay before a turn (#55). Classic 1
+# is the bundled game's starting preset. Jump doesn't cut upward speed
 # when let go (`jump_release_speed` equals `jump_speed`); it ends the
 # lighter `held_jump_gravity` instead.
 #
@@ -110,8 +115,8 @@ air_acceleration = 0.09375
 # or `size = [26, 38]` and `offset = 0.5` (the large one).
 [presets.classic-1]
 label = "Classic 1"
-description = "Placeholder: partly measured; the rest plays like Default."
-placeholder = true
+description = "The first classic title's movement."
+title = "title-1"
 
 [presets.classic-1.world]
 walk_speed = 2
