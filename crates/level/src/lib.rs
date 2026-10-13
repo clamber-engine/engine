@@ -9,7 +9,8 @@
 //!   number of texels per world unit
 //! - **entities**: placed things with per-instance parameters
 //! - **collision**: solid polygons and segments at any angle, one-way
-//!   platforms, and surface types ([`Surface`]), separate from visuals
+//!   platforms, thin or thick, and surface types ([`Surface`]), separate
+//!   from visuals
 //! - **regions**: areas with water, wind, darkness, physics overrides and
 //!   camera rules
 //! - **camera** rules for the whole level: limits and look-ahead
@@ -25,7 +26,7 @@ mod level;
 pub mod tiled;
 
 pub use clamber_fixed::Fixed;
-pub use collision::{Collider, Collision, Dir, Hit, Shape};
+pub use collision::{Collider, Collision, Dir, Hit, Shape, Span};
 pub use geom::{Area, Rect, Vec2};
 pub use level::{
     Camera, CameraRule, Depth, Entity, FORMAT, KeyLight, Layer, LayerContent, Level, LevelError,

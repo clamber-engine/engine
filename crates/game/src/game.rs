@@ -153,10 +153,15 @@ impl Game {
                     .get(&collider.surface)
                     .is_some_and(|s| s.hazard);
                 match &collider.shape {
-                    Shape::Solid(points) => {
+                    Shape::Solid { points, one_way } => {
                         let points: Vec<_> = points.iter().map(|&p| to_screen(point(p))).collect();
                         canvas.fill_polygon(&points, SOLID, 255);
-                        outline(canvas, &points, if hazard { HAZARD } else { EDGE });
+                        let color = match (hazard, one_way) {
+                            (true, _) => HAZARD,
+                            (false, true) => ONE_WAY,
+                            (false, false) => EDGE,
+                        };
+                        outline(canvas, &points, color);
                     }
                     Shape::Segment { a, b, one_way } => {
                         let color = match (hazard, one_way) {

@@ -54,12 +54,16 @@ fn reads_every_part() {
     assert_eq!(l.entities[1].at, v(400.5, 450.0));
 
     // the polyline becomes two segments
-    assert_eq!(l.collision.colliders.len(), 5);
+    assert_eq!(l.collision.colliders.len(), 6);
     assert!(matches!(
         l.collision.colliders[2].shape,
         Shape::Segment { one_way: true, .. }
     ));
     assert_eq!(l.collision.colliders[4].surface, "hazard");
+    assert!(matches!(
+        l.collision.colliders[5].shape,
+        Shape::Solid { one_way: true, .. }
+    ));
 
     let LayerContent::Image { normals, .. } = &l.layers[0].content else {
         panic!("expected an image");
@@ -348,7 +352,7 @@ fn imports_tiled_map() {
     // top edge, and a polyline
     let c = &l.collision.colliders;
     assert_eq!(c.len(), 3);
-    assert!(matches!(&c[0].shape, Shape::Solid(p) if p.len() == 4));
+    assert!(matches!(&c[0].shape, Shape::Solid { points, one_way: false } if points.len() == 4));
     assert_eq!(
         c[1].shape,
         Shape::Segment {

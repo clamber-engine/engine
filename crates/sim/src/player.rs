@@ -8,11 +8,13 @@
 //! With `face_slope`, a grounded body goes over the ground column by
 //! column instead (see `columns`): steep faces carry it down and stop it
 //! going up. An airborne body meets higher columns the same way, and is
-//! lifted onto ones up to a step higher.
+//! lifted onto ones up to a step higher. Nothing above its head stops
+//! it: it rises into one-way platforms and through them, and other ground
+//! stops its feet.
 
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame, JumpBuffer};
-use clamber_level::{Dir, Hit, Level, Vec2};
+use clamber_level::{Dir, Hit, Level, Shape, Vec2};
 use clamber_pack::{Feel, Param, Physics};
 
 use crate::columns;
@@ -155,6 +157,10 @@ pub struct Player {
     /// The knock-out under way, if the player was hurt and is being
     /// knocked out (`knockout_jump` above 0).
     pub knockout: Option<Knockout>,
+    /// In the air inside a one-way platform, by columns: risen into it
+    /// from below its underside, with the feet still between its
+    /// underside and top.
+    pub inside: bool,
     /// Colliders the body ran into or stood on during the last step:
     /// walls it was stopped by, a ceiling it hit, the ground.
     pub touched: Vec<usize>,
@@ -194,6 +200,7 @@ impl Player {
             jump_age: None,
             hurt_ahead: None,
             knockout: None,
+            inside: false,
             touched: Vec::new(),
         };
         player.ground = level
@@ -329,9 +336,15 @@ impl Player {
             physics[Param::FallGravity]
         };
         self.vel.y = (self.vel.y + gravity).min(physics[Param::KnockoutMaxFall]);
-        let moved = self.move_horizontally(level, HALF_WIDTH);
+        let moved = self.move_horizontally(level, HALF_WIDTH, |_| true);
         let mut landed = Vec::new();
-        self.move_vertically(level, moved, physics[Param::LandingReach], &mut landed);
+        self.move_vertically(
+            level,
+            moved,
+            physics[Param::LandingReach],
+            false,
+            &mut landed,
+        );
         if landed.is_empty() {
             return;
         }
@@ -627,12 +640,13 @@ impl Player {
             self.vel.y = (self.vel.y + gravity).min(physics[Param::MaxFallSpeed]);
         }
         let hold = self.jump_hold;
+        let feet = self.pos.y;
         let moved = if slope > Fixed::ZERO && airborne {
             self.move_in_air_by_columns(level, slope, events)
         } else if slope > Fixed::ZERO {
             self.move_by_columns(level, slope)
         } else {
-            self.move_horizontally(level, HALF_WIDTH)
+            self.move_horizontally(level, HALF_WIDTH, |_| true)
         };
         if self.roll_stop > 0 && self.roll_stop == slide {
             // The slide's last frame moves, but ends standing.
@@ -652,13 +666,19 @@ impl Player {
                 // There's no ground within a step below, so the drop
                 // can't land.
                 self.vel.y = drop;
-                self.move_vertically(level, moved, Fixed::ZERO, events);
+                self.move_vertically(level, moved, Fixed::ZERO, slope > Fixed::ZERO, events);
                 self.vel.y = physics[Param::LeaveFallSpeed];
             }
         } else {
             // Stepping onto a column while falling has landed already.
             if !self.grounded() {
-                self.move_vertically(level, moved, physics[Param::LandingReach], events);
+                self.move_vertically(
+                    level,
+                    moved,
+                    physics[Param::LandingReach],
+                    slope > Fixed::ZERO,
+                    events,
+                );
             }
             if let Some(speed) = air_takeoff {
                 // Landing on the take-off frame takes off from the ground
@@ -668,6 +688,14 @@ impl Player {
                 self.takeoff = self.grounded();
             }
         }
+
+        // Inside a platform from a frame that rises into its layer from
+        // below its underside, until the feet leave the layer.
+        self.inside = airborne
+            && slope > Fixed::ZERO
+            && !self.grounded()
+            && columns::layer(level, columns::column(self.pos.x), self.pos.y)
+                .is_some_and(|p| self.inside || feet > p.bottom);
 
         self.coyote = if self.grounded() {
             None
@@ -956,7 +984,7 @@ impl Player {
         }
         // Walls that aren't ground, such as segments, still stop the
         // feet.
-        self.move_horizontally(level, Fixed::ZERO)
+        self.move_horizontally(level, Fixed::ZERO, |_| true)
     }
 
     /// Moves an airborne body sideways by columns, after the frame's
@@ -964,9 +992,14 @@ impl Player {
     /// would move into counts. Ground there higher than the feet stops
     /// the body at the left edge of its own column if it's a face column
     /// or more than a step higher; otherwise the body is lifted onto it
-    /// by whole pixels, or lands on it if falling. One-way platforms
-    /// count only once the feet are level with them or above, as they're
-    /// thin: their underside is their top.
+    /// by whole pixels, or lands on it if falling. Ground whose underside
+    /// is above the feet doesn't count.
+    ///
+    /// Inside a one-way platform (see [`Player::inside`]), the columns
+    /// whose layer, between underside and top, holds the feet don't stop
+    /// or lift the body, except that rising with the feet up to
+    /// [`PLATFORM_LIFT`] below the top lifts it level with the top or
+    /// above by whole pixels.
     fn move_in_air_by_columns(
         &mut self,
         level: &Level,
@@ -976,6 +1009,15 @@ impl Player {
         let from = columns::column(self.pos.x);
         let to = columns::column(self.pos.x + self.vel.x);
         let feet = self.pos.y;
+        if self.inside
+            && let Some(platform) = columns::layer(level, to, feet)
+        {
+            let below = feet - platform.top;
+            if self.vel.y.is_negative() && below <= PLATFORM_LIFT {
+                self.pos.y -= Fixed::from_int(ceil(below) as i32);
+            }
+            return self.move_horizontally(level, Fixed::ZERO, only_segments(level));
+        }
         let floor = (to != from)
             .then(|| columns::floor_in_air(level, to, feet))
             .flatten()
@@ -996,17 +1038,22 @@ impl Player {
                 self.land(floor.y, floor.collider, events);
             } else {
                 // At most a step, so it fits.
-                self.pos.y += Fixed::from_int((-rise).floor() as i32);
+                self.pos.y -= Fixed::from_int(ceil(rise) as i32);
             }
         }
         // Walls that aren't ground, such as segments, still stop the
         // feet.
-        self.move_horizontally(level, Fixed::ZERO)
+        self.move_horizontally(level, Fixed::ZERO, only_segments(level))
     }
 
-    /// Moves sideways as far as walls allow a body `half_width` either
-    /// side of its position, and returns how far.
-    fn move_horizontally(&mut self, level: &Level, half_width: Fixed) -> Fixed {
+    /// Moves sideways as far as walls that `keep` accepts allow a body
+    /// `half_width` either side of its position, and returns how far.
+    fn move_horizontally(
+        &mut self,
+        level: &Level,
+        half_width: Fixed,
+        keep: impl Fn(&Hit) -> bool,
+    ) -> Fixed {
         if self.vel.x == Fixed::ZERO {
             return Fixed::ZERO;
         }
@@ -1026,7 +1073,9 @@ impl Player {
         let reach = (HEIGHT - Fixed::ONE - lift - TINY, Fixed::ZERO);
         let wall = level
             .collision
-            .sweep(from, cast_dir, distance + half_width, reach, is_wall);
+            .sweep(from, cast_dir, distance + half_width, reach, |hit| {
+                is_wall(hit) && keep(hit)
+            });
         let moved = match wall.map(|hit| (hit.distance - half_width, hit.collider)) {
             Some((room, collider)) if room < distance => {
                 self.vel.x = Fixed::ZERO;
@@ -1070,14 +1119,21 @@ impl Player {
 
     /// Moves up or down as far as the level allows, after moving `moved`
     /// sideways. Falling, the body lands if it ends less than `reach`
-    /// above the ground.
+    /// above the ground. `by_columns`, rising is stopped by the feet, not
+    /// the head (see [`Player::rise_by_columns`]), and a fall that ends
+    /// below a one-way platform's underside doesn't land on its top.
     fn move_vertically(
         &mut self,
         level: &Level,
         moved: Fixed,
         reach: Fixed,
+        by_columns: bool,
         events: &mut Vec<Event>,
     ) {
+        if self.vel.y.is_negative() && by_columns {
+            self.rise_by_columns(level);
+            return;
+        }
         if self.vel.y.is_negative() {
             // One-way platforms aren't found going up, so jumps pass
             // through them from below.
@@ -1107,18 +1163,55 @@ impl Player {
             Fixed::ZERO
         };
         let to = feet + self.vel.y;
+        let spans = if by_columns {
+            level.collision.spans(self.pos.x)
+        } else {
+            Vec::new()
+        };
+        // Thin platforms, segments, catch any fall onto them.
+        let below_underside = |hit: &Hit| {
+            !only_segments(level)(hit)
+                && spans.iter().any(|s| {
+                    s.collider == hit.collider
+                        && s.top <= hit.point.y
+                        && hit.point.y <= s.bottom
+                        && to > s.bottom
+                })
+        };
         let ground = level.collision.sweep(
             from,
             Dir::Down,
             above + self.vel.y + reach,
             (Fixed::ZERO, Fixed::ZERO),
-            |hit| !hit.one_way || hit.point.y >= feet,
+            |hit| !hit.one_way || (hit.point.y >= feet && !below_underside(hit)),
         );
         match ground {
             Some(hit) if hit.point.y <= to || hit.point.y - to < reach => {
                 self.land(hit.point.y, hit.collider, events);
             }
             _ => self.pos.y += self.vel.y,
+        }
+    }
+
+    /// Rises by the frame's speed, by columns. Nothing above the head
+    /// stops the body, but ground that isn't one-way stops the feet: a
+    /// rise from below the ground's underside that would end with the
+    /// feet line (the feet rounded down the screen to a whole pixel) in
+    /// it, below its top and level with its underside or above, leaves the
+    /// feet line where it was and stops the rise.
+    fn rise_by_columns(&mut self, level: &Level) {
+        let to = self.pos.y + self.vel.y;
+        let (before, after) = (ceil(self.pos.y), ceil(to));
+        let column = columns::column(self.pos.x);
+        let line = Fixed::from_int(after as i32);
+        let stop = columns::spans(level, column)
+            .into_iter()
+            .find(|s| !s.one_way && self.pos.y > s.bottom && s.top < line && line <= s.bottom);
+        self.pos.y = to;
+        if let Some(ground) = stop {
+            self.pos.y += Fixed::from_int((before - after) as i32);
+            self.vel.y = Fixed::ZERO;
+            self.touched.push(ground.collider);
         }
     }
 
@@ -1277,6 +1370,25 @@ fn facing_toward(dir: i32, facing: Facing) -> Facing {
 /// A whole number of frames from a parameter, clamped to what fits.
 pub(crate) fn frames(value: Fixed) -> u8 {
     value.floor().clamp(0, u8::MAX.into()) as u8
+}
+
+/// How far below a one-way platform's top the feet can be, inside it,
+/// for a rise to lift the body onto it, px.
+const PLATFORM_LIFT: Fixed = Fixed::from_int(2);
+
+/// The smallest whole number not less than `v`.
+fn ceil(v: Fixed) -> i64 {
+    -(-v).floor()
+}
+
+/// Accepts hits on segments only.
+fn only_segments(level: &Level) -> impl Fn(&Hit) -> bool + '_ {
+    |hit| {
+        matches!(
+            level.collision.colliders[hit.collider].shape,
+            Shape::Segment { .. }
+        )
+    }
 }
 
 /// Edges steeper than 45 degrees block; shallower ones are walked on.

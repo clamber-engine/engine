@@ -15,7 +15,7 @@
 //! steep edge of a polygon or a staircase of small steps.
 
 use clamber_fixed::Fixed;
-use clamber_level::{Dir, Hit, Level, Vec2};
+use clamber_level::{Dir, Level, Span, Vec2};
 
 use crate::player::{HEIGHT, STEP};
 
@@ -48,25 +48,6 @@ pub(crate) fn middle(column: i64) -> Fixed {
 /// height above the feet or more counts as that high. `None` if there's
 /// no ground in that range.
 pub(crate) fn floor(level: &Level, column: i64, feet: Fixed) -> Option<Floor> {
-    floor_where(level, column, feet, |_| true)
-}
-
-/// The floor of `column` as an airborne body with its feet at `feet`
-/// meets it: as [`floor`], but without one-way platforms above the feet,
-/// which a body passes up through.
-pub(crate) fn floor_in_air(level: &Level, column: i64, feet: Fixed) -> Option<Floor> {
-    floor_where(level, column, feet, |hit| {
-        !hit.one_way || hit.point.y >= feet
-    })
-}
-
-/// [`floor`], finding only ground that `keep` accepts.
-fn floor_where(
-    level: &Level,
-    column: i64,
-    feet: Fixed,
-    keep: impl Fn(&Hit) -> bool,
-) -> Option<Floor> {
     let top = Vec2::new(middle(column), feet - HEIGHT);
     if let Some(collider) = level.collision.solid_at(top) {
         return Some(Floor { y: top.y, collider });
@@ -74,11 +55,38 @@ fn floor_where(
     let across = (Fixed::ZERO, Fixed::ZERO);
     level
         .collision
-        .sweep(top, Dir::Down, HEIGHT + STEP + STEP, across, keep)
+        .sweep(top, Dir::Down, HEIGHT + STEP + STEP, across, |_| true)
         .map(|hit| Floor {
             y: hit.point.y,
             collider: hit.collider,
         })
+}
+
+/// The floor of `column` as an airborne body with its feet at `feet`
+/// meets it: as [`floor`], but without ground whose underside is above
+/// the feet, which the body passes under or rises into.
+pub(crate) fn floor_in_air(level: &Level, column: i64, feet: Fixed) -> Option<Floor> {
+    let head = feet - HEIGHT;
+    spans(level, column)
+        .into_iter()
+        .find(|s| s.bottom >= feet && s.top <= feet + STEP + STEP)
+        .map(|s| Floor {
+            y: s.top.max(head),
+            collider: s.collider,
+        })
+}
+
+/// Where the ground is under the middle of `column`, from the top down.
+pub(crate) fn spans(level: &Level, column: i64) -> Vec<Span> {
+    level.collision.spans(middle(column))
+}
+
+/// The one-way platform in `column` whose layer holds feet at `feet`:
+/// below its top, and level with its underside or above.
+pub(crate) fn layer(level: &Level, column: i64, feet: Fixed) -> Option<Span> {
+    spans(level, column)
+        .into_iter()
+        .find(|s| s.one_way && s.top < feet && feet <= s.bottom)
 }
 
 /// How much higher the floor of `to` is than the floor of `from`, px.

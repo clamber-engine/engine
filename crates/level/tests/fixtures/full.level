@@ -84,6 +84,11 @@ shape = "polyline"
 points = [[1100, 500], [1200, 450], [1300, 450]]
 surface = "hazard"
 
+[[collision]]
+shape = "rect"
+rect = [1400, 380, 100, 15]
+one_way = true
+
 [[regions]]
 name = "pool"
 rect = [1000, 400, 200, 100]

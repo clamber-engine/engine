@@ -14,8 +14,10 @@ use crate::geom::{self, Vec2};
 pub enum Shape {
     /// A solid area: a simple polygon, in either winding order. Its edges
     /// can be any angle, so slopes are just edges. They only stop what
-    /// moves into the area, so something inside comes out freely.
-    Solid(Vec<Vec2>),
+    /// moves into the area, so something inside comes out freely. If
+    /// `one_way`, only its top holds anything up, and only what lands on
+    /// it from above: a thick platform, passed up through from below.
+    Solid { points: Vec<Vec2>, one_way: bool },
     /// A line at any angle. Solid from both sides, unless `one_way`: then
     /// it only holds up what lands on it from above, like a thin platform.
     Segment { a: Vec2, b: Vec2, one_way: bool },
@@ -50,6 +52,16 @@ pub struct Hit {
     pub one_way: bool,
 }
 
+/// Where a collider is along a vertical line: see [`Collision::spans`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Span {
+    pub top: Fixed,
+    pub bottom: Fixed,
+    /// Index into [`Collision::colliders`].
+    pub collider: usize,
+    pub one_way: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Edge {
     a: Vec2,
@@ -81,7 +93,7 @@ impl Collision {
         let mut edges = Vec::new();
         for (i, c) in colliders.iter().enumerate() {
             match &c.shape {
-                Shape::Solid(points) => {
+                Shape::Solid { points, one_way } => {
                     let winding = geom::winding(points);
                     for (n, &a) in points.iter().enumerate() {
                         let b = points[(n + 1) % points.len()];
@@ -94,7 +106,7 @@ impl Collision {
                         };
                         let (dx, dy) = (sign(b.x - a.x), sign(b.y - a.y));
                         let outward = (dy * winding, -dx * winding);
-                        edges.push(edge(a, b, i, false, Some(outward)));
+                        edges.push(edge(a, b, i, *one_way, Some(outward)));
                     }
                 }
                 Shape::Segment { a, b, one_way } => edges.push(edge(*a, *b, i, *one_way, None)),
@@ -253,12 +265,64 @@ impl Collision {
         best
     }
 
-    /// The first solid area containing `p`, if any.
+    /// The first solid area containing `p`, if any. One-way areas don't
+    /// count.
     pub fn solid_at(&self, p: Vec2) -> Option<usize> {
         self.colliders.iter().position(|c| match &c.shape {
-            Shape::Solid(points) => geom::polygon_contains(points, p),
+            Shape::Solid { points, one_way } => !one_way && geom::polygon_contains(points, p),
             Shape::Segment { .. } => false,
         })
+    }
+
+    /// Where each collider is along the vertical line at `x`, from the top
+    /// down, ties in the order the colliders are listed. A solid area
+    /// gives a span from each top edge to the bottom edge below it, and a
+    /// segment a span of no height. Vertical edges, and edges that end at
+    /// `x` going right, aren't crossed.
+    pub fn spans(&self, x: Fixed) -> Vec<Span> {
+        let cx = cell(x);
+        let mut found: Vec<usize> = self
+            .grid
+            .range((cx, i64::MIN)..=(cx, i64::MAX))
+            .flat_map(|(_, edges)| edges.iter().copied())
+            .collect();
+        found.sort_unstable();
+        found.dedup();
+        // Where each edge crosses, by collider and then height.
+        let mut crossings: Vec<(usize, Fixed, &Edge)> = found
+            .into_iter()
+            .map(|n| &self.edges[n])
+            .filter(|e| e.a.x <= x && x < e.b.x)
+            .map(|e| (e.collider, geom::y_at(e.a, e.b, x), e))
+            .collect();
+        // A top before a bottom at the same height.
+        crossings
+            .sort_by_key(|&(collider, y, e)| (collider, y, e.outward.is_some_and(|o| o.1 > 0)));
+        let mut spans = Vec::new();
+        let mut top = None;
+        for (collider, y, e) in crossings {
+            match e.outward {
+                None => spans.push(Span {
+                    top: y,
+                    bottom: y,
+                    collider,
+                    one_way: e.one_way,
+                }),
+                Some((_, ny)) if ny < 0 => top = Some(y),
+                Some(_) => {
+                    if let Some(top) = top.take() {
+                        spans.push(Span {
+                            top,
+                            bottom: y,
+                            collider,
+                            one_way: e.one_way,
+                        });
+                    }
+                }
+            }
+        }
+        spans.sort_by_key(|s| (s.top, s.collider));
+        spans
     }
 }
 
@@ -292,12 +356,18 @@ mod tests {
 
     fn world() -> Collision {
         let ground = Collider {
-            shape: Shape::Solid(vec![v(0, 100), v(1000, 100), v(1000, 200), v(0, 200)]),
+            shape: Shape::Solid {
+                points: vec![v(0, 100), v(1000, 100), v(1000, 200), v(0, 200)],
+                one_way: false,
+            },
             surface: "normal".into(),
         };
         // a slope rising to the right, from (300, 100) to (500, 50)
         let ramp = Collider {
-            shape: Shape::Solid(vec![v(300, 100), v(500, 50), v(500, 100)]),
+            shape: Shape::Solid {
+                points: vec![v(300, 100), v(500, 50), v(500, 100)],
+                one_way: false,
+            },
             surface: "normal".into(),
         };
         let ledge = Collider {
@@ -342,6 +412,40 @@ mod tests {
     }
 
     #[test]
+    fn one_way_areas_only_hold_up_from_above() {
+        // A platform 15 px thick with sloped ends.
+        let platform = Collider {
+            shape: Shape::Solid {
+                points: vec![v(0, 15), v(20, 0), v(80, 0), v(100, 15)],
+                one_way: true,
+            },
+            surface: "normal".into(),
+        };
+        let w = Collision::new(vec![platform]);
+        let hit = w.cast(v(50, -10), Dir::Down, f(100)).unwrap();
+        assert_eq!((hit.point, hit.one_way), (v(50, 0), true));
+        assert_eq!(w.cast(v(50, 30), Dir::Up, f(100)), None);
+        assert_eq!(w.cast(v(-10, 10), Dir::Right, f(100)), None);
+        assert_eq!(w.solid_at(v(50, 10)), None);
+    }
+
+    #[test]
+    fn spans_run_from_tops_to_bottoms() {
+        let w = world();
+        let at = |x: i32| {
+            w.spans(f(x))
+                .into_iter()
+                .map(|s| (s.top, s.bottom, s.collider))
+                .collect::<Vec<_>>()
+        };
+        // The ledge at y = 40 and the ground.
+        assert_eq!(at(650), [(f(40), f(40), 2), (f(100), f(200), 0)]);
+        // The ramp sits on the ground, listed first as it's higher.
+        assert_eq!(at(400), [(f(75), f(100), 1), (f(100), f(200), 0)]);
+        assert_eq!(at(1500), []);
+    }
+
+    #[test]
     fn cast_sideways_into_walls() {
         let w = world();
         let hit = w.cast(v(520, 80), Dir::Left, f(500)).unwrap();
@@ -363,7 +467,10 @@ mod tests {
         assert_eq!(w.cast(v(100, 150), Dir::Down, f(500)), None);
         // the same holds whichever way a solid is wound
         let ccw = Collider {
-            shape: Shape::Solid(vec![v(0, 100), v(0, 200), v(100, 200), v(100, 100)]),
+            shape: Shape::Solid {
+                points: vec![v(0, 100), v(0, 200), v(100, 200), v(100, 100)],
+                one_way: false,
+            },
             surface: "normal".into(),
         };
         let w = Collision::new(vec![ccw]);

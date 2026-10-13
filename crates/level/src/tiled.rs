@@ -14,7 +14,8 @@
 //! - **Objects** are read by class (called type in older Tiled versions):
 //!   - `solid`: rectangles and polygons are solid areas, polylines are
 //!     segments. Properties `surface` (string) and `one_way` (bool).
-//!   - `platform`: one-way; a rectangle becomes its top edge.
+//!   - `platform`: one-way; a rectangle becomes its top edge, and a
+//!     polygon a one-way area, passed up through from below.
 //!   - `region`: a rectangle or polygon with properties `water` (bool),
 //!     `darkness` (float), `wind_x`/`wind_y` (float), `physics.<param>`
 //!     (float, sets it) or `physics.<param>.scale` (float, scales it), and
@@ -487,18 +488,20 @@ impl Out<'_> {
                     t.insert("from".into(), floats(&[x, y]));
                     t.insert("to".into(), floats(&[x + o.width, y]));
                     t.insert("one_way".into(), Value::Boolean(true));
-                } else if one_way {
-                    return Err(at(
-                        "one-way areas aren't supported; use a polyline or a platform",
-                    ));
                 } else if let Some(poly) = &o.polygon {
                     t.insert("shape".into(), Value::String("polygon".into()));
                     t.insert("points".into(), points(&absolute(poly)));
+                    if one_way {
+                        t.insert("one_way".into(), Value::Boolean(true));
+                    }
                 } else if o.point {
                     return Err(at("a point can't be solid"));
                 } else {
                     t.insert("shape".into(), Value::String("rect".into()));
                     t.insert("rect".into(), floats(&rect));
+                    if one_way {
+                        t.insert("one_way".into(), Value::Boolean(true));
+                    }
                 }
                 surface(&mut t);
                 self.collision.push(t);

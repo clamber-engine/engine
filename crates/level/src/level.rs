@@ -475,10 +475,14 @@ struct EntityFile {
 enum ColliderFile {
     Rect {
         rect: [N; 4],
+        #[serde(default)]
+        one_way: bool,
         surface: Option<String>,
     },
     Polygon {
         points: Vec<[N; 2]>,
+        #[serde(default)]
+        one_way: bool,
         surface: Option<String>,
     },
     Segment {
@@ -819,7 +823,11 @@ impl Reader<'_> {
             Ok(())
         };
         match c {
-            ColliderFile::Rect { rect: r, surface } => {
+            ColliderFile::Rect {
+                rect: r,
+                one_way,
+                surface,
+            } => {
                 let r = rect(r);
                 if r.w <= Fixed::ZERO || r.h <= Fixed::ZERO {
                     return Err(
@@ -827,14 +835,21 @@ impl Reader<'_> {
                     );
                 }
                 out.push(Collider {
-                    shape: Shape::Solid(r.corners()),
+                    shape: Shape::Solid {
+                        points: r.corners(),
+                        one_way,
+                    },
                     surface: check_surface(surface)?,
                 });
             }
-            ColliderFile::Polygon { points, surface } => {
+            ColliderFile::Polygon {
+                points,
+                one_way,
+                surface,
+            } => {
                 let points = self.polygon(&format!("{at}.points"), points)?;
                 out.push(Collider {
-                    shape: Shape::Solid(points),
+                    shape: Shape::Solid { points, one_way },
                     surface: check_surface(surface)?,
                 });
             }
@@ -1184,9 +1199,15 @@ impl Level {
         let colliders = self.collision.colliders.iter().map(|c| {
             let mut ct = Table::new();
             match &c.shape {
-                Shape::Solid(ps) => {
+                Shape::Solid {
+                    points: ps,
+                    one_way,
+                } => {
                     ct.insert("shape".into(), Value::String("polygon".into()));
                     ct.insert("points".into(), points(ps));
+                    if *one_way {
+                        ct.insert("one_way".into(), Value::Boolean(true));
+                    }
                 }
                 Shape::Segment { a, b, one_way } => {
                     ct.insert("shape".into(), Value::String("segment".into()));
