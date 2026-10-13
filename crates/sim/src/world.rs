@@ -200,6 +200,8 @@ impl World {
         out.push(p.jump_buffer.age().map_or(0, |age| age.saturating_add(1)));
         out.push(p.coyote.map_or(0, |n| n.saturating_add(1)));
         out.push(p.swap);
+        out.extend([p.crouch.held, p.crouch.rising]);
+        out.push(p.turn.map_or(0, |n| n.saturating_add(1)));
 
         count(&mut out, self.things.len());
         for t in &self.things {

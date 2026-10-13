@@ -27,7 +27,7 @@ pub use clamber_fixed::Fixed;
 pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };
-pub use player::{Facing, HALF_WIDTH, HEIGHT, Player, ROLL, SWAP_FRAMES, State};
+pub use player::{Crouch, Facing, HALF_WIDTH, HEIGHT, Player, ROLL, SWAP_FRAMES, State};
 pub use record::record;
 pub use script::{InputFrame, Script};
 pub use things::{DEFEATED_FRAMES, LAUNCH_REST};

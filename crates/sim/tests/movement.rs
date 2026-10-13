@@ -8,7 +8,7 @@ use std::ops::{Deref, DerefMut};
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
 use clamber_pack::{CharacterFeel, Feel, Fixed, Param};
-use clamber_sim::{Event, InputFrame, ROLL, SWAP_FRAMES, State, World, generic_feel, step};
+use clamber_sim::{Event, Facing, InputFrame, ROLL, SWAP_FRAMES, State, World, generic_feel, step};
 
 /// Flat ground at y = 400 from x = 0 to 1600, a ledge down to y = 528
 /// beyond it, and a one-way platform at y = 340 over x = 300..400.
@@ -442,4 +442,89 @@ fn state_names_follow_the_trace_vocabulary() {
         names,
         ["idle", "walk", "run", "roll", "jump", "fall", "swap"]
     );
+}
+
+fn classic() -> Play {
+    Play::new(generic_feel("classic-1").unwrap())
+}
+
+/// Horizontal speed in 1/256 px per frame.
+fn grains(v: Fixed) -> i64 {
+    (v.to_f64() * 256.0) as i64
+}
+
+#[test]
+fn classic_speed_eases_toward_walking_speed() {
+    // spec/behavior/ground-speed.md, "Worked values".
+    let mut w = classic();
+    let start = w.player.pos.x;
+    let mut vx = Vec::new();
+    for _ in 0..37 {
+        hold(&mut w, &[Action::Right], 1);
+        vx.push(grains(w.player.vel.x));
+    }
+    for (frame, expected) in [
+        (0, 64),
+        (1, 120),
+        (2, 169),
+        (3, 211),
+        (10, 392),
+        (20, 478),
+        (29, 499),
+        (30, 500),
+        (35, 505),
+        (36, 512),
+    ] {
+        assert_eq!(vx[frame], expected, "frame {frame}");
+    }
+    assert_eq!(w.player.pos.x - start, Fixed::from_f64(59.7734375).unwrap());
+}
+
+#[test]
+fn classic_crouch_stops_the_player() {
+    // spec/behavior/ground-speed.md, "Crouching": walking at +2, Down
+    // held on frames 40 to 69, Right held throughout.
+    let mut w = classic();
+    let mut vx = Vec::new();
+    for frame in 0..81 {
+        let held: &[Action] = if (40..70).contains(&frame) {
+            &[Action::Right, Action::Down]
+        } else {
+            &[Action::Right]
+        };
+        hold(&mut w, held, 1);
+        vx.push(w.player.vel.x.to_f64());
+    }
+    assert_eq!(vx[39], 2.0);
+    assert_eq!(vx[40], 2.0);
+    assert_eq!(vx[41], 1.75);
+    assert_eq!(vx[42], 1.53125);
+    assert_eq!(vx[76], 0.02734375);
+    assert_eq!(vx[77..80], [0.0; 3]);
+    assert_eq!(vx[80], 0.25);
+}
+
+#[test]
+fn classic_turns_take_eight_frames() {
+    // spec/behavior/ground-speed.md, "Facing and turns": from standing, one
+    // frame of Left is enough, and facing changes 4 frames in.
+    let mut w = classic();
+    let mut steps = hold(&mut w, &[Action::Left], 1);
+    steps.extend(hold(&mut w, &[], 10));
+    let turns: Vec<_> = (0..steps.len())
+        .filter(|&i| steps[i].events.contains(&Event::Turn))
+        .collect();
+    assert_eq!(turns, [4]);
+    assert_eq!(w.player.facing, Facing::Left);
+
+    // Left for 5 frames, then Right: the second turn starts as the first
+    // ends, 8 frames in, and turns back 4 frames after that.
+    let mut w = classic();
+    let mut steps = hold(&mut w, &[Action::Left], 5);
+    steps.extend(hold(&mut w, &[Action::Right], 15));
+    let turns: Vec<_> = (0..steps.len())
+        .filter(|&i| steps[i].events.contains(&Event::Turn))
+        .collect();
+    assert_eq!(turns, [4, 12]);
+    assert_eq!(w.player.facing, Facing::Right);
 }

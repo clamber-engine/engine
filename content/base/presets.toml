@@ -29,6 +29,9 @@ top_speed = 5
 walk_speed = 2.5
 air_acceleration = 0.125
 speed_response = 0
+crouch_start = 0
+crouch_recovery = 0
+turn_time = 0
 jump_speed = 7.5
 jump_release_speed = 3
 jump_buffer = 5
@@ -68,8 +71,8 @@ air_acceleration = 0.09375
 # as a placeholder, and what isn't filled in yet plays like Default.
 # Don't put values here that don't come from `spec`.
 
-# Classic 1: the `title-1` values. Filled in so far: horizontal speed
-# (ground-speed.md, air-control.md).
+# Classic 1: the `title-1` values. Filled in so far: horizontal speed,
+# crouching and turns (ground-speed.md, air-control.md).
 [presets.classic-1]
 label = "Classic 1"
 description = "Placeholder: partly measured; the rest plays like Default."
@@ -79,6 +82,9 @@ placeholder = true
 walk_speed = 2
 top_speed = 3
 speed_response = 0.125
+crouch_start = 2
+crouch_recovery = 10
+turn_time = 8
 
 [presets.classic-2]
 label = "Classic 2"

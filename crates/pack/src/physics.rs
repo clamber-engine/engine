@@ -67,6 +67,18 @@ params! {
     /// to `walk_speed`, `top_speed` with action held, or 0 with no
     /// direction. 0 turns easing off.
     SpeedResponse => "speed_response",
+    /// Holding down on the ground crouches from this frame of holding it
+    /// on (1 is at once). A crouching player doesn't move along the
+    /// ground: it slows as if no direction were held. 0: down doesn't
+    /// crouch. Whole frames.
+    CrouchStart => "crouch_start",
+    /// After letting go of down, a crouch lasts this many frames more.
+    /// Whole frames.
+    CrouchRecovery => "crouch_recovery",
+    /// Turning around on the ground takes this many frames, and facing
+    /// changes halfway through. A turn, once started, finishes. 0: facing
+    /// follows the direction held at once. Whole frames.
+    TurnTime => "turn_time",
     /// Upward speed at the start of a jump.
     JumpSpeed => "jump_speed",
     /// Releasing jump cuts upward speed down to this.

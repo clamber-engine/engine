@@ -98,6 +98,10 @@ pub struct Player {
     pub coyote: Option<u8>,
     /// Frames of swapping left.
     pub swap: u8,
+    /// Crouching, or getting up from a crouch.
+    pub crouch: Crouch,
+    /// Frames since the turn under way began, if one is.
+    pub turn: Option<u8>,
     /// Colliders the body ran into or stood on during the last step:
     /// walls it was stopped by, a ceiling it hit, the ground.
     pub touched: Vec<usize>,
@@ -117,6 +121,8 @@ impl Player {
             jump_buffer: JumpBuffer::new(0),
             coyote: None,
             swap: 0,
+            crouch: Crouch::default(),
+            turn: None,
             touched: Vec::new(),
         };
         player.ground = level
@@ -239,18 +245,37 @@ impl Player {
         }
         let rolling = self.state == State::Roll;
 
-        // A roll keeps facing the way it goes.
-        let facing = match (rolling, dir) {
-            (true, _) if self.vel.x.is_negative() => Facing::Left,
-            (true, _) => Facing::Right,
-            (false, -1) => Facing::Left,
-            (false, 1) => Facing::Right,
-            _ => self.facing,
+        let crouching = self.crouch.update(
+            held(Action::Down) && self.grounded() && !rolling,
+            frames(physics[Param::CrouchStart]),
+            frames(physics[Param::CrouchRecovery]),
+        );
+
+        let turn_time = frames(physics[Param::TurnTime]);
+        let facing = if rolling {
+            // A roll keeps facing the way it goes.
+            self.turn = None;
+            if self.vel.x.is_negative() {
+                Facing::Left
+            } else {
+                Facing::Right
+            }
+        } else if turn_time > 0 && self.grounded() {
+            self.turn_on_ground(dir, turn_time)
+        } else {
+            self.turn = None;
+            match dir {
+                -1 => Facing::Left,
+                1 => Facing::Right,
+                _ => self.facing,
+            }
         };
         if facing != self.facing {
             self.facing = facing;
             events.push(Event::Turn);
         }
+        // A crouch holds the player where they are.
+        let dir = if crouching { 0 } else { dir };
 
         let cap = if held(Action::Action) {
             physics[Param::TopSpeed]
@@ -297,6 +322,30 @@ impl Player {
             events.push(Event::RollEnd);
         }
         self.state = self.next_state(held(Action::Action), events);
+    }
+
+    /// Goes on with the turn under way, or starts one if `dir` points
+    /// behind the player, and returns the facing for this frame. A turn
+    /// starts at once whether the player is standing or moving; when one
+    /// starts while moving in Classic 1 isn't in the spec yet
+    /// (clamber-engine/spec#12, #55).
+    fn turn_on_ground(&mut self, dir: i32, turn_time: u8) -> Facing {
+        let mut facing = self.facing;
+        self.turn = self.turn.map(|n| n + 1).filter(|&n| n < turn_time);
+        let behind = match facing {
+            Facing::Left => 1,
+            Facing::Right => -1,
+        };
+        if self.turn.is_none() && dir == behind {
+            self.turn = Some(0);
+        }
+        if self.turn == Some(turn_time / 2) {
+            facing = match facing {
+                Facing::Left => Facing::Right,
+                Facing::Right => Facing::Left,
+            };
+        }
+        facing
     }
 
     /// The state after this step's movement.
@@ -418,6 +467,37 @@ impl Player {
             }
             None => self.pos.y += self.vel.y,
         }
+    }
+}
+
+/// Crouching on the ground, from holding down.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Crouch {
+    /// Frames down has been held on the ground.
+    pub held: u8,
+    /// Frames left of getting up after letting go.
+    pub rising: u8,
+}
+
+impl Crouch {
+    /// Advances one frame, with `down` held on the ground or not, and
+    /// returns whether the player is crouching on this frame.
+    fn update(&mut self, down: bool, start: u8, recovery: u8) -> bool {
+        if start == 0 {
+            *self = Crouch::default();
+            return false;
+        }
+        if down {
+            self.held = self.held.saturating_add(1);
+        } else {
+            if self.held >= start {
+                self.rising = recovery;
+            }
+            self.held = 0;
+        }
+        let crouching = self.held >= start || self.rising > 0;
+        self.rising = self.rising.saturating_sub(1);
+        crouching
     }
 }
 

@@ -288,7 +288,10 @@ mod tests {
         // the ones where 0 turns something off.
         let world = presets.world(DEFAULT).unwrap();
         for &p in Param::ALL {
-            let off = matches!(p, Param::SpeedResponse);
+            let off = matches!(
+                p,
+                Param::SpeedResponse | Param::CrouchStart | Param::CrouchRecovery | Param::TurnTime
+            );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }
     }
