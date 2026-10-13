@@ -14,6 +14,13 @@ use symphonia::core::units::Timestamp;
 
 use crate::AudioError;
 
+/// Frames decoded and dropped before the one sought to. Codecs that
+/// carry state from packet to packet decode the first packets after a
+/// seek wrongly: MP3 frames take bits from the frames before them and
+/// overlap with the frame before, and Vorbis packets overlap too. Four
+/// MP3 frames covers both.
+const PREROLL: u64 = 4 * 1152;
+
 /// Where to read encoded audio from.
 #[derive(Clone, Debug)]
 pub enum Input {
@@ -219,9 +226,10 @@ impl Decoding {
         }
     }
 
-    /// Moves to an exact frame.
+    /// Moves to an exact frame. Decoding starts [`PREROLL`] frames
+    /// earlier, and what's decoded before `frame` is dropped.
     pub fn seek(&mut self, frame: u64) -> Result<(), AudioError> {
-        let ts = Timestamp::new(frame as i64);
+        let ts = Timestamp::new(frame.saturating_sub(PREROLL) as i64);
         self.format
             .seek(
                 SeekMode::Accurate,

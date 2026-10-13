@@ -1,5 +1,6 @@
-//! The screens around a level: title, pause, controls, level complete
-//! and game over, and moving between them and play.
+//! The screens around a level: title, pause, controls, options,
+//! credits, level complete and game over, and moving between them and
+//! play.
 //!
 //! Menus read the same neutral actions as play, from every player at
 //! once, so a keyboard or a gamepad alone can drive them (see
@@ -13,15 +14,22 @@ use clamber_sim::{InputFrame, Outcome};
 use crate::camera::VIEW;
 use crate::canvas::{Color, rgb};
 use crate::controls::{Controls, Request};
+use crate::credits::Credits;
 use crate::feels::Feels;
 use crate::game::Game;
 use crate::hud::{COUNT, GEM, RELIC_ICON, relic_total};
 use crate::menu::{Choice, Menu};
-use crate::prefs::{Display, Prefs};
+use crate::prefs::{Prefs, Volume};
 use crate::report;
 use crate::sound::{Cue, cues};
 use crate::surface::Surface;
 use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred, text_size};
+
+/// Where the credits screen's lines start, and how many show at once.
+const CREDITS_TOP: i32 = 34;
+const CREDITS_ROWS: usize = 18;
+/// Characters across a line of credits.
+const CREDITS_WIDTH: usize = 60;
 
 const TITLE: Color = rgb(0xf0, 0xc8, 0x40);
 const HEADING: Color = rgb(0xf4, 0xf0, 0xe8);
@@ -46,6 +54,8 @@ pub enum Item {
     Movement,
     /// The options screen.
     Options,
+    /// The credits screen.
+    Credits,
     /// Back to the title screen.
     ToTitle,
     /// Close the game.
@@ -65,8 +75,19 @@ pub enum Screen {
     /// Choosing a movement preset, by index in the session's
     /// [`Feels::presets`], and the screen to go back to.
     Movement(Menu<usize>, Box<Screen>),
-    /// The display options, and the screen to go back to.
+    /// The display and sound options, and the screen to go back to.
     Options(Menu<Setting>, Box<Screen>),
+    /// The credits, scrolled down this many lines, and the screen to go
+    /// back to.
+    Credits(usize, Box<Screen>),
+}
+
+/// The music a screen plays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tune {
+    Title,
+    /// The level's own.
+    Level,
 }
 
 /// An item on the options screen.
@@ -74,6 +95,10 @@ pub enum Screen {
 pub enum Setting {
     Fullscreen,
     Vsync,
+    /// Turned down with Left and up with Right or Jump, which wraps
+    /// around to silent.
+    MusicVolume,
+    EffectsVolume,
     Back,
 }
 
@@ -84,6 +109,7 @@ impl Screen {
             ("Movement", Item::Movement),
             ("Controls", Item::Controls),
             ("Options", Item::Options),
+            ("Credits", Item::Credits),
             ("Quit", Item::Quit),
         ]))
     }
@@ -96,6 +122,21 @@ impl Screen {
             ("Options", Item::Options),
             ("Quit", Item::ToTitle),
         ]))
+    }
+
+    /// The music this screen plays: the title's on the title screen and
+    /// those opened from it, the level's in play and through pausing it,
+    /// and none once the level is over.
+    pub fn tune(&self) -> Option<Tune> {
+        match self {
+            Screen::Title(_) => Some(Tune::Title),
+            Screen::Playing | Screen::Paused(_) => Some(Tune::Level),
+            Screen::Complete(_) | Screen::GameOver(_) => None,
+            Screen::Controls(_, from)
+            | Screen::Movement(_, from)
+            | Screen::Options(_, from)
+            | Screen::Credits(_, from) => from.tune(),
+        }
     }
 
     fn complete() -> Screen {
@@ -124,6 +165,8 @@ pub struct Session {
     pub settings_path: Option<PathBuf>,
     /// The presets the movement screen offers, and how to play each.
     pub feels: Feels,
+    /// What the credits screen shows.
+    pub credits: Credits,
     /// Menu choices to remember, and where to save them, if anywhere.
     pub prefs: Prefs,
     pub prefs_path: Option<PathBuf>,
@@ -143,6 +186,7 @@ impl Session {
             input: Input::new(Settings::builtin()),
             settings_path: None,
             feels: Feels::generic(),
+            credits: Credits::default(),
             prefs: Prefs::default(),
             prefs_path: None,
             quit: false,
@@ -213,7 +257,53 @@ impl Session {
             self.screen = *from;
             return;
         }
+        if let Screen::Credits(scroll, _) = &mut self.screen {
+            let pressed = frame.pressed;
+            if pressed.contains(Action::Jump) || pressed.contains(Action::Pause) {
+                let Screen::Credits(_, from) = std::mem::replace(&mut self.screen, Screen::Playing)
+                else {
+                    unreachable!()
+                };
+                self.screen = *from;
+                return;
+            }
+            let lines = self.credits.wrapped(CREDITS_WIDTH).len();
+            let last = lines.saturating_sub(CREDITS_ROWS);
+            if pressed.contains(Action::Down) {
+                *scroll = (*scroll + 1).min(last);
+            } else if pressed.contains(Action::Up) {
+                *scroll = scroll.saturating_sub(1);
+            }
+            return;
+        }
         if let Screen::Options(menu, _) = &mut self.screen {
+            let pressed = frame.pressed;
+            let volume = &mut self.prefs.volume;
+            let level = match menu.current() {
+                Setting::MusicVolume => Some(&mut volume.music),
+                Setting::EffectsVolume => Some(&mut volume.effects),
+                _ => None,
+            };
+            if let Some(level) = level {
+                let step = Volume::STEP;
+                let changed = if pressed.contains(Action::Left) {
+                    *level = level.saturating_sub(step);
+                    true
+                } else if pressed.contains(Action::Right) {
+                    *level = (*level + step).min(100);
+                    true
+                } else if pressed.contains(Action::Jump) {
+                    *level = if *level >= 100 { 0 } else { *level + step };
+                    true
+                } else {
+                    false
+                };
+                if changed {
+                    menu.items = options_items(&self.prefs);
+                    self.save_prefs("the volume");
+                    return;
+                }
+            }
             let setting = match menu.update(&frame) {
                 Some(Choice::Picked(Setting::Back) | Choice::Back) => {
                     let Screen::Options(_, from) =
@@ -231,9 +321,11 @@ impl Session {
             match setting {
                 Setting::Fullscreen => display.fullscreen = !display.fullscreen,
                 Setting::Vsync => display.vsync = !display.vsync,
+                // changed above
+                Setting::MusicVolume | Setting::EffectsVolume => return,
                 Setting::Back => unreachable!(),
             }
-            menu.items = options_items(display);
+            menu.items = options_items(&self.prefs);
             self.save_prefs("the display options");
             return;
         }
@@ -266,8 +358,12 @@ impl Session {
             }
             Item::Options => {
                 let from = std::mem::replace(&mut self.screen, Screen::Playing);
-                let menu = Menu::new(options_items(&self.prefs.display));
+                let menu = Menu::new(options_items(&self.prefs));
                 self.screen = Screen::Options(menu, Box::new(from));
+            }
+            Item::Credits => {
+                let from = std::mem::replace(&mut self.screen, Screen::Playing);
+                self.screen = Screen::Credits(0, Box::new(from));
             }
             Item::ToTitle => self.screen = Screen::title(),
             Item::Quit => self.quit = true,
@@ -351,16 +447,9 @@ impl Session {
         }
     }
 
-    /// Whether the level's music should be playing: during play, and
-    /// on through pausing it.
-    pub fn music_on(&self) -> bool {
-        match &self.screen {
-            Screen::Playing | Screen::Paused(_) => true,
-            Screen::Controls(_, from) | Screen::Movement(_, from) | Screen::Options(_, from) => {
-                matches!(**from, Screen::Paused(_))
-            }
-            Screen::Title(_) | Screen::Complete(_) | Screen::GameOver(_) => false,
-        }
+    /// The music that should be playing.
+    pub fn tune(&self) -> Option<Tune> {
+        self.screen.tune()
     }
 
     /// Draws the screen. During play, `alpha` is how far to draw between
@@ -385,8 +474,12 @@ impl Session {
                 return;
             }
             Screen::Options(menu, _) => {
-                draw_text_centred(canvas, centre, 70, "OPTIONS", HEADING);
-                menu.draw(canvas, centre, 100);
+                draw_text_centred(canvas, centre, 50, "OPTIONS", HEADING);
+                menu.draw(canvas, centre, 80);
+                return;
+            }
+            Screen::Credits(scroll, _) => {
+                self.draw_credits(canvas, *scroll, centre);
                 return;
             }
             Screen::Title(menu) => {
@@ -444,6 +537,25 @@ impl Session {
         );
     }
 
+    /// The credits from line `scroll`, and a hint when there are more.
+    fn draw_credits(&self, canvas: &mut dyn Surface, scroll: usize, centre: i32) {
+        draw_text_centred(canvas, centre, 14, "CREDITS", HEADING);
+        let lines = self.credits.wrapped(CREDITS_WIDTH);
+        let left = centre - (CREDITS_WIDTH as i32 * ADVANCE) / 2;
+        for (row, line) in lines.iter().skip(scroll).take(CREDITS_ROWS).enumerate() {
+            let color = if line.heading { TITLE } else { HEADING };
+            let y = CREDITS_TOP + row as i32 * LINE;
+            draw_text(canvas, left, y, &line.text, color);
+        }
+        let more_above = scroll > 0;
+        let more_below = lines.len() > scroll + CREDITS_ROWS;
+        let hint = match (more_above, more_below) {
+            (false, false) => "Jump: back",
+            _ => "Up/Down: scroll   Jump: back",
+        };
+        draw_text_centred(canvas, centre, VIEW.1 as i32 - 14, hint, SUBTITLE);
+    }
+
     /// The level's time and what was collected, centred on `centre_x`.
     fn draw_results(&self, canvas: &mut dyn Surface, centre_x: i32, top: i32) {
         let world = &self.game.world;
@@ -472,15 +584,24 @@ impl Session {
     }
 }
 
-/// The options screen's items, showing `display`'s settings.
-fn options_items(display: &Display) -> Vec<(String, Setting)> {
+/// The options screen's items, showing the settings in `prefs`.
+fn options_items(prefs: &Prefs) -> Vec<(String, Setting)> {
     let on = |on| if on { "On" } else { "Off" };
+    let (display, volume) = (&prefs.display, &prefs.volume);
     vec![
         (
             format!("Fullscreen: {}", on(display.fullscreen)),
             Setting::Fullscreen,
         ),
         (format!("Vsync: {}", on(display.vsync)), Setting::Vsync),
+        (
+            format!("Music: < {}% >", volume.music),
+            Setting::MusicVolume,
+        ),
+        (
+            format!("Effects: < {}% >", volume.effects),
+            Setting::EffectsVolume,
+        ),
         ("Back".into(), Setting::Back),
     ]
 }
@@ -747,7 +868,16 @@ mod tests {
         };
         let labels =
             |s: &Session| -> Vec<String> { options(s).items.into_iter().map(|(l, _)| l).collect() };
-        assert_eq!(labels(&s), ["Fullscreen: Off", "Vsync: On", "Back"]);
+        assert_eq!(
+            labels(&s),
+            [
+                "Fullscreen: Off",
+                "Vsync: On",
+                "Music: < 100% >",
+                "Effects: < 100% >",
+                "Back"
+            ]
+        );
         let mut canvas = Game::canvas();
         s.draw(&mut canvas, 1.0);
         assert!(canvas.pixels.contains(&HEADING));
@@ -757,8 +887,26 @@ mod tests {
         s.step(&press(Action::Down));
         s.step(&press(Action::Jump));
         assert!(!s.prefs.display.vsync);
-        assert_eq!(labels(&s), ["Fullscreen: On", "Vsync: Off", "Back"]);
+        assert_eq!(labels(&s)[..2], ["Fullscreen: On", "Vsync: Off"]);
         assert_eq!(options(&s).current(), Setting::Vsync, "stays put");
+        assert_eq!(Prefs::load(&path), s.prefs);
+
+        // Left turns a volume down, Right up to full, and Jump up,
+        // wrapping around to silent.
+        s.step(&press(Action::Down));
+        s.step(&press(Action::Left));
+        assert_eq!(s.prefs.volume.music, 90);
+        s.step(&press(Action::Right));
+        s.step(&press(Action::Right));
+        assert_eq!(s.prefs.volume.music, 100);
+        s.step(&press(Action::Jump));
+        assert_eq!(s.prefs.volume.music, 0);
+        s.step(&press(Action::Left));
+        assert_eq!(s.prefs.volume.music, 0);
+        s.step(&press(Action::Down));
+        s.step(&press(Action::Left));
+        assert_eq!(labels(&s)[2..4], ["Music: < 0% >", "Effects: < 90% >"]);
+        assert_eq!(options(&s).current(), Setting::EffectsVolume);
         assert_eq!(Prefs::load(&path), s.prefs);
         std::fs::remove_dir_all(dir).unwrap();
 
@@ -771,6 +919,53 @@ mod tests {
     }
 
     #[test]
+    fn credits_scroll_and_go_back_to_the_title() {
+        let mut s = session(LEVEL);
+        s.credits = Credits::from_markdown(&"A line of credits.\n\n".repeat(30));
+        while !matches!(&s.screen, Screen::Title(m) if m.current() == Item::Credits) {
+            s.step(&press(Action::Down));
+        }
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Credits(0, _)));
+        assert_eq!(s.tune(), Some(Tune::Title));
+        let mut top = Game::canvas();
+        s.draw(&mut top, 1.0);
+        assert!(top.pixels.contains(&HEADING) && top.pixels.contains(&SUBTITLE));
+
+        s.step(&press(Action::Up));
+        assert!(
+            matches!(s.screen, Screen::Credits(0, _)),
+            "already at the top"
+        );
+        for _ in 0..100 {
+            s.step(&press(Action::Down));
+        }
+        let last = s.credits.wrapped(CREDITS_WIDTH).len() - CREDITS_ROWS;
+        assert!(matches!(s.screen, Screen::Credits(n, _) if n == last));
+        let mut bottom = Game::canvas();
+        s.draw(&mut bottom, 1.0);
+        assert_ne!(top, bottom);
+
+        s.step(&press(Action::Jump));
+        let Screen::Title(menu) = &s.screen else {
+            panic!("back to the title")
+        };
+        assert_eq!(menu.current(), Item::Credits);
+    }
+
+    #[test]
+    fn the_title_and_play_have_music_and_the_ends_of_the_level_dont() {
+        let mut s = session(LEVEL);
+        assert_eq!(s.tune(), Some(Tune::Title));
+        s.step(&press(Action::Jump));
+        assert_eq!(s.tune(), Some(Tune::Level));
+        for screen in [Screen::complete(), Screen::game_over()] {
+            s.screen = screen;
+            assert_eq!(s.tune(), None);
+        }
+    }
+
+    #[test]
     fn options_from_pause_go_back_there_with_the_music_on() {
         let mut s = session(LEVEL);
         s.step(&press(Action::Jump));
@@ -780,7 +975,7 @@ mod tests {
         }
         s.step(&press(Action::Jump));
         assert!(matches!(s.screen, Screen::Options(..)));
-        assert!(s.music_on());
+        assert_eq!(s.tune(), Some(Tune::Level));
         s.step(&press(Action::Pause));
         assert!(matches!(s.screen, Screen::Paused(_)));
     }

@@ -3,7 +3,9 @@
 Clamber comes with one level so far, *First Steps*: runs and jumps, a
 climb, a slope to roll down through enemies, a launcher and some islands
 over a long drop, with a checkpoint halfway. Reach the goal at the end.
-All the art and sound are placeholders.
+The music is the *Platformer Game Music Pack* by CodeManu (CC-BY 3.0);
+**Credits** on the title screen has the details, and they're also in
+`content/base/CREDITS.md`. The sound effects are placeholders.
 
 ## On Windows
 
@@ -60,9 +62,11 @@ be picked yet. Your choice is saved to `prefs.toml` in the same folder
 as `input.toml`, and the game starts with it next time.
 
 **Options** on the title or pause screen turns fullscreen and vsync on
-and off. Vsync is on to start with, so the picture doesn't tear; with it
-off, the game draws up to 240 frames a second. Both settings, and the
-window's size, are saved to `prefs.toml` too. The game pauses when its
+and off, and sets the music and effects volumes. Vsync is on to start
+with, so the picture doesn't tear; with it off, the game draws up to 240
+frames a second. On a volume, Left turns it down and Right or Jump turns
+it up, in steps of 10%; Jump at 100% goes back to silent. All of these,
+and the window's size, are saved to `prefs.toml` too. The game pauses when its
 window loses focus.
 
 ## On Linux, from source

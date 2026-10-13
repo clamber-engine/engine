@@ -273,8 +273,9 @@ impl Mixer {
             } else {
                 slot.music.fill(&mut self.scratch)
             };
+            let track_gain = music_gain * slot.music.volume();
             for f in 0..frames {
-                let g = music_gain * (slot.level * FRAC_PI_2).sin();
+                let g = track_gain * (slot.level * FRAC_PI_2).sin();
                 out[2 * f] += self.scratch[2 * f] * g;
                 out[2 * f + 1] += self.scratch[2 * f + 1] * g;
                 slot.level = (slot.level + slot.rate).clamp(0.0, 1.0);

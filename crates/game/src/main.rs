@@ -12,9 +12,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clamber_game::{
-    Canvas, Cast, Clock, DrawList, Feels, Fit, GIF_DELAY, Game, Gpu, LayerArt, Prefs, SPRITES,
-    Screen, Session, VIEW, content_dir, display, encode_gif, encode_png, keys, present, report,
-    rgb,
+    Canvas, Cast, Clock, Credits, DEFAULT_CREDITS, DrawList, Feels, Fit, GIF_DELAY, Game, Gpu,
+    LayerArt, Prefs, SPRITES, Screen, Session, VIEW, content_dir, display, encode_gif, encode_png,
+    keys, present, report, rgb,
 };
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
@@ -46,8 +46,9 @@ or the per-user settings file. --debug starts with the
 collision and region view on. Warnings and errors are written to
 clamber.log in the per-user settings folder, and to stderr; on Windows,
 --console shows them in a console window. With sound (the `audio`
-feature), the level's music plays, and effects from the content folder's
-base/sounds.toml.
+feature), music plays on the title screen and in the level, with loops
+and volumes from the content folder's base/music.toml, and effects from
+its base/sounds.toml.
 
   Z, Space       jump; pick in menus
   Enter, Escape  pause; back in menus
@@ -317,16 +318,21 @@ fn load(options: &Options, saved: Option<&str>) -> Result<(Session, PathBuf), St
     let world = World::try_new(Arc::new(level), Arc::new(feel)).map_err(|e| e.to_string())?;
     let mut session = Session::new(Game::new(world).with_art(art).with_cast(cast));
     session.feels = feels;
+    session.credits = Credits::load(&content_dir().join(DEFAULT_CREDITS)).unwrap_or_else(|e| {
+        report::warn(e);
+        Credits::default()
+    });
     session.game.debug = options.debug;
     Ok((session, level_path))
 }
 
-/// Sound output, playing `level`'s music (relative to `dir`) and the
-/// bundled sound effects. Without a sound device, or with sounds that
-/// can't be read, the game plays on with what there is.
+/// Sound output, playing the bundled title music, `level`'s music
+/// (relative to `dir`) and the bundled sound effects. Without a sound
+/// device, or with sounds that can't be read, the game plays on with
+/// what there is.
 #[cfg(feature = "audio")]
 fn open_audio(level: &Level, dir: &Path) -> Option<(clamber_audio::Output, clamber_game::Audio)> {
-    use clamber_game::{Audio, DEFAULT_SOUNDS, SoundList};
+    use clamber_game::{Audio, DEFAULT_MUSIC, DEFAULT_SOUNDS, MusicList, SoundList};
 
     let warn = |w: String| report::warn(w);
     let (handle, mixer) = clamber_audio::mixer(MAX_VOICES);
@@ -337,8 +343,13 @@ fn open_audio(level: &Level, dir: &Path) -> Option<(clamber_audio::Output, clamb
         warn(format!("{e}; playing without sound effects"));
         SoundList::default()
     });
+    let music = MusicList::load(&content_dir().join(DEFAULT_MUSIC)).unwrap_or_else(|e| {
+        warn(format!("{e}; music plays without loops or volumes"));
+        MusicList::default()
+    });
     let mut audio = Audio::new(handle, output.rate(), &sounds, warn);
-    audio.set_music(level.music.as_ref(), dir);
+    audio.set_title_music(&music);
+    audio.set_music(level.music.as_ref(), dir, &music);
     Some((output, audio))
 }
 

@@ -456,7 +456,7 @@ def write(c, path):
     w("look_ahead = [32, 24]")
     w("")
     w("[music]")
-    w('file = "../music/theme.wav"')
+    w('file = "../music/grasslands-theme.mp3"')
     w("")
     w("[[layers]]")
     w('name = "sky"')

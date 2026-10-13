@@ -12,6 +12,8 @@
 //!   limit, and crossfades between tracks. The game controls it through an
 //!   [`AudioHandle`]; a track that's already playing carries on when asked
 //!   for again, so music continues across level sections.
+//! - [`seam::check`] measures a loop's seam for clicks and gaps, by
+//!   playing it.
 //! - With the `output` feature, [`Output`] plays the mixer on the default
 //!   sound device and reopens it when the device goes away.
 
@@ -20,6 +22,7 @@ mod mixer;
 mod music;
 #[cfg(feature = "output")]
 mod output;
+pub mod seam;
 mod sound;
 
 use std::fmt;

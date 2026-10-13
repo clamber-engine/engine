@@ -20,10 +20,13 @@
 //! and a [`Controls`] screen for remapping each player's bindings and
 //! saving them to their settings file ([`settings_path`]), and a
 //! movement screen for choosing among the [`Feels`]' presets, which is
-//! remembered in the [`Prefs`] ([`prefs_path`]).
+//! remembered in the [`Prefs`] ([`prefs_path`]) along with the options
+//! screen's choices. A credits screen shows the content's [`Credits`].
 //!
 //! What happens in play becomes [`Cue`]s, which [`Audio`] plays from a
-//! [`SoundList`], along with the level's music while it's being played.
+//! [`SoundList`], along with music: the title's on the title screen and
+//! the level's in play, crossfading between them, with loops and volumes
+//! from a [`MusicList`].
 //!
 //! Everything here except the window itself works headlessly, so a
 //! [`Session`] or [`Game`] can be stepped and drawn in tests, and
@@ -35,6 +38,7 @@ mod capture;
 mod cast;
 mod clock;
 mod controls;
+mod credits;
 pub mod display;
 mod feels;
 mod game;
@@ -43,6 +47,7 @@ mod hud;
 pub mod keys;
 mod layers;
 mod menu;
+mod music;
 mod prefs;
 pub mod report;
 mod session;
@@ -59,14 +64,16 @@ pub use capture::{Capture, GIF_DELAY, SHOTS, capture, encode_gif, encode_png, re
 pub use cast::{Cast, PLAYER, Pose, Poses};
 pub use clock::Clock;
 pub use controls::{Controls, Request, Row, TIMEOUT};
+pub use credits::{Credits, DEFAULT_CREDITS};
 pub use feels::Feels;
 pub use game::Game;
 pub use gpu::Gpu;
 pub use hud::draw_hud;
 pub use layers::LayerArt;
 pub use menu::{Choice, Menu};
-pub use prefs::{Display, Prefs};
-pub use session::{Item, Screen, Session, Setting, clock_time};
+pub use music::{DEFAULT_MUSIC, MusicList, MusicTrack};
+pub use prefs::{Display, Prefs, Volume};
+pub use session::{Item, Screen, Session, Setting, Tune, clock_time};
 pub use sound::{Audio, Cue, DEFAULT_SOUNDS, SoundList, cues};
 pub use sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
 pub use surface::{DrawList, Drawn, Flip, Quad, Surface, Texture, triangulate};

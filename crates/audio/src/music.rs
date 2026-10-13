@@ -77,6 +77,8 @@ pub struct Music {
     chunk: Vec<f32>,
     read: usize,
     finished: bool,
+    /// Linear gain, 1.0 for the track as recorded.
+    volume: f32,
     /// Times the mixer asked for audio that wasn't decoded yet.
     pub underruns: u64,
 }
@@ -100,8 +102,22 @@ impl Music {
             chunk: Vec::new(),
             read: 0,
             finished: false,
+            volume: 1.0,
             underruns: 0,
         })
+    }
+
+    /// The track played at `volume`, as linear gain, to balance it
+    /// against others.
+    pub fn with_volume(self, volume: f32) -> Music {
+        Music {
+            volume: volume.max(0.0),
+            ..self
+        }
+    }
+
+    pub fn volume(&self) -> f32 {
+        self.volume
     }
 
     pub fn is_finished(&self) -> bool {

@@ -1,6 +1,6 @@
 use std::cell::Cell;
 
-use clamber_audio::{Category, Input, LoopPoints, Looping, Music, Play, Sound, mixer};
+use clamber_audio::{Category, Input, LoopPoints, Looping, Music, Play, Sound, mixer, seam};
 
 /// A 16-bit PCM WAV.
 fn wav(rate: u32, channels: u16, samples: &[i16]) -> Vec<u8> {
@@ -87,6 +87,31 @@ fn music_loops_between_points_exactly() {
         .take(1200)
         .collect();
     assert_eq!(got, expected);
+}
+
+#[test]
+fn music_loops_exactly_far_into_a_file() {
+    // far enough in that the decoder starts before the loop and drops
+    // what comes first
+    let looping = Looping::From {
+        start: 9000,
+        length: Some(500),
+    };
+    let mut m = Music::open(ramp(12000), Some(looping), 8000).unwrap();
+    let got = play(&mut m, 10500);
+    let expected: Vec<i32> = (1..=9500)
+        .chain(9001..=9500)
+        .chain(9001..)
+        .take(10500)
+        .collect();
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sound_decodes_at_the_files_rate() {
+    let (s, rate) = Sound::decode(&ramp(100)).unwrap();
+    assert_eq!(rate, 8000);
+    assert_eq!(values(&s.samples), (1..=100).collect::<Vec<_>>());
 }
 
 #[test]
@@ -234,4 +259,60 @@ fn music_continues_and_crossfades() {
     mixer.mix(&mut out);
     assert!(out.iter().all(|&s| s == 0.0));
     assert_eq!(handle.music(), None);
+}
+
+#[test]
+fn music_plays_at_its_volume() {
+    let (mut handle, mut mixer) = mixer(8);
+    let music = Music::open(ramp(100), None, 8000).unwrap().with_volume(0.5);
+    assert_eq!(music.volume(), 0.5);
+    handle.play_music("quiet", 0, || Ok(music)).unwrap();
+    handle.set_volume(Category::Music, 0.5);
+    let mut out = vec![0.0; 8];
+    mixer.render(&mut out);
+    let quarter: Vec<f32> = [1, 1, 2, 2, 3, 3, 4, 4]
+        .iter()
+        .map(|&v| v as f32 / 32768.0 / 4.0)
+        .collect();
+    assert_eq!(out, quarter);
+}
+
+/// Mono WAV: `silence` frames of silence, then a 100 Hz sine at 8 kHz,
+/// 80 frames a cycle, starting at a peak.
+fn tone(silence: usize, frames: usize) -> Input {
+    let samples: Vec<i16> = (0..silence)
+        .map(|_| 0)
+        .chain((0..frames).map(|i| {
+            let phase = i as f64 / 80.0 * std::f64::consts::TAU;
+            (phase.cos() * 16000.0).round() as i16
+        }))
+        .collect();
+    Input::bytes(wav(8000, 1, &samples), Some("wav"))
+}
+
+#[test]
+fn a_seamless_loop_measures_seamless() {
+    // whole cycles, starting mid-tone: the end leads into the start
+    let s = seam::check(&tone(0, 8000), 800, 800 + 80 * 50).unwrap();
+    assert!(s.click < 0.5, "{s:?}");
+    assert_eq!(s.gap, 0.0);
+    assert!(s.mismatch < -60.0, "{s:?}");
+    assert!(s.after < -60.0, "{s:?}");
+}
+
+#[test]
+fn a_misplaced_loop_clicks() {
+    // half a cycle out: the seam jumps from a trough to a peak
+    let s = seam::check(&tone(0, 8000), 800, 800 + 80 * 50 + 40).unwrap();
+    assert!(s.click > 10.0, "{s:?}");
+    assert!(s.mismatch > 0.0, "{s:?}");
+    assert!(s.after < -60.0, "{s:?}");
+}
+
+#[test]
+fn a_loop_through_silence_has_a_gap() {
+    // the loop starts 40 frames into the silence before the tone
+    let s = seam::check(&tone(400, 8000), 360, 400 + 80 * 50).unwrap();
+    assert!((s.gap - 40.0 / 8000.0).abs() < 1e-6, "{s:?}");
+    assert!(seam::check(&tone(0, 100), 10, 200).is_err(), "past the end");
 }

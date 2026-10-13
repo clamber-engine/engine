@@ -16,7 +16,7 @@ start = [104, 736]
 look_ahead = [32, 24]
 
 [music]
-file = "../music/theme.wav"
+file = "../music/grasslands-theme.mp3"
 
 [[layers]]
 name = "sky"

@@ -1,0 +1,69 @@
+# The base game's music: each track's file, how it loops and how loud it
+# plays, and which track plays on the title screen. A level names its
+# own track's file; the loop and volume for it come from here. Paths are
+# relative to this file.
+#
+# Loop points are frames at the file's sample rate: the music plays from
+# the start of the file to `loop_end`, then carries on from `loop_start`,
+# forever. MP3s have no loop tags, and the encoder adds silence at both
+# ends, so these were found by analysis:
+#
+#     cargo run --release -p clamber-audio --example find-loop -- music/*.mp3
+#
+# Each of these files is one pass of its track, so each loop runs from
+# where the music starts, after the encoder's silence, to where it stops,
+# fine-tuned so the end leads smoothly into the start. A test plays every
+# seam and checks for clicks and gaps.
+#
+# `volume` is linear gain, balancing each track to about -22 dB RMS,
+# below the sound effects. Credits for the music are in CREDITS.md.
+
+title = "intro-theme"
+
+[tracks.intro-theme]
+file = "music/intro-theme.mp3"
+loop_start = 2545
+loop_end = 1884167
+volume = 0.6
+
+[tracks.worldmap-theme]
+file = "music/worldmap-theme.mp3"
+loop_start = 1282
+loop_end = 1210902
+volume = 0.79
+
+[tracks.grasslands-theme]
+file = "music/grasslands-theme.mp3"
+loop_start = 3860
+loop_end = 1735799
+volume = 0.79
+
+[tracks.desert-theme]
+file = "music/desert-theme.mp3"
+loop_start = 1385
+loop_end = 1412497
+volume = 0.38
+
+[tracks.iceland-theme]
+file = "music/iceland-theme.mp3"
+loop_start = 1282
+loop_end = 1210898
+volume = 0.86
+
+[tracks.mushroom-theme]
+file = "music/mushroom-theme.mp3"
+loop_start = 1314
+loop_end = 1210747
+volume = 1.0
+
+[tracks.dungeon-theme]
+file = "music/dungeon-theme.mp3"
+loop_start = 2547
+loop_end = 2365534
+volume = 0.68
+
+[tracks.boss-theme]
+file = "music/boss-theme.mp3"
+loop_start = 1273
+loop_end = 1513303
+volume = 0.51

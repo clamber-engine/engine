@@ -29,6 +29,19 @@ impl Sound {
         })
     }
 
+    /// Decodes a whole file at its own rate, which is returned with it.
+    /// Frame `n` is the frame that loop positions call `n`.
+    pub fn decode(input: &Input) -> Result<(Sound, u32), AudioError> {
+        let mut d = Decoding::open(input)?;
+        let mut samples = Vec::new();
+        while d.read(&mut samples, 1 << 16)? > 0 {}
+        let sound = Sound {
+            channels: d.channels,
+            samples: samples.into(),
+        };
+        Ok((sound, d.rate))
+    }
+
     pub fn frames(&self) -> usize {
         self.samples.len() / self.channels
     }

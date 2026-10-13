@@ -69,51 +69,6 @@ tones = [
     { from = 660, length = 0.07, volume = 0.2, duty = 0.25 },
 ]
 
-# Music: voices play note patterns on a grid of `steps_per_beat` steps a
-# beat. Each token is a note (`C4` is middle C; `F#3`, `Bb5`), `.` to hold
-# the note before, or `-` for silence. Shorter patterns repeat to fill the
-# longest; the file is one pass, so it loops end to start.
-[[music]]
-out = "music/theme.wav"
-tempo = 128
-steps_per_beat = 2
-
-# Lead
-[[music.voices]]
-wave = "square"
-duty = 0.25
-volume = 0.16
-fade = 0.3
-notes = """
-E5 .  G5 .  C6 .  G5 E5
-A5 .  .  G5 E5 .  C5 .
-F5 .  A5 .  C6 .  A5 F5
-G5 .  .  .  D5 .  -  -
-E5 G5 C6 .  B5 .  G5 .
-A5 .  E5 .  A5 C6 B5 A5
-F5 .  A5 .  G5 .  F5 E5
-D5 .  G5 .  B4 .  D5 .
-"""
-
-# Bass
-[[music.voices]]
-wave = "triangle"
-volume = 0.4
-fade = 0.15
-notes = """
-C3 .  G2 .  C3 .  G2 .
-A2 .  E3 .  A2 .  E3 .
-F2 .  C3 .  F2 .  C3 .
-G2 .  D3 .  G2 .  B2 .
-"""
-
-# Hi-hat
-[[music.voices]]
-wave = "noise"
-volume = 0.05
-fade = 1.0
-notes = "C8 - C8 C8 C8 - C8 C8"
-
 [[sounds]]
 out = "sounds/defeat.wav"
 tones = [

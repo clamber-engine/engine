@@ -1,6 +1,6 @@
 //! What the game sounds like: [`Cue`]s for what happens in play, a
 //! [`SoundList`] naming a file for each, and [`Audio`], which plays them
-//! and the level's music through `clamber-audio`.
+//! and the music through `clamber-audio`.
 //!
 //! Sound is never needed to play: a missing or unreadable file is a
 //! warning, and the cue it was for stays silent.
@@ -8,12 +8,14 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use clamber_audio::{AudioHandle, Input, Looping, Music, Play, Sound};
+use clamber_audio::{AudioHandle, Category, Input, Looping, Music, Play, Sound};
 use clamber_level::Track;
 use clamber_sim::{Event, FlowEvent, World};
 use serde::Deserialize;
 
-use crate::session::Session;
+use crate::music::{MusicList, MusicTrack};
+use crate::prefs::Volume;
+use crate::session::{Session, Tune};
 
 /// The sound list played when none is given, relative to the content
 /// folder.
@@ -144,24 +146,41 @@ impl SoundList {
     }
 }
 
-/// Crossfade into a level's music, in seconds.
+/// Fade in from silence, in seconds.
 const MUSIC_IN: f32 = 0.05;
-/// Fade out of it when play stops, in seconds.
+/// Crossfade from one track to another, as between the title and play.
+const CROSSFADE: f32 = 1.0;
+/// Fade out when the music stops, as when the level ends.
 const MUSIC_OUT: f32 = 0.75;
 
-/// Plays a session's cues and its level's music on a mixer.
+/// Plays a session's cues, and the music for its screen, on a mixer.
 pub struct Audio {
     handle: AudioHandle,
     rate: u32,
     effects: BTreeMap<Cue, Sound>,
-    music: Option<LevelMusic>,
+    title: Option<TrackToPlay>,
+    level: Option<TrackToPlay>,
+    /// The volumes last set on the mixer, from the prefs.
+    volume: Option<Volume>,
 }
 
-struct LevelMusic {
+struct TrackToPlay {
     path: PathBuf,
     looping: Option<Looping>,
+    volume: f32,
     /// It couldn't be opened, which was reported once.
     failed: bool,
+}
+
+impl TrackToPlay {
+    fn new(path: PathBuf, track: Option<&MusicTrack>) -> TrackToPlay {
+        TrackToPlay {
+            path,
+            looping: track.and_then(|t| t.looping),
+            volume: track.map_or(1.0, |t| t.volume),
+            failed: false,
+        }
+    }
 }
 
 impl Audio {
@@ -190,19 +209,32 @@ impl Audio {
             handle,
             rate,
             effects,
-            music: None,
+            title: None,
+            level: None,
+            volume: None,
         }
     }
 
-    /// Sets the level's music, whose file is relative to `dir`.
-    pub fn set_music(&mut self, track: Option<&Track>, dir: &Path) {
-        self.music = track.map(|t| LevelMusic {
-            path: dir.join(&t.file),
-            looping: t.loop_start.map(|start| Looping::From {
-                start,
-                length: t.loop_length,
-            }),
-            failed: false,
+    /// Sets the title screen's music, from `list`.
+    pub fn set_title_music(&mut self, list: &MusicList) {
+        self.title = list
+            .title()
+            .map(|t| TrackToPlay::new(t.file.clone(), Some(t)));
+    }
+
+    /// Sets the level's music, whose file is relative to `dir`. Its loop
+    /// and volume come from `list`, unless the level gives a loop.
+    pub fn set_music(&mut self, track: Option<&Track>, dir: &Path, list: &MusicList) {
+        self.level = track.map(|t| {
+            let path = dir.join(&t.file);
+            let mut play = TrackToPlay::new(path.clone(), list.find(&path));
+            if let Some(start) = t.loop_start {
+                play.looping = Some(Looping::From {
+                    start,
+                    length: t.loop_length,
+                });
+            }
+            play
         });
     }
 
@@ -211,10 +243,19 @@ impl Audio {
         self.effects.keys().copied()
     }
 
-    /// Plays the cues of `session`'s last step, and starts or stops the
-    /// music as play starts or stops. Music that can't be opened is
-    /// passed to `warn`, once.
+    /// Plays the cues of `session`'s last step, sets the volumes from
+    /// its prefs, and changes the music as its screen asks: fading in
+    /// from silence, crossfading from another track, or fading out.
+    /// Music that can't be opened is passed to `warn`, once.
     pub fn update(&mut self, session: &Session, mut warn: impl FnMut(String)) {
+        let volume = session.prefs.volume;
+        if self.volume != Some(volume) {
+            let set = |c, percent| self.handle.set_volume(c, Volume::gain(percent));
+            set(Category::Music, volume.music);
+            set(Category::Effects, volume.effects);
+            self.volume = Some(volume);
+        }
+
         for cue in &session.cues {
             if let Some(sound) = self.effects.get(cue) {
                 self.handle.play(sound, Play::default());
@@ -222,24 +263,31 @@ impl Audio {
         }
 
         let playing = self.handle.music().is_some();
-        if session.music_on() == playing {
-            return;
-        }
-        if playing {
-            self.handle.stop_music(self.frames(MUSIC_OUT));
-            return;
-        }
-        let (rate, fade) = (self.rate, self.frames(MUSIC_IN));
-        let Some(music) = self.music.as_mut().filter(|m| !m.failed) else {
+        let fade = self.frames(if playing { CROSSFADE } else { MUSIC_IN });
+        let out = self.frames(MUSIC_OUT);
+        let rate = self.rate;
+        let wanted = match session.tune() {
+            Some(Tune::Title) => self.title.as_mut(),
+            Some(Tune::Level) => self.level.as_mut(),
+            None => None,
+        };
+        let Some(track) = wanted.filter(|t| !t.failed) else {
+            if playing {
+                self.handle.stop_music(out);
+            }
             return;
         };
-        let id = music.path.display().to_string();
+        let id = track.path.display().to_string();
         let result = self.handle.play_music(&id, fade, || {
-            Music::open(Input::file(&music.path), music.looping, rate)
+            Music::open(Input::file(&track.path), track.looping, rate)
+                .map(|m| m.with_volume(track.volume))
         });
         if let Err(e) = result {
-            music.failed = true;
+            track.failed = true;
             warn(format!("{id}: {e}; playing without music"));
+            if playing {
+                self.handle.stop_music(out);
+            }
         }
     }
 
@@ -259,7 +307,8 @@ mod tests {
 
     use super::*;
     use crate::game::Game;
-    use crate::session::Screen;
+    use crate::menu::Menu;
+    use crate::session::{Item, Screen};
 
     const RATE: u32 = 8000;
 
@@ -275,6 +324,11 @@ mod tests {
 
     /// A mono 16-bit WAV of `frames` frames at full scale.
     fn wav(frames: usize) -> Vec<u8> {
+        level_wav(frames, i16::MAX)
+    }
+
+    /// A mono 16-bit WAV of `frames` frames, all `value`.
+    fn level_wav(frames: usize, value: i16) -> Vec<u8> {
         let data_len = (frames * 2) as u32;
         let mut out = Vec::new();
         out.extend_from_slice(b"RIFF");
@@ -290,7 +344,7 @@ mod tests {
         out.extend_from_slice(b"data");
         out.extend_from_slice(&data_len.to_le_bytes());
         for _ in 0..frames {
-            out.extend_from_slice(&i16::MAX.to_le_bytes());
+            out.extend_from_slice(&value.to_le_bytes());
         }
         out
     }
@@ -312,6 +366,13 @@ mod tests {
 
     fn press(action: Action) -> InputFrame {
         InputFrame::single(Frame::after(Actions::NONE, action.into()))
+    }
+
+    /// Mixes `frames` frames and returns the last frame's left sample.
+    fn last(mixer: &mut Mixer, frames: usize) -> f32 {
+        let mut out = vec![0.0; frames * 2];
+        mixer.render(&mut out);
+        out[out.len() - 2]
     }
 
     /// Mixes `frames` frames and says whether any were loud.
@@ -388,39 +449,99 @@ mod tests {
     }
 
     #[test]
-    fn music_plays_during_play_and_fades_at_the_title() {
+    fn title_and_level_music_crossfade_and_fade_out_when_the_level_ends() {
+        // the title's track is positive and the level's negative, at the
+        // volumes the music list gives them
         let dir = folder("music");
-        std::fs::write(dir.join("theme.wav"), wav(RATE as usize)).unwrap();
+        std::fs::write(dir.join("title.wav"), level_wav(RATE as usize, 16384)).unwrap();
+        std::fs::write(dir.join("level.wav"), level_wav(RATE as usize, -16384)).unwrap();
+        let list = MusicList::from_toml_str(
+            "title = \"t\"\n\
+             [tracks.t]\nfile = \"title.wav\"\nvolume = 0.5\n\
+             [tracks.l]\nfile = \"level.wav\"\nloop_start = 0\nloop_end = 4000\n",
+            &dir,
+            "music.toml",
+        )
+        .unwrap();
         let (handle, mut mixer) = mixer(8);
         let mut audio = Audio::new(handle, RATE, &SoundList::default(), |w| panic!("{w}"));
+        audio.set_title_music(&list);
         let track = Track {
-            file: "theme.wav".into(),
-            loop_start: Some(0),
+            file: "level.wav".into(),
+            loop_start: None,
             loop_length: None,
         };
-        audio.set_music(Some(&track), &dir);
+        audio.set_music(Some(&track), &dir, &list);
+        let near = |a: f32, b: f32| (a - b).abs() < 0.01;
+        let crossfade = (RATE as f32 * CROSSFADE) as usize;
 
         let mut s = session();
         audio.update(&s, |w| panic!("{w}"));
-        assert!(!loud(&mut mixer, 800), "silent on the title screen");
+        assert!(near(last(&mut mixer, 800), 0.25), "the title's music");
 
         s.step(&press(Action::Jump));
         audio.update(&s, |w| panic!("{w}"));
-        assert!(loud(&mut mixer, 800), "plays once play starts");
+        let halfway = last(&mut mixer, crossfade / 2);
+        assert!(halfway > -0.5 && halfway < 0.25, "crossfading: {halfway}");
+        assert!(near(last(&mut mixer, crossfade), -0.5), "the level's music");
 
         s.step(&press(Action::Pause));
-        assert_eq!(s.cues, [Cue::Pause]);
         audio.update(&s, |w| panic!("{w}"));
-        assert!(loud(&mut mixer, 800), "carries on while paused");
+        assert!(near(last(&mut mixer, 800), -0.5), "carries on while paused");
 
-        // Pause menu: Resume, Restart level, Controls, Quit.
+        // Pause menu: Resume, Restart level, Controls, Options, Quit.
         s.step(&press(Action::Up));
         s.step(&press(Action::Jump));
         assert!(matches!(s.screen, Screen::Title(_)));
         audio.update(&s, |w| panic!("{w}"));
+        assert!(
+            near(last(&mut mixer, crossfade + 1), 0.25),
+            "back to the title's"
+        );
+
+        s.step(&press(Action::Jump));
+        audio.update(&s, |w| panic!("{w}"));
+        last(&mut mixer, crossfade + 1);
+        s.screen = Screen::GameOver(Menu::new([("Quit", Item::ToTitle)]));
+        audio.update(&s, |w| panic!("{w}"));
         let fade = (RATE as f32 * MUSIC_OUT) as usize;
-        loud(&mut mixer, fade);
-        assert!(!loud(&mut mixer, 800), "faded out");
+        let fading = last(&mut mixer, fade / 2);
+        assert!(fading < -0.05 && fading > -0.5, "fading out: {fading}");
+        assert_eq!(last(&mut mixer, fade), 0.0, "faded out at game over");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn plays_at_the_volumes_in_the_prefs() {
+        let dir = folder("volume");
+        std::fs::write(dir.join("jump.wav"), level_wav(400, 16384)).unwrap();
+        std::fs::write(dir.join("level.wav"), level_wav(400, 16384)).unwrap();
+        let sounds =
+            SoundList::from_toml_str("[effects]\njump = \"jump.wav\"\n", &dir, "s").unwrap();
+        let (handle, mut mixer) = mixer(8);
+        let mut audio = Audio::new(handle, RATE, &sounds, |w| panic!("{w}"));
+        let track = Track {
+            file: "level.wav".into(),
+            loop_start: None,
+            loop_length: None,
+        };
+        audio.set_music(Some(&track), &dir, &MusicList::default());
+
+        let mut s = session();
+        s.prefs.volume.music = 50;
+        s.step(&press(Action::Jump));
+        audio.update(&s, |w| panic!("{w}"));
+        // past the fade in
+        let music = last(&mut mixer, 800);
+        assert!((music - 0.5 * 0.25).abs() < 0.01, "{music}");
+
+        s.prefs.volume.music = 0;
+        s.prefs.volume.effects = 50;
+        s.step(&press(Action::Jump));
+        assert_eq!(s.cues, [Cue::Jump]);
+        audio.update(&s, |w| panic!("{w}"));
+        let jump = last(&mut mixer, 100);
+        assert!((jump - 0.5 * 0.25).abs() < 0.01, "{jump}");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -433,7 +554,11 @@ mod tests {
             loop_start: None,
             loop_length: None,
         };
-        audio.set_music(Some(&track), Path::new("no-such-folder"));
+        audio.set_music(
+            Some(&track),
+            Path::new("no-such-folder"),
+            &MusicList::default(),
+        );
         let mut s = session();
         s.step(&press(Action::Jump));
         let mut warnings = Vec::new();

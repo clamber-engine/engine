@@ -17,6 +17,9 @@ pub struct Prefs {
     /// How the game is shown, from the options screen and the window.
     #[serde(default)]
     pub display: Display,
+    /// How loud the game plays, from the options screen.
+    #[serde(default)]
+    pub volume: Volume,
 }
 
 /// The window's settings.
@@ -42,6 +45,33 @@ impl Default for Display {
             vsync: true,
             window: None,
         }
+    }
+}
+
+/// Volumes, as percentages of full, in steps of [`Volume::STEP`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Volume {
+    pub music: u8,
+    pub effects: u8,
+}
+
+impl Default for Volume {
+    fn default() -> Volume {
+        Volume {
+            music: 100,
+            effects: 100,
+        }
+    }
+}
+
+impl Volume {
+    pub const STEP: u8 = 10;
+
+    /// The linear gain for a percentage. Gain goes with its square, so
+    /// that each step sounds about as big as the last.
+    pub fn gain(percent: u8) -> f32 {
+        (f32::from(percent.min(100)) / 100.0).powi(2)
     }
 }
 
@@ -93,7 +123,7 @@ mod tests {
             Prefs::default(),
             Prefs {
                 preset: Some("snappy".into()),
-                display: Display::default(),
+                ..Prefs::default()
             },
             Prefs {
                 preset: None,
@@ -101,6 +131,10 @@ mod tests {
                     fullscreen: true,
                     vsync: false,
                     window: Some([1600, 900]),
+                },
+                volume: Volume {
+                    music: 30,
+                    effects: 0,
                 },
             },
         ] {
@@ -116,6 +150,17 @@ mod tests {
         assert!(prefs.display.vsync, "prefs from before there were options");
         let prefs = Prefs::from_toml_str("[display]\nfullscreen = true").unwrap();
         assert!(prefs.display.fullscreen && prefs.display.vsync);
+    }
+
+    #[test]
+    fn volumes_are_full_unless_turned_down() {
+        assert_eq!(Prefs::default().volume, Volume::default());
+        let prefs = Prefs::from_toml_str("[volume]\nmusic = 40").unwrap();
+        assert_eq!((prefs.volume.music, prefs.volume.effects), (40, 100));
+        assert_eq!(Volume::gain(100), 1.0);
+        assert_eq!(Volume::gain(50), 0.25);
+        assert_eq!(Volume::gain(0), 0.0);
+        assert_eq!(Volume::gain(200), 1.0);
     }
 
     #[test]
