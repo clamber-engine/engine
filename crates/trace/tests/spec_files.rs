@@ -98,7 +98,8 @@ fn format_examples_parse() {
     // The spec writes rows the way the engine does.
     for (line, row) in head
         .lines()
-        .skip(4)
+        .skip_while(|l| l.starts_with('#'))
+        .skip(1)
         .zip(&trace.rows)
         .chain(rest.lines().zip(&tail))
     {

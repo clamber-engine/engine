@@ -52,7 +52,8 @@ For every scenario in `spec/scenarios/` that has a reference trace in
 `spec/traces/reference/`, the harness:
 
 1. builds the scenario's test level from `content/test/<id>.level`
-2. runs the engine headlessly with the scenario's inputs
+2. runs the engine headlessly with the scenario's inputs, on the
+   `classic-1` preset (the reference traces were measured on `title-1`)
 3. computes every metric in the scenario's `[metrics]` section for both
    traces (definitions in `spec/traces/METRICS.md`)
 4. reports pass or fail per metric, with the first divergence for curves

@@ -1,0 +1,20 @@
+# clamber level v1
+#
+# For scenario bounce-walker: "flat ground at least 120 px to the left and
+# 200 px to the right of the player; one walker on that ground, heading
+# left at full speed (vx -1), its x 75.828125 px to the right of the
+# player's x when frame 0 begins". The ground runs 200 px left and 824 px
+# right of the start, and the walker is the only entity.
+format = 1
+name = "Test: bounce off a walker"
+size = [1024, 480]
+start = [200, 400]
+
+[[collision]]
+shape = "rect"
+rect = [0, 400, 1024, 80]
+
+[[entities]]
+type = "crawler"
+at = [275.828125, 400]
+params = { speed = 1, facing = "left" }

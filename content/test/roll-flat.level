@@ -1,0 +1,13 @@
+# clamber level v1
+#
+# For scenario roll-flat: "flat ground, at least 240 px clear ahead, no
+# entities or carryable objects within 280 px". The start leaves 960 px
+# of flat ground ahead, more than a 100-frame walk can cover.
+format = 1
+name = "Test: roll on flat ground"
+size = [1024, 480]
+start = [64, 400]
+
+[[collision]]
+shape = "rect"
+rect = [0, 400, 1024, 80]

@@ -1,7 +1,8 @@
 //! Engine traces checked against themselves and against the spec
 //! (TESTING.md layers 4 and 5), and the `clamber-trace` CLI.
 //!
-//! Every scenario is recorded on the [`PRESET`] preset with its level:
+//! Every scenario is recorded with its level, on the [`PRESET`] preset
+//! for golden traces and [`CONFORMANCE_PRESET`] for conformance:
 //!
 //! - spec scenarios (`spec/scenarios/<id>.scn`) play
 //!   `content/test/<id>.level`, built to satisfy their `requires:` line;
@@ -18,9 +19,13 @@ use clamber_sim::generic_feel;
 use clamber_trace::{Outcome, Scenario, Trace};
 use serde::Deserialize;
 
-/// The preset traces are recorded on. Reference traces will be compared
-/// against it until the Classic presets have measured values.
+/// The preset traces are recorded on: Clamber's own feel, for golden
+/// traces.
 pub const PRESET: &str = "default";
+
+/// The preset compared against the reference traces directly in
+/// `spec/traces/reference/`, which were measured on `title-1`.
+pub const CONFORMANCE_PRESET: &str = "classic-1";
 
 /// Expected conformance failures, relative to the repository root.
 pub const STATUS_FILE: &str = "tests/conformance-status.toml";

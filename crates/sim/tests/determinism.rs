@@ -68,9 +68,12 @@ fn scenarios_move_the_player() {
         let feel = Arc::new(generic_feel("default").unwrap());
         let mut world = World::new(level.clone(), feel);
         assert!(world.player.grounded(), "{} starts in the air", scenario.id);
-        run(&mut world, &Script::from_scenario(&scenario), |_| {});
+        let mut moved = false;
+        run(&mut world, &Script::from_scenario(&scenario), |w| {
+            moved |= w.player.pos != level.start;
+        });
         assert_eq!(world.frame, scenario.frames);
-        assert!(world.player.pos.x > level.start.x, "{}", scenario.id);
+        assert!(moved, "{} never moves the player", scenario.id);
         assert!(world.player.grounded(), "{} ends in the air", scenario.id);
     }
 }

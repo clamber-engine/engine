@@ -6,5 +6,43 @@
 # [run-jump-flat]
 # expected_failures = ["airtime", "curve y,vy from jump_start"]  # #NN
 #
-# Labels are written as `clamber-trace diff` prints them. No spec scenario
-# has a reference trace yet, so nothing is listed.
+# Labels are written as `clamber-trace diff` prints them. Scenarios are
+# compared on `classic-1`, which doesn't have its measured values yet
+# (#42 and the issues split from it).
+
+[bounce-walker]
+expected_failures = [
+    "bounce_height",  # #54
+    "curve x,y,vy from bounce",  # #54
+]
+
+[roll-flat]
+expected_failures = [
+    "roll_distance",  # #53
+    "top_speed",  # #53
+    "final_x",  # #53
+    "curve x,vx from roll_start",  # #53
+]
+
+[run-jump-flat]
+expected_failures = [
+    "apex_height",  # #51
+    "airtime",  # #51
+    "top_speed",  # #50
+    "frames_to_top",  # #50
+    "curve y,vy from jump_start",  # #51
+]
+
+[slope-dip]
+expected_failures = [
+    "apex_height",  # #51
+    "airtime",  # #51
+    "final_x",  # #50
+    "curve x,y,vy from jump_start",  # #50, #51
+]
+
+[walk-off-ledge]
+expected_failures = [
+    "final_x",  # #50
+    "curve x,y,vy from leave_ground",  # #50, #52
+]

@@ -15,6 +15,7 @@ names! {
         Bounce => "bounce",
         Hurt => "hurt",
         Swap => "swap",
+        GroundAction => "ground_action",
     }
 }
 

@@ -10,7 +10,9 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clamber_conformance::{Case, PRESET, STATUS_FILE, Status, record, root, spec_cases};
+use clamber_conformance::{
+    CONFORMANCE_PRESET, Case, STATUS_FILE, Status, record, root, spec_cases,
+};
 use clamber_trace::{Trace, compare};
 
 struct Options {
@@ -73,7 +75,7 @@ fn check(case: &Case, status: &Status) -> Option<Result<(), String>> {
     let reference = reference(case)?;
     Some((|| {
         let reference = Trace::load(&reference).map_err(|e| e.to_string())?;
-        let candidate = record(scenario, &case.level, PRESET)?;
+        let candidate = record(scenario, &case.level, CONFORMANCE_PRESET)?;
         let outcomes = compare(scenario, &reference, &candidate);
         let problems = status.check(&scenario.id, &outcomes);
         if problems.is_empty() {
