@@ -4,13 +4,19 @@
 #
 # Every archetype has a `behavior`, which the engine implements, and a
 # `size = [w, h]`: the box it touches the player with. A walker stands on
-# its position; anything else is centred on it.
+# its position; anything else is centred on it. `offset` moves the box's
+# middle that far in front of the position, the way it's going (negative:
+# behind).
 #
 # Behaviors and their values:
 #
 # - `walker`: an enemy that walks along the ground at `speed` and turns
 #   at walls and ledges. It starts walking the way `facing` says
-#   (`"left"` or `"right"`).
+#   (`"left"` or `"right"`), at full speed. Above 0, `response` (up to 1)
+#   is the part of the gap to its speed it closes each frame, rounded as
+#   the player's `speed_response` is, so it eases into a turn; a walker
+#   stopped by a wall stands still for a frame, then speeds up the other
+#   way. 0 changes speed at once.
 # - `patrol`: an enemy that flies from where it's placed to `path = [x, y]`
 #   away and back, taking `period` frames for the round trip.
 # - `launcher`: fires the player off at `velocity = [x, y]` on touch.
@@ -24,16 +30,20 @@
 [archetypes.crawler]
 behavior = "walker"
 size = [20, 18]
+offset = 0
 speed = 0.5
+response = 0
 facing = "left"
 
 [archetypes.flutter]
 behavior = "patrol"
 size = [18, 16]
+offset = 0
 path = [0, -64]
 period = 180
 
 [archetypes.launcher]
 behavior = "launcher"
 size = [24, 16]
+offset = 0
 velocity = [0, -13.5]

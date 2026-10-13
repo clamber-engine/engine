@@ -171,15 +171,36 @@ params! {
     RollAirBuffer => "roll_air_buffer",
     /// Upward speed after an attack lands on something from above.
     BounceSpeed => "bounce_speed",
+    /// For this many frames after a bounce the player doesn't move and
+    /// input is ignored. Holding jump makes the bounce use
+    /// `held_jump_gravity` only if it's held from the frame after these
+    /// on. Whole frames.
+    BounceFreeze => "bounce_freeze",
+    /// Above 0, whether the player bounces off an enemy is decided with
+    /// a box on whole-pixel positions instead of by landing on it: this
+    /// wide, standing on the player's position and as tall as the body.
+    /// 0: the player bounces by landing on the enemy, feet first.
+    BounceWidth => "bounce_width",
+    /// How far the middle of the bounce box is in front of the player's
+    /// position, px. Negative is behind.
+    BounceOffset => "bounce_offset",
+    /// How far the bounce box reaches below the player's feet, px.
+    BounceBelow => "bounce_below",
+    /// A player rising this fast or faster doesn't bounce off an enemy
+    /// its bounce box touches. 0: only when not rising.
+    BounceMaxRise => "bounce_max_rise",
 }
 
 impl Param {
     pub const COUNT: usize = Param::ALL.len();
 
     /// Whether the parameter may be set to a negative value. Everything
-    /// except gravity is a magnitude.
+    /// except gravity and offsets is a magnitude.
     pub fn allows_negative(self) -> bool {
-        matches!(self, Param::Gravity | Param::FallGravity)
+        matches!(
+            self,
+            Param::Gravity | Param::FallGravity | Param::BounceOffset
+        )
     }
 }
 

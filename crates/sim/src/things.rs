@@ -9,6 +9,9 @@
 //!   means the player's feet were no lower than the enemy's middle at
 //!   the start of the step and haven't risen since. Any other touch hurts
 //!   the player, which costs a life (see [`flow`](crate::flow)).
+//! - With a `bounce_width` above 0, the player instead bounces off an
+//!   enemy its bounce box touches, checked on whole-pixel positions after
+//!   the player moves but before enemies do (see [`bounce_on_boxes`]).
 //! - A launcher sends the player off at its velocity, then rests for
 //!   [`LAUNCH_REST`] frames before it can fire again.
 //!
@@ -17,11 +20,11 @@
 
 use clamber_fixed::Fixed;
 use clamber_level::{Dir, Level, Vec2};
-use clamber_pack::Param;
+use clamber_pack::{Param, Physics};
 
 use crate::archetype::Behavior;
 use crate::flow::{FlowEvent, overlap};
-use crate::player::{Facing, STEP, State, TINY, is_wall};
+use crate::player::{Facing, HEIGHT, STEP, State, TINY, ease, frames, is_wall};
 use crate::world::{Event, Phase, Thing, World};
 
 /// How long a defeated enemy shows before it's gone.
@@ -33,10 +36,15 @@ pub const LAUNCH_REST: u8 = 20;
 /// Moves every thing one step, then applies what the player touched.
 /// `previous_feet` is the player's `pos.y` before this step.
 pub(crate) fn update(world: &mut World, previous_feet: Fixed) {
+    let physics = world.player_physics();
+    let boxes = physics[Param::BounceWidth] > Fixed::ZERO;
+    if boxes {
+        bounce_on_boxes(world, &physics);
+    }
     for thing in world.things.iter_mut().filter(|t| t.active) {
         advance(&world.level, thing);
     }
-    interact(world, previous_feet);
+    interact(world, previous_feet, &physics, boxes);
 }
 
 fn advance(level: &Level, thing: &mut Thing) {
@@ -63,7 +71,9 @@ fn advance(level: &Level, thing: &mut Thing) {
     }
     thing.clock = thing.clock.wrapping_add(1);
     match archetype.behavior {
-        Behavior::Walker { speed, .. } => walk(level, thing, speed, archetype.size),
+        Behavior::Walker {
+            speed, response, ..
+        } => walk(level, thing, speed, response, archetype.size),
         Behavior::Patrol { path, period } => {
             let origin = level.entities[thing.index].at;
             fly(thing, origin, path, period);
@@ -72,14 +82,30 @@ fn advance(level: &Level, thing: &mut Thing) {
     }
 }
 
-/// Moves a walker `speed` along the ground, or turns it around if a wall
+/// Moves a walker along the ground, its speed easing toward `speed` the
+/// way it faces by `response`, or stops it and turns it around if a wall
 /// or a ledge is in the way.
-fn walk(level: &Level, thing: &mut Thing, speed: Fixed, size: Vec2) {
-    let half_width = Fixed::from_bits(size.x.to_bits() / 2);
-    let (cast_dir, sign) = match thing.facing {
-        Facing::Left => (Dir::Left, -Fixed::ONE),
-        Facing::Right => (Dir::Right, Fixed::ONE),
+fn walk(level: &Level, thing: &mut Thing, speed: Fixed, response: Fixed, size: Vec2) {
+    let target = match thing.facing {
+        Facing::Left => -speed,
+        Facing::Right => speed,
     };
+    let vx = if response > Fixed::ZERO {
+        ease(thing.vx, target, response)
+    } else {
+        target
+    };
+    if vx == Fixed::ZERO {
+        thing.vx = vx;
+        return;
+    }
+    let half_width = Fixed::from_bits(size.x.to_bits() / 2);
+    let (cast_dir, sign, back) = if vx.is_negative() {
+        (Dir::Left, -Fixed::ONE, Facing::Right)
+    } else {
+        (Dir::Right, Fixed::ONE, Facing::Left)
+    };
+    let speed = vx.abs();
     let pos = thing.pos;
     // Sweep from just above step height, so walkers climb what the
     // player can walk up, to just below the top of the walker.
@@ -91,19 +117,87 @@ fn walk(level: &Level, thing: &mut Thing, speed: Fixed, size: Vec2) {
     let wall = level
         .collision
         .sweep(probe, cast_dir, speed + half_width, reach, is_wall);
-    let x = pos.x + sign * speed;
+    let x = pos.x + vx;
     let ground_at = |x: Fixed| {
         let from = Vec2::new(x, pos.y - STEP);
         level.collision.cast(from, Dir::Down, STEP + STEP)
     };
     let ground = ground_at(x + sign * half_width).and_then(|_| ground_at(x));
     match (wall, ground) {
-        (None, Some(hit)) => thing.pos = Vec2::new(x, hit.point.y),
+        (None, Some(hit)) => {
+            thing.pos = Vec2::new(x, hit.point.y);
+            thing.vx = vx;
+        }
         _ => {
-            thing.facing = match thing.facing {
-                Facing::Left => Facing::Right,
-                Facing::Right => Facing::Left,
-            }
+            thing.vx = Fixed::ZERO;
+            thing.facing = back;
+        }
+    }
+}
+
+/// The way a thing is going: the way it moves, or faces when still.
+fn heading(thing: &Thing) -> Facing {
+    if thing.vx.is_negative() {
+        Facing::Left
+    } else if thing.vx > Fixed::ZERO {
+        Facing::Right
+    } else {
+        thing.facing
+    }
+}
+
+/// `pos` rounded to whole pixels: left, and down.
+fn whole_pixels(pos: Vec2) -> Vec2 {
+    let down = |v: Fixed| Fixed::from_int(v.floor() as i32);
+    Vec2::new(down(pos.x), -down(-pos.y))
+}
+
+/// Bounces the player off every enemy its bounce box touches, from the
+/// player's position after this step's move and the enemies' before
+/// theirs, on whole pixels. The box is `bounce_width` wide, centred
+/// `bounce_offset` in front of the player, and reaches from the top of
+/// the body to `bounce_below` under the feet. A player on the ground,
+/// rolling, or rising at `bounce_max_rise` or faster doesn't bounce.
+fn bounce_on_boxes(world: &mut World, physics: &Physics) {
+    let player = &mut world.player;
+    let max_rise = physics[Param::BounceMaxRise];
+    let rising_fast = if max_rise > Fixed::ZERO {
+        player.vel.y <= -max_rise
+    } else {
+        player.vel.y.is_negative()
+    };
+    if player.grounded() || player.state == State::Roll || rising_fast {
+        return;
+    }
+    let at = whole_pixels(player.pos);
+    let offset = physics[Param::BounceOffset];
+    let middle = match player.facing {
+        Facing::Left => at.x - offset,
+        Facing::Right => at.x + offset,
+    };
+    let half_width = Fixed::from_bits(physics[Param::BounceWidth].to_bits() / 2);
+    let reach = (
+        middle - half_width,
+        at.y - HEIGHT,
+        middle + half_width,
+        at.y + physics[Param::BounceBelow],
+    );
+    let speed = physics[Param::BounceSpeed];
+    let freeze = frames(physics[Param::BounceFreeze]);
+    for thing in world.things.iter_mut().filter(|t| t.active) {
+        let Some(archetype) = thing.archetype else {
+            continue;
+        };
+        if thing.phase != Phase::Ready || !archetype.behavior.is_enemy() {
+            continue;
+        }
+        if overlap(
+            reach,
+            archetype.bounds(whole_pixels(thing.pos), heading(thing)),
+        ) {
+            player.bounce(speed, freeze, &mut world.events);
+            thing.phase = Phase::Defeated(DEFEATED_FRAMES);
+            world.flow.events.push(FlowEvent::Defeat(thing.index));
         }
     }
 }
@@ -129,8 +223,12 @@ fn fly(thing: &mut Thing, origin: Vec2, path: Vec2, period: u32) {
     }
 }
 
-fn interact(world: &mut World, previous_feet: Fixed) {
-    let bounce = world.player_physics()[Param::BounceSpeed];
+/// Acts on what the player's body touches after everything has moved.
+/// With `boxes`, bounces were already decided by [`bounce_on_boxes`], so
+/// any other touch of an enemy hurts.
+fn interact(world: &mut World, previous_feet: Fixed, physics: &Physics, boxes: bool) {
+    let bounce = physics[Param::BounceSpeed];
+    let freeze = frames(physics[Param::BounceFreeze]);
     let player = &mut world.player;
     let rolling = player.state == State::Roll;
     for thing in world.things.iter_mut().filter(|t| t.active) {
@@ -140,7 +238,7 @@ fn interact(world: &mut World, previous_feet: Fixed) {
         if thing.phase != Phase::Ready {
             continue;
         }
-        let area = archetype.bounds(thing.pos);
+        let area = archetype.bounds(thing.pos, heading(thing));
         if !overlap(player.body(), area) {
             continue;
         }
@@ -152,13 +250,13 @@ fn interact(world: &mut World, previous_feet: Fixed) {
             }
             _ => {
                 let middle = Fixed::from_bits((area.1.to_bits() + area.3.to_bits()) / 2);
-                let landed = previous_feet <= middle && player.pos.y >= previous_feet;
+                let landed = !boxes && previous_feet <= middle && player.pos.y >= previous_feet;
                 if !rolling && !landed {
                     world.events.push(Event::Hurt);
                     return;
                 }
                 if !rolling {
-                    player.bounce(bounce, &mut world.events);
+                    player.bounce(bounce, freeze, &mut world.events);
                 }
                 thing.phase = Phase::Defeated(DEFEATED_FRAMES);
                 world.flow.events.push(FlowEvent::Defeat(thing.index));

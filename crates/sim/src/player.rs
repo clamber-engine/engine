@@ -110,6 +110,8 @@ pub struct Player {
     pub takeoff: bool,
     /// Frames of swapping left.
     pub swap: u8,
+    /// Frames left that the player is held still after a bounce.
+    pub frozen: u8,
     /// Crouching, or getting up from a crouch.
     pub crouch: Crouch,
     /// Frames since the turn under way began, if one is.
@@ -155,6 +157,7 @@ impl Player {
             jump_hold: false,
             takeoff: false,
             swap: 0,
+            frozen: 0,
             crouch: Crouch::default(),
             turn: None,
             roll: None,
@@ -200,12 +203,15 @@ impl Player {
         self.state = State::Fall;
     }
 
-    /// Bounces up at `speed` off something landed on.
-    pub fn bounce(&mut self, speed: Fixed, events: &mut Vec<Event>) {
+    /// Bounces up at `speed` off something landed on, then holds still
+    /// for `freeze` frames. Jump held from the frame after those on makes
+    /// a held bounce.
+    pub fn bounce(&mut self, speed: Fixed, freeze: u8, events: &mut Vec<Event>) {
         self.vel.y = -speed;
         self.ground = None;
         self.coyote = None;
-        self.jump_hold = false;
+        self.frozen = freeze;
+        self.jump_hold = true;
         self.takeoff = false;
         self.roll = None;
         self.roll_stop = 0;
@@ -227,6 +233,10 @@ impl Player {
         events: &mut Vec<Event>,
     ) {
         self.touched.clear();
+        if self.frozen > 0 {
+            self.frozen -= 1;
+            return;
+        }
         self.swap = self.swap.saturating_sub(1);
         // While swapping, nothing is pressed or held.
         let input = if self.swap > 0 {
@@ -880,7 +890,7 @@ fn facing_toward(dir: i32, facing: Facing) -> Facing {
 }
 
 /// A whole number of frames from a parameter, clamped to what fits.
-fn frames(value: Fixed) -> u8 {
+pub(crate) fn frames(value: Fixed) -> u8 {
     value.floor().clamp(0, u8::MAX.into()) as u8
 }
 
@@ -934,7 +944,7 @@ pub(crate) const SPEED_GRAIN: Fixed = Fixed::from_ratio_pow2(1, 8);
 /// `v` moved toward `target` by `response` of the gap between them,
 /// rounded toward zero to a whole number of [`SPEED_GRAIN`]s. A step that
 /// rounds to nothing closes the gap, so easing always arrives.
-fn ease(v: Fixed, target: Fixed, response: Fixed) -> Fixed {
+pub(crate) fn ease(v: Fixed, target: Fixed, response: Fixed) -> Fixed {
     let gap = target - v;
     let step = gap.checked_mul(response).unwrap_or(gap);
     let grain = SPEED_GRAIN.to_bits();

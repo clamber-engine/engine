@@ -22,8 +22,14 @@ const BUILTIN_ORIGIN: &str = "content/base/archetypes.toml";
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Behavior {
     /// An enemy that walks along the ground at `speed`, turning at walls
-    /// and ledges.
-    Walker { speed: Fixed, facing: Facing },
+    /// and ledges. Above 0, `response` is the part of the gap to that
+    /// speed it closes each frame, as the player's `speed_response`;
+    /// 0 changes speed at once.
+    Walker {
+        speed: Fixed,
+        response: Fixed,
+        facing: Facing,
+    },
     /// An enemy that flies from where it's placed to `path` away and
     /// back, taking `period` frames for the round trip.
     Patrol { path: Vec2, period: u32 },
@@ -45,12 +51,20 @@ pub struct Archetype {
     /// The box it touches the player with: standing on its position for
     /// a walker, centred on it otherwise.
     pub size: Vec2,
+    /// How far the box's middle is in front of its position, the way it's
+    /// going.
+    pub offset: Fixed,
 }
 
 impl Archetype {
-    /// The box as `(left, top, right, bottom)` for a thing at `pos`.
-    pub fn bounds(&self, pos: Vec2) -> (Fixed, Fixed, Fixed, Fixed) {
+    /// The box as `(left, top, right, bottom)` for a thing at `pos` going
+    /// the way `heading` says.
+    pub fn bounds(&self, pos: Vec2, heading: Facing) -> (Fixed, Fixed, Fixed, Fixed) {
         let half_w = half(self.size.x);
+        let x = match heading {
+            Facing::Left => pos.x - self.offset,
+            Facing::Right => pos.x + self.offset,
+        };
         let (top, bottom) = match self.behavior {
             Behavior::Walker { .. } => (pos.y - self.size.y, pos.y),
             _ => {
@@ -58,7 +72,7 @@ impl Archetype {
                 (pos.y - half_h, pos.y + half_h)
             }
         };
-        (pos.x - half_w, top, pos.x + half_w, bottom)
+        (x - half_w, top, x + half_w, bottom)
     }
 }
 
@@ -188,15 +202,14 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         _ => return Err(format!("{path}.behavior: expected a string")),
     };
     let known: &[&str] = match behavior {
-        "walker" => &["speed", "facing"],
+        "walker" => &["speed", "response", "facing"],
         "patrol" => &["path", "period"],
         "launcher" => &["velocity"],
         _ => return Err(format!("{path}.behavior: unknown behavior `{behavior}`")),
     };
-    if let Some(key) = table
-        .keys()
-        .find(|k| !matches!(k.as_str(), "behavior" | "size") && !known.contains(&k.as_str()))
-    {
+    if let Some(key) = table.keys().find(|k| {
+        !matches!(k.as_str(), "behavior" | "size" | "offset") && !known.contains(&k.as_str())
+    }) {
         return Err(format!("{path}.{key}: `{behavior}` has no such value"));
     }
 
@@ -215,7 +228,15 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 Value::String(s) if s == "right" => Facing::Right,
                 _ => return Err(format!("{path}.facing: expected \"left\" or \"right\"")),
             };
-            Behavior::Walker { speed, facing }
+            let response = number("response")?;
+            if response.is_negative() || response > Fixed::ONE {
+                return Err(format!("{path}.response: must be from 0 to 1"));
+            }
+            Behavior::Walker {
+                speed,
+                response,
+                facing,
+            }
         }
         "patrol" => {
             let period = match get("period")? {
@@ -235,7 +256,11 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             velocity: pair("velocity")?,
         },
     };
-    Ok(Archetype { behavior, size })
+    Ok(Archetype {
+        behavior,
+        size,
+        offset: number("offset")?,
+    })
 }
 
 #[cfg(test)]
@@ -285,10 +310,27 @@ mod tests {
             }
         );
         assert_eq!(got.size, Vec2::ints(8, 8));
-        assert_eq!(got.bounds(Vec2::ints(10, 10)), {
+        assert_eq!(got.bounds(Vec2::ints(10, 10), Facing::Right), {
             let i = Fixed::from_int;
             (i(6), i(6), i(14), i(14))
         });
+    }
+
+    #[test]
+    fn offset_moves_the_box_the_way_it_goes() {
+        let a = Archetypes::builtin();
+        let e = entity("crawler", "size = [20, 12]\noffset = 0.5\nresponse = 0.125");
+        let got = a.resolve(&e, "test", "e").unwrap().unwrap();
+        let x = |v: f64| Fixed::from_f64(v).unwrap();
+        let at = Vec2::ints(100, 50);
+        assert_eq!(
+            got.bounds(at, Facing::Right),
+            (x(90.5), x(38.0), x(110.5), x(50.0))
+        );
+        assert_eq!(
+            got.bounds(at, Facing::Left),
+            (x(89.5), x(38.0), x(109.5), x(50.0))
+        );
     }
 
     #[test]
@@ -309,6 +351,7 @@ mod tests {
         check("crawler", "path = [1, 2]", "entities[3].params.path");
         check("crawler", "facing = \"up\"", "entities[3].params.facing");
         check("crawler", "speed = -1", "must not be negative");
+        check("crawler", "response = 1.5", "entities[3].params.response");
         check("flutter", "period = 1", "entities[3].params.period");
         check("launcher", "velocity = [1]", "expected [x, y]");
         check("launcher", "size = [0, 4]", "must be positive");
@@ -316,10 +359,10 @@ mod tests {
 
     #[test]
     fn files_are_checked_when_read() {
-        let bad = "[archetypes.x]\nbehavior = \"walker\"\nsize = [1, 1]\nspeed = 1\n";
+        let bad = "[archetypes.x]\nbehavior = \"walker\"\nsize = [1, 1]\noffset = 0\nspeed = 1\nresponse = 0\n";
         let e = Archetypes::from_toml_str(bad, "f").unwrap_err();
         assert!(e.message.contains("archetypes.x: missing `facing`"), "{e}");
-        let unknown = "[archetypes.x]\nbehavior = \"teleporter\"\nsize = [1, 1]\n";
+        let unknown = "[archetypes.x]\nbehavior = \"teleporter\"\nsize = [1, 1]\noffset = 0\n";
         assert!(Archetypes::from_toml_str(unknown, "f").is_err());
     }
 }

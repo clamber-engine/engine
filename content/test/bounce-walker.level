@@ -4,7 +4,10 @@
 # 200 px to the right of the player; one walker on that ground, heading
 # left at full speed (vx -1), its x 75.828125 px to the right of the
 # player's x when frame 0 begins". The ground runs 200 px left and 824 px
-# right of the start, and the walker is the only entity.
+# right of the start, and the walker is the only entity. It's the small
+# walker of spec/behavior/walker-contact.md, in the sizes the classic-1
+# preset's bounce box goes with (content/base/presets.toml), and eases its
+# speed as in spec/behavior/walker.md.
 format = 1
 name = "Test: bounce off a walker"
 size = [1024, 480]
@@ -17,4 +20,4 @@ rect = [0, 400, 1024, 80]
 [[entities]]
 type = "crawler"
 at = [275.828125, 400]
-params = { speed = 1, facing = "left" }
+params = { speed = 1, response = 0.125, facing = "left", size = [20, 12], offset = 0.5 }

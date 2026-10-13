@@ -9,9 +9,3 @@
 # Labels are written as `clamber-trace diff` prints them. Scenarios are
 # compared on `classic-1`, which doesn't have its measured values yet
 # (#42 and the issues split from it).
-
-[bounce-walker]
-expected_failures = [
-    "bounce_height",  # #54
-    "curve x,y,vy from bounce",  # #54
-]

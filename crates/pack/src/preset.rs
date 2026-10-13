@@ -313,6 +313,11 @@ mod tests {
                     | Param::RollStopSlide
                     | Param::RollBuffer
                     | Param::RollAirBuffer
+                    | Param::BounceFreeze
+                    | Param::BounceWidth
+                    | Param::BounceOffset
+                    | Param::BounceBelow
+                    | Param::BounceMaxRise
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

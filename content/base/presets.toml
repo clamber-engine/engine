@@ -59,6 +59,11 @@ roll_stop_slide = 0
 roll_buffer = 0
 roll_air_buffer = 0
 bounce_speed = 6
+bounce_freeze = 0
+bounce_width = 0
+bounce_offset = 0
+bounce_below = 0
+bounce_max_rise = 0
 
 [presets.snappy]
 label = "Snappy"
@@ -94,9 +99,15 @@ air_acceleration = 0.09375
 # crouching and turns (ground-speed.md, air-control.md), jump input
 # timing (jump-input.md, walk-off.md), the jump arc and landing
 # (jump-arc.md, landing.md), walking off ledges (walk-off.md), and rolls
-# (roll-input.md, roll-speed.md, rolling-off-ledges.md). Jump
-# doesn't cut upward speed when let go (`jump_release_speed` equals
-# `jump_speed`); it ends the lighter `held_jump_gravity` instead.
+# (roll-input.md, roll-speed.md, rolling-off-ledges.md), and bounces off
+# walkers (bounce.md, walker-contact.md). Jump doesn't cut upward speed
+# when let go (`jump_release_speed` equals `jump_speed`); it ends the
+# lighter `held_jump_gravity` instead.
+#
+# The bounce box is one way to split walker-contact.md's bounce ranges
+# between the player and a walker: it gives exactly those ranges against
+# a walker with `size = [20, 12]` and `offset = 0.5` (the small walker)
+# or `size = [26, 38]` and `offset = 0.5` (the large one).
 [presets.classic-1]
 label = "Classic 1"
 description = "Placeholder: partly measured; the rest plays like Default."
@@ -135,6 +146,12 @@ roll_stop_time = 17
 roll_stop_slide = 3
 roll_buffer = 19
 roll_air_buffer = 7
+bounce_speed = 7.125
+bounce_freeze = 2
+bounce_width = 36
+bounce_offset = -7
+bounce_below = 13
+bounce_max_rise = 1.25
 
 [presets.classic-2]
 label = "Classic 2"

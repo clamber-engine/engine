@@ -12,6 +12,11 @@ use clamber_sim::{
 /// Ground at y = 400 from x = 0 to 600, with a wall from x = 100 to 120
 /// standing on it, and the player at `start`. `entities` is appended.
 fn world(start: [i32; 2], entities: &str) -> World {
+    world_on("default", start, entities)
+}
+
+/// [`world`] on the given feel preset.
+fn world_on(preset: &str, start: [i32; 2], entities: &str) -> World {
     let src = format!(
         r#"
         format = 1
@@ -32,7 +37,7 @@ fn world(start: [i32; 2], entities: &str) -> World {
         start[0], start[1]
     );
     let level = Level::from_toml_str(&src, "test").unwrap();
-    World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()))
+    World::new(Arc::new(level), Arc::new(generic_feel(preset).unwrap()))
 }
 
 /// What happened while holding `held` for `frames` steps.
@@ -236,4 +241,232 @@ fn entity_params_are_checked_against_their_archetype() {
     let feel = Arc::new(generic_feel("default").unwrap());
     let err = World::try_new(Arc::new(level), feel).unwrap_err();
     assert!(err.message.contains("entities[0].params.velocity"), "{err}");
+}
+
+// Classic 1: bounces off walkers (spec/behavior/bounce.md,
+// walker-contact.md) and how walkers move (walker.md).
+
+/// A walker as in walker-contact.md's small walker, with the sizes the
+/// classic-1 bounce box goes with.
+fn small_walker(x: &str, speed: &str, facing: &str) -> String {
+    format!(
+        r#"
+        [[entities]]
+        type = "crawler"
+        at = [{x}, 400]
+        params = {{ speed = {speed}, response = 0.125, facing = "{facing}", size = [20, 12], offset = 0.5 }}
+        "#
+    )
+}
+
+fn fx(v: f64) -> Fixed {
+    Fixed::from_f64(v).unwrap()
+}
+
+/// Steps `world` holding jump on the frames `jump` says, by frame count
+/// from 0, and returns the player's `(y, vy)` and events after each.
+fn play(
+    world: &mut World,
+    frames: usize,
+    jump: impl Fn(usize) -> bool,
+) -> Vec<(Fixed, Fixed, Vec<Event>)> {
+    let mut previous = Actions::NONE;
+    (0..frames)
+        .map(|n| {
+            let held = if jump(n) {
+                Action::Jump.into()
+            } else {
+                Actions::NONE
+            };
+            step(world, &InputFrame::single(Frame::after(previous, held)));
+            previous = held;
+            (world.player.pos.y, world.player.vel.y, world.events.clone())
+        })
+        .collect()
+}
+
+/// A classic-1 player falling from 100 px up onto a still walker under
+/// it: the world and the frame it bounces on.
+fn classic_bounce() -> (World, usize) {
+    let mut w = world_on("classic-1", [300, 300], &small_walker("300", "0", "left"));
+    let steps = play(&mut w, 60, |_| false);
+    let b = steps
+        .iter()
+        .position(|s| s.2.contains(&Event::Bounce))
+        .expect("bounces");
+    (
+        world_on("classic-1", [300, 300], &small_walker("300", "0", "left")),
+        b,
+    )
+}
+
+#[test]
+fn classic_bounce_sets_vy_then_holds_still_for_two_frames() {
+    let (mut w, b) = classic_bounce();
+    // Direction input in the frozen frames is ignored.
+    let mut previous = Actions::NONE;
+    let mut rows = Vec::new();
+    for n in 0..=b + 3 {
+        let held = if n > b {
+            Action::Right.into()
+        } else {
+            Actions::NONE
+        };
+        step(&mut w, &InputFrame::single(Frame::after(previous, held)));
+        previous = held;
+        rows.push((w.player.pos, w.player.vel, w.player.state));
+    }
+    let (at_b, vel_b, state_b) = rows[b];
+    assert_eq!(vel_b.y, fx(-7.125));
+    assert_eq!(state_b, State::Bounce);
+    assert_eq!(rows[b + 1], (at_b, vel_b, State::Bounce));
+    assert_eq!(rows[b + 2], (at_b, vel_b, State::Bounce));
+    // B + 3 moves again, under the heavier gravity: jump isn't held.
+    let (at, vel, _) = rows[b + 3];
+    assert_eq!(vel.y, fx(-7.125 + 0.4375));
+    assert_eq!(at.y, at_b.y + vel.y);
+    assert!(vel.x > Fixed::ZERO);
+    assert_eq!(w.things[0].phase, Phase::Defeated(DEFEATED_FRAMES - 4));
+}
+
+#[test]
+fn classic_bounce_height_by_how_long_jump_is_held_from_b_plus_3() {
+    let (_, b) = classic_bounce();
+    let table = [
+        (0, 54.5),
+        (1, 57.0),
+        (2, 59.34375),
+        (3, 61.6875),
+        (4, 63.875),
+        (5, 65.9375),
+        (8, 71.625),
+        (10, 74.90625),
+        (15, 81.375),
+        (20, 85.3125),
+        (25, 86.71875),
+        (40, 86.71875),
+    ];
+    for (k, height) in table {
+        let (mut w, _) = classic_bounce();
+        let steps = play(&mut w, b + 80, |n| n >= b + 3 && n < b + 3 + k);
+        let y_b = steps[b].0;
+        let landed = steps
+            .iter()
+            .position(|s| s.2.contains(&Event::Land))
+            .unwrap();
+        let top = steps[b..landed].iter().map(|s| s.0).min().unwrap();
+        assert_eq!(y_b - top, fx(height), "K = {k}");
+    }
+}
+
+#[test]
+fn classic_bounce_hold_counts_only_from_b_plus_3() {
+    let (_, b) = classic_bounce();
+    let height = |jump: &dyn Fn(usize) -> bool| {
+        let (mut w, _) = classic_bounce();
+        let steps = play(&mut w, b + 40, jump);
+        let top = steps[b..].iter().map(|s| s.0).min().unwrap();
+        steps[b].0 - top
+    };
+    // Held through the bounce but let go on B + 3: no help.
+    assert_eq!(height(&|n| n < b + 3), fx(54.5));
+    // Held from before the bounce on: as a hold from B + 3.
+    assert_eq!(height(&|_| true), fx(86.71875));
+    // Pressed on B + 4 or later: never the lighter gravity.
+    assert_eq!(height(&|n| n >= b + 4), fx(54.5));
+    // A one-frame break gives the heavier gravity for the rest.
+    assert_eq!(height(&|n| n >= b + 3 && n != b + 4), fx(57.0));
+}
+
+#[test]
+fn classic_bounce_arc_follows_the_formula() {
+    let (mut w, b) = classic_bounce();
+    let steps = play(&mut w, b + 40, |_| false);
+    let y_b = steps[b].0;
+    let g = 0.4375;
+    for n in 1..=15 {
+        let (y, vy, _) = &steps[b + 2 + n];
+        let n = n as f64;
+        assert_eq!(*vy, fx(-7.125 + g * n), "n = {n}");
+        assert_eq!(
+            *y - y_b,
+            fx(-7.125 * n + g * n * (n + 1.0) / 2.0),
+            "n = {n}"
+        );
+    }
+}
+
+/// Whether a classic-1 player facing `facing`, falling straight down
+/// `i` px from a still small walker heading `heading`, bounces off it.
+fn classic_bounces_at(i: i32, facing: Facing, heading: &str) -> bool {
+    let mut w = world_on(
+        "classic-1",
+        [300 + i, 340],
+        &small_walker("300", "0", heading),
+    );
+    w.player.facing = facing;
+    let steps = play(&mut w, 40, |_| false);
+    steps.iter().any(|s| s.2.contains(&Event::Bounce))
+}
+
+#[test]
+fn classic_bounce_ranges_for_the_small_walker() {
+    let table = [
+        (Facing::Right, "left", -21, 34),
+        (Facing::Right, "right", -20, 35),
+        (Facing::Left, "left", -35, 20),
+        (Facing::Left, "right", -34, 21),
+    ];
+    for (facing, heading, low, high) in table {
+        for (i, bounces) in [
+            (low - 1, false),
+            (low, true),
+            (high, true),
+            (high + 1, false),
+        ] {
+            assert_eq!(
+                classic_bounces_at(i, facing, heading),
+                bounces,
+                "I = {i}, facing {facing:?}, heading {heading}"
+            );
+        }
+    }
+}
+
+#[test]
+fn classic_bounce_needs_the_player_not_to_be_rising_fast() {
+    // vy after this frame's gravity: -1.1875 bounces, -1.25 doesn't.
+    for (vy, bounces) in [(-1.1875, true), (-1.25, false)] {
+        let mut w = world_on("classic-1", [300, 380], &small_walker("300", "0", "left"));
+        w.player.vel.y = fx(vy - 0.4375);
+        let steps = play(&mut w, 1, |_| false);
+        assert_eq!(steps[0].1 == fx(-7.125), bounces, "vy {vy}");
+        assert_eq!(steps[0].2.contains(&Event::Bounce), bounces, "vy {vy}");
+    }
+}
+
+#[test]
+fn classic_walker_eases_its_speed() {
+    // Heading left into the wall, it stops there, then speeds up to the
+    // right: full speed on the 32nd frame (walker.md).
+    let mut w = world_on("classic-1", [110, 300], &small_walker("160", "1", "left"));
+    let mut speeds = Vec::new();
+    for _ in 0..120 {
+        hold(&mut w, Actions::NONE, 1);
+        speeds.push(w.things[0].vx);
+    }
+    assert!(speeds[..20].iter().all(|&v| v == -Fixed::ONE));
+    let stop = speeds.iter().position(|&v| v == Fixed::ZERO).unwrap();
+    let grains: Vec<i64> = speeds[stop + 1..stop + 33]
+        .iter()
+        .map(|v| v.to_bits() * 256 / Fixed::ONE.to_bits())
+        .collect();
+    assert_eq!(
+        grains,
+        [
+            32, 60, 84, 105, 123, 139, 153, 165, 176, 186, 194, 201, 207, 213, 218, 222, 226, 229,
+            232, 235, 237, 239, 241, 242, 243, 244, 245, 246, 247, 248, 249, 256
+        ]
+    );
+    assert_eq!(w.things[0].facing, Facing::Right);
 }

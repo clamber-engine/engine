@@ -67,6 +67,8 @@ pub struct Thing {
     pub archetype: Option<Archetype>,
     /// The way it's going or looking.
     pub facing: Facing,
+    /// Horizontal speed, px per frame, for a walker.
+    pub vx: Fixed,
     /// Steps it has moved, which a patrol follows its path by.
     pub clock: u32,
     pub phase: Phase,
@@ -124,9 +126,13 @@ impl World {
             .map(|(index, e)| {
                 let path = format!("entities[{index}]");
                 let archetype = archetypes.resolve(e, &level.name, &path)?;
-                let facing = match archetype.map(|a| a.behavior) {
-                    Some(Behavior::Walker { facing, .. }) => facing,
-                    _ => Facing::Right,
+                // A walker starts out at full speed.
+                let (facing, vx) = match archetype.map(|a| a.behavior) {
+                    Some(Behavior::Walker { facing, speed, .. }) => match facing {
+                        Facing::Left => (facing, -speed),
+                        Facing::Right => (facing, speed),
+                    },
+                    _ => (Facing::Right, Fixed::ZERO),
                 };
                 Ok(Thing {
                     index,
@@ -135,6 +141,7 @@ impl World {
                     active: true,
                     archetype,
                     facing,
+                    vx,
                     clock: 0,
                     phase: Phase::Ready,
                 })
@@ -197,6 +204,7 @@ impl World {
             Facing::Right => 1,
         });
         out.push(p.state as u8);
+        out.push(p.frozen);
         out.push(p.jump_buffer.age().map_or(0, |age| age.saturating_add(1)));
         out.push(p.coyote.map_or(0, |n| n.saturating_add(1)));
         out.extend([p.lockout, p.jump_needs_hold.into()]);
@@ -235,6 +243,7 @@ impl World {
                 Facing::Left => 0,
                 Facing::Right => 1,
             });
+            fixed(&mut out, t.vx);
             out.extend(t.clock.to_le_bytes());
             out.extend(match t.phase {
                 Phase::Ready => [0, 0],
