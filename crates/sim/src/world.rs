@@ -9,7 +9,7 @@ use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 
 use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
-use crate::player::{Facing, Player, ROLL, frames};
+use crate::player::{Facing, Player, ROLL, Roll, frames};
 use crate::script::{InputFrame, Script};
 use crate::things;
 
@@ -227,19 +227,30 @@ impl World {
         out.push(p.swap);
         out.extend([p.crouch.held, p.crouch.rising]);
         out.push(p.turn.map_or(0, |n| n.saturating_add(1)));
-        match p.roll {
-            Some(roll) => out.extend([
-                1,
-                roll.left,
-                roll.dir as u8,
-                roll.size as u8,
-                roll.held.into(),
-                roll.carry.into(),
-                roll.still.into(),
-            ]),
+        let roll = |out: &mut Vec<u8>, roll: Option<Roll>| match roll {
+            Some(roll) => {
+                out.extend([
+                    1,
+                    roll.left,
+                    roll.dir as u8,
+                    roll.size as u8,
+                    roll.boosts,
+                    roll.defeated.into(),
+                    roll.held.into(),
+                    roll.carry.into(),
+                    roll.still.into(),
+                ]);
+                fixed(out, roll.speed);
+            }
+            None => out.push(0),
+        };
+        roll(&mut out, p.roll);
+        out.push(p.roll_stop);
+        roll(&mut out, p.stopped);
+        match p.boost {
+            Some(b) => out.extend([1, b.dir as u8, b.size as u8, b.boosts]),
             None => out.push(0),
         }
-        out.push(p.roll_stop);
         match p.roll_press {
             Some((age, window, hold)) => out.extend([1, age, window, hold.into()]),
             None => out.push(0),
@@ -351,11 +362,12 @@ pub fn step(world: &mut World, input: &InputFrame) {
     }
     let physics = world.player_physics();
     let previous_feet = world.player.pos.y;
+    let frozen = world.player.frozen > 0;
     if world.player.knockout.is_some() {
         world
             .player
             .knocked_out(&world.level, &physics, &mut world.events);
-        things::update(world, previous_feet);
+        things::update(world, previous_feet, frozen);
     } else {
         let hurt_by = world.player.hurt_ahead.take();
         if hurt_by.is_some() {
@@ -369,7 +381,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
                 &mut world.events,
             );
         }
-        things::update(world, previous_feet);
+        things::update(world, previous_feet, frozen);
         flow::update(world, hurt_by);
     }
     if let Some(knockout) = world.player.knockout

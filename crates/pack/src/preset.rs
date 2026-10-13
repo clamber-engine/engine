@@ -329,6 +329,12 @@ mod tests {
                     | Param::RollStopSlide
                     | Param::RollBuffer
                     | Param::RollAirBuffer
+                    | Param::RollAttackWidth
+                    | Param::RollAttackOffset
+                    | Param::RollAttackStop
+                    | Param::RollStopGuard
+                    | Param::RollDefeatFreeze
+                    | Param::RollBoost
                     | Param::BounceFreeze
                     | Param::BounceWidth
                     | Param::BounceOffset

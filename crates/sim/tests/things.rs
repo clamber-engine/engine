@@ -5,8 +5,8 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_sim::{
-    Event, Facing, Fixed, FlowEvent, InputFrame, LAUNCH_REST, Outcome, Phase, START_LIVES, State,
-    World, generic_feel, step,
+    Event, Facing, Fixed, FlowEvent, InputFrame, LAUNCH_REST, Outcome, Phase, Roll, RollSize,
+    START_LIVES, State, World, generic_feel, step,
 };
 
 /// Ground at y = 400 from x = 0 to 600, with a wall from x = 100 to 120
@@ -918,4 +918,375 @@ fn classic_walkers_hold_still_while_the_player_does_after_a_hit() {
         let moved = !(h + 1..=h + 10).contains(&k);
         assert_eq!(xs[k].1 - xs[k - 1].1 == Fixed::ONE, moved, "frame {k}");
     }
+}
+
+// Classic 1: rolling into walkers (rolling-into-walkers.md).
+
+/// Steps `world` for `frames` frames holding what `held` says for each
+/// frame, counted from 0, and returns every frame's row.
+fn roll_rows(world: &mut World, frames: usize, held: impl Fn(usize) -> Actions) -> Vec<RollRow> {
+    let mut previous = Actions::NONE;
+    (0..frames)
+        .map(|n| {
+            let now = held(n);
+            step(world, &InputFrame::single(Frame::after(previous, now)));
+            previous = now;
+            RollRow {
+                x: world.player.pos.x,
+                vx: world.player.vel.x,
+                state: world.player.state,
+                events: world.events.clone(),
+                defeats: world
+                    .flow
+                    .events
+                    .iter()
+                    .filter(|e| matches!(e, FlowEvent::Defeat(_)))
+                    .count(),
+            }
+        })
+        .collect()
+}
+
+struct RollRow {
+    x: Fixed,
+    vx: Fixed,
+    state: State,
+    events: Vec<Event>,
+    defeats: usize,
+}
+
+/// Whether a classic-1 player rolling at 3 px per frame the way `facing`
+/// says, starting at x = 300, defeats a walker made by `walker` heading
+/// the way `heading` says at full speed, when I is `i` at the end of the
+/// frame.
+fn classic_roll_defeats_at(
+    walker: fn(&str, &str, &str) -> String,
+    i: i32,
+    facing: Facing,
+    heading: &str,
+) -> bool {
+    let p = match facing {
+        Facing::Left => 297,
+        Facing::Right => 303,
+    };
+    let w = p - i;
+    let start = match heading {
+        "left" => w + 1,
+        _ => w - 1,
+    };
+    let mut world = world_on(
+        "classic-1",
+        [300, 400],
+        &walker(&format!("{start}.5"), "1", heading),
+    );
+    let speed = Fixed::from_int(3);
+    world.player.facing = facing;
+    world.player.state = State::Roll;
+    world.player.vel.x = if facing == Facing::Left {
+        -speed
+    } else {
+        speed
+    };
+    world.player.roll = Some(Roll {
+        left: 20,
+        dir: facing,
+        size: RollSize::Normal,
+        speed,
+        boosts: 0,
+        defeated: false,
+        held: false,
+        carry: false,
+        still: false,
+    });
+    let rows = roll_rows(&mut world, 1, |_| Actions::NONE);
+    assert_eq!(rows[0].x, Fixed::from_int(p));
+    assert_eq!(
+        world.things[0].pos.x.floor(),
+        i64::from(w),
+        "the walker moves 1 px"
+    );
+    assert!(!rows[0].events.contains(&Event::Hurt));
+    rows[0].defeats == 1
+}
+
+#[test]
+fn classic_roll_defeat_ranges_by_walker_facing_and_heading() {
+    type Walker = fn(&str, &str, &str) -> String;
+    let table: [(Walker, Facing, &str, i32, i32); 6] = [
+        (small_walker, Facing::Right, "left", -16, 25),
+        (small_walker, Facing::Right, "right", -17, 24),
+        (small_walker, Facing::Left, "left", -24, 17),
+        (small_walker, Facing::Left, "right", -25, 16),
+        (large_walker, Facing::Right, "left", -19, 28),
+        (large_walker, Facing::Right, "right", -20, 27),
+    ];
+    for (n, (walker, facing, heading, low, high)) in table.into_iter().enumerate() {
+        for (i, defeated) in [
+            (low - 1, false),
+            (low, true),
+            (high, true),
+            (high + 1, false),
+        ] {
+            assert_eq!(
+                classic_roll_defeats_at(walker, i, facing, heading),
+                defeated,
+                "row {n}: I = {i}, facing {facing:?}, heading {heading}"
+            );
+        }
+    }
+}
+
+/// rolling-into-walkers.md's examples: a classic-1 player walking right
+/// at 2 px per frame from x = 200, who presses Action and Right on frame
+/// 0, toward a small walker heading left. `action` says on which frames
+/// Action is held; Right is held throughout.
+fn classic_roll_example(action: impl Fn(usize) -> bool) -> (World, Vec<RollRow>) {
+    let mut w = world_on("classic-1", [200, 400], &small_walker("260.5", "1", "left"));
+    w.player.vel.x = Fixed::from_int(2);
+    w.player.state = State::Walk;
+    // Right was already held before frame 0.
+    let mut previous: Actions = Action::Right.into();
+    let mut rows = Vec::new();
+    for n in 0..50 {
+        let mut held: Actions = Action::Right.into();
+        if action(n) {
+            held.insert(Action::Action);
+        }
+        step(&mut w, &InputFrame::single(Frame::after(previous, held)));
+        previous = held;
+        rows.push(RollRow {
+            x: w.player.pos.x - Fixed::from_int(200),
+            vx: w.player.vel.x,
+            state: w.player.state,
+            events: w.events.clone(),
+            defeats: w.flow.events.len(),
+        });
+    }
+    (w, rows)
+}
+
+#[test]
+fn classic_roll_example_with_action_held_boosts_the_roll() {
+    let (w, rows) = classic_roll_example(|_| true);
+    assert_eq!(rows[0].events, [Event::RollStart]);
+    let expect = [
+        (10, 27.53515625, 2.7578125, State::Roll),
+        (11, 30.3203125, 2.78515625, State::Roll),
+        (12, 33.12890625, 2.80859375, State::Roll),
+        (13, 33.12890625, 2.80859375, State::Roll),
+        (14, 33.12890625, 2.80859375, State::Roll),
+        (15, 36.0859375, 2.95703125, State::Roll),
+        (16, 39.171875, 3.0859375, State::Roll),
+        (43, 140.6953125, 3.9609375, State::Roll),
+        (46, 152.6015625, 3.97265625, State::Roll),
+        (47, 156.6015625, 4.0, State::Run),
+        (48, 160.4765625, 3.875, State::Run),
+    ];
+    for (frame, x, vx, state) in expect {
+        let row = &rows[frame];
+        assert_eq!(
+            (row.x, row.vx, row.state),
+            (fx(x), fx(vx), state),
+            "frame {frame}"
+        );
+    }
+    let defeats: Vec<_> = (0..50).filter(|&n| rows[n].defeats > 0).collect();
+    assert_eq!(defeats, [12]);
+    // No event marks the defeat or the boost; roll_end is on P + 32.
+    let events: Vec<_> = (1..50).filter(|&n| !rows[n].events.is_empty()).collect();
+    assert_eq!(events, [47]);
+    assert_eq!(rows[47].events, [Event::RollEnd]);
+    assert!(!w.events.contains(&Event::Hurt));
+}
+
+#[test]
+fn classic_roll_example_without_action_carries_on_into_walking() {
+    let (_, rows) = classic_roll_example(|n| n == 0);
+    let expect = [
+        (12, 33.12890625, 2.80859375, State::Roll),
+        (14, 33.12890625, 2.80859375, State::Roll),
+        (15, 35.9609375, 2.83203125, State::Roll),
+        (30, 79.8125, 2.96484375, State::Roll),
+        (31, 82.78125, 2.96875, State::Roll),
+        (33, 88.75390625, 3.0, State::Roll),
+        (34, 91.75390625, 3.0, State::Walk),
+        (35, 94.62890625, 2.875, State::Walk),
+    ];
+    for (frame, x, vx, state) in expect {
+        let row = &rows[frame];
+        assert_eq!(
+            (row.x, row.vx, row.state),
+            (fx(x), fx(vx), state),
+            "frame {frame}"
+        );
+    }
+    let ends: Vec<_> = (0..50)
+        .filter(|&n| rows[n].events.contains(&Event::RollEnd))
+        .collect();
+    assert_eq!(ends, [34]);
+}
+
+#[test]
+fn classic_roll_inputs_in_the_pause_change_nothing() {
+    // Action only on frame 0, then a jump pressed on K + 1 and left and
+    // down on K + 2: the same as with none.
+    let (_, plain) = classic_roll_example(|n| n == 0);
+    let mut w = world_on("classic-1", [200, 400], &small_walker("260.5", "1", "left"));
+    w.player.vel.x = Fixed::from_int(2);
+    w.player.state = State::Walk;
+    let rows = roll_rows(&mut w, 40, |n| match n {
+        0 => Actions::from_iter([Action::Right, Action::Action]),
+        13 => Actions::from_iter([Action::Jump, Action::Action]),
+        14 => Actions::from_iter([Action::Left, Action::Down]),
+        _ => Action::Right.into(),
+    });
+    for n in 0..40 {
+        assert_eq!(rows[n].x - Fixed::from_int(200), plain[n].x, "frame {n}");
+        assert_eq!(rows[n].state, plain[n].state, "frame {n}");
+    }
+}
+
+#[test]
+fn classic_roll_second_defeat_boosts_again() {
+    // A second walker further on: after it the normal roll is size 5.
+    let walkers = small_walker("260.5", "1", "left") + &small_walker("340.5", "1", "left");
+    let world = || {
+        let mut w = world_on("classic-1", [200, 400], &walkers);
+        w.player.vel.x = Fixed::from_int(2);
+        w.player.state = State::Walk;
+        w
+    };
+    let held = |_| Actions::from_iter([Action::Right, Action::Action]);
+    let rows = roll_rows(&mut world(), 80, held);
+    let defeats: Vec<_> = (0..80).filter(|&n| rows[n].defeats > 0).collect();
+    assert_eq!(defeats.len(), 2, "{defeats:?}");
+    let k = defeats[1];
+    assert_eq!(rows[k + 2].x, rows[k].x);
+    assert_eq!(rows[k + 2].vx, rows[k].vx);
+    assert!(rows[k + 2].vx < rows[k + 3].vx);
+    assert_eq!(rows[k + 3 + 32].events, [Event::RollEnd]);
+    let mut w = world();
+    roll_rows(&mut w, k + 4, held);
+    let roll = w.player.roll.unwrap();
+    assert_eq!((roll.speed, roll.boosts), (Fixed::from_int(5), 2));
+}
+
+/// A classic-1 player standing at x = 300 facing right presses Action
+/// alone on frame 0, a slow roll with D = 29, and holds Right from
+/// D + 1; a small walker heading left starts at `walker`. Action is
+/// held again on the frames `action` says.
+fn classic_roll_stop(walker: &str, action: impl Fn(usize) -> bool) -> Vec<RollRow> {
+    let mut w = world_on("classic-1", [300, 400], &small_walker(walker, "1", "left"));
+    roll_rows(&mut w, 70, |n| {
+        let mut held = Actions::NONE;
+        if n == 0 || action(n) {
+            held.insert(Action::Action);
+        }
+        if n > D {
+            held.insert(Action::Right);
+        }
+        held
+    })
+}
+
+const D: usize = 29;
+
+/// Where the player stands in the stop after [`classic_roll_stop`]'s
+/// roll, with no walker in the way.
+fn classic_stop_x() -> Fixed {
+    let rows = classic_roll_stop("900.5", |_| false);
+    assert_eq!(rows[D].events, [Event::RollEnd]);
+    assert_eq!(rows[D + 3].x, rows[D + 17].x);
+    assert_eq!(rows[D + 17].vx, Fixed::ZERO);
+    assert_ne!(rows[D + 18].vx, Fixed::ZERO);
+    rows[D + 3].x
+}
+
+/// Where a walker heading left has to start for I to be `i` at the end
+/// of frame `frame` against a player standing at `x`.
+fn walker_start_for(x: Fixed, i: i64, frame: usize) -> String {
+    format!("{}.5", x.floor() - i + frame as i64 + 1)
+}
+
+#[test]
+fn classic_roll_stop_defeats_in_its_first_8_frames_and_lengthens() {
+    let x = classic_stop_x();
+    // I = −16 at the end of D + 7: defeated there.
+    let rows = classic_roll_stop(&walker_start_for(x, -16, D + 7), |_| false);
+    let defeats: Vec<_> = (0..70).filter(|&n| rows[n].defeats > 0).collect();
+    assert_eq!(defeats, [D + 7]);
+    assert!(!rows.iter().any(|r| r.events.contains(&Event::Hurt)));
+    // The stop goes on 2 frames later: the player first moves on D + 20.
+    assert_eq!(rows[D + 19].vx, Fixed::ZERO);
+    assert_ne!(rows[D + 20].vx, Fixed::ZERO);
+    assert_eq!(rows[D + 20].state, State::Walk);
+}
+
+#[test]
+fn classic_roll_stop_hurts_from_d_plus_12() {
+    let x = classic_stop_x();
+    // I = −16 at the end of D + 8: past the attack frames, inside the hurt
+    // range from D + 5, but the hurt is decided at the end of D + 11 at
+    // the earliest.
+    let rows = classic_roll_stop(&walker_start_for(x, -16, D + 8), |_| false);
+    assert!(rows.iter().all(|r| r.defeats == 0));
+    let hurt = rows.iter().position(|r| r.events.contains(&Event::Hurt));
+    assert_eq!(hurt, Some(D + 12));
+}
+
+#[test]
+fn classic_roll_stop_defeat_boosts_into_a_new_roll() {
+    let x = classic_stop_x();
+    // Defeated on D + 7; Action held from D + 12 starts a slow roll boosted
+    // to size 2 there, which always carries on into running.
+    let rows = classic_roll_stop(&walker_start_for(x, -16, D + 7), |n| n >= D + 12);
+    let p = D + 12;
+    assert_eq!(rows[p].events, [Event::RollStart]);
+    assert_eq!(rows[p].state, State::Roll);
+    let ends: Vec<_> = (p..70)
+        .filter(|&n| rows[n].events.contains(&Event::RollEnd))
+        .collect();
+    assert!(ends.is_empty() || ends == [p + 32], "{ends:?}");
+    // Facing right with Right held: the roll's own direction from P + 1
+    // makes it normal.
+    assert!(rows[p + 20].vx > fx(2.5));
+}
+
+#[test]
+fn classic_roll_stop_boost_keeps_size_2_without_a_direction() {
+    let x = classic_stop_x();
+    let mut w = world_on(
+        "classic-1",
+        [300, 400],
+        &small_walker(&walker_start_for(x, -16, D + 7), "1", "left"),
+    );
+    let rows = roll_rows(&mut w, D + 50, |n| {
+        if n == 0 || n >= D + 12 {
+            Action::Action.into()
+        } else {
+            Actions::NONE
+        }
+    });
+    let p = D + 12;
+    assert_eq!(rows[p].events, [Event::RollStart]);
+    assert_eq!(rows[p + 31].state, State::Roll);
+    assert_eq!(rows[p + 32].events, [Event::RollEnd]);
+    // Eased toward 2 from the stop's standstill: never past it.
+    assert!(rows[p..=p + 31].iter().all(|r| r.vx <= Fixed::from_int(2)));
+    assert!(rows[p + 31].vx > fx(1.9));
+}
+
+#[test]
+fn classic_hurt_before_a_roll_comes_first() {
+    // Hurt on H as the walker walks in: an Action press on H doesn't roll.
+    let (mut w, h) = classic_walked_into("");
+    let rows = roll_rows(&mut w, h + 1, |n| {
+        if n == h {
+            Action::Action.into()
+        } else {
+            Actions::NONE
+        }
+    });
+    assert_eq!(rows[h].events, [Event::Hurt]);
+    assert_eq!(w.things[0].phase, Phase::Ready);
 }

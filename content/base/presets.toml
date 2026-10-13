@@ -58,6 +58,12 @@ roll_stop_time = 0
 roll_stop_slide = 0
 roll_buffer = 0
 roll_air_buffer = 0
+roll_attack_width = 0
+roll_attack_offset = 0
+roll_attack_stop = 0
+roll_stop_guard = 0
+roll_defeat_freeze = 0
+roll_boost = 0
 bounce_speed = 6
 bounce_freeze = 0
 bounce_width = 0
@@ -120,9 +126,10 @@ air_acceleration = 0.09375
 # (jump-arc.md, landing.md), walking off ledges (walk-off.md), rolls
 # (roll-input.md, roll-speed.md, rolling-off-ledges.md), bounces off
 # walkers and getting hurt by them (bounce.md, walker-contact.md),
-# knock-out (knock-out.md) and steep faces on the ground (steep-faces.md).
-# Still to come: walls in the air (#61), the rest of walker.md (#59),
-# rolling into walkers (#60) and the delay before a turn (#55). Classic 1
+# knock-out (knock-out.md), steep faces on the ground (steep-faces.md)
+# and rolling into walkers (rolling-into-walkers.md).
+# Still to come: walls in the air (#61) and the delay before a turn
+# (#55). Classic 1
 # is the bundled game's starting preset. Jump doesn't cut upward speed
 # when let go (`jump_release_speed` equals `jump_speed`); it ends the
 # lighter `held_jump_gravity` instead.
@@ -133,7 +140,10 @@ air_acceleration = 0.09375
 # or `size = [26, 38]` and `offset = 0.5` (the large one). The hurt box
 # (24 wide, 3 behind) splits walker-contact.md's hurt ranges the same
 # way; lifting its bottom 21 px from 6 frames into a jump gives the
-# vertical reach there. The knock-out flight falls under `gravity`,
+# vertical reach there. The roll's attack box (22 wide, 4 behind),
+# checked against walkers before they move as the bounce box is, gives
+# rolling-into-walkers.md's defeat ranges at the end of the frame for
+# walkers walking at full speed. The knock-out flight falls under `gravity`,
 # which is knock-out.md's 0.4375 here.
 [presets.classic-1]
 label = "Classic 1"
@@ -173,6 +183,12 @@ roll_stop_time = 17
 roll_stop_slide = 3
 roll_buffer = 19
 roll_air_buffer = 7
+roll_attack_width = 22
+roll_attack_offset = -4
+roll_attack_stop = 8
+roll_stop_guard = 11
+roll_defeat_freeze = 2
+roll_boost = 1
 bounce_speed = 7.125
 bounce_freeze = 2
 bounce_width = 36

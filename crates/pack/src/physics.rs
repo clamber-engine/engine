@@ -169,6 +169,34 @@ params! {
     /// to this many frames after the press, if action stays held until
     /// then. Whole frames.
     RollAirBuffer => "roll_air_buffer",
+    /// Above 0, a timed roll defeats an enemy with a box on whole-pixel
+    /// positions instead of by touching it, and only on its attack
+    /// frames: every frame of the roll before its `roll_end` frame, and
+    /// the first `roll_attack_stop` frames of the stop after it. The box
+    /// is this wide and stands on the player's position, as tall as the
+    /// body; it's checked after the player moves and before enemies do.
+    /// A roll that defeats an enemy carries on into running. 0: a roll
+    /// defeats any enemy its body touches.
+    RollAttackWidth => "roll_attack_width",
+    /// How far the middle of the roll's attack box is in front of the
+    /// player's position, px. Negative is behind.
+    RollAttackOffset => "roll_attack_offset",
+    /// How many frames at the start of the stop after a timed roll,
+    /// counting its `roll_end` frame, still defeat enemies. Whole frames.
+    RollAttackStop => "roll_attack_stop",
+    /// An enemy touching the hurt box at the end of one of this many
+    /// frames at the start of the stop after a timed roll, counting its
+    /// `roll_end` frame, doesn't hurt the player. Whole frames.
+    RollStopGuard => "roll_stop_guard",
+    /// For this many frames after a roll defeats an enemy, the player
+    /// and the enemy don't move and input is ignored; the roll or its
+    /// stop then goes on where it was. Whole frames.
+    RollDefeatFreeze => "roll_defeat_freeze",
+    /// Above 0, action held after a roll's freeze, until the roll or its
+    /// stop is over, starts the roll over at the size it had when it
+    /// started plus this much for each such boost in the chain of rolls.
+    /// One boost per enemy defeated.
+    RollBoost => "roll_boost",
     /// Upward speed after an attack lands on something from above.
     BounceSpeed => "bounce_speed",
     /// For this many frames after a bounce the player doesn't move and
@@ -268,7 +296,11 @@ impl Param {
     pub fn allows_negative(self) -> bool {
         matches!(
             self,
-            Param::Gravity | Param::FallGravity | Param::BounceOffset | Param::HurtOffset
+            Param::Gravity
+                | Param::FallGravity
+                | Param::BounceOffset
+                | Param::HurtOffset
+                | Param::RollAttackOffset
         )
     }
 }

@@ -125,6 +125,11 @@ pub struct Player {
     /// Which frame of the stop after a timed roll this is, counting from
     /// 1, or 0 outside a stop.
     pub roll_stop: u8,
+    /// The timed roll whose stop this is, during a stop.
+    pub stopped: Option<Roll>,
+    /// A boost waiting for action to be held, after a roll or its stop
+    /// defeated an enemy (`roll_boost` above 0).
+    pub boost: Option<Boost>,
     /// An action press waiting until a timed roll can start: how many
     /// frames ago it was made, how many it waits at most, and whether
     /// action must stay held meanwhile.
@@ -178,6 +183,8 @@ impl Player {
             turn: None,
             roll: None,
             roll_stop: 0,
+            stopped: None,
+            boost: None,
             roll_press: None,
             since_run: None,
             lone_run: false,
@@ -213,8 +220,7 @@ impl Player {
         if self.state == State::Roll {
             events.push(Event::RollEnd);
         }
-        self.roll = None;
-        self.roll_stop = 0;
+        self.end_roll();
         self.vel = vel;
         self.ground = None;
         self.coyote = None;
@@ -235,8 +241,7 @@ impl Player {
         self.jump_age = None;
         self.jump_hold = true;
         self.takeoff = false;
-        self.roll = None;
-        self.roll_stop = 0;
+        self.end_roll();
         if !events.contains(&Event::Bounce) {
             events.push(Event::Bounce);
         }
@@ -249,10 +254,35 @@ impl Player {
         self.vel = Vec2::default();
         self.frozen = 0;
         self.takeoff = false;
-        self.roll = None;
-        self.roll_stop = 0;
+        self.end_roll();
         self.turn = None;
         events.push(Event::Hurt);
+    }
+
+    /// Ends the timed roll under way or the stop after one, with any
+    /// boost waiting.
+    fn end_roll(&mut self) {
+        self.roll = None;
+        self.roll_stop = 0;
+        self.stopped = None;
+        self.boost = None;
+    }
+
+    /// Holds a rolling player still for `freeze` frames after its roll,
+    /// or the stop after it, defeated an enemy. A roll that did carries
+    /// on into running, and the next frame with action held can boost it.
+    pub fn defeat_rolling(&mut self, freeze: u8) {
+        self.frozen = freeze;
+        if let Some(roll) = &mut self.roll {
+            roll.defeated = true;
+        }
+        if let Some(roll) = self.roll.or(self.stopped) {
+            self.boost = Some(Boost {
+                dir: roll.dir,
+                size: roll.size,
+                boosts: roll.boosts.saturating_add(1),
+            });
+        }
     }
 
     /// Advances a knocked-out player one step: still, then flying,
@@ -426,8 +456,7 @@ impl Player {
             if self.state == State::Roll {
                 events.push(Event::RollEnd);
             }
-            self.roll = None;
-            self.roll_stop = 0;
+            self.end_roll();
             let mut speed = -physics[Param::JumpSpeed];
             if !held(Action::Jump) {
                 // A buffered tap that's already over makes a short hop.
@@ -479,11 +508,17 @@ impl Player {
             self.state = State::Roll;
             events.push(Event::RollStart);
         }
-        let started = timed
+        let can_roll = timed
             && !events.contains(&Event::JumpStart)
-            && feel.roster[self.character].abilities.contains_key(ROLL)
-            && self.start_timed_roll(input, physics);
-        if started {
+            && feel.roster[self.character].abilities.contains_key(ROLL);
+        let boost = if can_roll {
+            self.use_boost(held(Action::Action), physics)
+        } else {
+            None
+        };
+        let boosted = boost.is_some();
+        let started = can_roll && !boosted && self.start_timed_roll(input, physics);
+        if started || boost == Some(true) {
             self.state = State::Roll;
             events.push(Event::RollStart);
         }
@@ -499,7 +534,7 @@ impl Player {
         let slide = frames(physics[Param::RollStopSlide]);
         let facing = if let Some(mut roll) = self.roll {
             if !started {
-                roll.steer(dir);
+                roll.steer(dir, boosted, physics);
             }
             self.roll = Some(roll);
             self.turn = None;
@@ -550,7 +585,7 @@ impl Player {
             if roll.still {
                 Fixed::ZERO
             } else {
-                ease(self.vel.x, roll.target(physics), response)
+                ease(self.vel.x, roll.target(), response)
             }
         } else if rolling {
             roll_speed(self.vel.x, dir, physics)
@@ -667,6 +702,9 @@ impl Player {
         } else if rolling && (!self.grounded() || self.vel.x.abs() < physics[Param::RollMinSpeed]) {
             events.push(Event::RollEnd);
         }
+        if self.roll_stop == 0 {
+            self.stopped = None;
+        }
         self.jump_age = if events.contains(&Event::JumpStart) {
             Some(0)
         } else if self.grounded() && !self.takeoff {
@@ -737,6 +775,9 @@ impl Player {
             left: length,
             dir: self.facing,
             size,
+            speed: size.speed(physics),
+            boosts: 0,
+            defeated: false,
             held: true,
             carry: false,
             still,
@@ -744,6 +785,47 @@ impl Player {
         self.roll_press = None;
         self.roll_stop = 0;
         true
+    }
+
+    /// Uses the boost waiting after a defeat if action is held, starting
+    /// the roll over, or a new one in the stop. `None` if there was no
+    /// boost to use; otherwise whether a new roll started. A boost not
+    /// used by the end of the roll or its stop is lost.
+    fn use_boost(&mut self, action: bool, physics: &Physics) -> Option<bool> {
+        let boost = self.boost?;
+        if self.roll.is_none() && self.roll_stop == 0 {
+            self.boost = None;
+            return None;
+        }
+        if !action || physics[Param::RollBoost] <= Fixed::ZERO {
+            return None;
+        }
+        self.boost = None;
+        let speed = boost.size.speed(physics)
+            + physics[Param::RollBoost] * Fixed::from_int(boost.boosts.into());
+        let left = frames(physics[Param::RollTime]);
+        if let Some(roll) = &mut self.roll {
+            roll.left = left;
+            roll.speed = speed;
+            roll.boosts = boost.boosts;
+            roll.carry = false;
+            return Some(false);
+        }
+        self.roll = Some(Roll {
+            left,
+            dir: boost.dir,
+            size: boost.size,
+            speed,
+            boosts: boost.boosts,
+            defeated: true,
+            held: true,
+            carry: false,
+            still: false,
+        });
+        self.roll_stop = 0;
+        self.stopped = None;
+        self.roll_press = None;
+        Some(true)
     }
 
     /// Counts down the timed roll at the end of a frame, ending it or
@@ -773,13 +855,17 @@ impl Player {
             // It doesn't end in the air.
             roll.left = roll.left.saturating_sub(1);
             false
-        } else if !roll.carry && roll.held && roll.size != RollSize::Fast && carry_time > 0 {
+        } else if !roll.carry
+            && (roll.defeated || (roll.held && roll.size != RollSize::Fast))
+            && carry_time > 0
+        {
             roll.carry = true;
             roll.left = carry_time - 1;
             false
         } else {
             if !roll.carry && stop_time > 0 {
                 self.roll_stop = 1;
+                self.stopped = Some(roll);
             }
             true
         };
@@ -1021,7 +1107,14 @@ pub struct Roll {
     pub left: u8,
     /// The way it goes.
     pub dir: Facing,
+    /// Its size as it started, before steering or boosts.
     pub size: RollSize,
+    /// The speed it eases toward, the way it goes.
+    pub speed: Fixed,
+    /// Boosts so far in this chain of rolls.
+    pub boosts: u8,
+    /// It defeated an enemy, so it carries on into running.
+    pub defeated: bool,
     /// Action has been held on every frame since the roll started.
     pub held: bool,
     /// The roll has been lengthened to carry on into running.
@@ -1038,31 +1131,46 @@ pub enum RollSize {
     Fast,
 }
 
+/// A boost waiting to be used after a defeat.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Boost {
+    /// The way the roll went.
+    pub dir: Facing,
+    /// The size the chain of rolls started at.
+    pub size: RollSize,
+    /// Boosts in the chain once this one is used.
+    pub boosts: u8,
+}
+
+impl RollSize {
+    /// The speed a roll of this size starts out easing toward.
+    fn speed(self, physics: &Physics) -> Fixed {
+        physics[match self {
+            RollSize::Slow => Param::RollSlowSpeed,
+            RollSize::Normal => Param::RollSpeed,
+            RollSize::Fast => Param::RollFastSpeed,
+        }]
+    }
+}
+
 impl Roll {
-    /// Holding the way the roll goes makes a slow roll normal; holding
-    /// the other way turns it around.
-    fn steer(&mut self, dir: i32) {
-        let along = match self.dir {
-            Facing::Left => -1,
-            Facing::Right => 1,
-        };
-        if dir == along && self.size == RollSize::Slow {
-            self.size = RollSize::Normal;
+    /// Holding the way the roll goes makes a slower roll normal, except
+    /// on the frame it's boosted; holding the other way turns it around.
+    fn steer(&mut self, dir: i32, boosted: bool, physics: &Physics) {
+        let along = direction(self.dir);
+        let normal = physics[Param::RollSpeed];
+        if dir == along && !boosted && self.speed < normal {
+            self.speed = normal;
         } else if dir == -along {
             self.dir = facing_toward(dir, self.dir);
         }
     }
 
-    /// The speed the roll eases toward.
-    fn target(&self, physics: &Physics) -> Fixed {
-        let speed = physics[match self.size {
-            RollSize::Slow => Param::RollSlowSpeed,
-            RollSize::Normal => Param::RollSpeed,
-            RollSize::Fast => Param::RollFastSpeed,
-        }];
+    /// The speed the roll eases toward, signed.
+    fn target(&self) -> Fixed {
         match self.dir {
-            Facing::Left => -speed,
-            Facing::Right => speed,
+            Facing::Left => -self.speed,
+            Facing::Right => self.speed,
         }
     }
 }

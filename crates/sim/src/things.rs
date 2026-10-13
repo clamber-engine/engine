@@ -15,6 +15,10 @@
 //! - With a `hurt_width` above 0, touching an enemy doesn't hurt. An
 //!   enemy that the player's hurt box touches at the end of a step hurts
 //!   the player on the next one instead (see [`hurt_ahead`]).
+//! - With a `roll_attack_width` above 0, a roll defeats an enemy its
+//!   attack box touches on an attack frame, and nothing else does (see
+//!   [`roll_attacks`]). The player and the enemy then hold still for
+//!   `roll_defeat_freeze` frames.
 //! - While the player is knocked out, things don't act on it, and
 //!   enemies other than the one that hurt it hold still for the frames
 //!   it holds still after the hit.
@@ -41,15 +45,22 @@ pub const DEFEATED_FRAMES: u8 = 20;
 pub const LAUNCH_REST: u8 = 20;
 
 /// Moves every thing one step, then applies what the player touched.
-/// `previous_feet` is the player's `pos.y` before this step.
-pub(crate) fn update(world: &mut World, previous_feet: Fixed) {
+/// `previous_feet` is the player's `pos.y` before this step; `frozen`
+/// says the player was held still on it.
+pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     let physics = world.player_physics();
     let boxes = physics[Param::BounceWidth] > Fixed::ZERO;
     let hurt_boxes = physics[Param::HurtWidth] > Fixed::ZERO;
+    let attack_boxes = physics[Param::RollAttackWidth] > Fixed::ZERO;
     let knocked =
         |world: &World| world.player.knockout.is_some() || world.events.contains(&Event::Hurt);
     let bounced = if boxes && !knocked(world) {
         bounce_on_boxes(world, &physics)
+    } else {
+        Vec::new()
+    };
+    let attacked = if attack_boxes && !frozen && !knocked(world) {
+        roll_attacks(world, &physics)
     } else {
         Vec::new()
     };
@@ -73,10 +84,24 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed) {
     for index in bounced {
         defeat(&mut world.things[index], freeze);
     }
+    let roll_freeze = frames(physics[Param::RollDefeatFreeze]);
+    for &index in &attacked {
+        defeat(&mut world.things[index], roll_freeze);
+    }
+    if !attacked.is_empty() {
+        world.player.defeat_rolling(roll_freeze);
+    }
     if knocked(world) {
         return;
     }
-    interact(world, previous_feet, &physics, boxes, hurt_boxes);
+    interact(
+        world,
+        previous_feet,
+        &physics,
+        boxes,
+        hurt_boxes,
+        attack_boxes,
+    );
     if hurt_boxes && !knocked(world) {
         world.player.hurt_ahead = hurt_ahead(world, &physics);
     }
@@ -338,14 +363,65 @@ fn bounce_on_boxes(world: &mut World, physics: &Physics) -> Vec<usize> {
     bounced
 }
 
+/// Defeats every enemy the rolling player's attack box touches on an
+/// attack frame, from the player's position after this step's move and
+/// the enemies' before theirs, on whole pixels: every frame of a timed
+/// roll before its `roll_end` frame, and the first `roll_attack_stop`
+/// frames of the stop after one. The box is `roll_attack_width` wide,
+/// centred `roll_attack_offset` in front of the player, as tall as the
+/// body. Returns the enemies defeated, which are put out of action once
+/// they've moved this frame.
+fn roll_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
+    let player = &world.player;
+    let stop = player.roll_stop > 0 && player.roll_stop <= frames(physics[Param::RollAttackStop]);
+    if player.roll.is_none() && !stop {
+        return Vec::new();
+    }
+    let at = whole_pixels(player.pos);
+    let offset = physics[Param::RollAttackOffset];
+    let middle = match player.facing {
+        Facing::Left => at.x - offset,
+        Facing::Right => at.x + offset,
+    };
+    let half_width = Fixed::from_bits(physics[Param::RollAttackWidth].to_bits() / 2);
+    let reach = (
+        middle - half_width,
+        at.y - HEIGHT,
+        middle + half_width,
+        at.y,
+    );
+    let mut attacked = Vec::new();
+    for thing in world
+        .things
+        .iter()
+        .filter(|t| t.active && t.phase == Phase::Ready)
+    {
+        let Some(archetype) = thing.archetype else {
+            continue;
+        };
+        if archetype.behavior.is_enemy()
+            && overlap(
+                reach,
+                archetype.bounds(whole_pixels(thing.pos), going(thing)),
+            )
+        {
+            attacked.push(thing.index);
+            world.flow.events.push(FlowEvent::Defeat(thing.index));
+        }
+    }
+    attacked
+}
+
 /// The enemy that hurts the player on the next step, if any: one its
 /// hurt box touches now, on whole pixels. The box is `hurt_width` wide,
 /// centred `hurt_offset` in front of the player, and reaches from the
 /// top of the body to the feet, or to `hurt_jump_lift` above them from
-/// `hurt_jump_time` frames into a jump. A rolling player isn't hurt.
+/// `hurt_jump_time` frames into a jump. A rolling player isn't hurt, nor
+/// one in the first `roll_stop_guard` frames of the stop after a roll.
 fn hurt_ahead(world: &World, physics: &Physics) -> Option<usize> {
     let player = &world.player;
-    if player.state == State::Roll {
+    let guarded = player.roll_stop > 0 && player.roll_stop <= frames(physics[Param::RollStopGuard]);
+    if player.state == State::Roll || guarded {
         return None;
     }
     let at = whole_pixels(player.pos);
@@ -405,18 +481,19 @@ fn fly(thing: &mut Thing, origin: Vec2, path: Vec2, period: u32) {
 /// Acts on what the player's body touches after everything has moved.
 /// With `boxes`, bounces were already decided by [`bounce_on_boxes`], so
 /// any other touch of an enemy hurts, unless `hurt_boxes` decide that
-/// instead.
+/// instead. With `attack_boxes`, so were defeats by rolling.
 fn interact(
     world: &mut World,
     previous_feet: Fixed,
     physics: &Physics,
     boxes: bool,
     hurt_boxes: bool,
+    attack_boxes: bool,
 ) {
     let bounce = physics[Param::BounceSpeed];
     let freeze = frames(physics[Param::BounceFreeze]);
     let player = &mut world.player;
-    let rolling = player.state == State::Roll;
+    let rolling = player.state == State::Roll && !attack_boxes;
     for thing in world.things.iter_mut().filter(|t| t.active) {
         let Some(archetype) = thing.archetype else {
             continue;
