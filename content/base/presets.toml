@@ -64,6 +64,10 @@ bounce_width = 0
 bounce_offset = 0
 bounce_below = 0
 bounce_max_rise = 0
+face_slope = 0
+face_speed = 0
+face_exit = 0
+start_rise_ahead = 0
 
 [presets.snappy]
 label = "Snappy"
@@ -157,6 +161,10 @@ bounce_width = 36
 bounce_offset = -7
 bounce_below = 13
 bounce_max_rise = 1.25
+face_slope = 3
+face_speed = 1.5
+face_exit = 2
+start_rise_ahead = 5
 
 [presets.classic-2]
 label = "Classic 2"

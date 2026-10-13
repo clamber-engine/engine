@@ -334,6 +334,10 @@ mod tests {
                     | Param::BounceOffset
                     | Param::BounceBelow
                     | Param::BounceMaxRise
+                    | Param::FaceSlope
+                    | Param::FaceSpeed
+                    | Param::FaceExit
+                    | Param::StartRiseAhead
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

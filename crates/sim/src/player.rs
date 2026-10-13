@@ -5,12 +5,16 @@
 //! jumping and falling, and swapping to the next roster character.
 //! Collision keeps the body on slopes and one-way platforms and stops it
 //! at walls and ceilings.
+//! With `face_slope`, a grounded body goes over the ground column by
+//! column instead (see `columns`): steep faces carry it down and stop it
+//! going up.
 
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame, JumpBuffer};
 use clamber_level::{Dir, Hit, Level, Vec2};
 use clamber_pack::{Feel, Param, Physics};
 
+use crate::columns;
 use crate::world::Event;
 
 /// Half the body's width, px. The body is a box standing on its
@@ -133,6 +137,10 @@ pub struct Player {
     /// A jump pressed during a timed roll ended it, and starts on the
     /// next frame, in the air too.
     pub roll_jump: bool,
+    /// Just come off the low end of a steep face: the way it fell, and
+    /// for how many more frames a direction held back up it counts as
+    /// none.
+    pub off_face: Option<(Facing, u8)>,
     /// Colliders the body ran into or stood on during the last step:
     /// walls it was stopped by, a ceiling it hit, the ground.
     pub touched: Vec<usize>,
@@ -166,6 +174,7 @@ impl Player {
             since_run: None,
             lone_run: false,
             roll_jump: false,
+            off_face: None,
             touched: Vec::new(),
         };
         player.ground = level
@@ -246,7 +255,7 @@ impl Player {
         };
         let held = |a| input.held.contains(a);
         let pressed = |a| input.pressed.contains(a);
-        let dir = match (held(Action::Left), held(Action::Right)) {
+        let held_dir = match (held(Action::Left), held(Action::Right)) {
             (true, false) => -1,
             (false, true) => 1,
             _ => 0,
@@ -276,6 +285,23 @@ impl Player {
         let locked = self.lockout > 0;
         self.lockout = self.lockout.saturating_sub(1);
 
+        // The way the steep face the player starts the frame on falls, if
+        // any. Rolls on faces aren't in the spec yet.
+        let slope = physics[Param::FaceSlope];
+        let face = if slope > Fixed::ZERO && self.grounded() && self.state != State::Roll {
+            columns::face(level, columns::column(self.pos.x), self.pos.y, slope)
+        } else {
+            None
+        };
+        // A direction held up the face, or back up one just come off,
+        // counts as none.
+        let downhill = face.or(self.off_face.map(|(way, _)| direction(way)));
+        let dir = if downhill == Some(-held_dir) {
+            0
+        } else {
+            held_dir
+        };
+
         if timed {
             self.remember_roll_press(input, physics);
         }
@@ -293,10 +319,17 @@ impl Player {
         // A jump pressed during a timed roll can start wherever the roll
         // has taken the player, in the air too.
         let roll_jump = std::mem::take(&mut self.roll_jump) || self.roll.is_some();
+        let ready = self.jump_buffer.age().is_some_and(|age| age >= delay);
         let can_jump = self.swap == 0
             && !locked
+            && face.is_none()
             && (self.grounded() || self.coyote.is_some() || roll_jump)
-            && self.jump_buffer.age().is_some_and(|age| age >= delay);
+            && ready;
+        if face.is_some() && ready {
+            // No jump starts on a face: the press is treated as one made
+            // in the air.
+            self.jump_needs_hold = physics[Param::JumpBufferHold] > Fixed::ZERO;
+        }
         let takeoff_frame = physics[Param::GroundedTakeoff] > Fixed::ZERO;
         let mut air_takeoff = None;
         if can_jump && self.jump_buffer.take() {
@@ -404,9 +437,18 @@ impl Player {
             self.facing = facing;
             events.push(Event::Turn);
         }
-        // A crouch holds the player where they are.
+        // A crouch holds the player where they are, and so does ground
+        // ahead that's too high to start walking toward.
         let run_dir = dir;
-        let dir = if crouching { 0 } else { dir };
+        let ahead = physics[Param::StartRiseAhead].floor();
+        let walled = ahead > 0
+            && dir != 0
+            && start_vx == Fixed::ZERO
+            && self.grounded()
+            && !rolling
+            && !events.contains(&Event::JumpStart)
+            && columns::rise_ahead(level, columns::column(self.pos.x), dir, ahead, self.pos.y);
+        let dir = if crouching || walled { 0 } else { dir };
 
         let cap = if held(Action::Action) {
             physics[Param::TopSpeed]
@@ -429,16 +471,25 @@ impl Player {
                 Fixed::ZERO
             }
         } else if response > Fixed::ZERO {
-            let target = match dir {
+            let mut target = match dir {
                 -1 => -cap,
                 1 => cap,
                 _ => Fixed::ZERO,
             };
+            match face {
+                Some(-1) => target -= physics[Param::FaceSpeed],
+                Some(_) => target += physics[Param::FaceSpeed],
+                None => {}
+            }
             ease(self.vel.x, target, response)
         } else {
             horizontal_speed(self.vel.x, dir, self.grounded(), cap, physics)
         };
-        let moved = self.move_horizontally(level);
+        let moved = if slope > Fixed::ZERO && self.grounded() {
+            self.move_by_columns(level, slope)
+        } else {
+            self.move_horizontally(level, HALF_WIDTH)
+        };
         if self.roll_stop > 0 && self.roll_stop == slide {
             // The slide's last frame moves, but ends standing.
             self.vel.x = Fixed::ZERO;
@@ -446,7 +497,14 @@ impl Player {
 
         if self.grounded() {
             let drop = physics[Param::LeaveDrop];
-            if self.follow_ground(level, events) && drop > Fixed::ZERO {
+            // By columns, the floor is the one under the middle of the
+            // player's column.
+            let x = if slope > Fixed::ZERO {
+                columns::middle(columns::column(self.pos.x))
+            } else {
+                self.pos.x
+            };
+            if self.follow_ground(level, x, events) && drop > Fixed::ZERO {
                 // There's no ground within a step below, so the drop
                 // can't land.
                 self.vel.y = drop;
@@ -489,6 +547,15 @@ impl Player {
         if events.contains(&Event::Land) {
             self.lockout = frames(physics[Param::LandingLockout]);
         }
+        self.off_face = if !self.grounded() {
+            None
+        } else if let Some(way) = face {
+            let exit = frames(physics[Param::FaceExit]);
+            (exit > 0).then_some((facing_of(way), exit))
+        } else {
+            self.off_face
+                .and_then(|(way, n)| (n > 1).then_some((way, n - 1)))
+        };
         // A press on a frame that ends on the ground, landing included,
         // jumps when it can whether or not jump is still held.
         if self.jump_buffer.age() == Some(0) {
@@ -673,8 +740,36 @@ impl Player {
         }
     }
 
-    /// Moves sideways as far as walls allow, and returns how far.
-    fn move_horizontally(&mut self, level: &Level) -> Fixed {
+    /// Moves a grounded body sideways column by column, as far as the
+    /// ground allows, and returns how far. A column it can't go into
+    /// stops it at the left edge of the column it was in.
+    fn move_by_columns(&mut self, level: &Level, slope: Fixed) -> Fixed {
+        if self.vel.x == Fixed::ZERO {
+            return Fixed::ZERO;
+        }
+        let dir = if self.vel.x.is_negative() { -1 } else { 1 };
+        let from = columns::column(self.pos.x);
+        let to = columns::column(self.pos.x + self.vel.x);
+        let mut next = from;
+        while next != to {
+            next += i64::from(dir);
+            if let Some(collider) = columns::blocks(level, next, dir, self.pos.y, slope) {
+                let edge = columns::left_edge(from);
+                let moved = (self.pos.x - edge).abs();
+                self.pos.x = edge;
+                self.vel.x = Fixed::ZERO;
+                self.touched.push(collider);
+                return moved;
+            }
+        }
+        // Walls that aren't ground, such as segments, still stop the
+        // feet.
+        self.move_horizontally(level, Fixed::ZERO)
+    }
+
+    /// Moves sideways as far as walls allow a body `half_width` either
+    /// side of its position, and returns how far.
+    fn move_horizontally(&mut self, level: &Level, half_width: Fixed) -> Fixed {
         if self.vel.x == Fixed::ZERO {
             return Fixed::ZERO;
         }
@@ -694,8 +789,8 @@ impl Player {
         let reach = (HEIGHT - Fixed::ONE - lift - TINY, Fixed::ZERO);
         let wall = level
             .collision
-            .sweep(from, cast_dir, distance + HALF_WIDTH, reach, is_wall);
-        let moved = match wall.map(|hit| (hit.distance - HALF_WIDTH, hit.collider)) {
+            .sweep(from, cast_dir, distance + half_width, reach, is_wall);
+        let moved = match wall.map(|hit| (hit.distance - half_width, hit.collider)) {
             Some((room, collider)) if room < distance => {
                 self.vel.x = Fixed::ZERO;
                 self.touched.push(collider);
@@ -710,12 +805,12 @@ impl Player {
         moved
     }
 
-    /// Keeps a grounded body on the ground as it moves over slopes and
-    /// bumps, or lets it leave the ground when there's none within reach.
-    /// A body taking off keeps its upward speed. Returns whether the body
-    /// walked off the ground.
-    fn follow_ground(&mut self, level: &Level, events: &mut Vec<Event>) -> bool {
-        let from = Vec2::new(self.pos.x, self.pos.y - STEP);
+    /// Keeps a grounded body on the ground under `x` as it moves over
+    /// slopes and bumps, or lets it leave the ground when there's none
+    /// within reach. A body taking off keeps its upward speed. Returns
+    /// whether the body walked off the ground.
+    fn follow_ground(&mut self, level: &Level, x: Fixed, events: &mut Vec<Event>) -> bool {
+        let from = Vec2::new(x, self.pos.y - STEP);
         match level.collision.cast(from, Dir::Down, STEP + STEP) {
             Some(hit) => {
                 self.pos.y = hit.point.y;
@@ -898,6 +993,19 @@ pub(crate) fn frames(value: Fixed) -> u8 {
 pub(crate) fn is_wall(hit: &Hit) -> bool {
     let (a, b) = hit.edge;
     (b.y - a.y).abs() > (b.x - a.x).abs()
+}
+
+/// -1 for left, 1 for right.
+fn direction(facing: Facing) -> i32 {
+    match facing {
+        Facing::Left => -1,
+        Facing::Right => 1,
+    }
+}
+
+/// Left for a negative `dir`, right otherwise.
+fn facing_of(dir: i32) -> Facing {
+    if dir < 0 { Facing::Left } else { Facing::Right }
 }
 
 /// `vx` moved toward zero by `amount`, without reversing it.

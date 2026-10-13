@@ -231,6 +231,10 @@ impl World {
         }
         out.push(p.since_run.map_or(0, |n| n.saturating_add(1)));
         out.extend([p.lone_run, p.roll_jump].map(u8::from));
+        match p.off_face {
+            Some((way, n)) => out.extend([1, way as u8, n]),
+            None => out.push(0),
+        }
 
         count(&mut out, self.things.len());
         for t in &self.things {

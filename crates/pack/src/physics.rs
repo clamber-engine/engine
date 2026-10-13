@@ -189,6 +189,29 @@ params! {
     /// A player rising this fast or faster doesn't bounce off an enemy
     /// its bounce box touches. 0: only when not rising.
     BounceMaxRise => "bounce_max_rise",
+    /// Above 0, a grounded body moves over the ground column by column:
+    /// its `x` is a point with no width, and the floor of each 1-px column
+    /// is the top of the ground under the column's middle. Where the floor
+    /// changes by more than this from one column to the next, but by no
+    /// more than 8 px, the ground is a steep face; more than 8 px is a
+    /// wall. A body moving into a column that climbs more than this, or
+    /// into a face that climbs onward, is stopped at the left edge of the
+    /// column it was in, with no speed. On a face no jump starts. 0: the
+    /// body is a box that walks up slopes up to 45 degrees and is stopped
+    /// by steeper ones.
+    FaceSlope => "face_slope",
+    /// On a frame that starts on a steep face, the target speed has this
+    /// much added the way the face falls, and a direction held up the
+    /// face counts as none.
+    FaceSpeed => "face_speed",
+    /// After coming off the low end of a steep face onto other ground, a
+    /// direction held back up the face counts as none for this many
+    /// frames. Whole frames.
+    FaceExit => "face_exit",
+    /// Above 0, a grounded body standing still doesn't start moving toward
+    /// ground that, this many columns ahead, is more than 8 px higher than
+    /// its own column. Whole columns.
+    StartRiseAhead => "start_rise_ahead",
 }
 
 impl Param {

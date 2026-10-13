@@ -15,6 +15,7 @@
 //! happens as a trace (`spec/traces/FORMAT.md`).
 
 mod archetype;
+mod columns;
 mod flow;
 mod player;
 mod record;
