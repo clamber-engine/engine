@@ -7,7 +7,8 @@
 //! at walls and ceilings.
 //! With `face_slope`, a grounded body goes over the ground column by
 //! column instead (see `columns`): steep faces carry it down and stop it
-//! going up.
+//! going up. An airborne body meets higher columns the same way, and is
+//! lifted onto ones up to a step higher.
 
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame, JumpBuffer};
@@ -610,7 +611,25 @@ impl Player {
         } else {
             horizontal_speed(self.vel.x, dir, self.grounded(), cap, physics)
         };
-        let moved = if slope > Fixed::ZERO && self.grounded() {
+        let airborne = !self.grounded();
+        if airborne {
+            let held_gravity = physics[Param::HeldJumpGravity];
+            // A jump pressed during a roll in the air falls under the
+            // held gravity from its press.
+            let jump_hold = self.jump_hold || (self.roll_jump && self.jump_held_since_press);
+            let gravity = if jump_hold && held_gravity > Fixed::ZERO {
+                held_gravity
+            } else if self.vel.y.is_negative() {
+                physics[Param::Gravity]
+            } else {
+                physics[Param::FallGravity]
+            };
+            self.vel.y = (self.vel.y + gravity).min(physics[Param::MaxFallSpeed]);
+        }
+        let hold = self.jump_hold;
+        let moved = if slope > Fixed::ZERO && airborne {
+            self.move_in_air_by_columns(level, slope, events)
+        } else if slope > Fixed::ZERO {
             self.move_by_columns(level, slope)
         } else {
             self.move_horizontally(level, HALF_WIDTH)
@@ -620,7 +639,7 @@ impl Player {
             self.vel.x = Fixed::ZERO;
         }
 
-        if self.grounded() {
+        if !airborne {
             let drop = physics[Param::LeaveDrop];
             // By columns, the floor is the one under the middle of the
             // player's column.
@@ -637,20 +656,10 @@ impl Player {
                 self.vel.y = physics[Param::LeaveFallSpeed];
             }
         } else {
-            let held_gravity = physics[Param::HeldJumpGravity];
-            // A jump pressed during a roll in the air falls under the
-            // held gravity from its press.
-            let jump_hold = self.jump_hold || (self.roll_jump && self.jump_held_since_press);
-            let gravity = if jump_hold && held_gravity > Fixed::ZERO {
-                held_gravity
-            } else if self.vel.y.is_negative() {
-                physics[Param::Gravity]
-            } else {
-                physics[Param::FallGravity]
-            };
-            self.vel.y = (self.vel.y + gravity).min(physics[Param::MaxFallSpeed]);
-            let hold = self.jump_hold;
-            self.move_vertically(level, moved, physics[Param::LandingReach], events);
+            // Stepping onto a column while falling has landed already.
+            if !self.grounded() {
+                self.move_vertically(level, moved, physics[Param::LandingReach], events);
+            }
             if let Some(speed) = air_takeoff {
                 // Landing on the take-off frame takes off from the ground
                 // on the next one.
@@ -950,6 +959,51 @@ impl Player {
         self.move_horizontally(level, Fixed::ZERO)
     }
 
+    /// Moves an airborne body sideways by columns, after the frame's
+    /// speeds are worked out, and returns how far. Only the column it
+    /// would move into counts. Ground there higher than the feet stops
+    /// the body at the left edge of its own column if it's a face column
+    /// or more than a step higher; otherwise the body is lifted onto it
+    /// by whole pixels, or lands on it if falling. One-way platforms
+    /// count only once the feet are level with them or above, as they're
+    /// thin: their underside is their top.
+    fn move_in_air_by_columns(
+        &mut self,
+        level: &Level,
+        slope: Fixed,
+        events: &mut Vec<Event>,
+    ) -> Fixed {
+        let from = columns::column(self.pos.x);
+        let to = columns::column(self.pos.x + self.vel.x);
+        let feet = self.pos.y;
+        let floor = (to != from)
+            .then(|| columns::floor_in_air(level, to, feet))
+            .flatten()
+            .filter(|f| f.y < feet);
+        if let Some(floor) = floor {
+            let rise = feet - floor.y;
+            if rise > STEP || columns::face(level, to, feet, slope).is_some() {
+                let edge = columns::left_edge(from);
+                let moved = (self.pos.x - edge).abs();
+                self.pos.x = edge;
+                self.vel.x = Fixed::ZERO;
+                self.touched.push(floor.collider);
+                return moved;
+            }
+            // A frame with no vertical speed isn't in the spec; it's
+            // lifted as if rising.
+            if self.vel.y > Fixed::ZERO {
+                self.land(floor.y, floor.collider, events);
+            } else {
+                // At most a step, so it fits.
+                self.pos.y += Fixed::from_int((-rise).floor() as i32);
+            }
+        }
+        // Walls that aren't ground, such as segments, still stop the
+        // feet.
+        self.move_horizontally(level, Fixed::ZERO)
+    }
+
     /// Moves sideways as far as walls allow a body `half_width` either
     /// side of its position, and returns how far.
     fn move_horizontally(&mut self, level: &Level, half_width: Fixed) -> Fixed {
@@ -1062,15 +1116,20 @@ impl Player {
         );
         match ground {
             Some(hit) if hit.point.y <= to || hit.point.y - to < reach => {
-                self.pos.y = hit.point.y;
-                self.vel.y = Fixed::ZERO;
-                self.ground = Some(hit.collider);
-                self.jump_hold = false;
-                self.touched.push(hit.collider);
-                events.push(Event::Land);
+                self.land(hit.point.y, hit.collider, events);
             }
             _ => self.pos.y += self.vel.y,
         }
+    }
+
+    /// Lands with the feet at `y` on `collider`.
+    fn land(&mut self, y: Fixed, collider: usize, events: &mut Vec<Event>) {
+        self.pos.y = y;
+        self.vel.y = Fixed::ZERO;
+        self.ground = Some(collider);
+        self.jump_hold = false;
+        self.touched.push(collider);
+        events.push(Event::Land);
     }
 }
 

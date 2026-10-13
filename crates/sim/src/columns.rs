@@ -15,7 +15,7 @@
 //! steep edge of a polygon or a staircase of small steps.
 
 use clamber_fixed::Fixed;
-use clamber_level::{Dir, Level, Vec2};
+use clamber_level::{Dir, Hit, Level, Vec2};
 
 use crate::player::{HEIGHT, STEP};
 
@@ -48,13 +48,33 @@ pub(crate) fn middle(column: i64) -> Fixed {
 /// height above the feet or more counts as that high. `None` if there's
 /// no ground in that range.
 pub(crate) fn floor(level: &Level, column: i64, feet: Fixed) -> Option<Floor> {
+    floor_where(level, column, feet, |_| true)
+}
+
+/// The floor of `column` as an airborne body with its feet at `feet`
+/// meets it: as [`floor`], but without one-way platforms above the feet,
+/// which a body passes up through.
+pub(crate) fn floor_in_air(level: &Level, column: i64, feet: Fixed) -> Option<Floor> {
+    floor_where(level, column, feet, |hit| {
+        !hit.one_way || hit.point.y >= feet
+    })
+}
+
+/// [`floor`], finding only ground that `keep` accepts.
+fn floor_where(
+    level: &Level,
+    column: i64,
+    feet: Fixed,
+    keep: impl Fn(&Hit) -> bool,
+) -> Option<Floor> {
     let top = Vec2::new(middle(column), feet - HEIGHT);
     if let Some(collider) = level.collision.solid_at(top) {
         return Some(Floor { y: top.y, collider });
     }
+    let across = (Fixed::ZERO, Fixed::ZERO);
     level
         .collision
-        .cast(top, Dir::Down, HEIGHT + STEP + STEP)
+        .sweep(top, Dir::Down, HEIGHT + STEP + STEP, across, keep)
         .map(|hit| Floor {
             y: hit.point.y,
             collider: hit.collider,
@@ -205,6 +225,24 @@ mod tests {
         for c in 0..9 {
             assert_eq!(blocks(&gentle, c, 1, Fixed::ZERO, slope()), None, "{c}");
         }
+    }
+
+    #[test]
+    fn one_way_platforms_above_the_feet_arent_there_in_the_air() {
+        let src = "format = 1\nname = \"p\"\nsize = [100, 100]\nstart = [0, 0]\n\
+                   [[collision]]\nshape = \"segment\"\nfrom = [0, -20]\nto = [10, -20]\n\
+                   one_way = true\n\
+                   [[collision]]\nshape = \"polygon\"\n\
+                   points = [[0, 0], [10, 0], [10, 50], [0, 50]]\n";
+        let level = Level::from_toml_str(src, "p").unwrap();
+        let y = |feet: i32| floor_in_air(&level, 5, Fixed::from_int(feet)).map(|f| f.y);
+        assert_eq!(
+            floor(&level, 5, Fixed::ZERO).map(|f| f.y),
+            Some(Fixed::from_int(-20))
+        );
+        assert_eq!(y(0), Some(Fixed::ZERO));
+        assert_eq!(y(-20), Some(Fixed::from_int(-20)));
+        assert_eq!(y(-25), Some(Fixed::from_int(-20)));
     }
 
     #[test]
