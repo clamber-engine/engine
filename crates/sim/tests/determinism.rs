@@ -93,5 +93,5 @@ fn walking_off_a_ledge_lands_below() {
     use clamber_sim::Event::{Land, LeaveGround};
     let kinds: Vec<_> = events.iter().map(|&(_, e)| e).collect();
     assert_eq!(kinds, [LeaveGround, Land]);
-    assert_eq!(world.player.pos.y, Vec2::ints(0, 400).y);
+    assert_eq!(world.player.pos.y, Vec2::ints(0, 448).y);
 }

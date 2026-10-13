@@ -2,7 +2,8 @@
 #
 # For scenario walk-off-ledge: "a ledge 48 to 64 px ahead, a drop of at
 # least 96 px to flat ground below". The ledge is 56 px ahead of the
-# start and the drop is 128 px.
+# start and the drop is 176 px, as in the reference trace, so the fall
+# lasts through the scenario's 30-frame curve.
 format = 1
 name = "Test: walk off a ledge"
 size = [1024, 480]
@@ -16,4 +17,4 @@ rect = [0, 272, 120, 208]
 # lower ground
 [[collision]]
 shape = "rect"
-rect = [120, 400, 904, 80]
+rect = [120, 448, 904, 32]

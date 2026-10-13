@@ -23,8 +23,3 @@ expected_failures = [
     "final_x",  # #53
     "curve x,vx from roll_start",  # #53
 ]
-
-[walk-off-ledge]
-expected_failures = [
-    "curve x,y,vy from leave_ground",  # #52
-]
