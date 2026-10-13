@@ -12,8 +12,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clamber_game::{
-    Canvas, Cast, Clock, DrawList, Feels, Fit, Game, Gpu, LayerArt, Prefs, SPRITES, Screen,
-    Session, VIEW, content_dir, display, encode_gif, encode_png, keys, present, report, rgb,
+    Canvas, Cast, Clock, DrawList, Feels, Fit, GIF_DELAY, Game, Gpu, LayerArt, Prefs, SPRITES,
+    Screen, Session, VIEW, content_dir, display, encode_gif, encode_png, keys, present, report,
+    rgb,
 };
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
@@ -61,10 +62,18 @@ screenshots shot-1.png to shot-4.png to the folder.";
 /// drawing without a GPU.
 const BORDER: u32 = rgb(0, 0, 0);
 
-/// Captures are scaled up by this, or drawn at 1:1 if that makes the
-/// GIF larger than [`GIF_LIMIT`] bytes.
-const CAPTURE_SCALE: u32 = 2;
+/// The capture's GIF is the first that fits in [`GIF_LIMIT`] bytes, or
+/// else the last, of: each of these pixels per view unit, largest first,
+/// keeping every captured frame, then every second, then every third.
+/// Smooth art changes most pixels every frame, so it gives up frame rate
+/// before resolution.
+const GIF_SCALES: [u32; 2] = [2, 1];
+const GIF_STEPS: [u16; 3] = [1, 2, 3];
 const GIF_LIMIT: usize = 5_000_000;
+
+/// Pixels per view unit in screenshots: 1920 by 1080, the density the
+/// bundled art is rendered at.
+const SHOT_SCALE: u32 = 5;
 
 /// Sound effects playing at once, at most.
 #[cfg(feature = "audio")]
@@ -214,9 +223,8 @@ fn play(options: Options) -> Result<(), String> {
 /// bindings, no remembered choices and no sound, and writes the GIF and
 /// screenshots.
 fn record(options: Options, capture: &Capture) -> Result<(), String> {
-    let (mut session, _) = load(&options, None)?;
     let scenario = Scenario::load(&capture.inputs).map_err(|e| e.to_string())?;
-    let run = clamber_game::capture(&mut session, &Script::from_scenario(&scenario));
+    let script = Script::from_scenario(&scenario);
 
     let out = &capture.out;
     std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
@@ -224,23 +232,42 @@ fn record(options: Options, capture: &Capture) -> Result<(), String> {
         let path = out.join(name);
         std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))
     };
-    let mut gif = encode_gif(&run.frames, CAPTURE_SCALE)?;
-    if gif.len() > GIF_LIMIT {
-        gif = encode_gif(&run.frames, 1)?;
+    let mut gif = Vec::new();
+    let mut run = None;
+    'fit: for scale in GIF_SCALES {
+        let (mut session, _) = load(&options, None)?;
+        let captured = run.insert(clamber_game::capture(&mut session, &script, scale));
+        for step in GIF_STEPS {
+            let frames: Vec<_> = captured
+                .frames
+                .iter()
+                .step_by(step.into())
+                .cloned()
+                .collect();
+            gif = encode_gif(&frames, 1, GIF_DELAY * step)?;
+            if gif.len() <= GIF_LIMIT {
+                break 'fit;
+            }
+        }
     }
+    let Some(run) = run else {
+        return Err("no GIF scales to try".into());
+    };
     write("latest.gif", &gif)?;
-    for (n, &shot) in run.shots.iter().enumerate() {
-        write(
-            &format!("shot-{}.png", n + 1),
-            &encode_png(&run.frames[shot], CAPTURE_SCALE)?,
-        )?;
+
+    let (mut session, _) = load(&options, None)?;
+    let shots = clamber_game::redraw(&mut session, &script, &run.shots, SHOT_SCALE);
+    for (n, shot) in shots.iter().enumerate() {
+        write(&format!("shot-{}.png", n + 1), &encode_png(shot, 1)?)?;
     }
     eprintln!(
-        "captured {} frames to {}: latest.gif ({} KB), {} screenshots",
+        "captured {} frames to {}: latest.gif ({} KB, {}x{}), {} screenshots",
         run.frames.len(),
         out.display(),
         gif.len() / 1000,
-        run.shots.len()
+        run.frames[0].width,
+        run.frames[0].height,
+        shots.len()
     );
     Ok(())
 }

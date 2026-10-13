@@ -1,13 +1,8 @@
-# Clamber's placeholder art and sound: the sources, and what
+# Clamber's placeholder sound: the sources, and what
 # `cargo run -p clamber-art` makes from them. Output paths are relative to
-# content/base; sources are relative to this file. Generated files are
-# checked in, and a test fails if they're out of date.
+# content/base. Generated files are checked in, and a test fails if
+# they're out of date.
 #
-# Sheets: an SVG laid out as a grid of `frame`-sized frames, numbered left
-# to right and top to bottom. `origin` is the pivot within a frame (for
-# characters, between the feet). Animations name a first and last frame
-# and how many 60 Hz ticks each frame shows. Sprites face right.
-
 # The climber, enemies, pickups and objects, the terrain tiles and the
 # background layers are pre-rendered from the scripts in art/ at the
 # repository root by tools/render-art.sh.

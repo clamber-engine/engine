@@ -55,7 +55,7 @@ use std::path::{Path, PathBuf};
 
 pub use camera::{Camera, VIEW};
 pub use canvas::{Canvas, Color, Fit, present, rgb};
-pub use capture::{Capture, GIF_DELAY, SHOTS, capture, encode_gif, encode_png};
+pub use capture::{Capture, GIF_DELAY, SHOTS, capture, encode_gif, encode_png, redraw};
 pub use cast::{Cast, PLAYER, Pose, Poses};
 pub use clock::Clock;
 pub use controls::{Controls, Request, Row, TIMEOUT};

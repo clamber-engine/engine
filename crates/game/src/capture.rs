@@ -6,8 +6,8 @@ use std::collections::HashMap;
 
 use clamber_sim::Script;
 
+use crate::VIEW;
 use crate::canvas::{Canvas, Color};
-use crate::game::Game;
 use crate::session::Session;
 use crate::sound::Cue;
 
@@ -31,12 +31,13 @@ pub struct Capture {
 }
 
 /// Plays `script` from wherever `session` is (usually its title
-/// screen), drawing a frame every [`GIF_DELAY`] hundredths of a second.
-pub fn capture(session: &mut Session, script: &Script) -> Capture {
+/// screen), drawing a frame every [`GIF_DELAY`] hundredths of a second
+/// at `scale` pixels per view unit.
+pub fn capture(session: &mut Session, script: &Script, scale: u32) -> Capture {
     let mut frames = Vec::new();
     // Where the run starts, usually the title screen, is worth a shot.
     let mut moments = vec![(2, 0)];
-    let mut canvas = Game::canvas();
+    let mut canvas = Canvas::scaled(VIEW, scale);
     for (step, input) in (0u32..).zip(script.frames()) {
         session.step(&input);
         for &cue in &session.cues {
@@ -44,7 +45,7 @@ pub fn capture(session: &mut Session, script: &Script) -> Capture {
                 moments.push((rank, step + delay));
             }
         }
-        if step * KEPT % STEPS < KEPT {
+        if is_kept(step) {
             session.draw(&mut canvas, 1.0);
             frames.push(canvas.clone());
         }
@@ -57,6 +58,36 @@ pub fn capture(session: &mut Session, script: &Script) -> Capture {
         .collect();
     let shots = pick_shots(&moments, frames.len(), SHOTS);
     Capture { frames, shots }
+}
+
+/// Plays `script` again, as [`capture`] did from the same starting
+/// `session`, and draws just the kept frames numbered in `wanted` (as in
+/// [`Capture::frames`]) at `scale` pixels per view unit: screenshots at a
+/// higher resolution than the GIF without keeping every frame that large.
+/// Play is deterministic, so they show what the capture's frames did.
+pub fn redraw(session: &mut Session, script: &Script, wanted: &[usize], scale: u32) -> Vec<Canvas> {
+    let mut drawn = Vec::new();
+    let mut kept = 0;
+    for (step, input) in (0u32..).zip(script.frames()) {
+        if drawn.len() == wanted.len() {
+            break;
+        }
+        session.step(&input);
+        if is_kept(step) {
+            if wanted.contains(&kept) {
+                let mut canvas = Canvas::scaled(VIEW, scale);
+                session.draw(&mut canvas, 1.0);
+                drawn.push(canvas);
+            }
+            kept += 1;
+        }
+    }
+    drawn
+}
+
+/// Whether the frame after logic step `step` is kept.
+fn is_kept(step: u32) -> bool {
+    step * KEPT % STEPS < KEPT
 }
 
 /// How worth showing what follows a cue is, and how many steps after it
@@ -123,11 +154,12 @@ pub fn encode_png(canvas: &Canvas, scale: u32) -> Result<Vec<u8>, String> {
 const COLORS: usize = 255;
 const UNCHANGED: u8 = 255;
 
-/// `frames` scaled up by `scale` as a looping GIF, [`GIF_DELAY`] apart.
+/// `frames` scaled up by `scale` as a looping GIF, `delay` hundredths of
+/// a second apart.
 /// All frames share one palette of the colours they use, reduced to 255
 /// when there are more. After the first, each frame only stores the
 /// rectangle that changed, with unchanged pixels in it transparent.
-pub fn encode_gif(frames: &[Canvas], scale: u32) -> Result<Vec<u8>, String> {
+pub fn encode_gif(frames: &[Canvas], scale: u32, delay: u16) -> Result<Vec<u8>, String> {
     let Some(first) = frames.first() else {
         return Err("no frames to encode".into());
     };
@@ -173,7 +205,7 @@ pub fn encode_gif(frames: &[Canvas], scale: u32) -> Result<Vec<u8>, String> {
                 top: to_u16(y0 * scale)?,
                 width: to_u16(w)?,
                 height: to_u16(h)?,
-                delay: GIF_DELAY,
+                delay,
                 dispose: gif::DisposalMethod::Keep,
                 transparent: previous.is_some().then_some(UNCHANGED),
                 buffer: buffer.into(),
@@ -329,10 +361,12 @@ mod tests {
 
     use super::*;
     use crate::canvas::rgb;
+    use crate::game::Game;
     use crate::surface::Surface;
 
-    #[test]
-    fn captures_a_run_to_the_goal() {
+    /// A session at the title screen of a flat level with a goal, and a
+    /// script that starts and walks right into it.
+    fn walk_to_goal() -> (Session, Script) {
         let level = Level::from_toml_str(
             r#"
             format = 1
@@ -351,14 +385,18 @@ mod tests {
         )
         .unwrap();
         let world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
-        let mut session = Session::new(Game::new(world));
-        // Start, then walk right into the goal.
         let mut script = Script::idle(240);
         script.held[10] = Action::Jump.into();
         for held in &mut script.held[11..] {
             *held = Actions::from(Action::Right);
         }
-        let run = capture(&mut session, &script);
+        (Session::new(Game::new(world)), script)
+    }
+
+    #[test]
+    fn captures_a_run_to_the_goal() {
+        let (mut session, script) = walk_to_goal();
+        let run = capture(&mut session, &script, 1);
         assert_eq!(run.frames.len(), 100);
         assert_eq!(run.shots.len(), SHOTS);
         assert_eq!(run.shots[0], 0, "the title screen");
@@ -367,8 +405,27 @@ mod tests {
     }
 
     #[test]
+    fn redraws_the_same_frames_at_another_scale() {
+        let (mut session, script) = walk_to_goal();
+        let run = capture(&mut session, &script, 1);
+        let wanted = [0, 37, 99];
+        let (mut session, _) = walk_to_goal();
+        let same = redraw(&mut session, &script, &wanted, 1);
+        let want: Vec<_> = wanted.iter().map(|&i| run.frames[i].clone()).collect();
+        assert_eq!(same, want);
+
+        let (mut session, _) = walk_to_goal();
+        let larger = redraw(&mut session, &script, &wanted[1..], 2);
+        assert_eq!(larger.len(), 2);
+        assert_eq!(
+            (larger[0].width, larger[0].height),
+            (2 * VIEW.0, 2 * VIEW.1)
+        );
+    }
+
+    #[test]
     fn keeps_25_frames_a_second() {
-        let kept = (0u32..60).filter(|s| s * KEPT % STEPS < KEPT).count();
+        let kept = (0u32..60).filter(|&s| is_kept(s)).count();
         assert_eq!(kept, 25);
     }
 
@@ -418,7 +475,7 @@ mod tests {
         a.clear(rgb(10, 20, 30));
         let mut b = a.clone();
         b.plot(5, 2, rgb(250, 0, 0));
-        let bytes = encode_gif(&[a, b], 2).unwrap();
+        let bytes = encode_gif(&[a, b], 2, GIF_DELAY).unwrap();
 
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::RGBA);
@@ -467,7 +524,7 @@ mod tests {
             // A repeat: nothing changes.
             frames.push(canvas.clone());
         }
-        let (width, decoded) = decode_gif(&encode_gif(&frames, 3).unwrap());
+        let (width, decoded) = decode_gif(&encode_gif(&frames, 3, GIF_DELAY).unwrap());
         assert_eq!(width, 60);
         assert_eq!(decoded.len(), frames.len());
         for (canvas, got) in frames.iter().zip(&decoded) {
