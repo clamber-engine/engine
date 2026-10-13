@@ -12,6 +12,12 @@
 //! - With a `bounce_width` above 0, the player instead bounces off an
 //!   enemy its bounce box touches, checked on whole-pixel positions after
 //!   the player moves but before enemies do (see [`bounce_on_boxes`]).
+//! - With a `hurt_width` above 0, touching an enemy doesn't hurt. An
+//!   enemy that the player's hurt box touches at the end of a step hurts
+//!   the player on the next one instead (see [`hurt_ahead`]).
+//! - While the player is knocked out, things don't act on it, and
+//!   enemies other than the one that hurt it hold still for the frames
+//!   it holds still after the hit.
 //! - A launcher sends the player off at its velocity, then rests for
 //!   [`LAUNCH_REST`] frames before it can fire again.
 //!
@@ -38,13 +44,34 @@ pub const LAUNCH_REST: u8 = 20;
 pub(crate) fn update(world: &mut World, previous_feet: Fixed) {
     let physics = world.player_physics();
     let boxes = physics[Param::BounceWidth] > Fixed::ZERO;
-    if boxes {
+    let hurt_boxes = physics[Param::HurtWidth] > Fixed::ZERO;
+    let knocked =
+        |world: &World| world.player.knockout.is_some() || world.events.contains(&Event::Hurt);
+    if boxes && !knocked(world) {
         bounce_on_boxes(world, &physics);
     }
+    // Enemies hold still while a knocked-out player does, after the hit
+    // frame, except the one that hurt it.
+    let hold = frames(physics[Param::KnockoutHold]);
+    let held = world
+        .player
+        .knockout
+        .filter(|k| k.frame >= 1 && k.frame < hold)
+        .map(|k| k.by);
     for thing in world.things.iter_mut().filter(|t| t.active) {
+        let enemy = thing.archetype.is_some_and(|a| a.behavior.is_enemy());
+        if held.is_some_and(|by| enemy && by != Some(thing.index)) {
+            continue;
+        }
         advance(&world.level, thing);
     }
-    interact(world, previous_feet, &physics, boxes);
+    if knocked(world) {
+        return;
+    }
+    interact(world, previous_feet, &physics, boxes, hurt_boxes);
+    if hurt_boxes && !knocked(world) {
+        world.player.hurt_ahead = hurt_ahead(world, &physics);
+    }
 }
 
 fn advance(level: &Level, thing: &mut Thing) {
@@ -202,6 +229,49 @@ fn bounce_on_boxes(world: &mut World, physics: &Physics) {
     }
 }
 
+/// The enemy that hurts the player on the next step, if any: one its
+/// hurt box touches now, on whole pixels. The box is `hurt_width` wide,
+/// centred `hurt_offset` in front of the player, and reaches from the
+/// top of the body to the feet, or to `hurt_jump_lift` above them from
+/// `hurt_jump_time` frames into a jump. A rolling player isn't hurt.
+fn hurt_ahead(world: &World, physics: &Physics) -> Option<usize> {
+    let player = &world.player;
+    if player.state == State::Roll {
+        return None;
+    }
+    let at = whole_pixels(player.pos);
+    let offset = physics[Param::HurtOffset];
+    let middle = match player.facing {
+        Facing::Left => at.x - offset,
+        Facing::Right => at.x + offset,
+    };
+    let half_width = Fixed::from_bits(physics[Param::HurtWidth].to_bits() / 2);
+    let late = player
+        .jump_age
+        .is_some_and(|age| age >= frames(physics[Param::HurtJumpTime]));
+    let lift = if late {
+        physics[Param::HurtJumpLift]
+    } else {
+        Fixed::ZERO
+    };
+    let reach = (
+        middle - half_width,
+        at.y - HEIGHT,
+        middle + half_width,
+        at.y - lift,
+    );
+    world
+        .things
+        .iter()
+        .filter(|t| t.active && t.phase == Phase::Ready)
+        .find(|t| {
+            t.archetype.is_some_and(|a| {
+                a.behavior.is_enemy() && overlap(reach, a.bounds(whole_pixels(t.pos), heading(t)))
+            })
+        })
+        .map(|t| t.index)
+}
+
 /// Places a patrol along its path for its clock: out from `origin` in
 /// the first half of each `period`, back in the second.
 fn fly(thing: &mut Thing, origin: Vec2, path: Vec2, period: u32) {
@@ -225,8 +295,15 @@ fn fly(thing: &mut Thing, origin: Vec2, path: Vec2, period: u32) {
 
 /// Acts on what the player's body touches after everything has moved.
 /// With `boxes`, bounces were already decided by [`bounce_on_boxes`], so
-/// any other touch of an enemy hurts.
-fn interact(world: &mut World, previous_feet: Fixed, physics: &Physics, boxes: bool) {
+/// any other touch of an enemy hurts, unless `hurt_boxes` decide that
+/// instead.
+fn interact(
+    world: &mut World,
+    previous_feet: Fixed,
+    physics: &Physics,
+    boxes: bool,
+    hurt_boxes: bool,
+) {
     let bounce = physics[Param::BounceSpeed];
     let freeze = frames(physics[Param::BounceFreeze]);
     let player = &mut world.player;
@@ -252,6 +329,9 @@ fn interact(world: &mut World, previous_feet: Fixed, physics: &Physics, boxes: b
                 let middle = Fixed::from_bits((area.1.to_bits() + area.3.to_bits()) / 2);
                 let landed = !boxes && previous_feet <= middle && player.pos.y >= previous_feet;
                 if !rolling && !landed {
+                    if hurt_boxes {
+                        continue;
+                    }
                     world.events.push(Event::Hurt);
                     return;
                 }

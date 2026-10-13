@@ -438,7 +438,9 @@ impl Session {
             self.cues.push(Cue::Pause);
             return;
         }
-        self.game.step(input);
+        if !self.game.step(input) {
+            return;
+        }
         self.cues.extend(cues(&self.game.world));
         match self.game.world.flow.outcome {
             Outcome::Complete => self.screen = Screen::complete(),

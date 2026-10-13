@@ -29,7 +29,7 @@ pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };
 pub use player::{
-    Crouch, Facing, HALF_WIDTH, HEIGHT, Player, ROLL, Roll, RollSize, SWAP_FRAMES, State,
+    Crouch, Facing, HALF_WIDTH, HEIGHT, Knockout, Player, ROLL, Roll, RollSize, SWAP_FRAMES, State,
 };
 pub use record::record;
 pub use script::{InputFrame, Script};

@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 use clamber_fixed::Fixed;
 use clamber_level::{Level, Vec2};
-use clamber_pack::{CharacterFeel, Feel, Physics, Presets};
+use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 
 use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
-use crate::player::{Facing, Player, ROLL};
+use crate::player::{Facing, Player, ROLL, frames};
 use crate::script::{InputFrame, Script};
 use crate::things;
 
@@ -99,6 +99,11 @@ pub struct World {
     pub events: Vec<Event>,
     /// Goal, lives, checkpoints and pickups.
     pub flow: Flow,
+    /// Frames the whole game should stand still after the last step
+    /// before the next, as during a knock-out. Whatever runs the world in
+    /// real time holds the screen for them; they aren't steps, and a
+    /// trace has no rows for them.
+    pub pause: u8,
 }
 
 impl World {
@@ -155,6 +160,7 @@ impl World {
             things,
             events: Vec::new(),
             flow: Flow::new(),
+            pause: 0,
         })
     }
 
@@ -235,6 +241,29 @@ impl World {
             Some((way, n)) => out.extend([1, way as u8, n]),
             None => out.push(0),
         }
+        out.push(p.jump_age.map_or(0, |n| n.saturating_add(1)));
+        match p.hurt_ahead {
+            Some(i) => {
+                out.push(1);
+                count(&mut out, i);
+            }
+            None => out.push(0),
+        }
+        match p.knockout {
+            Some(k) => {
+                out.push(1);
+                match k.by {
+                    Some(i) => {
+                        out.push(1);
+                        count(&mut out, i);
+                    }
+                    None => out.push(0),
+                }
+                out.extend([k.frame, k.landings]);
+                out.push(k.rest.map_or(0, |n| n.saturating_add(1)));
+            }
+            None => out.push(0),
+        }
 
         count(&mut out, self.things.len());
         for t in &self.things {
@@ -267,6 +296,7 @@ impl World {
             Outcome::GameOver => out.push(3),
         }
         out.push(f.lives);
+        out.push(self.pause);
         out.extend(f.gems.to_le_bytes());
         out.extend(f.relics.to_le_bytes());
         count(&mut out, f.checkpoints.len());
@@ -297,6 +327,7 @@ impl World {
 pub fn step(world: &mut World, input: &InputFrame) {
     world.events.clear();
     world.flow.events.clear();
+    world.pause = 0;
     if world.flow.outcome.is_over() {
         return;
     }
@@ -306,15 +337,32 @@ pub fn step(world: &mut World, input: &InputFrame) {
     }
     let physics = world.player_physics();
     let previous_feet = world.player.pos.y;
-    world.player.update(
-        &world.level,
-        &world.feel,
-        &physics,
-        &input.players[0],
-        &mut world.events,
-    );
-    things::update(world, previous_feet);
-    flow::update(world);
+    if world.player.knockout.is_some() {
+        world
+            .player
+            .knocked_out(&world.level, &physics, &mut world.events);
+        things::update(world, previous_feet);
+    } else {
+        let hurt_by = world.player.hurt_ahead.take();
+        if hurt_by.is_some() {
+            world.player.hit(&mut world.events);
+        } else {
+            world.player.update(
+                &world.level,
+                &world.feel,
+                &physics,
+                &input.players[0],
+                &mut world.events,
+            );
+        }
+        things::update(world, previous_feet);
+        flow::update(world, hurt_by);
+    }
+    if let Some(knockout) = world.player.knockout
+        && u32::from(knockout.frame) + 1 == u32::from(frames(physics[Param::KnockoutPauseAfter]))
+    {
+        world.pause = frames(physics[Param::KnockoutPause]);
+    }
     world.frame += 1;
 }
 

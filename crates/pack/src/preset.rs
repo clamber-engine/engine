@@ -338,6 +338,19 @@ mod tests {
                     | Param::FaceSpeed
                     | Param::FaceExit
                     | Param::StartRiseAhead
+                    | Param::HurtWidth
+                    | Param::HurtOffset
+                    | Param::HurtJumpTime
+                    | Param::HurtJumpLift
+                    | Param::KnockoutJump
+                    | Param::KnockoutSpeed
+                    | Param::KnockoutMaxFall
+                    | Param::KnockoutHold
+                    | Param::KnockoutPause
+                    | Param::KnockoutPauseAfter
+                    | Param::KnockoutRebound1
+                    | Param::KnockoutRebound2
+                    | Param::KnockoutRest
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

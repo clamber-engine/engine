@@ -68,6 +68,19 @@ face_slope = 0
 face_speed = 0
 face_exit = 0
 start_rise_ahead = 0
+hurt_width = 0
+hurt_offset = 0
+hurt_jump_time = 0
+hurt_jump_lift = 0
+knockout_jump = 0
+knockout_speed = 0
+knockout_max_fall = 0
+knockout_hold = 0
+knockout_pause = 0
+knockout_pause_after = 0
+knockout_rebound_1 = 0
+knockout_rebound_2 = 0
+knockout_rest = 0
 
 [presets.snappy]
 label = "Snappy"
@@ -104,10 +117,11 @@ air_acceleration = 0.09375
 # Classic 1: the `title-1` values. Filled in so far: horizontal speed,
 # crouching and turns (ground-speed.md, air-control.md), jump input
 # timing (jump-input.md, walk-off.md), the jump arc and landing
-# (jump-arc.md, landing.md), walking off ledges (walk-off.md), and rolls
-# (roll-input.md, roll-speed.md, rolling-off-ledges.md), and bounces off
-# walkers (bounce.md, walker-contact.md). Still to come: steep faces
-# (#57), getting hurt by walkers (#58), the rest of walker.md (#59),
+# (jump-arc.md, landing.md), walking off ledges (walk-off.md), rolls
+# (roll-input.md, roll-speed.md, rolling-off-ledges.md), bounces off
+# walkers and getting hurt by them (bounce.md, walker-contact.md),
+# knock-out (knock-out.md) and steep faces on the ground (steep-faces.md).
+# Still to come: walls in the air (#61), the rest of walker.md (#59),
 # rolling into walkers (#60) and the delay before a turn (#55). Classic 1
 # is the bundled game's starting preset. Jump doesn't cut upward speed
 # when let go (`jump_release_speed` equals `jump_speed`); it ends the
@@ -116,7 +130,11 @@ air_acceleration = 0.09375
 # The bounce box is one way to split walker-contact.md's bounce ranges
 # between the player and a walker: it gives exactly those ranges against
 # a walker with `size = [20, 12]` and `offset = 0.5` (the small walker)
-# or `size = [26, 38]` and `offset = 0.5` (the large one).
+# or `size = [26, 38]` and `offset = 0.5` (the large one). The hurt box
+# (24 wide, 3 behind) splits walker-contact.md's hurt ranges the same
+# way; lifting its bottom 21 px from 6 frames into a jump gives the
+# vertical reach there. The knock-out flight falls under `gravity`,
+# which is knock-out.md's 0.4375 here.
 [presets.classic-1]
 label = "Classic 1"
 description = "The first classic title's movement."
@@ -165,6 +183,19 @@ face_slope = 3
 face_speed = 1.5
 face_exit = 2
 start_rise_ahead = 5
+hurt_width = 24
+hurt_offset = -3
+hurt_jump_time = 6
+hurt_jump_lift = 21
+knockout_jump = 8
+knockout_speed = 0.78125
+knockout_max_fall = 6
+knockout_hold = 11
+knockout_pause = 32
+knockout_pause_after = 8
+knockout_rebound_1 = 5
+knockout_rebound_2 = 2
+knockout_rest = 154
 
 [presets.classic-2]
 label = "Classic 2"

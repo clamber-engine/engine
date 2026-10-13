@@ -212,6 +212,52 @@ params! {
     /// ground that, this many columns ahead, is more than 8 px higher than
     /// its own column. Whole columns.
     StartRiseAhead => "start_rise_ahead",
+    /// Above 0, whether an enemy hurts the player is decided a frame
+    /// ahead with a box on whole-pixel positions instead of by touching
+    /// it: when the box touches an enemy at the end of a frame, the
+    /// player is hurt on the next one, and doesn't move or bounce on it.
+    /// The box is this wide and stands on the player's position, as tall
+    /// as the body. 0: touching an enemy hurts on the frame it happens.
+    HurtWidth => "hurt_width",
+    /// How far the middle of the hurt box is in front of the player's
+    /// position, px. Negative is behind.
+    HurtOffset => "hurt_offset",
+    /// From this many frames after a jump starts, until it lands, the
+    /// bottom of the hurt box is `hurt_jump_lift` above the feet. Whole
+    /// frames.
+    HurtJumpTime => "hurt_jump_time",
+    /// How far the bottom of the hurt box rises late in a jump, px.
+    HurtJumpLift => "hurt_jump_lift",
+    /// Above 0, a hurt player is knocked out before losing the life: it
+    /// holds still for `knockout_hold` frames from the hit, flies up at
+    /// this speed, and lands, rebounds and lies still. Its flight falls
+    /// under `gravity` and `fall_gravity`. 0: the player stays where it
+    /// was hurt until it comes back.
+    KnockoutJump => "knockout_jump",
+    /// The knock-out flight's horizontal speed, away from the way the
+    /// player faces.
+    KnockoutSpeed => "knockout_speed",
+    /// The knock-out flight's downward speed never exceeds this.
+    KnockoutMaxFall => "knockout_max_fall",
+    /// Frames a knocked-out player holds still, counting the hit frame,
+    /// before the flight. Enemies other than the one that hurt the player
+    /// hold still on the same frames, after the hit frame. Whole frames.
+    KnockoutHold => "knockout_hold",
+    /// Above 0, the whole game stands still this many frames during a
+    /// knock-out: nothing moves or changes on screen. Pause frames aren't
+    /// steps of the world. Whole frames.
+    KnockoutPause => "knockout_pause",
+    /// The pause comes after this many frames of the knock-out, counting
+    /// the hit frame. Whole frames.
+    KnockoutPauseAfter => "knockout_pause_after",
+    /// The upward speed the knock-out flight rebounds at on its first
+    /// landing. 0: it stops there.
+    KnockoutRebound1 => "knockout_rebound_1",
+    /// The same on its second landing.
+    KnockoutRebound2 => "knockout_rebound_2",
+    /// Frames the player lies still, counting the landing that stops the
+    /// flight, before the life is lost. Whole frames.
+    KnockoutRest => "knockout_rest",
 }
 
 impl Param {
@@ -222,7 +268,7 @@ impl Param {
     pub fn allows_negative(self) -> bool {
         matches!(
             self,
-            Param::Gravity | Param::FallGravity | Param::BounceOffset
+            Param::Gravity | Param::FallGravity | Param::BounceOffset | Param::HurtOffset
         )
     }
 }

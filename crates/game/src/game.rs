@@ -39,6 +39,8 @@ pub struct Game {
     cast: Arc<Cast>,
     /// Where each actor is in its animation.
     poses: Poses,
+    /// Frames left of a pause the world asked for ([`World::pause`]).
+    pause: u8,
 }
 
 impl Game {
@@ -51,6 +53,7 @@ impl Game {
             previous: world.player.pos,
             debug: world.level.layers.is_empty(),
             poses: Poses::new(&cast, &world),
+            pause: 0,
             world,
             art: Arc::default(),
             cast,
@@ -95,9 +98,18 @@ impl Game {
 
     /// Advances one logic frame. Once the level is complete or over, the
     /// world stays as it is until [`restart`](Game::restart).
-    pub fn step(&mut self, input: &InputFrame) {
+    ///
+    /// During a pause the world asked for ([`World::pause`]), holds the
+    /// screen for a frame instead, and returns false.
+    pub fn step(&mut self, input: &InputFrame) -> bool {
         self.previous = self.world.player.pos;
+        if self.pause > 0 {
+            self.pause -= 1;
+            self.camera.previous = self.camera.centre;
+            return false;
+        }
         step(&mut self.world, input);
+        self.pause = self.world.pause;
         if self.world.flow.events.contains(&FlowEvent::Respawn) {
             // A jump to somewhere else, not a move to draw between.
             self.previous = self.world.player.pos;
@@ -106,6 +118,7 @@ impl Game {
             self.camera.update(&self.world);
         }
         self.poses.update(&self.cast, &self.world);
+        true
     }
 
     /// A new canvas the size of the view.
@@ -443,6 +456,35 @@ mod tests {
         assert_eq!(game.world.frame, 1);
         assert!(game.world.player.pos.x > game.previous.x);
         assert!(game.camera.centre.0 > game.camera.previous.0);
+    }
+
+    #[test]
+    fn holds_the_screen_through_a_pause_in_a_knock_out() {
+        // A walker walks into the player on classic-1.
+        let src = LEVEL.replace(
+            "type = \"marker\"\n        at = [560, 280]",
+            "type = \"crawler\"\n        at = [530, 300]\n        params = { speed = 1 }",
+        );
+        let level = Level::from_toml_str(&src, "test").unwrap();
+        let mut game = Game::new(World::new(
+            Arc::new(level),
+            Arc::new(generic_feel("classic-1").unwrap()),
+        ));
+        let idle = InputFrame::default();
+        while game.world.pause == 0 {
+            assert!(game.step(&idle));
+            assert!(game.world.frame < 60, "no pause");
+        }
+        assert!(game.world.player.knockout.is_some());
+        let (frame, poses) = (game.world.frame, game.poses.clone());
+        for _ in 0..32 {
+            assert!(!game.step(&idle));
+            assert_eq!(game.camera.previous, game.camera.centre);
+        }
+        assert_eq!(game.world.frame, frame);
+        assert_eq!(game.poses, poses);
+        assert!(game.step(&idle));
+        assert_eq!(game.world.frame, frame + 1);
     }
 
     #[test]

@@ -141,6 +141,14 @@ pub struct Player {
     /// for how many more frames a direction held back up it counts as
     /// none.
     pub off_face: Option<(Facing, u8)>,
+    /// Frames since the jump under way started, until it lands.
+    pub jump_age: Option<u8>,
+    /// The enemy whose touch hurts the player on the next step, found
+    /// at the end of this one (`hurt_width` above 0).
+    pub hurt_ahead: Option<usize>,
+    /// The knock-out under way, if the player was hurt and is being
+    /// knocked out (`knockout_jump` above 0).
+    pub knockout: Option<Knockout>,
     /// Colliders the body ran into or stood on during the last step:
     /// walls it was stopped by, a ceiling it hit, the ground.
     pub touched: Vec<usize>,
@@ -175,6 +183,9 @@ impl Player {
             lone_run: false,
             roll_jump: false,
             off_face: None,
+            jump_age: None,
+            hurt_ahead: None,
+            knockout: None,
             touched: Vec::new(),
         };
         player.ground = level
@@ -207,6 +218,7 @@ impl Player {
         self.vel = vel;
         self.ground = None;
         self.coyote = None;
+        self.jump_age = None;
         self.jump_hold = false;
         self.takeoff = false;
         self.state = State::Fall;
@@ -220,6 +232,7 @@ impl Player {
         self.ground = None;
         self.coyote = None;
         self.frozen = freeze;
+        self.jump_age = None;
         self.jump_hold = true;
         self.takeoff = false;
         self.roll = None;
@@ -228,6 +241,83 @@ impl Player {
             events.push(Event::Bounce);
         }
         self.state = State::Bounce;
+    }
+
+    /// Hurts the player where it is: it doesn't move on this step.
+    pub fn hit(&mut self, events: &mut Vec<Event>) {
+        self.touched.clear();
+        self.vel = Vec2::default();
+        self.frozen = 0;
+        self.takeoff = false;
+        self.roll = None;
+        self.roll_stop = 0;
+        self.turn = None;
+        events.push(Event::Hurt);
+    }
+
+    /// Advances a knocked-out player one step: still, then flying,
+    /// rebounding and lying still. Once it has lain still long enough, or
+    /// flown out of the bottom of the level, the knock-out is over.
+    pub fn knocked_out(&mut self, level: &Level, physics: &Physics, events: &mut Vec<Event>) {
+        self.touched.clear();
+        let Some(mut knockout) = self.knockout else {
+            return;
+        };
+        knockout.frame = knockout.frame.saturating_add(1);
+        let hold = frames(physics[Param::KnockoutHold]);
+        if let Some(left) = knockout.rest {
+            knockout.rest = Some(left.saturating_sub(1));
+        } else if knockout.frame >= hold {
+            if knockout.frame == hold {
+                let speed = physics[Param::KnockoutSpeed];
+                self.vel.x = match self.facing {
+                    Facing::Left => speed,
+                    Facing::Right => -speed,
+                };
+                self.vel.y = -physics[Param::KnockoutJump];
+                self.ground = None;
+            }
+            self.fly_knocked_out(level, physics, &mut knockout, events);
+        }
+        let over = knockout.rest == Some(0) || self.body().1 > level.size.y;
+        self.knockout = (!over).then_some(knockout);
+    }
+
+    /// One frame of the knock-out flight. The first two landings rebound
+    /// at the `knockout_rebound` speeds; the one after stops the flight.
+    fn fly_knocked_out(
+        &mut self,
+        level: &Level,
+        physics: &Physics,
+        knockout: &mut Knockout,
+        events: &mut Vec<Event>,
+    ) {
+        let gravity = if self.vel.y.is_negative() {
+            physics[Param::Gravity]
+        } else {
+            physics[Param::FallGravity]
+        };
+        self.vel.y = (self.vel.y + gravity).min(physics[Param::KnockoutMaxFall]);
+        let moved = self.move_horizontally(level, HALF_WIDTH);
+        let mut landed = Vec::new();
+        self.move_vertically(level, moved, physics[Param::LandingReach], &mut landed);
+        if landed.is_empty() {
+            return;
+        }
+        knockout.landings = knockout.landings.saturating_add(1);
+        let rebound = match knockout.landings {
+            1 => physics[Param::KnockoutRebound1],
+            2 => physics[Param::KnockoutRebound2],
+            _ => Fixed::ZERO,
+        };
+        if rebound > Fixed::ZERO {
+            self.vel.y = -rebound;
+            self.ground = None;
+        } else {
+            self.vel = Vec2::default();
+            events.extend(landed);
+            knockout.rest = Some(frames(physics[Param::KnockoutRest]).saturating_sub(1));
+        }
     }
 
     /// Advances the player one step under `physics`, the physics in
@@ -577,6 +667,13 @@ impl Player {
         } else if rolling && (!self.grounded() || self.vel.x.abs() < physics[Param::RollMinSpeed]) {
             events.push(Event::RollEnd);
         }
+        self.jump_age = if events.contains(&Event::JumpStart) {
+            Some(0)
+        } else if self.grounded() && !self.takeoff {
+            None
+        } else {
+            self.jump_age.map(|n| n.saturating_add(1))
+        };
         self.state = self.next_state(held(Action::Action), events);
     }
 
@@ -887,6 +984,32 @@ impl Player {
                 events.push(Event::Land);
             }
             _ => self.pos.y += self.vel.y,
+        }
+    }
+}
+
+/// A knock-out under way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Knockout {
+    /// The enemy that hurt the player, if it was one.
+    pub by: Option<usize>,
+    /// Frames since the hit frame, which is 0.
+    pub frame: u8,
+    /// Landings so far in the flight.
+    pub landings: u8,
+    /// Once the flight has stopped, how many more frames the player lies
+    /// still.
+    pub rest: Option<u8>,
+}
+
+impl Knockout {
+    /// A knock-out whose hit frame is this one.
+    pub fn new(by: Option<usize>) -> Knockout {
+        Knockout {
+            by,
+            frame: 0,
+            landings: 0,
+            rest: None,
         }
     }
 }

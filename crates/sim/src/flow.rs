@@ -12,14 +12,17 @@
 //!
 //! Getting hurt, by touching a hazard surface or an enemy
 //! ([`things`](crate::things)), or falling below the level costs a life.
-//! The player stays where it was for [`DYING_FRAMES`], then comes back at
-//! the last checkpoint reached, or the level's start. Losing the last
-//! life ends the world with [`Outcome::GameOver`].
+//! The player stays where it was for [`DYING_FRAMES`], or is knocked out
+//! if the physics say so (`knockout_jump`), then comes back at the last
+//! checkpoint reached, or the level's start. Losing the last life ends
+//! the world with [`Outcome::GameOver`].
 
 use clamber_fixed::Fixed;
 use clamber_level::Vec2;
 
-use crate::player::{Player, State};
+use clamber_pack::Param;
+
+use crate::player::{Knockout, Player, State};
 use crate::world::{Event, World};
 
 pub const GOAL: &str = "goal";
@@ -122,6 +125,10 @@ pub(crate) fn dying(world: &mut World) -> bool {
     let Outcome::Dying(left) = world.flow.outcome else {
         return false;
     };
+    if world.player.knockout.is_some() {
+        // The knock-out plays out in steps of its own first.
+        return false;
+    }
     if left > 1 {
         world.flow.outcome = Outcome::Dying(left - 1);
     } else if world.flow.lives == 0 {
@@ -142,7 +149,10 @@ pub(crate) fn dying(world: &mut World) -> bool {
 }
 
 /// Applies what the player touched during the step just taken.
-pub(crate) fn update(world: &mut World) {
+/// `hurt_by` is the enemy that hurt the player on this step, if one did
+/// from the step before.
+pub(crate) fn update(world: &mut World, hurt_by: Option<usize>) {
+    let knockout = world.player_physics()[Param::KnockoutJump] > Fixed::ZERO;
     let level = &world.level;
     let flow = &mut world.flow;
     let body = world.player.body();
@@ -194,5 +204,10 @@ pub(crate) fn update(world: &mut World) {
         flow.lives = flow.lives.saturating_sub(1);
         flow.outcome = Outcome::Dying(DYING_FRAMES);
         flow.events.push(FlowEvent::Die);
+    }
+    if hurt && !fell && knockout {
+        // The life is lost on the step after the knock-out's last.
+        world.player.knockout = Some(Knockout::new(hurt_by));
+        flow.outcome = Outcome::Dying(1);
     }
 }
