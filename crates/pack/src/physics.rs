@@ -88,6 +88,10 @@ params! {
     /// ground: it slows as if no direction were held. 0: down doesn't
     /// crouch. Whole frames.
     CrouchStart => "crouch_start",
+    /// Once down is held on the ground, it counts as held for at least
+    /// this many frames, counting the first, even if let go sooner. 0 or
+    /// 1: only while it's held. Whole frames.
+    CrouchMin => "crouch_min",
     /// After letting go of down, a crouch lasts this many frames more.
     /// Whole frames.
     CrouchRecovery => "crouch_recovery",

@@ -509,6 +509,61 @@ fn classic_crouch_stops_the_player() {
     assert_eq!(vx[80], 0.25);
 }
 
+/// Horizontal speeds in Classic 1 over `frames` frames, walking right
+/// from standing with Right held throughout and Down held on the frames
+/// in `down`.
+fn classic_crouch_speeds(frames: usize, down: &[usize]) -> Vec<i64> {
+    let mut w = classic();
+    let mut vx = Vec::new();
+    for frame in 0..frames {
+        let held: &[Action] = if down.contains(&frame) {
+            &[Action::Right, Action::Down]
+        } else {
+            &[Action::Right]
+        };
+        hold(&mut w, held, 1);
+        vx.push(grains(w.player.vel.x));
+    }
+    vx
+}
+
+#[test]
+fn classic_crouch_lasts_at_least_thirteen_frames() {
+    // spec/behavior/ground-speed.md, "Crouching", the short press: Down
+    // held on frame 30 only. The crouch lasts to frame 42 and the target
+    // stays 0 to frame 52.
+    let vx = classic_crouch_speeds(60, &[30]);
+    assert_eq!(vx[30], 500);
+    assert_eq!(vx[31], 438);
+    assert_eq!(vx[32], 384);
+    assert_eq!(vx[42], 104);
+    for frame in 31..=52 {
+        assert!(vx[frame] < vx[frame - 1] || vx[frame] == 0, "frame {frame}");
+    }
+    assert!(vx[53] > vx[52]);
+    // A press of 5 frames gives exactly the same speeds.
+    assert_eq!(classic_crouch_speeds(60, &[30, 31, 32, 33, 34]), vx);
+}
+
+#[test]
+fn classic_crouch_again_while_getting_up() {
+    // spec/behavior/ground-speed.md, "Crouching": after the short press
+    // on frame 30, U is frame 43. Down again on frame 45 starts a new
+    // crouch with target 0 on that frame too; it lasts to frame 57, and
+    // the target stays 0 to frame 67.
+    let vx = classic_crouch_speeds(80, &[30, 45]);
+    assert_eq!(vx[..45], classic_crouch_speeds(45, &[30]));
+    for frame in 31..=67 {
+        assert!(vx[frame] < vx[frame - 1] || vx[frame] == 0, "frame {frame}");
+    }
+    assert!(vx[68] > vx[67]);
+    // The same press after U + 9 is a fresh crouch: the target is normal
+    // on its first frame.
+    let vx = classic_crouch_speeds(80, &[30, 53]);
+    assert!(vx[53] > vx[52]);
+    assert!(vx[54] < vx[53]);
+}
+
 #[test]
 fn classic_turns_take_eight_frames() {
     // spec/behavior/ground-speed.md, "Facing and turns": from standing, one

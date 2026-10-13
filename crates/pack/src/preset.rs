@@ -309,6 +309,7 @@ mod tests {
                 p,
                 Param::SpeedResponse
                     | Param::CrouchStart
+                    | Param::CrouchMin
                     | Param::CrouchRecovery
                     | Param::TurnTime
                     | Param::StrideSteps

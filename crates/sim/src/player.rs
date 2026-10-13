@@ -545,8 +545,10 @@ impl Player {
         let rolling = self.state == State::Roll;
 
         let crouching = self.crouch.update(
-            held(Action::Down) && self.grounded() && !rolling,
+            held(Action::Down),
+            self.grounded() && !rolling,
             frames(physics[Param::CrouchStart]),
+            frames(physics[Param::CrouchMin]),
             frames(physics[Param::CrouchRecovery]),
         );
 
@@ -1497,14 +1499,16 @@ pub struct Crouch {
 }
 
 impl Crouch {
-    /// Advances one frame, with `down` held on the ground or not, and
-    /// returns whether the player is crouching on this frame.
-    fn update(&mut self, down: bool, start: u8, recovery: u8) -> bool {
+    /// Advances one frame, with `down` held or not and the player
+    /// `on_ground` (not rolling) or not, and returns whether the player is
+    /// crouching on this frame. On the ground, down counts as held until
+    /// it has been for `min` frames.
+    fn update(&mut self, down: bool, on_ground: bool, start: u8, min: u8, recovery: u8) -> bool {
         if start == 0 {
             *self = Crouch::default();
             return false;
         }
-        if down {
+        if on_ground && (down || (self.held > 0 && self.held < min)) {
             self.held = self.held.saturating_add(1);
         } else {
             if self.held >= start {
