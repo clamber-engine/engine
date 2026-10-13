@@ -22,19 +22,34 @@ const BUILTIN_ORIGIN: &str = "content/base/archetypes.toml";
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Behavior {
     /// An enemy that walks along the ground at `speed`, turning at walls
-    /// and ledges. Above 0, `response` is the part of the gap to that
-    /// speed it closes each frame, as the player's `speed_response`;
-    /// 0 changes speed at once.
+    /// and ledges, and at the ends of its `range` if it has one. Above 0,
+    /// `response` is the part of the gap to that speed it closes each
+    /// frame, as the player's `speed_response`; 0 changes speed at once.
+    /// Its facing follows a turn `turn_delay` frames later. Defeated, it
+    /// falls as `defeat` says.
     Walker {
         speed: Fixed,
         response: Fixed,
         facing: Facing,
+        turn_delay: u8,
+        range: Option<(Fixed, Fixed)>,
+        defeat: Fall,
     },
     /// An enemy that flies from where it's placed to `path` away and
     /// back, taking `period` frames for the round trip.
     Patrol { path: Vec2, period: u32 },
     /// Fires the player off at `velocity` on touch.
     Launcher { velocity: Vec2 },
+}
+
+/// How a defeated walker leaves: it jumps up at `jump`, then falls
+/// under `gravity` up to `max_fall`, through the floor and out of the
+/// level.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Fall {
+    pub jump: Fixed,
+    pub gravity: Fixed,
+    pub max_fall: Fixed,
 }
 
 impl Behavior {
@@ -202,7 +217,16 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         _ => return Err(format!("{path}.behavior: expected a string")),
     };
     let known: &[&str] = match behavior {
-        "walker" => &["speed", "response", "facing"],
+        "walker" => &[
+            "speed",
+            "response",
+            "facing",
+            "turn_delay",
+            "range",
+            "defeat_jump",
+            "defeat_gravity",
+            "defeat_max_fall",
+        ],
         "patrol" => &["path", "period"],
         "launcher" => &["velocity"],
         _ => return Err(format!("{path}.behavior: unknown behavior `{behavior}`")),
@@ -232,10 +256,42 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             if response.is_negative() || response > Fixed::ONE {
                 return Err(format!("{path}.response: must be from 0 to 1"));
             }
+            let turn_delay = match get("turn_delay")? {
+                Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => *n as u8,
+                _ => {
+                    return Err(format!(
+                        "{path}.turn_delay: expected a whole number of frames, 0 to 255"
+                    ));
+                }
+            };
+            let range = match get("range")? {
+                Value::Array(items) if items.is_empty() => None,
+                Value::Array(items) if items.len() == 2 => {
+                    let r = pair("range")?;
+                    if r.x > r.y {
+                        return Err(format!("{path}.range: left end is past the right end"));
+                    }
+                    Some((r.x, r.y))
+                }
+                _ => return Err(format!("{path}.range: expected [] or [left, right]")),
+            };
+            let defeat = Fall {
+                jump: number("defeat_jump")?,
+                gravity: number("defeat_gravity")?,
+                max_fall: number("defeat_max_fall")?,
+            };
+            if defeat.gravity <= Fixed::ZERO || defeat.max_fall <= Fixed::ZERO {
+                return Err(format!(
+                    "{path}: `defeat_gravity` and `defeat_max_fall` must be positive"
+                ));
+            }
             Behavior::Walker {
                 speed,
                 response,
                 facing,
+                turn_delay,
+                range,
+                defeat,
             }
         }
         "patrol" => {
@@ -317,6 +373,23 @@ mod tests {
     }
 
     #[test]
+    fn walkers_can_have_a_range() {
+        let a = Archetypes::builtin();
+        let range = |params| match a.resolve(&entity("crawler", params), "test", "e") {
+            Ok(Some(Archetype {
+                behavior: Behavior::Walker { range, .. },
+                ..
+            })) => range,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(range(""), None);
+        assert_eq!(
+            range("range = [-128, 127.5]"),
+            Some((Fixed::from_int(-128), Fixed::from_ratio_pow2(255, 1)))
+        );
+    }
+
+    #[test]
     fn offset_moves_the_box_the_way_it_goes() {
         let a = Archetypes::builtin();
         let e = entity("crawler", "size = [20, 12]\noffset = 0.5\nresponse = 0.125");
@@ -352,6 +425,18 @@ mod tests {
         check("crawler", "facing = \"up\"", "entities[3].params.facing");
         check("crawler", "speed = -1", "must not be negative");
         check("crawler", "response = 1.5", "entities[3].params.response");
+        check(
+            "crawler",
+            "turn_delay = -1",
+            "entities[3].params.turn_delay",
+        );
+        check("crawler", "range = [1]", "expected [] or [left, right]");
+        check(
+            "crawler",
+            "range = [8, -8]",
+            "left end is past the right end",
+        );
+        check("crawler", "defeat_gravity = 0", "must be positive");
         check("flutter", "period = 1", "entities[3].params.period");
         check("launcher", "velocity = [1]", "expected [x, y]");
         check("launcher", "size = [0, 4]", "must be positive");
@@ -359,7 +444,7 @@ mod tests {
 
     #[test]
     fn files_are_checked_when_read() {
-        let bad = "[archetypes.x]\nbehavior = \"walker\"\nsize = [1, 1]\noffset = 0\nspeed = 1\nresponse = 0\n";
+        let bad = "[archetypes.x]\nbehavior = \"walker\"\nsize = [1, 1]\noffset = 0\nspeed = 1\nresponse = 0\nturn_delay = 0\nrange = []\ndefeat_jump = 1\ndefeat_gravity = 1\ndefeat_max_fall = 1\n";
         let e = Archetypes::from_toml_str(bad, "f").unwrap_err();
         assert!(e.message.contains("archetypes.x: missing `facing`"), "{e}");
         let unknown = "[archetypes.x]\nbehavior = \"teleporter\"\nsize = [1, 1]\noffset = 0\n";

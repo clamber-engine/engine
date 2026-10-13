@@ -7,7 +7,7 @@
 # right of the start, and the walker is the only entity. It's the small
 # walker of spec/behavior/walker-contact.md, in the sizes the classic-1
 # preset's bounce box goes with (content/base/presets.toml), and eases its
-# speed as in spec/behavior/walker.md.
+# speed, turns and falls when bounced on as in spec/behavior/walker.md.
 format = 1
 name = "Test: bounce off a walker"
 size = [1024, 480]
@@ -20,4 +20,4 @@ rect = [0, 400, 1024, 80]
 [[entities]]
 type = "crawler"
 at = [275.828125, 400]
-params = { speed = 1, response = 0.125, facing = "left", size = [20, 12], offset = 0.5 }
+params = { speed = 1, response = 0.125, facing = "left", size = [20, 12], offset = 0.5, turn_delay = 4, defeat_jump = 6, defeat_gravity = 0.4375, defeat_max_fall = 8 }

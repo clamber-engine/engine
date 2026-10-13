@@ -14,9 +14,19 @@
 #   at walls and ledges. It starts walking the way `facing` says
 #   (`"left"` or `"right"`), at full speed. Above 0, `response` (up to 1)
 #   is the part of the gap to its speed it closes each frame, rounded as
-#   the player's `speed_response` is, so it eases into a turn; a walker
-#   stopped by a wall stands still for a frame, then speeds up the other
-#   way. 0 changes speed at once.
+#   the player's `speed_response` is, so it eases into a turn. 0 changes
+#   speed at once. A walker that would walk into a wall is put against
+#   it with no speed, and one that would walk off a ledge stops where it
+#   is; either way it heads back from the next frame. With
+#   `range = [left, right]`, offsets from where it's placed, it also
+#   turns once its x rounded down is past an end, the way it's heading,
+#   without stopping (`range = []`: no range). Its facing, which it's
+#   drawn with, follows a turn `turn_delay` frames later (one more after
+#   stopping at a wall or ledge). Defeated, it jumps up at `defeat_jump`
+#   and falls through the floor under `defeat_gravity`, up to
+#   `defeat_max_fall`, keeping the speed it had; it's gone once below the
+#   level. After a bounce it holds still first for the bounce's frozen
+#   frames, as the player does.
 # - `patrol`: an enemy that flies from where it's placed to `path = [x, y]`
 #   away and back, taking `period` frames for the round trip.
 # - `launcher`: fires the player off at `velocity = [x, y]` on touch.
@@ -34,6 +44,11 @@ offset = 0
 speed = 0.5
 response = 0
 facing = "left"
+turn_delay = 0
+range = []
+defeat_jump = 5
+defeat_gravity = 0.375
+defeat_max_fall = 8
 
 [archetypes.flutter]
 behavior = "patrol"

@@ -21,14 +21,15 @@
 //! - A launcher sends the player off at its velocity, then rests for
 //!   [`LAUNCH_REST`] frames before it can fire again.
 //!
-//! Defeated enemies show as defeated for [`DEFEATED_FRAMES`], then are
-//! gone. They stay gone after the player loses a life.
+//! A defeated walker jumps up and falls out of the level (see [`fall`]);
+//! other defeated enemies show as defeated for [`DEFEATED_FRAMES`], then
+//! are gone. They stay gone after the player loses a life.
 
 use clamber_fixed::Fixed;
 use clamber_level::{Dir, Level, Vec2};
 use clamber_pack::{Param, Physics};
 
-use crate::archetype::Behavior;
+use crate::archetype::{Archetype, Behavior, Fall};
 use crate::flow::{FlowEvent, overlap};
 use crate::player::{Facing, HEIGHT, STEP, State, TINY, ease, frames, is_wall};
 use crate::world::{Event, Phase, Thing, World};
@@ -47,9 +48,11 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed) {
     let hurt_boxes = physics[Param::HurtWidth] > Fixed::ZERO;
     let knocked =
         |world: &World| world.player.knockout.is_some() || world.events.contains(&Event::Hurt);
-    if boxes && !knocked(world) {
-        bounce_on_boxes(world, &physics);
-    }
+    let bounced = if boxes && !knocked(world) {
+        bounce_on_boxes(world, &physics)
+    } else {
+        Vec::new()
+    };
     // Enemies hold still while a knocked-out player does, after the hit
     // frame, except the one that hurt it.
     let hold = frames(physics[Param::KnockoutHold]);
@@ -64,6 +67,11 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed) {
             continue;
         }
         advance(&world.level, thing);
+    }
+    // Enemies bounced on still moved this frame, as they were.
+    let freeze = frames(physics[Param::BounceFreeze]);
+    for index in bounced {
+        defeat(&mut world.things[index], freeze);
     }
     if knocked(world) {
         return;
@@ -87,6 +95,12 @@ fn advance(level: &Level, thing: &mut Thing) {
             }
             return;
         }
+        Phase::Falling { vy, hold } => {
+            if let Behavior::Walker { defeat, .. } = archetype.behavior {
+                fall(level, thing, &archetype, defeat, vy, hold);
+            }
+            return;
+        }
         Phase::Fired(since) => {
             thing.phase = if since + 1 >= LAUNCH_REST {
                 Phase::Ready
@@ -99,8 +113,26 @@ fn advance(level: &Level, thing: &mut Thing) {
     thing.clock = thing.clock.wrapping_add(1);
     match archetype.behavior {
         Behavior::Walker {
-            speed, response, ..
-        } => walk(level, thing, speed, response, archetype.size),
+            speed,
+            response,
+            turn_delay,
+            range,
+            ..
+        } => {
+            turn_toward_heading(thing);
+            if let Some((left, right)) = range {
+                let start = level.entities[thing.index].at.x;
+                let x = Fixed::from_int(thing.pos.x.floor() as i32);
+                let past = match thing.heading {
+                    Facing::Left => x < start + left,
+                    Facing::Right => x > start + right,
+                };
+                if past {
+                    turn_around(thing, turn_delay);
+                }
+            }
+            walk(level, thing, speed, response, turn_delay, archetype.size);
+        }
         Behavior::Patrol { path, period } => {
             let origin = level.entities[thing.index].at;
             fly(thing, origin, path, period);
@@ -109,11 +141,78 @@ fn advance(level: &Level, thing: &mut Thing) {
     }
 }
 
+/// Counts down a walker's turn, turning its facing to its heading when
+/// the count runs out.
+fn turn_toward_heading(thing: &mut Thing) {
+    if thing.turn > 0 {
+        thing.turn -= 1;
+        if thing.turn == 0 {
+            thing.facing = thing.heading;
+        }
+    }
+}
+
+/// Heads a walker the other way. Its facing follows `delay` frames
+/// later, or at once for 0.
+fn turn_around(thing: &mut Thing, delay: u8) {
+    thing.heading = match thing.heading {
+        Facing::Left => Facing::Right,
+        Facing::Right => Facing::Left,
+    };
+    thing.turn = delay;
+    if delay == 0 {
+        thing.facing = thing.heading;
+    }
+}
+
+/// Defeats an enemy. A walker falls out of the level after holding still
+/// for `hold` frames; anything else shows as defeated for a while.
+fn defeat(thing: &mut Thing, hold: u8) {
+    thing.phase = match thing.archetype.map(|a| a.behavior) {
+        Some(Behavior::Walker { defeat, .. }) => Phase::Falling {
+            vy: -defeat.jump,
+            hold,
+        },
+        _ => Phase::Defeated(DEFEATED_FRAMES),
+    };
+}
+
+/// Moves a defeated walker: still while `hold` lasts, then down under
+/// the fall's gravity, through anything, at the speed it had across. It's
+/// gone once its top is below the level.
+fn fall(
+    level: &Level,
+    thing: &mut Thing,
+    archetype: &Archetype,
+    defeat: Fall,
+    vy: Fixed,
+    hold: u8,
+) {
+    if hold > 0 {
+        thing.phase = Phase::Falling { vy, hold: hold - 1 };
+        return;
+    }
+    let vy = (vy + defeat.gravity).min(defeat.max_fall);
+    thing.pos = Vec2::new(thing.pos.x + thing.vx, thing.pos.y + vy);
+    thing.phase = Phase::Falling { vy, hold: 0 };
+    if thing.pos.y - archetype.size.y > level.size.y {
+        thing.active = false;
+    }
+}
+
 /// Moves a walker along the ground, its speed easing toward `speed` the
-/// way it faces by `response`, or stops it and turns it around if a wall
-/// or a ledge is in the way.
-fn walk(level: &Level, thing: &mut Thing, speed: Fixed, response: Fixed, size: Vec2) {
-    let target = match thing.facing {
+/// way it's heading by `response`. If a wall is in the way, it's put
+/// against it; if a ledge is, it stays put. Either way it stops and turns
+/// around, its facing following `turn_delay` frames after the next.
+fn walk(
+    level: &Level,
+    thing: &mut Thing,
+    speed: Fixed,
+    response: Fixed,
+    turn_delay: u8,
+    size: Vec2,
+) {
+    let target = match thing.heading {
         Facing::Left => -speed,
         Facing::Right => speed,
     };
@@ -127,10 +226,10 @@ fn walk(level: &Level, thing: &mut Thing, speed: Fixed, response: Fixed, size: V
         return;
     }
     let half_width = Fixed::from_bits(size.x.to_bits() / 2);
-    let (cast_dir, sign, back) = if vx.is_negative() {
-        (Dir::Left, -Fixed::ONE, Facing::Right)
+    let (cast_dir, sign) = if vx.is_negative() {
+        (Dir::Left, -Fixed::ONE)
     } else {
-        (Dir::Right, Fixed::ONE, Facing::Left)
+        (Dir::Right, Fixed::ONE)
     };
     let speed = vx.abs();
     let pos = thing.pos;
@@ -141,9 +240,11 @@ fn walk(level: &Level, thing: &mut Thing, speed: Fixed, response: Fixed, size: V
         (size.y - Fixed::ONE - STEP - TINY).max(Fixed::ZERO),
         Fixed::ZERO,
     );
+    // A wall stops it only if this move would take it past touching.
     let wall = level
         .collision
-        .sweep(probe, cast_dir, speed + half_width, reach, is_wall);
+        .sweep(probe, cast_dir, speed + half_width, reach, is_wall)
+        .filter(|hit| hit.distance < speed + half_width);
     let x = pos.x + vx;
     let ground_at = |x: Fixed| {
         let from = Vec2::new(x, pos.y - STEP);
@@ -156,14 +257,18 @@ fn walk(level: &Level, thing: &mut Thing, speed: Fixed, response: Fixed, size: V
             thing.vx = vx;
         }
         _ => {
+            if let Some(hit) = wall {
+                let gap = (hit.distance - half_width).max(Fixed::ZERO);
+                thing.pos.x = pos.x + sign * gap;
+            }
             thing.vx = Fixed::ZERO;
-            thing.facing = back;
+            turn_around(thing, turn_delay.saturating_add(1));
         }
     }
 }
 
 /// The way a thing is going: the way it moves, or faces when still.
-fn heading(thing: &Thing) -> Facing {
+fn going(thing: &Thing) -> Facing {
     if thing.vx.is_negative() {
         Facing::Left
     } else if thing.vx > Fixed::ZERO {
@@ -185,7 +290,10 @@ fn whole_pixels(pos: Vec2) -> Vec2 {
 /// `bounce_offset` in front of the player, and reaches from the top of
 /// the body to `bounce_below` under the feet. A player on the ground,
 /// rolling, or rising at `bounce_max_rise` or faster doesn't bounce.
-fn bounce_on_boxes(world: &mut World, physics: &Physics) {
+/// Returns the enemies bounced on, which are defeated once they've
+/// moved this frame.
+fn bounce_on_boxes(world: &mut World, physics: &Physics) -> Vec<usize> {
+    let mut bounced = Vec::new();
     let player = &mut world.player;
     let max_rise = physics[Param::BounceMaxRise];
     let rising_fast = if max_rise > Fixed::ZERO {
@@ -194,7 +302,7 @@ fn bounce_on_boxes(world: &mut World, physics: &Physics) {
         player.vel.y.is_negative()
     };
     if player.grounded() || player.state == State::Roll || rising_fast {
-        return;
+        return bounced;
     }
     let at = whole_pixels(player.pos);
     let offset = physics[Param::BounceOffset];
@@ -220,13 +328,14 @@ fn bounce_on_boxes(world: &mut World, physics: &Physics) {
         }
         if overlap(
             reach,
-            archetype.bounds(whole_pixels(thing.pos), heading(thing)),
+            archetype.bounds(whole_pixels(thing.pos), going(thing)),
         ) {
             player.bounce(speed, freeze, &mut world.events);
-            thing.phase = Phase::Defeated(DEFEATED_FRAMES);
+            bounced.push(thing.index);
             world.flow.events.push(FlowEvent::Defeat(thing.index));
         }
     }
+    bounced
 }
 
 /// The enemy that hurts the player on the next step, if any: one its
@@ -266,7 +375,7 @@ fn hurt_ahead(world: &World, physics: &Physics) -> Option<usize> {
         .filter(|t| t.active && t.phase == Phase::Ready)
         .find(|t| {
             t.archetype.is_some_and(|a| {
-                a.behavior.is_enemy() && overlap(reach, a.bounds(whole_pixels(t.pos), heading(t)))
+                a.behavior.is_enemy() && overlap(reach, a.bounds(whole_pixels(t.pos), going(t)))
             })
         })
         .map(|t| t.index)
@@ -315,7 +424,7 @@ fn interact(
         if thing.phase != Phase::Ready {
             continue;
         }
-        let area = archetype.bounds(thing.pos, heading(thing));
+        let area = archetype.bounds(thing.pos, going(thing));
         if !overlap(player.body(), area) {
             continue;
         }
@@ -338,7 +447,7 @@ fn interact(
                 if !rolling {
                     player.bounce(bounce, freeze, &mut world.events);
                 }
-                thing.phase = Phase::Defeated(DEFEATED_FRAMES);
+                defeat(thing, if rolling { 0 } else { freeze });
                 world.flow.events.push(FlowEvent::Defeat(thing.index));
             }
         }

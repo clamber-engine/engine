@@ -5,8 +5,8 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_sim::{
-    DEFEATED_FRAMES, Event, Facing, Fixed, FlowEvent, InputFrame, LAUNCH_REST, Outcome, Phase,
-    START_LIVES, State, World, generic_feel, step,
+    Event, Facing, Fixed, FlowEvent, InputFrame, LAUNCH_REST, Outcome, Phase, START_LIVES, State,
+    World, generic_feel, step,
 };
 
 /// Ground at y = 400 from x = 0 to 600, with a wall from x = 100 to 120
@@ -79,12 +79,9 @@ fn walkers_turn_at_ledges_and_walls() {
     }
     let max = *xs.iter().max().unwrap();
     let min = *xs.iter().min().unwrap();
-    // It turns with its front edge at the ledge and at the wall.
+    // It turns with its front edge at the ledge, and against the wall.
     assert_eq!(max, Fixed::from_int(590));
-    assert!(
-        min >= Fixed::from_int(130) && min < Fixed::from_int(131),
-        "{min}"
-    );
+    assert_eq!(min, Fixed::from_int(130));
     assert!(w.things[0].active);
 }
 
@@ -129,12 +126,19 @@ fn landing_on_an_enemy_defeats_it_and_bounces() {
     }
     assert_eq!(bounced, Some(-Fixed::from_int(6)));
     assert_eq!(w.player.state, State::Bounce);
-    assert_eq!(w.things[0].phase, Phase::Defeated(DEFEATED_FRAMES));
+    assert_eq!(
+        w.things[0].phase,
+        Phase::Falling {
+            vy: -Fixed::from_int(5),
+            hold: 0
+        }
+    );
 
-    // It shows as defeated for a while, then it's gone; the player is
-    // bouncing until it lands.
-    hold(&mut w, Actions::NONE, DEFEATED_FRAMES as usize - 1);
+    // It jumps, then falls through the floor and is gone once it's below
+    // the level; the player is bouncing until it lands.
+    hold(&mut w, Actions::NONE, 19);
     assert!(w.things[0].active);
+    assert!(w.things[0].pos.y < Fixed::from_int(400));
     assert_eq!(w.player.state, State::Bounce);
     let seen = hold(&mut w, Actions::NONE, 60);
     assert!(!w.things[0].active);
@@ -246,6 +250,10 @@ fn entity_params_are_checked_against_their_archetype() {
 // Classic 1: bounces off walkers (spec/behavior/bounce.md,
 // walker-contact.md) and how walkers move (walker.md).
 
+/// The values walkers in walker.md have, besides their speed and facing.
+const CLASSIC_WALKER: &str = "response = 0.125, turn_delay = 4, \
+    defeat_jump = 6, defeat_gravity = 0.4375, defeat_max_fall = 8";
+
 /// A walker as in walker-contact.md's small walker, with the sizes the
 /// classic-1 bounce box goes with.
 fn small_walker(x: &str, speed: &str, facing: &str) -> String {
@@ -254,7 +262,7 @@ fn small_walker(x: &str, speed: &str, facing: &str) -> String {
         [[entities]]
         type = "crawler"
         at = [{x}, 400]
-        params = {{ speed = {speed}, response = 0.125, facing = "{facing}", size = [20, 12], offset = 0.5 }}
+        params = {{ speed = {speed}, facing = "{facing}", size = [20, 12], offset = 0.5, {CLASSIC_WALKER} }}
         "#
     )
 }
@@ -326,7 +334,14 @@ fn classic_bounce_sets_vy_then_holds_still_for_two_frames() {
     assert_eq!(vel.y, fx(-7.125 + 0.4375));
     assert_eq!(at.y, at_b.y + vel.y);
     assert!(vel.x > Fixed::ZERO);
-    assert_eq!(w.things[0].phase, Phase::Defeated(DEFEATED_FRAMES - 4));
+    // So does the walker it bounced off.
+    assert_eq!(
+        w.things[0].phase,
+        Phase::Falling {
+            vy: fx(-6.0 + 0.4375),
+            hold: 0
+        }
+    );
 }
 
 #[test]
@@ -471,6 +486,169 @@ fn classic_walker_eases_its_speed() {
     assert_eq!(w.things[0].facing, Facing::Right);
 }
 
+/// Steps `world` with nothing held and returns the first walker's `x`,
+/// `vx` and facing after each step.
+fn walker_rows(world: &mut World, frames: usize) -> Vec<(Fixed, Fixed, Facing)> {
+    (0..frames)
+        .map(|_| {
+            hold(world, Actions::NONE, 1);
+            let t = &world.things[0];
+            (t.pos.x, t.vx, t.facing)
+        })
+        .collect()
+}
+
+#[test]
+fn classic_walker_turns_softly_at_the_end_of_its_range() {
+    // walker.md's soft turn: heading left at full speed, its range from
+    // L = 200. Placed at 328.5, it's at 200.5 after 128 steps: the
+    // example's frame 1.
+    let walker = format!(
+        r#"
+        [[entities]]
+        type = "crawler"
+        at = [328.5, 400]
+        params = {{ speed = 1, facing = "left", size = [20, 12], offset = 0.5, range = [-128.5, 127.5], {CLASSIC_WALKER} }}
+        "#
+    );
+    let mut w = world_on("classic-1", [110, 300], &walker);
+    let rows = walker_rows(&mut w, 127 + 39);
+    let frame = |f: usize| rows[126 + f];
+    let (l, r) = (Facing::Left, Facing::Right);
+    let want = [
+        (1, 200.5, -1.0, l),
+        (2, 199.5, -1.0, l),
+        (3, 198.75, -0.75, l),
+        (4, 198.21875, -0.53125, l),
+        (5, 197.87890625, -0.33984375, l),
+        (6, 197.703125, -0.17578125, l),
+        (7, 197.671875, -0.03125, r),
+        (8, 197.76953125, 0.09765625, r),
+        (9, 197.9765625, 0.20703125, r),
+        (38, 221.2734375, 0.97265625, r),
+        (39, 222.2734375, 1.0, r),
+    ];
+    for (f, x, vx, facing) in want {
+        assert_eq!(frame(f), (fx(x), fx(vx), facing), "frame {f}");
+    }
+}
+
+#[test]
+fn classic_walker_patrols_its_range_in_laps() {
+    // A range 256 px wide, centred on its start: each lap takes 544
+    // frames, the same every time (walker.md). That's 256 whole pixels
+    // from L to R, both ends included.
+    let walker = format!(
+        r#"
+        [[entities]]
+        type = "crawler"
+        at = [300, 400]
+        params = {{ speed = 1, facing = "left", size = [20, 12], offset = 0.5, range = [-128, 127], {CLASSIC_WALKER} }}
+        "#
+    );
+    let mut w = world_on("classic-1", [110, 300], &walker);
+    let rows = walker_rows(&mut w, 2000);
+    for n in 600..1400 {
+        assert_eq!(rows[n], rows[n + 544], "frame {n}");
+    }
+    let xs = rows.iter().map(|r| r.0);
+    assert!(xs.clone().min().unwrap() < fx(172.0));
+    assert!(xs.max().unwrap() > fx(428.0));
+    let turns = rows
+        .windows(2)
+        .filter(|p| p[0].1 >= Fixed::ZERO && p[1].1 < Fixed::ZERO);
+    assert!(turns.count() >= 3);
+}
+
+#[test]
+fn classic_walker_stops_at_a_wall_and_turns_after_five_frames() {
+    // walker.md's barrier example, against the arena's wall: the walker
+    // can't have x below 130, where its 20-px box touches the wall at
+    // 120. Its x is the example's minus 70; placed at 150.5, it's at
+    // 130.5 after 20 steps: the example's frame 3.
+    let mut w = world_on("classic-1", [110, 300], &small_walker("150.5", "1", "left"));
+    let rows = walker_rows(&mut w, 17 + 36);
+    let frame = |f: usize| rows[16 + f];
+    let (l, r) = (Facing::Left, Facing::Right);
+    let want = [
+        (3, 200.5, -1.0, l),
+        (4, 200.0, 0.0, l),
+        (5, 200.125, 0.125, l),
+        (6, 200.359375, 0.234375, l),
+        (7, 200.6875, 0.328125, l),
+        (8, 201.09765625, 0.41015625, l),
+        (9, 201.578125, 0.48046875, r),
+        (36, 224.75390625, 1.0, r),
+    ];
+    for (f, x, vx, facing) in want {
+        assert_eq!(frame(f), (fx(x - 70.0), fx(vx), facing), "frame {f}");
+    }
+}
+
+#[test]
+fn classic_bounced_walker_jumps_holds_still_and_falls_through_the_floor() {
+    // A classic-1 player falls onto a walker walking left at full speed.
+    // Find a start for the walker that gives a bounce.
+    let walker = |x: i32| small_walker(&x.to_string(), "1", "left");
+    let bounce_frame = |x: i32| {
+        let mut w = world_on("classic-1", [300, 300], &walker(x));
+        play(&mut w, 60, |_| false)
+            .iter()
+            .position(|s| s.2.contains(&Event::Bounce))
+    };
+    let (x, b) = (300..360)
+        .find_map(|x| bounce_frame(x).map(|b| (x, b)))
+        .expect("bounces on some walker");
+    let mut w = world_on("classic-1", [300, 300], &walker(x));
+    let mut rows = Vec::new();
+    for _ in 0..b + 60 {
+        hold(&mut w, Actions::NONE, 1);
+        let t = &w.things[0];
+        let vy = match t.phase {
+            Phase::Falling { vy, .. } => vy,
+            _ => Fixed::ZERO,
+        };
+        rows.push((t.pos, vy, t.facing, t.active));
+    }
+    // walker.md's example, relative to the end of B - 1.
+    let at = rows[b - 1].0;
+    let want = [
+        (0, -1.0, 0.0, -6.0),
+        (1, -1.0, 0.0, -6.0),
+        (2, -1.0, 0.0, -6.0),
+        (3, -2.0, -5.5625, -5.5625),
+        (4, -3.0, -10.6875, -5.125),
+        (15, -14.0, -38.1875, -0.3125),
+        (16, -15.0, -38.0625, 0.125),
+        (29, -28.0, 3.375, 5.8125),
+    ];
+    for (n, dx, dy, vy) in want {
+        let (pos, got_vy, facing, active) = rows[b + n];
+        assert_eq!(
+            (pos.x - at.x, pos.y - at.y, got_vy),
+            (fx(dx), fx(dy), fx(vy)),
+            "B + {n}"
+        );
+        assert_eq!(facing, Facing::Left);
+        assert!(active);
+    }
+    // It falls no faster than 8 px a frame, and is gone once below the
+    // level, which ends 200 px under the floor.
+    let falls = rows
+        .windows(2)
+        .filter(|p| p[1].3)
+        .map(|p| p[1].0.y - p[0].0.y);
+    assert!(falls.clone().all(|dy| dy <= fx(8.0)));
+    assert!(falls.clone().any(|dy| dy == fx(8.0)));
+    let gone = rows.iter().position(|r| !r.3).expect("gone");
+    assert!(rows[gone - 1].0.y - fx(12.0) <= fx(600.0));
+    assert!(rows[gone].0.y - fx(12.0) > fx(600.0));
+    // A defeated walker never comes back, even after the player loses a
+    // life.
+    hold(&mut w, Actions::NONE, 600);
+    assert!(!w.things[0].active);
+}
+
 // Classic 1: getting hurt by walkers (walker-contact.md, "Being hurt"),
 // knock-out (knock-out.md) and walkers while the player is knocked out
 // (walker.md).
@@ -483,7 +661,7 @@ fn large_walker(x: &str, speed: &str, facing: &str) -> String {
         [[entities]]
         type = "crawler"
         at = [{x}, 400]
-        params = {{ speed = {speed}, response = 0.125, facing = "{facing}", size = [26, 38], offset = 0.5 }}
+        params = {{ speed = {speed}, facing = "{facing}", size = [26, 38], offset = 0.5, {CLASSIC_WALKER} }}
         "#
     )
 }

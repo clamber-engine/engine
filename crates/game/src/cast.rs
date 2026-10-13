@@ -226,7 +226,7 @@ fn player_animation(world: &World) -> &'static str {
 /// A thing's animation, if not its sheet's first.
 fn thing_animation(world: &World, thing: &Thing) -> Option<&'static str> {
     match thing.phase {
-        Phase::Defeated(_) => return Some("defeated"),
+        Phase::Defeated(_) | Phase::Falling { .. } => return Some("defeated"),
         Phase::Fired(_) => return Some("fire"),
         Phase::Ready => {}
     }

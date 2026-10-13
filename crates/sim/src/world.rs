@@ -65,8 +65,12 @@ pub struct Thing {
     pub active: bool,
     /// How it behaves, if its kind is an archetype.
     pub archetype: Option<Archetype>,
-    /// The way it's going or looking.
+    /// The way it looks, which it's drawn with.
     pub facing: Facing,
+    /// The way a walker is heading: the way its speed eases toward.
+    pub heading: Facing,
+    /// Frames until a walker's facing follows its heading, or 0.
+    pub turn: u8,
     /// Horizontal speed, px per frame, for a walker.
     pub vx: Fixed,
     /// Steps it has moved, which a patrol follows its path by.
@@ -82,6 +86,9 @@ pub enum Phase {
     Ready,
     /// Defeated; gone after this many more frames.
     Defeated(u8),
+    /// A defeated walker falling out of the level at `vy`, after holding
+    /// still for `hold` more frames.
+    Falling { vy: Fixed, hold: u8 },
     /// A launcher that fired this many frames ago.
     Fired(u8),
 }
@@ -146,6 +153,8 @@ impl World {
                     active: true,
                     archetype,
                     facing,
+                    heading: facing,
+                    turn: 0,
                     vx,
                     clock: 0,
                     phase: Phase::Ready,
@@ -272,17 +281,22 @@ impl World {
             out.extend(t.kind.as_bytes());
             vec2(&mut out, t.pos);
             out.push(t.active.into());
-            out.push(match t.facing {
+            out.extend([t.facing, t.heading].map(|f| match f {
                 Facing::Left => 0,
                 Facing::Right => 1,
-            });
+            }));
+            out.push(t.turn);
             fixed(&mut out, t.vx);
             out.extend(t.clock.to_le_bytes());
             out.extend(match t.phase {
                 Phase::Ready => [0, 0],
                 Phase::Defeated(left) => [1, left],
                 Phase::Fired(since) => [2, since],
+                Phase::Falling { hold, .. } => [3, hold],
             });
+            if let Phase::Falling { vy, .. } = t.phase {
+                fixed(&mut out, vy);
+            }
         }
 
         count(&mut out, self.events.len());
