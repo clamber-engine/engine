@@ -10,6 +10,7 @@ clamber-fixed = { path = "../fixed" }
 clamber-level = { path = "../level" }
 clamber-sprite = { path = "../sprite" }
 serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 sha2 = "0.11.1"
 toml = "1.1.8"
 

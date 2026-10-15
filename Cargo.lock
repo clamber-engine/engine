@@ -339,6 +339,7 @@ dependencies = [
  "clamber-level",
  "clamber-sprite",
  "serde",
+ "serde_json",
  "sha2",
  "toml",
 ]

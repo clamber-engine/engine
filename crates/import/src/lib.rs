@@ -28,6 +28,7 @@ mod installed;
 mod location;
 mod manifest;
 mod placements;
+mod sprites;
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -43,6 +44,10 @@ pub use installed::{Installed, check_shareable, installed};
 pub use location::{BANK_SIZE, Location};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements};
+pub use sprites::{
+    Form, Frame, FrameTable, Header, LAST_SHORT, Mirror, Picture, Piece, Runs, SheetFiles, Size,
+    SpritePalette, TABLE_ENTRY_SIZE, TableEntry, read_frames, sprite_sheet,
+};
 
 /// The folder in a pack that holds its levels.
 pub const LEVELS: &str = "levels";
