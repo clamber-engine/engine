@@ -3,7 +3,7 @@
 //!
 //! [`prefs_path`]: crate::prefs_path
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +20,10 @@ pub struct Prefs {
     /// How loud the game plays, from the options screen.
     #[serde(default)]
     pub volume: Volume,
+    /// The folder a game was last imported from, to start choosing the
+    /// next one in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub import_folder: Option<PathBuf>,
 }
 
 /// The window's settings.
@@ -136,6 +140,7 @@ mod tests {
                     music: 30,
                     effects: 0,
                 },
+                import_folder: Some(PathBuf::from("games")),
             },
         ] {
             assert_eq!(Prefs::from_toml_str(&prefs.to_toml_string()), Ok(prefs));

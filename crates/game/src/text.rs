@@ -65,7 +65,9 @@ const GLYPHS: &[(char, [&str; 7])] = &[
     ('!', ["  #  ", "  #  ", "  #  ", "  #  ", "  #  ", "     ", "  #  "]),
     ('?', [" ### ", "#   #", "    #", "   # ", "  #  ", "     ", "  #  "]),
     ('\'', ["  #  ", "  #  ", "     ", "     ", "     ", "     ", "     "]),
+    ('…', ["     ", "     ", "     ", "     ", "     ", "     ", "# # #"]),
     ('-', ["     ", "     ", "     ", " ### ", "     ", "     ", "     "]),
+    ('_', ["     ", "     ", "     ", "     ", "     ", "     ", "#####"]),
     ('+', ["     ", "  #  ", "  #  ", "#####", "  #  ", "  #  ", "     "]),
     ('%', ["##   ", "##  #", "   # ", "  #  ", " #   ", "#  ##", "   ##"]),
     ('/', ["    #", "    #", "   # ", "  #  ", " #   ", "#    ", "#    "]),
@@ -100,6 +102,37 @@ pub fn text_size(text: &str) -> (i32, i32) {
         (lines - 1) * LINE + GLYPH.1
     };
     (width, height)
+}
+
+/// `text` in lines of at most `width` characters, broken between words
+/// where it can be.
+pub fn wrap(text: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        let mut word: Vec<char> = word.chars().collect();
+        while !word.is_empty() {
+            let used = line.chars().count();
+            let space = usize::from(used > 0);
+            if used + space + word.len() <= width {
+                if space > 0 {
+                    line.push(' ');
+                }
+                line.extend(word.drain(..));
+            } else if used == 0 {
+                // Longer than a line: break it.
+                line.extend(word.drain(..width));
+                lines.push(std::mem::take(&mut line));
+            } else {
+                lines.push(std::mem::take(&mut line));
+            }
+        }
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
 }
 
 /// Draws `text` with its top left at `(x, y)` and its shadow under it.
@@ -198,6 +231,14 @@ mod tests {
         assert_eq!(text_size("A"), (5, 7));
         assert_eq!(text_size("AB"), (11, 7));
         assert_eq!(text_size("AB\nCDE"), (17, 16));
+    }
+
+    #[test]
+    fn wraps_between_words() {
+        assert_eq!(wrap("", 10), Vec::<String>::new());
+        assert_eq!(wrap("one two three", 7), ["one two", "three"]);
+        assert_eq!(wrap("  spaced   out ", 20), ["spaced out"]);
+        assert_eq!(wrap("abcdefghij k", 4), ["abcd", "efgh", "ij k"]);
     }
 
     #[test]

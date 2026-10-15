@@ -69,6 +69,20 @@ it up, in steps of 10%; Jump at 100% goes back to silent. All of these,
 and the window's size, are saved to `prefs.toml` too. The game pauses when its
 window loses focus.
 
+**Import a game…** on the title screen turns your own copy of a
+supported game into a personal pack for Clamber to play. Find the file
+with Up and Down, Jump to open a folder or pick the file, Left to go up a
+folder, and pause to go back. The pack goes into
+`%LOCALAPPDATA%\Clamber\packs` on Windows, and
+`~/.local/share/clamber/packs` on Linux; `clamber-import <file>` does
+the same from a command line. A personal import is yours alone: it's
+marked as one wherever it's shown, and Clamber won't export it or
+capture it for sharing. This version can't import any games yet: it
+says so, and why, for any file you pick.
+
+**Games** on the title screen lists Clamber's own game and the games
+you've imported. Pick one to play it from the title screen.
+
 ## On Linux, from source
 
 You need a current stable Rust ([rustup](https://rustup.rs)) and, for sound

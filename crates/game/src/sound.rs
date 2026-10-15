@@ -160,6 +160,13 @@ pub struct Audio {
     effects: BTreeMap<Cue, Sound>,
     title: Option<TrackToPlay>,
     level: Option<TrackToPlay>,
+    /// The loops and volumes of music, from [`set_title_music`].
+    ///
+    /// [`set_title_music`]: Audio::set_title_music
+    list: MusicList,
+    /// The folder and track of the level the session was last seen
+    /// playing, to follow it to another.
+    level_seen: Option<(PathBuf, Option<Track>)>,
     /// The volumes last set on the mixer, from the prefs.
     volume: Option<Volume>,
 }
@@ -211,12 +218,16 @@ impl Audio {
             effects,
             title: None,
             level: None,
+            list: MusicList::default(),
+            level_seen: None,
             volume: None,
         }
     }
 
-    /// Sets the title screen's music, from `list`.
+    /// Sets the title screen's music, from `list`, which also gives the
+    /// loops and volumes of levels played after the first.
     pub fn set_title_music(&mut self, list: &MusicList) {
+        self.list = list.clone();
         self.title = list
             .title()
             .map(|t| TrackToPlay::new(t.file.clone(), Some(t)));
@@ -246,8 +257,21 @@ impl Audio {
     /// Plays the cues of `session`'s last step, sets the volumes from
     /// its prefs, and changes the music as its screen asks: fading in
     /// from silence, crossfading from another track, or fading out.
-    /// Music that can't be opened is passed to `warn`, once.
+    /// Music that can't be opened is passed to `warn`, once. When the
+    /// session plays another level, its music becomes the level's.
     pub fn update(&mut self, session: &Session, mut warn: impl FnMut(String)) {
+        let dir = session.level_path.parent().unwrap_or(Path::new(""));
+        let music = &session.game.world.level.music;
+        let seen = self.level_seen.as_ref();
+        if seen.is_none_or(|(d, m)| d != dir || m != music) {
+            if seen.is_some() {
+                let list = std::mem::take(&mut self.list);
+                self.set_music(music.as_ref(), dir, &list);
+                self.list = list;
+            }
+            self.level_seen = Some((dir.to_path_buf(), music.clone()));
+        }
+
         let volume = session.prefs.volume;
         if self.volume != Some(volume) {
             let set = |c, percent| self.handle.set_volume(c, Volume::gain(percent));
@@ -542,6 +566,39 @@ mod tests {
         audio.update(&s, |w| panic!("{w}"));
         let jump = last(&mut mixer, 100);
         assert!((jump - 0.5 * 0.25).abs() < 0.01, "{jump}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn follows_the_session_to_another_level() {
+        let dir = folder("follow");
+        std::fs::write(dir.join("first.wav"), level_wav(RATE as usize, -16384)).unwrap();
+        let other = dir.join("other");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("second.wav"), level_wav(RATE as usize, 16384)).unwrap();
+        let (handle, mut mixer) = mixer(8);
+        let mut audio = Audio::new(handle, RATE, &SoundList::default(), |w| panic!("{w}"));
+        audio.set_title_music(&MusicList::default());
+        let track = Track {
+            file: "first.wav".into(),
+            loop_start: None,
+            loop_length: None,
+        };
+        audio.set_music(Some(&track), &dir, &MusicList::default());
+
+        let mut s = session();
+        s.level_path = dir.join("first.level");
+        s.step(&press(Action::Jump));
+        audio.update(&s, |w| panic!("{w}"));
+        assert!(last(&mut mixer, 800) < -0.2, "the first level's music");
+
+        let src = format!("{LEVEL}\n[music]\nfile = \"second.wav\"\n");
+        let level = Level::from_toml_str(&src, "test").unwrap();
+        s.game = Game::new(World::new(Arc::new(level), s.game.world.feel.clone()));
+        s.level_path = other.join("second.level");
+        audio.update(&s, |w| panic!("{w}"));
+        let crossfade = (RATE as f32 * CROSSFADE) as usize;
+        assert!(last(&mut mixer, crossfade + 1) > 0.2, "the second level's");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

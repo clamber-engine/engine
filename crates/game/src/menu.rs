@@ -95,14 +95,36 @@ impl<T: Copy> Menu<T> {
 
     /// Height of the drawn items, px.
     pub fn height(&self) -> i32 {
-        self.items.len() as i32 * (LINE + SPACING) - SPACING
+        Menu::<T>::rows_height(self.items.len())
     }
 
     /// Draws the items centred on `centre_x` from `top` down, with a
     /// marker beside the selected one.
     pub fn draw(&self, canvas: &mut dyn Surface, centre_x: i32, top: i32) {
-        for (i, (label, _)) in self.items.iter().enumerate() {
-            let y = top + i as i32 * (LINE + SPACING);
+        self.draw_rows(canvas, centre_x, top, self.items.len());
+    }
+
+    /// Height of `rows` drawn items, px.
+    pub fn rows_height(rows: usize) -> i32 {
+        rows as i32 * (LINE + SPACING) - SPACING
+    }
+
+    /// The first of `rows` items shown at once, so that the selected one
+    /// is among them, as near the middle as the ends allow.
+    pub fn first_shown(&self, rows: usize) -> usize {
+        let rows = rows.max(1);
+        self.selected
+            .saturating_sub(rows / 2)
+            .min(self.items.len().saturating_sub(rows))
+    }
+
+    /// Like [`draw`](Menu::draw), but only `rows` items at most, scrolled
+    /// to show the selected one.
+    pub fn draw_rows(&self, canvas: &mut dyn Surface, centre_x: i32, top: i32, rows: usize) {
+        let first = self.first_shown(rows);
+        let shown = self.items.iter().enumerate().skip(first).take(rows);
+        for (row, (i, (label, _))) in shown.enumerate() {
+            let y = top + row as i32 * (LINE + SPACING);
             let color = match (self.available(i), i == self.selected) {
                 (false, _) => UNAVAILABLE,
                 (true, true) => SELECTED,
@@ -192,5 +214,22 @@ mod tests {
         menu.draw(&mut canvas, 50, 10);
         assert_ne!(canvas, first);
         assert_eq!(menu.height(), 3 * LINE + 2 * SPACING);
+    }
+
+    #[test]
+    fn scrolls_to_show_the_selected_item() {
+        let mut menu = Menu::new((0..10).map(|i| (i.to_string(), i)));
+        assert_eq!(menu.first_shown(4), 0);
+        menu.selected = 5;
+        assert_eq!(menu.first_shown(4), 3);
+        menu.selected = 9;
+        assert_eq!(menu.first_shown(4), 6);
+        assert_eq!(menu.first_shown(20), 0);
+
+        let mut canvas = Canvas::new(100, 60);
+        menu.draw_rows(&mut canvas, 50, 0, 4);
+        let mut all = Canvas::new(100, 60);
+        menu.draw_rows(&mut all, 50, 0, 10);
+        assert_ne!(canvas, all);
     }
 }

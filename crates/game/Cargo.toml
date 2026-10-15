@@ -14,6 +14,7 @@ gamepad = ["clamber-input/gamepad"]
 [dependencies]
 clamber-audio = { path = "../audio" }
 clamber-fixed = { path = "../fixed" }
+clamber-import = { path = "../import" }
 clamber-input = { path = "../input" }
 clamber-level = { path = "../level" }
 clamber-pack = { path = "../pack" }

@@ -1,12 +1,15 @@
 //! The screens around a level: title, pause, controls, options,
-//! credits, level complete and game over, and moving between them and
-//! play.
+//! credits, importing a game, the games to play, level complete and game
+//! over, and moving between them and play.
 //!
 //! Menus read the same neutral actions as play, from every player at
 //! once, so a keyboard or a gamepad alone can drive them (see
 //! [`Menu`]).
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use clamber_import::{Importer, Installed};
 
 use clamber_input::{Action, Event, Frame, Input, Settings};
 use clamber_sim::{InputFrame, Outcome};
@@ -18,12 +21,14 @@ use crate::credits::Credits;
 use crate::feels::Feels;
 use crate::game::Game;
 use crate::hud::{COUNT, GEM, RELIC_ICON, relic_total};
+use crate::import::{After, Games, Importing, PERSONAL, Pick, Picked, Picker};
 use crate::menu::{Choice, Menu};
 use crate::prefs::{Prefs, Volume};
 use crate::report;
 use crate::sound::{Cue, cues};
 use crate::surface::Surface;
 use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred, text_size};
+use crate::{SPRITES, content_dir, load_game};
 
 /// Where the credits screen's lines start, and how many show at once.
 const CREDITS_TOP: i32 = 34;
@@ -31,10 +36,10 @@ const CREDITS_ROWS: usize = 18;
 /// Characters across a line of credits.
 const CREDITS_WIDTH: usize = 60;
 
-const TITLE: Color = rgb(0xf0, 0xc8, 0x40);
-const HEADING: Color = rgb(0xf4, 0xf0, 0xe8);
-const SUBTITLE: Color = rgb(0xa8, 0xb0, 0xbc);
-const FAILED: Color = rgb(0xe8, 0x50, 0x60);
+pub(crate) const TITLE: Color = rgb(0xf0, 0xc8, 0x40);
+pub(crate) const HEADING: Color = rgb(0xf4, 0xf0, 0xe8);
+pub(crate) const SUBTITLE: Color = rgb(0xa8, 0xb0, 0xbc);
+pub(crate) const FAILED: Color = rgb(0xe8, 0x50, 0x60);
 /// Laid over the level behind a menu.
 const DIM: Color = rgb(0x08, 0x0a, 0x10);
 
@@ -56,6 +61,10 @@ pub enum Item {
     Options,
     /// The credits screen.
     Credits,
+    /// The games screen: the bundled game and the imported ones.
+    Games,
+    /// Import a game the player owns.
+    Import,
     /// Back to the title screen.
     ToTitle,
     /// Close the game.
@@ -80,6 +89,13 @@ pub enum Screen {
     /// The credits, scrolled down this many lines, and the screen to go
     /// back to.
     Credits(usize, Box<Screen>),
+    /// Choosing a game image to import, and the screen to go back to.
+    Picker(Picker, Box<Screen>),
+    /// An import, running or finished, and the picker it was started
+    /// from.
+    Importing(Importing, Box<Screen>),
+    /// Choosing a game to play, and the screen to go back to.
+    Games(Games, Box<Screen>),
 }
 
 /// The music a screen plays.
@@ -106,6 +122,8 @@ impl Screen {
     pub fn title() -> Screen {
         Screen::Title(Menu::new([
             ("Start", Item::Start),
+            ("Games", Item::Games),
+            ("Import a game…", Item::Import),
             ("Movement", Item::Movement),
             ("Controls", Item::Controls),
             ("Options", Item::Options),
@@ -135,7 +153,10 @@ impl Screen {
             Screen::Controls(_, from)
             | Screen::Movement(_, from)
             | Screen::Options(_, from)
-            | Screen::Credits(_, from) => from.tune(),
+            | Screen::Credits(_, from)
+            | Screen::Picker(_, from)
+            | Screen::Importing(_, from)
+            | Screen::Games(_, from) => from.tune(),
         }
     }
 
@@ -174,6 +195,16 @@ pub struct Session {
     pub quit: bool,
     /// What made a sound during the last step, in order.
     pub cues: Vec<Cue>,
+    /// The level being played, if it came from a file.
+    pub level_path: PathBuf,
+    /// The level the session started with, to go back to from an
+    /// imported one, if there's one to go back to.
+    pub bundled: Option<PathBuf>,
+    /// The personal import being played, if one is.
+    pub pack: Option<Installed>,
+    /// Where imported packs go, if anywhere.
+    pub packs_dir: Option<PathBuf>,
+    pub importer: Arc<Importer>,
 }
 
 impl Session {
@@ -191,6 +222,11 @@ impl Session {
             prefs_path: None,
             quit: false,
             cues: Vec::new(),
+            level_path: PathBuf::new(),
+            bundled: None,
+            pack: None,
+            packs_dir: None,
+            importer: Arc::new(Importer::builtin()),
         }
     }
 
@@ -218,6 +254,12 @@ impl Session {
             return;
         }
         let frame = everyone(input);
+        match self.screen {
+            Screen::Picker(..) => return self.step_picker(&frame),
+            Screen::Importing(..) => return self.step_importing(&frame),
+            Screen::Games(..) => return self.step_games(&frame),
+            _ => {}
+        }
         if let Screen::Controls(controls, _) = &mut self.screen {
             match controls.update(&frame, &mut self.input) {
                 Some(Request::Save) => {
@@ -365,9 +407,155 @@ impl Session {
                 let from = std::mem::replace(&mut self.screen, Screen::Playing);
                 self.screen = Screen::Credits(0, Box::new(from));
             }
+            Item::Games => {
+                let from = std::mem::replace(&mut self.screen, Screen::Playing);
+                self.screen = Screen::Games(self.games(), Box::new(from));
+            }
+            Item::Import => {
+                let dir = Picker::start_dir(self.prefs.import_folder.as_deref());
+                let from = std::mem::replace(&mut self.screen, Screen::Playing);
+                self.screen = Screen::Picker(Picker::open(&dir), Box::new(from));
+            }
             Item::ToTitle => self.screen = Screen::title(),
             Item::Quit => self.quit = true,
         }
+    }
+
+    /// Goes back from the screen showing to the one it was opened from.
+    fn back(&mut self) {
+        let from = match std::mem::replace(&mut self.screen, Screen::Playing) {
+            Screen::Controls(_, from)
+            | Screen::Movement(_, from)
+            | Screen::Options(_, from)
+            | Screen::Credits(_, from)
+            | Screen::Picker(_, from)
+            | Screen::Importing(_, from)
+            | Screen::Games(_, from) => from,
+            other => Box::new(other),
+        };
+        self.screen = *from;
+    }
+
+    fn step_picker(&mut self, frame: &Frame) {
+        let Screen::Picker(picker, _) = &mut self.screen else {
+            return;
+        };
+        match picker.update(frame) {
+            None => {}
+            Some(Picked::Back) => self.back(),
+            Some(Picked::File(file)) => {
+                if self.prefs.import_folder.as_ref() != Some(&picker.dir) {
+                    self.prefs.import_folder = Some(picker.dir.clone());
+                    self.save_prefs("the folder to import from");
+                }
+                self.start_import(file, false);
+            }
+        }
+    }
+
+    /// Imports `file` from the picker that's showing, or again from the
+    /// import that's showing.
+    fn start_import(&mut self, file: PathBuf, replace: bool) {
+        let picker = match std::mem::replace(&mut self.screen, Screen::Playing) {
+            Screen::Importing(_, picker) => picker,
+            picker => Box::new(picker),
+        };
+        let packs = self.packs_dir.clone();
+        let importing = Importing::start(self.importer.clone(), file, packs, replace);
+        self.screen = Screen::Importing(importing, picker);
+    }
+
+    fn step_importing(&mut self, frame: &Frame) {
+        let Screen::Importing(importing, _) = &mut self.screen else {
+            return;
+        };
+        let Some(after) = importing.update(frame) else {
+            return;
+        };
+        let file = importing.file.clone();
+        let made = match &importing.result {
+            Some(Ok(imported)) => Some(imported.dir.clone()),
+            _ => None,
+        };
+        match after {
+            After::Replace => self.start_import(file, true),
+            After::Another => self.back(),
+            After::Done => {
+                self.back();
+                self.back();
+            }
+            After::Play => {
+                let played = made
+                    .ok_or_else(|| "nothing was imported".to_string())
+                    .and_then(|dir| Installed::load(&dir))
+                    .and_then(|pack| self.play_pack(pack));
+                match played {
+                    Ok(()) => self.screen = Screen::title(),
+                    Err(e) => self.show_games_problem(e),
+                }
+            }
+        }
+    }
+
+    /// The games screen, with the game being played selected.
+    fn games(&self) -> Games {
+        let playing = self.pack.as_ref().map(|p| p.manifest.id.as_str());
+        Games::list(self.packs_dir.as_deref(), playing, self.bundled.is_some())
+    }
+
+    /// Shows the games screen, opened from the title, saying why a game
+    /// couldn't be played.
+    fn show_games_problem(&mut self, problem: String) {
+        report::warn(&problem);
+        let mut games = self.games();
+        games.problem = Some(problem);
+        self.screen = Screen::Games(games, Box::new(Screen::title()));
+    }
+
+    fn step_games(&mut self, frame: &Frame) {
+        let Screen::Games(games, _) = &mut self.screen else {
+            return;
+        };
+        let played = match games.update(frame) {
+            None => return,
+            Some(Pick::Back) => return self.back(),
+            Some(Pick::Bundled) => match self.bundled.clone() {
+                Some(path) => self.play_level(&path, None),
+                None => return,
+            },
+            Some(Pick::Pack(i)) => {
+                let pack = games.packs[i].clone();
+                self.play_pack(pack)
+            }
+        };
+        match played {
+            Ok(()) => self.screen = Screen::title(),
+            Err(e) => self.show_games_problem(e),
+        }
+    }
+
+    /// Plays the first of `pack`'s levels, from the title screen.
+    fn play_pack(&mut self, pack: Installed) -> Result<(), String> {
+        let Some(level) = pack.levels().into_iter().next() else {
+            return Err(format!("{} has nothing to play yet", pack.manifest.name));
+        };
+        self.play_level(&level, Some(pack))
+    }
+
+    /// Plays the level at `path` with the movement being played, and
+    /// `pack`'s sprites if it has them. Keeps the debug view setting,
+    /// and turns it on for a level with nothing else to see.
+    fn play_level(&mut self, path: &Path, pack: Option<Installed>) -> Result<(), String> {
+        let sprites = pack
+            .as_ref()
+            .and_then(Installed::sprites)
+            .unwrap_or_else(|| content_dir().join(SPRITES));
+        let mut game = load_game(path, &sprites, self.game.world.feel.clone())?;
+        game.debug |= self.game.debug;
+        self.game = game;
+        self.level_path = path.to_path_buf();
+        self.pack = pack;
+        Ok(())
     }
 
     /// The presets to choose from, with the one being played selected.
@@ -484,13 +672,28 @@ impl Session {
                 self.draw_credits(canvas, *scroll, centre);
                 return;
             }
+            Screen::Picker(picker, _) => {
+                picker.draw(canvas, centre);
+                return;
+            }
+            Screen::Importing(importing, _) => {
+                importing.draw(canvas, centre);
+                return;
+            }
+            Screen::Games(games, _) => {
+                games.draw(canvas, centre);
+                return;
+            }
             Screen::Title(menu) => {
-                draw_text_centred(canvas, centre, 60, "CLAMBER", TITLE);
+                draw_text_centred(canvas, centre, 40, "CLAMBER", TITLE);
                 let name = &self.game.world.level.name;
                 if !name.is_empty() {
-                    draw_text_centred(canvas, centre, 60 + 2 * LINE, name, SUBTITLE);
+                    draw_text_centred(canvas, centre, 40 + 2 * LINE, name, SUBTITLE);
                 }
-                (menu, 120)
+                if self.pack.is_some() {
+                    draw_text_centred(canvas, centre, 40 + 3 * LINE, PERSONAL, FAILED);
+                }
+                (menu, 40 + 5 * LINE)
             }
             Screen::Paused(menu) => {
                 draw_text_centred(canvas, centre, 70, "PAUSED", HEADING);
@@ -639,6 +842,7 @@ pub fn clock_time(frames: u32) -> String {
 mod tests {
     use std::sync::Arc;
 
+    use clamber_import::ImportError;
     use clamber_input::{Actions, Key};
     use clamber_level::Level;
     use clamber_sim::{World, generic_feel};
@@ -782,9 +986,19 @@ mod tests {
     }
 
     /// Goes from the title to the movement screen.
-    fn open_movement(s: &mut Session) {
-        s.step(&press(Action::Down));
+    /// Picks `item` on the title screen.
+    fn pick(s: &mut Session, item: Item) {
+        for _ in 0..20 {
+            if matches!(&s.screen, Screen::Title(m) if m.current() == item) {
+                break;
+            }
+            s.step(&press(Action::Down));
+        }
         s.step(&press(Action::Jump));
+    }
+
+    fn open_movement(s: &mut Session) {
+        pick(s, Item::Movement);
         assert!(matches!(s.screen, Screen::Movement(..)));
     }
 
@@ -1101,6 +1315,292 @@ mod tests {
         let mut canvas = Game::canvas();
         s.draw(&mut canvas, 1.0);
         assert_eq!(canvas, playing);
+    }
+
+    /// A folder of its own for one test, outside the source tree.
+    fn scratch(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("clamber-session-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Writes [`LEVEL`], renamed, as the pack's one level.
+    struct LevelDecoder;
+
+    impl clamber_import::Decoder for LevelDecoder {
+        fn name(&self) -> &str {
+            "level"
+        }
+        fn applies_to(&self, _: &clamber_import::Known) -> bool {
+            true
+        }
+        fn decode(
+            &self,
+            _: &clamber_import::Image,
+            pack: &mut clamber_import::PackWriter,
+        ) -> Result<(), String> {
+            let src = LEVEL.replace("Test level", "Imported level");
+            pack.write("levels/first.level", src.as_bytes())
+        }
+    }
+
+    /// A session that imports a made-up image, `game.img` in a folder of
+    /// its own, into a packs folder of its own, and starts with a level
+    /// file to go back to.
+    fn importing_session(name: &str) -> (Session, PathBuf) {
+        let dir = scratch(name);
+        let image: Vec<u8> = (0..=255u8).cycle().take(500).collect();
+        let games = dir.join("games");
+        std::fs::create_dir_all(&games).unwrap();
+        std::fs::write(games.join("game.img"), &image).unwrap();
+        std::fs::write(dir.join("bundled.level"), LEVEL).unwrap();
+
+        let mut s = session(LEVEL);
+        s.level_path = dir.join("bundled.level");
+        s.bundled = Some(s.level_path.clone());
+        s.packs_dir = Some(dir.join("packs"));
+        s.prefs.import_folder = Some(games);
+        let image = clamber_import::Image::new(image);
+        s.importer = Arc::new(Importer {
+            catalog: clamber_import::Catalog {
+                known: vec![clamber_import::Known {
+                    title: "title-9".into(),
+                    release: "made-up release".into(),
+                    size: image.len() as u64,
+                    sha256: image.sha256(),
+                }],
+            },
+            decoders: vec![Box::new(LevelDecoder)],
+        });
+        (s, dir)
+    }
+
+    /// Steps until the import that's showing has finished.
+    fn finish_import(s: &mut Session) -> &Importing {
+        for _ in 0..500 {
+            if let Screen::Importing(importing, _) = &s.screen
+                && importing.result.is_some()
+            {
+                break;
+            }
+            s.step(&idle());
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        match &s.screen {
+            Screen::Importing(importing, _) if importing.result.is_some() => importing,
+            other => panic!("not a finished import: {other:?}"),
+        }
+    }
+
+    /// From the title, picks `game.img` in the picker.
+    fn import_the_game(s: &mut Session) {
+        pick(s, Item::Import);
+        let Screen::Picker(picker, _) = &s.screen else {
+            panic!("the picker opens: {:?}", s.screen);
+        };
+        assert!(picker.dir.ends_with("games"), "{:?}", picker.dir);
+        let labels: Vec<_> = picker.menu.items.iter().map(|i| i.0.as_str()).collect();
+        assert_eq!(labels, ["../", "game.img"]);
+        s.step(&press(Action::Down));
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Importing(..)), "{:?}", s.screen);
+    }
+
+    #[test]
+    fn imports_a_game_from_the_title_and_plays_it() {
+        let (mut s, dir) = importing_session("import");
+        import_the_game(&mut s);
+        let mut canvas = Game::canvas();
+        s.draw(&mut canvas, 1.0);
+        let importing = finish_import(&mut s);
+        let imported = importing.result.clone().unwrap().unwrap();
+        assert_eq!(imported.dir, dir.join("packs/title-9"));
+        assert!(!imported.manifest.redistribute);
+        assert_eq!(importing.menu.as_ref().unwrap().current(), After::Play);
+        let mut done = Game::canvas();
+        s.draw(&mut done, 1.0);
+        assert_ne!(canvas, done, "shows what came of it");
+
+        s.step(&press(Action::Jump));
+        let Screen::Title(_) = &s.screen else {
+            panic!("plays it from the title: {:?}", s.screen);
+        };
+        assert_eq!(s.game.world.level.name, "Imported level");
+        assert_eq!(s.level_path, dir.join("packs/title-9/levels/first.level"));
+        let pack = s.pack.as_ref().expect("a personal import");
+        assert_eq!(pack.manifest.id, "title-9");
+        let mut title = Game::canvas();
+        s.draw(&mut title, 1.0);
+        assert!(
+            title.pixels.contains(&FAILED),
+            "marked as a personal import"
+        );
+        assert_eq!(s.prefs.import_folder, Some(dir.join("games")));
+
+        s.step(&press(Action::Jump));
+        assert_eq!(s.screen, Screen::Playing);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn importing_again_offers_to_replace() {
+        let (mut s, dir) = importing_session("again");
+        import_the_game(&mut s);
+        finish_import(&mut s);
+        // Done: back to the title.
+        s.step(&press(Action::Pause));
+        assert!(matches!(s.screen, Screen::Title(_)), "{:?}", s.screen);
+        assert!(s.pack.is_none());
+
+        import_the_game(&mut s);
+        let importing = finish_import(&mut s);
+        let result = importing.result.clone().unwrap();
+        assert_eq!(
+            result,
+            Err(ImportError::AlreadyImported(dir.join("packs/title-9")))
+        );
+        assert_eq!(importing.menu.as_ref().unwrap().current(), After::Replace);
+        s.step(&press(Action::Jump));
+        let importing = finish_import(&mut s);
+        assert!(importing.result.as_ref().unwrap().is_ok());
+        s.step(&press(Action::Pause));
+
+        // Choose another file, from the failure: back to the picker.
+        import_the_game(&mut s);
+        finish_import(&mut s);
+        s.step(&press(Action::Down));
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Picker(..)), "{:?}", s.screen);
+        s.step(&press(Action::Pause));
+        assert!(matches!(s.screen, Screen::Title(_)));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn refuses_what_it_cant_import_and_says_why() {
+        let (mut s, dir) = importing_session("refuses");
+        s.importer = Arc::new(Importer::builtin());
+        import_the_game(&mut s);
+        let importing = finish_import(&mut s);
+        let Some(Err(ImportError::Unsupported(_))) = &importing.result else {
+            panic!("{:?}", importing.result);
+        };
+        let menu = importing.menu.as_ref().unwrap();
+        assert_eq!(menu.current(), After::Another);
+        let mut canvas = Game::canvas();
+        s.draw(&mut canvas, 1.0);
+        assert!(canvas.pixels.contains(&FAILED));
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Picker(..)));
+        assert!(!dir.join("packs").exists());
+
+        // Still on the same file.
+        s.packs_dir = None;
+        s.step(&press(Action::Jump));
+        let Screen::Importing(importing, _) = &s.screen else {
+            panic!("{:?}", s.screen);
+        };
+        assert!(matches!(
+            importing.result,
+            Some(Err(ImportError::Destination(_)))
+        ));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_games_screen_lists_imports_and_plays_them() {
+        let (mut s, dir) = importing_session("games");
+        pick(&mut s, Item::Games);
+        let Screen::Games(games, _) = &s.screen else {
+            panic!("{:?}", s.screen);
+        };
+        assert!(games.packs.is_empty());
+        let labels: Vec<_> = games.menu.items.iter().map(|i| i.0.as_str()).collect();
+        assert_eq!(labels, ["Clamber", "Back"]);
+        s.step(&press(Action::Pause));
+        assert!(matches!(s.screen, Screen::Title(_)));
+
+        import_the_game(&mut s);
+        finish_import(&mut s);
+        s.step(&press(Action::Pause));
+        // A pack with nothing to play is listed, but can't be picked.
+        std::fs::create_dir_all(dir.join("packs/title-8")).unwrap();
+        let manifest = std::fs::read_to_string(dir.join("packs/title-9/manifest.toml")).unwrap();
+        let manifest = manifest.replace("title-9", "title-8");
+        std::fs::write(dir.join("packs/title-8/manifest.toml"), manifest).unwrap();
+
+        pick(&mut s, Item::Games);
+        let Screen::Games(games, _) = &s.screen else {
+            panic!("{:?}", s.screen);
+        };
+        let labels: Vec<_> = games.menu.items.iter().map(|i| i.0.as_str()).collect();
+        assert_eq!(
+            labels,
+            ["Clamber", "Imported title-8", "Imported title-9", "Back"]
+        );
+        assert!(!games.menu.available(1));
+        s.step(&press(Action::Down));
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Games(..)), "can't play title-8");
+        s.step(&press(Action::Down));
+        let mut canvas = Game::canvas();
+        s.draw(&mut canvas, 1.0);
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Title(_)));
+        assert_eq!(s.pack.as_ref().unwrap().manifest.id, "title-9");
+
+        pick(&mut s, Item::Games);
+        let Screen::Games(games, _) = &s.screen else {
+            panic!("{:?}", s.screen);
+        };
+        assert_eq!(games.menu.current(), Pick::Pack(1), "the one playing");
+        s.step(&press(Action::Up));
+        s.step(&press(Action::Up));
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Title(_)));
+        assert!(s.pack.is_none());
+        assert_eq!(s.level_path, dir.join("bundled.level"));
+        assert_eq!(s.game.world.level.name, "Test level");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_picker_browses_folders() {
+        let dir = scratch("picker");
+        std::fs::create_dir_all(dir.join("b-folder/inner")).unwrap();
+        std::fs::create_dir_all(dir.join("A-folder")).unwrap();
+        std::fs::create_dir_all(dir.join(".hidden")).unwrap();
+        std::fs::write(dir.join("z.img"), "").unwrap();
+        std::fs::write(dir.join("c.img"), "").unwrap();
+        let mut picker = Picker::open(&dir);
+        let labels =
+            |p: &Picker| -> Vec<String> { p.menu.items.iter().map(|i| i.0.clone()).collect() };
+        assert_eq!(
+            labels(&picker),
+            ["../", "A-folder/", "b-folder/", "c.img", "z.img"]
+        );
+        let down = Frame::after(Actions::NONE, Action::Down.into());
+        let jump = Frame::after(Actions::NONE, Action::Jump.into());
+        let left = Frame::after(Actions::NONE, Action::Left.into());
+        picker.update(&down);
+        picker.update(&down);
+        assert_eq!(picker.update(&jump), None);
+        assert_eq!(picker.dir, dir.join("b-folder"));
+        assert_eq!(labels(&picker), ["../", "inner/"]);
+        picker.update(&left);
+        assert_eq!(picker.dir, dir);
+        assert_eq!(picker.menu.current(), 2, "the folder it came from");
+        picker.update(&down);
+        assert_eq!(picker.update(&jump), Some(Picked::File(dir.join("c.img"))));
+
+        let mut gone = Picker::open(&dir.join("not-there"));
+        assert!(gone.problem.is_some());
+        assert_eq!(labels(&gone), ["../"]);
+        assert_eq!(gone.update(&jump), None);
+        assert_eq!(gone.dir, dir);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

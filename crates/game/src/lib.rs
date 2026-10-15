@@ -22,6 +22,9 @@
 //! movement screen for choosing among the [`Feels`]' presets, which is
 //! remembered in the [`Prefs`] ([`prefs_path`]) along with the options
 //! screen's choices. A credits screen shows the content's [`Credits`].
+//! The title screen also imports a game the player owns, picked with a
+//! [`Picker`], as a personal pack, and lists the packs to play
+//! ([`Games`]).
 //!
 //! What happens in play becomes [`Cue`]s, which [`Audio`] plays from a
 //! [`SoundList`], along with music: the title's on the title screen and
@@ -44,6 +47,7 @@ mod feels;
 mod game;
 mod gpu;
 mod hud;
+mod import;
 pub mod keys;
 mod layers;
 mod menu;
@@ -57,6 +61,11 @@ mod surface;
 mod text;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use clamber_level::Level;
+use clamber_pack::Feel;
+use clamber_sim::World;
 
 pub use camera::{Camera, VIEW};
 pub use canvas::{Canvas, Color, Fit, present, rgb};
@@ -69,6 +78,7 @@ pub use feels::Feels;
 pub use game::Game;
 pub use gpu::Gpu;
 pub use hud::draw_hud;
+pub use import::{Games, Importing, Picker};
 pub use layers::LayerArt;
 pub use menu::{Choice, Menu};
 pub use music::{DEFAULT_MUSIC, MusicList, MusicTrack};
@@ -85,6 +95,17 @@ pub const DEFAULT_LEVEL: &str = "base/levels/first.level";
 /// The player's and entities' sprite sheets, relative to the content
 /// folder.
 pub const SPRITES: &str = "base/sprites";
+
+/// A game of the level at `path`, with its layers' art, its music's
+/// folder, and the player and entities drawn from the sheets in
+/// `sprites`, played with `feel`.
+pub fn load_game(path: &Path, sprites: &Path, feel: Arc<Feel>) -> Result<Game, String> {
+    let level = Level::load(path).map_err(|e| e.to_string())?;
+    let art = LayerArt::load(&level, path.parent().unwrap_or(Path::new("")))?;
+    let cast = Cast::load(sprites)?;
+    let world = World::try_new(Arc::new(level), feel).map_err(|e| e.to_string())?;
+    Ok(Game::new(world).with_art(art).with_cast(cast))
+}
 
 /// The content folder: next to the executable for a packaged build,
 /// otherwise the working directory's, otherwise the source tree's.

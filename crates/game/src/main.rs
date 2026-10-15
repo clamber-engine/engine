@@ -12,14 +12,14 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clamber_game::{
-    Canvas, Cast, Clock, Credits, DEFAULT_CREDITS, DrawList, Feels, Fit, GIF_DELAY, Game, Gpu,
-    LayerArt, Prefs, SPRITES, Screen, Session, VIEW, content_dir, display, encode_gif, encode_png,
-    keys, present, report, rgb,
+    Canvas, Clock, Credits, DEFAULT_CREDITS, DrawList, Feels, Fit, GIF_DELAY, Game, Gpu, Prefs,
+    SPRITES, Screen, Session, VIEW, content_dir, display, encode_gif, encode_png, keys, load_game,
+    present, report, rgb,
 };
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
 use clamber_pack::Pack;
-use clamber_sim::{Script, World};
+use clamber_sim::Script;
 use clamber_trace::Scenario;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -197,6 +197,7 @@ fn play(options: Options) -> Result<(), String> {
     let event_loop = EventLoop::new().map_err(|e| e.to_string())?;
     let mut app = App {
         title: format!("Clamber: {}", title(&session.game.world.level, &level_path)),
+        level_path,
         session,
         canvas: Game::canvas(),
         list: DrawList::new(VIEW),
@@ -224,6 +225,11 @@ fn play(options: Options) -> Result<(), String> {
 /// bindings, no remembered choices and no sound, and writes the GIF and
 /// screenshots.
 fn record(options: Options, capture: &Capture) -> Result<(), String> {
+    // Captures are made to be shared, so not of a personal import.
+    if let Some(level) = &options.level {
+        clamber_import::check_shareable(level)
+            .map_err(|e| format!("can't capture {}: {e}", level.display()))?;
+    }
     let scenario = Scenario::load(&capture.inputs).map_err(|e| e.to_string())?;
     let script = Script::from_scenario(&scenario);
 
@@ -287,9 +293,6 @@ fn load(options: &Options, saved: Option<&str>) -> Result<(Session, PathBuf), St
         .level
         .clone()
         .unwrap_or_else(|| content_dir().join(clamber_game::DEFAULT_LEVEL));
-    let level = Level::load(&level_path).map_err(|e| e.to_string())?;
-    let art = LayerArt::load(&level, level_path.parent().unwrap_or(Path::new("")))?;
-    let cast = Cast::load(&content_dir().join(SPRITES))?;
     let feels = match &options.pack {
         Some(path) => {
             let src = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
@@ -315,9 +318,13 @@ fn load(options: &Options, saved: Option<&str>) -> Result<(Session, PathBuf), St
     for warning in &warnings {
         report::warn(warning);
     }
-    let world = World::try_new(Arc::new(level), Arc::new(feel)).map_err(|e| e.to_string())?;
-    let mut session = Session::new(Game::new(world).with_art(art).with_cast(cast));
+    let sprites = content_dir().join(SPRITES);
+    let game = load_game(&level_path, &sprites, Arc::new(feel))?;
+    let mut session = Session::new(game);
     session.feels = feels;
+    session.level_path = level_path.clone();
+    session.bundled = Some(level_path.clone());
+    session.packs_dir = clamber_import::packs_dir();
     session.credits = Credits::load(&content_dir().join(DEFAULT_CREDITS)).unwrap_or_else(|e| {
         report::warn(e);
         Credits::default()
@@ -396,6 +403,8 @@ enum Output {
 
 struct App {
     title: String,
+    /// The level the title is for, to change it when another is played.
+    level_path: PathBuf,
     session: Session,
     /// What's drawn without a GPU, at the scale it's shown at.
     canvas: Canvas,
@@ -519,6 +528,19 @@ impl App {
         }
     }
 
+    /// Names the window after the level, once another is played.
+    fn retitle(&mut self) {
+        if self.session.level_path == self.level_path {
+            return;
+        }
+        self.level_path = self.session.level_path.clone();
+        let level = &self.session.game.world.level;
+        self.title = format!("Clamber: {}", title(level, &self.level_path));
+        if let Some(shown) = &self.window {
+            shown.window.set_title(&self.title);
+        }
+    }
+
     /// Notes the window's size, to open at it next time, unless it's
     /// fullscreen, maximized or minimized.
     fn resized(&mut self, size: PhysicalSize<u32>) {
@@ -582,6 +604,7 @@ impl App {
         }
         if steps > 0 {
             self.apply_display();
+            self.retitle();
         }
     }
 

@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use clamber_import::{
-    Catalog, Decoder, Image, ImportError, Importer, Known, MANIFEST, Manifest, PackWriter,
+    Catalog, Decoder, Image, ImportError, Importer, Known, MANIFEST, Manifest, NotShareable,
+    PackWriter, check_shareable, installed,
 };
 
 /// A fresh folder outside the source tree.
@@ -162,6 +163,72 @@ fn decoders_write_only_plain_paths() {
         assert!(matches!(err, ImportError::Decode { .. }), "{path}: {err}");
         assert!(entries(&packs).is_empty(), "{path}");
     }
+}
+
+#[test]
+fn reports_each_decoder_as_it_starts() {
+    let packs = scratch("progress");
+    let mut started = Vec::new();
+    importer(false)
+        .import_with_progress(&image(), &packs, false, &mut |name| {
+            started.push(name.to_string())
+        })
+        .unwrap();
+    assert_eq!(started, ["probe"]);
+}
+
+#[test]
+fn lists_installed_packs_and_their_levels() {
+    let packs = scratch("installed");
+    assert_eq!(installed(&packs.join("none")), (Vec::new(), Vec::new()));
+    importer(false).import(&image(), &packs, false).unwrap();
+    let levels = packs.join("title-9/levels");
+    fs::write(levels.join("b.level"), "").unwrap();
+    fs::write(levels.join("a.level"), "").unwrap();
+    fs::create_dir(packs.join(".importing-title-9-1")).unwrap();
+    fs::create_dir(packs.join("stray")).unwrap();
+
+    let (found, problems) = installed(&packs);
+    assert_eq!(found.len(), 1);
+    let pack = &found[0];
+    assert_eq!(pack.manifest.id, "title-9");
+    assert_eq!(
+        pack.levels(),
+        [levels.join("a.level"), levels.join("b.level")]
+    );
+    assert_eq!(pack.sprites(), None);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("stray"), "{problems:?}");
+
+    fs::rename(packs.join("title-9"), packs.join("renamed")).unwrap();
+    let (found, problems) = installed(&packs);
+    assert!(found.is_empty());
+    assert!(
+        problems.iter().any(|p| p.contains("named after")),
+        "{problems:?}"
+    );
+}
+
+#[test]
+fn nothing_in_a_personal_import_is_shareable() {
+    let packs = scratch("shareable");
+    let imported = importer(false).import(&image(), &packs, false).unwrap();
+    let refused = Err(NotShareable("title-9".into()));
+    assert_eq!(check_shareable(&imported.dir), refused);
+    assert_eq!(
+        check_shareable(&imported.dir.join("levels/size.txt")),
+        refused
+    );
+    assert_eq!(check_shareable(&imported.dir.join("not/there")), refused);
+    assert_eq!(check_shareable(&packs), Ok(()));
+
+    let other = scratch("shareable-other");
+    fs::write(other.join(MANIFEST), "name = \"not a pack\"\n").unwrap();
+    assert_eq!(check_shareable(&other.join("file")), Ok(()));
+    fs::write(other.join(MANIFEST), "redistribute = true\n").unwrap();
+    assert_eq!(check_shareable(&other.join("file")), Ok(()));
+    fs::write(other.join(MANIFEST), "redistribute = 'yes'\n").unwrap();
+    assert!(check_shareable(&other.join("file")).is_err());
 }
 
 #[test]

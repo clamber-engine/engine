@@ -12,10 +12,16 @@
 //! describe an image by its size and hash only. Decoders keep to that
 //! too.
 //!
+//! A pack's levels are in its [`LEVELS`] folder, in Clamber's level
+//! format, and its sprite sheets in [`SPRITES`]. [`installed`] lists the
+//! packs in a folder, and [`check_shareable`] refuses to let anything
+//! inside a personal import be exported or shared.
+//!
 //! The `clamber-import` command and the game's import menu both call
 //! [`Importer::import`].
 
 mod image;
+mod installed;
 mod manifest;
 
 use std::collections::BTreeSet;
@@ -24,11 +30,19 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 pub use image::{Catalog, Image, Known, MAX_IMAGE_SIZE, Sha256Hash};
+pub use installed::{Installed, check_shareable, installed};
 pub use manifest::{FORMAT, MANIFEST, Manifest, NotShareable};
 
+/// The folder in a pack that holds its levels.
+pub const LEVELS: &str = "levels";
+
+/// The folder in a pack that holds its sprite sheets.
+pub const SPRITES: &str = "sprites";
+
 /// Converts one part of a supported image (graphics, a level, …) to
-/// Clamber's formats.
-pub trait Decoder {
+/// Clamber's formats. Imports can run on a thread of their own, so
+/// decoders can be shared between threads.
+pub trait Decoder: Send + Sync {
     /// What it decodes, for progress and error messages.
     fn name(&self) -> &str;
     /// Whether it has anything to decode in this image.
@@ -38,7 +52,7 @@ pub trait Decoder {
     fn decode(&self, image: &Image, pack: &mut PackWriter) -> Result<(), String>;
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ImportError {
     /// The image file couldn't be read.
     Read(String),
@@ -113,7 +127,7 @@ impl PackWriter {
 }
 
 /// A finished import.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Imported {
     pub manifest: Manifest,
     /// The pack's folder.
@@ -146,6 +160,18 @@ impl Importer {
         packs_dir: &Path,
         replace: bool,
     ) -> Result<Imported, ImportError> {
+        self.import_with_progress(image, packs_dir, replace, &mut |_| {})
+    }
+
+    /// [`import`](Importer::import), passing each decoder's name to
+    /// `progress` as it starts.
+    pub fn import_with_progress(
+        &self,
+        image: &Image,
+        packs_dir: &Path,
+        replace: bool,
+        progress: &mut dyn FnMut(&str),
+    ) -> Result<Imported, ImportError> {
         let known = self.catalog.identify(image)?;
         check_destination(packs_dir)?;
         let write_err =
@@ -161,23 +187,25 @@ impl Importer {
         let _ = fs::remove_dir_all(&staging);
         fs::create_dir(&staging).map_err(|e| write_err(&staging, e))?;
 
-        let result = self.fill(image, known, &staging).and_then(|imported| {
-            let old = packs_dir.join(format!(".replaced-{id}-{}", std::process::id()));
-            let had_old = dest.exists();
-            if had_old {
-                fs::rename(&dest, &old).map_err(|e| write_err(&dest, e))?;
-            }
-            if let Err(e) = fs::rename(&staging, &dest) {
+        let result = self
+            .fill(image, known, &staging, progress)
+            .and_then(|imported| {
+                let old = packs_dir.join(format!(".replaced-{id}-{}", std::process::id()));
+                let had_old = dest.exists();
                 if had_old {
-                    let _ = fs::rename(&old, &dest);
+                    fs::rename(&dest, &old).map_err(|e| write_err(&dest, e))?;
                 }
-                return Err(write_err(&dest, e));
-            }
-            if had_old {
-                let _ = fs::remove_dir_all(&old);
-            }
-            Ok(imported)
-        });
+                if let Err(e) = fs::rename(&staging, &dest) {
+                    if had_old {
+                        let _ = fs::rename(&old, &dest);
+                    }
+                    return Err(write_err(&dest, e));
+                }
+                if had_old {
+                    let _ = fs::remove_dir_all(&old);
+                }
+                Ok(imported)
+            });
         if result.is_err() {
             let _ = fs::remove_dir_all(&staging);
         }
@@ -195,6 +223,7 @@ impl Importer {
         image: &Image,
         known: &Known,
         staging: &Path,
+        progress: &mut dyn FnMut(&str),
     ) -> Result<(Manifest, Vec<String>), ImportError> {
         let mut pack = PackWriter {
             dir: staging.to_path_buf(),
@@ -202,6 +231,7 @@ impl Importer {
         };
         let mut decoded = Vec::new();
         for decoder in self.decoders.iter().filter(|d| d.applies_to(known)) {
+            progress(decoder.name());
             decoder
                 .decode(image, &mut pack)
                 .map_err(|message| ImportError::Decode {
