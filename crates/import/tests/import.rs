@@ -83,7 +83,16 @@ fn writes_a_personal_pack() {
     assert_eq!(manifest, imported.manifest);
     assert!(!manifest.redistribute);
     assert!(manifest.ensure_shareable().is_err());
+    // Imports are pixel art; this made-up title has no view size.
+    assert!(manifest.pixel_art);
+    assert_eq!(manifest.view, None);
     assert_eq!(entries(&packs), ["title-9"]);
+}
+
+#[test]
+fn knows_the_view_sizes_the_spec_gives() {
+    assert_eq!(clamber_import::view_of("title-1"), Some([256, 224]));
+    assert_eq!(clamber_import::view_of("title-9"), None);
 }
 
 #[test]

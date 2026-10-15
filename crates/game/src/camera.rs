@@ -6,8 +6,9 @@
 use clamber_level::{CameraRule, Fixed, Level, Rect, Vec2};
 use clamber_sim::{Facing, HEIGHT, World};
 
-/// The view's size in world units. It's drawn at any size, so the
-/// window's resolution doesn't change how much of the world is seen.
+/// The view's size in world units, unless a pack's [`Look`](crate::Look)
+/// sets its own. It's drawn at any size, so the window's resolution
+/// doesn't change how much of the world is seen.
 pub const VIEW: (u32, u32) = (384, 216);
 
 /// How fast the look-ahead offset moves to where it's headed, px/frame.
@@ -40,15 +41,24 @@ pub struct Camera {
     rule: CameraRule,
     /// The rule being left and frames into the move away from it.
     leaving: Option<(CameraRule, u32)>,
+    /// The size of the view it keeps within the level, in world units.
+    pub view: (u32, u32),
 }
 
 impl Camera {
-    /// A camera already where it belongs for the world as it is.
+    /// A camera already where it belongs for the world as it is, with a
+    /// [`VIEW`]-sized view.
     pub fn new(world: &World) -> Camera {
+        Camera::with_view(world, VIEW)
+    }
+
+    /// A camera already where it belongs for the world as it is, with a
+    /// view `view` units in size.
+    pub fn with_view(world: &World, view: (u32, u32)) -> Camera {
         let rule = rule_at(world);
         let look = (look_target(world, &rule).0, 0.0);
         let free = offset(focus(world), look);
-        let centre = apply(&rule, &world.level, free);
+        let centre = apply(&rule, &world.level, free, view);
         Camera {
             centre,
             previous: centre,
@@ -56,6 +66,7 @@ impl Camera {
             follow_y: free.1,
             rule,
             leaving: None,
+            view,
         }
     }
 
@@ -80,13 +91,13 @@ impl Camera {
         }
         self.follow_y = self.follow_y.clamp(wanted.1 - BAND_Y, wanted.1 + BAND_Y);
         let free = (wanted.0, self.follow_y);
-        let centre = apply(&self.rule, &world.level, free);
+        let centre = apply(&self.rule, &world.level, free, self.view);
 
         self.centre = match &mut self.leaving {
             Some((old, frame)) => {
                 *frame += 1;
                 let t = ease(*frame as f64 / TRANSITION_FRAMES as f64);
-                let from = apply(old, &world.level, free);
+                let from = apply(old, &world.level, free, self.view);
                 if *frame >= TRANSITION_FRAMES {
                     self.leaving = None;
                 }
@@ -100,9 +111,16 @@ impl Camera {
     /// the previous update to the last. It isn't snapped to whole units,
     /// so the view scrolls smoothly at any resolution.
     pub fn top_left(&self, alpha: f64) -> (f64, f64) {
+        self.top_left_of(self.view, alpha)
+    }
+
+    /// The top-left corner of a view `view` units in size around the same
+    /// centre as [`top_left`](Camera::top_left)'s, for drawing somewhere
+    /// that shows more or less than the camera's own view.
+    pub fn top_left_of(&self, view: (u32, u32), alpha: f64) -> (f64, f64) {
         let x = lerp(self.previous.0, self.centre.0, alpha);
         let y = lerp(self.previous.1, self.centre.1, alpha);
-        (x - VIEW.0 as f64 / 2.0, y - VIEW.1 as f64 / 2.0)
+        (x - view.0 as f64 / 2.0, y - view.1 as f64 / 2.0)
     }
 }
 
@@ -143,9 +161,9 @@ fn offset(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
 }
 
 /// The view's centre under `rule` for a camera that would like to be at
-/// `free`: locks fix an axis, then the view stays inside the limits (the
-/// level's bounds unless the rule sets its own).
-fn apply(rule: &CameraRule, level: &Level, free: (f64, f64)) -> (f64, f64) {
+/// `free`: locks fix an axis, then a view `view` in size stays inside the
+/// limits (the level's bounds unless the rule sets its own).
+fn apply(rule: &CameraRule, level: &Level, free: (f64, f64), view: (u32, u32)) -> (f64, f64) {
     let limits = rule.limits.unwrap_or(Rect {
         x: Fixed::ZERO,
         y: Fixed::ZERO,
@@ -155,8 +173,8 @@ fn apply(rule: &CameraRule, level: &Level, free: (f64, f64)) -> (f64, f64) {
     let x = rule.lock_x.map_or(free.0, Fixed::to_f64);
     let y = rule.lock_y.map_or(free.1, Fixed::to_f64);
     (
-        clamp_view(x, limits.x, limits.w, VIEW.0),
-        clamp_view(y, limits.y, limits.h, VIEW.1),
+        clamp_view(x, limits.x, limits.w, view.0),
+        clamp_view(y, limits.y, limits.h, view.1),
     )
 }
 
@@ -237,6 +255,18 @@ mod tests {
         let camera = Camera::new(&w);
         assert_eq!(camera.centre, (2000.0, 884.0));
         assert_eq!(camera.top_left(1.0), (2000.0 - 192.0, 884.0 - 108.0));
+    }
+
+    #[test]
+    fn keeps_a_view_of_any_size_inside_the_level() {
+        let w = world(&WIDE.replace("start = [2000, 900]", "start = [10, 900]"));
+        let camera = Camera::new(&w);
+        assert_eq!(camera.centre, (192.0, 884.0));
+        let camera = Camera::with_view(&w, (256, 224));
+        assert_eq!(camera.centre, (128.0, 884.0));
+        assert_eq!(camera.top_left(1.0), (0.0, 884.0 - 112.0));
+        // Drawn somewhere that shows more, around the same centre.
+        assert_eq!(camera.top_left_of((384, 216), 1.0), (-64.0, 884.0 - 108.0));
     }
 
     #[test]

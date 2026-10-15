@@ -31,7 +31,7 @@ use std::path::{Component, Path, PathBuf};
 
 pub use image::{Catalog, Image, Known, MAX_IMAGE_SIZE, Sha256Hash};
 pub use installed::{Installed, check_shareable, installed};
-pub use manifest::{FORMAT, MANIFEST, Manifest, NotShareable};
+pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
 
 /// The folder in a pack that holds its levels.
 pub const LEVELS: &str = "levels";
@@ -248,11 +248,23 @@ impl Importer {
             release: known.release.clone(),
             importer: env!("CARGO_PKG_VERSION").to_string(),
             redistribute: false,
+            pixel_art: true,
+            view: view_of(&known.title),
         };
         let path = staging.join(MANIFEST);
         fs::write(&path, manifest.to_toml())
             .map_err(|e| ImportError::Write(format!("{}: {e}", path.display())))?;
         Ok((manifest, decoded))
+    }
+}
+
+/// How much of a level each title shows at once, `[width, height]` in
+/// pixels, where the spec gives it: `behavior/view.md` and
+/// `behavior/view-vertical.md` for `title-1`.
+pub fn view_of(title: &str) -> Option<[u32; 2]> {
+    match title {
+        "title-1" => Some([256, 224]),
+        _ => None,
     }
 }
 

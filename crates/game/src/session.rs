@@ -18,6 +18,7 @@ use crate::camera::VIEW;
 use crate::canvas::{Color, rgb};
 use crate::controls::{Controls, Request};
 use crate::credits::Credits;
+use crate::display::Look;
 use crate::feels::Feels;
 use crate::game::Game;
 use crate::hud::{COUNT, GEM, RELIC_ICON, relic_total};
@@ -550,7 +551,10 @@ impl Session {
             .as_ref()
             .and_then(Installed::sprites)
             .unwrap_or_else(|| content_dir().join(SPRITES));
-        let mut game = load_game(path, &sprites, self.game.world.feel.clone())?;
+        let look = pack
+            .as_ref()
+            .map_or(Look::RENDERED, |p| Look::of(&p.manifest));
+        let mut game = load_game(path, &sprites, self.game.world.feel.clone())?.with_look(look);
         game.debug |= self.game.debug;
         self.game = game;
         self.level_path = path.to_path_buf();
@@ -644,6 +648,20 @@ impl Session {
 
     /// Draws the screen. During play, `alpha` is how far to draw between
     /// the last two states; behind a menu the level stands still.
+    /// How the next frame is drawn: the game's look in play and on the
+    /// small screens over it, and the bundled look for the other menus,
+    /// which are laid out for its view.
+    pub fn look(&self) -> Look {
+        match self.screen {
+            Screen::Playing | Screen::Paused(_) | Screen::Complete(_) | Screen::GameOver(_) => {
+                self.game.look
+            }
+            _ => Look::RENDERED,
+        }
+    }
+
+    /// Draws the game and the screen over it into `canvas`, whose view
+    /// should be [`look`](Session::look)'s.
     pub fn draw(&self, canvas: &mut dyn Surface, alpha: f64) {
         let playing = self.screen == Screen::Playing;
         self.game.draw(canvas, if playing { alpha } else { 1.0 });
@@ -652,7 +670,7 @@ impl Session {
         }
         canvas.shade(DIM, 160);
 
-        let centre = VIEW.0 as i32 / 2;
+        let centre = canvas.view().0 as i32 / 2;
         let (menu, top) = match &self.screen {
             Screen::Playing => return,
             Screen::Controls(controls, _) => {
@@ -1441,6 +1459,47 @@ mod tests {
 
         s.step(&press(Action::Jump));
         assert_eq!(s.screen, Screen::Playing);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn plays_a_pixel_art_pack_at_its_own_view() {
+        let (mut s, dir) = importing_session("look");
+        import_the_game(&mut s);
+        finish_import(&mut s);
+        s.step(&press(Action::Pause));
+        let manifest = dir.join("packs/title-9/manifest.toml");
+        let text = std::fs::read_to_string(&manifest).unwrap();
+        assert!(text.contains("pixel_art = true"), "{text}");
+        std::fs::write(&manifest, format!("{text}view = [256, 224]\n")).unwrap();
+        let pack = Installed::load(&dir.join("packs/title-9")).unwrap();
+        s.play_pack(pack).unwrap();
+        let look = Look {
+            view: (256, 224),
+            pixel_art: true,
+        };
+        assert_eq!(s.game.look, look);
+        assert_eq!(s.game.camera.view, look.view);
+        // The menus are laid out for the bundled view.
+        s.screen = Screen::title();
+        assert_eq!(s.look(), Look::RENDERED);
+
+        s.step(&press(Action::Jump));
+        assert_eq!(s.screen, Screen::Playing);
+        assert_eq!(s.look(), look);
+        let mut canvas = crate::Canvas::new(256, 224);
+        s.draw(&mut canvas, 1.0);
+        s.game.restart();
+        assert_eq!(s.game.camera.view, look.view, "kept on a restart");
+        s.step(&press(Action::Pause));
+        assert!(matches!(s.screen, Screen::Paused(_)), "{:?}", s.screen);
+        assert_eq!(s.look(), look, "pausing doesn't change the view");
+        s.draw(&mut canvas, 1.0);
+
+        // The bundled game has the bundled look.
+        let bundled = s.bundled.clone().unwrap();
+        s.play_level(&bundled, None).unwrap();
+        assert_eq!(s.game.look, Look::RENDERED);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

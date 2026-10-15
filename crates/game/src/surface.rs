@@ -309,6 +309,9 @@ pub enum Drawn {
 #[derive(Clone, Debug)]
 pub struct DrawList {
     pub view: (u32, u32),
+    /// Drawn at one pixel per view unit, then scaled up by a whole number
+    /// with nearest-neighbour filtering ([`Look::pixel_art`](crate::Look)).
+    pub pixel_art: bool,
     /// What the frame starts as.
     pub background: Color,
     /// In drawing order.
@@ -321,6 +324,7 @@ impl DrawList {
     pub fn new(view: (u32, u32)) -> DrawList {
         DrawList {
             view,
+            pixel_art: false,
             background: 0,
             items: Vec::new(),
             lighting: Lighting::default(),

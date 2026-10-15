@@ -13,7 +13,7 @@ use winit::event_loop::OwnedDisplayHandle;
 use winit::window::Window;
 
 use crate::canvas::Color;
-use crate::display::letterbox;
+use crate::display::{letterbox, pixel_fit};
 use crate::report;
 use crate::surface::{
     DrawList, Drawn, LIGHT_HEIGHT, Lighting, MAX_LIGHTS, Quad, Texture, triangulate,
@@ -304,6 +304,15 @@ struct Painter {
     vertices: wgpu::Buffer,
     /// The multisampled target, and its size.
     multisampled: Option<(wgpu::TextureView, (u32, u32))>,
+    /// Draws pixel art into [`Painter::low`]: one sample, and colours
+    /// written as they are.
+    low_pipeline: wgpu::RenderPipeline,
+    /// The view's size for drawing into [`Painter::low`].
+    low_uniform: wgpu::Buffer,
+    low_view_group: wgpu::BindGroup,
+    /// Pixel art is drawn into this, a pixel to a view unit, then scaled
+    /// up from it: the target, what draws it, and its size.
+    low: Option<(wgpu::TextureView, wgpu::BindGroup, (u32, u32))>,
     frame: u64,
 }
 
@@ -385,38 +394,42 @@ impl Painter {
             0 => Float32x2, 1 => Float32x2, 2 => Float32x4, 3 => Float32x4, 4 => Float32,
             5 => Float32x4
         ];
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("draw"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vertex"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: (FLOATS * 4) as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &attributes,
-                })],
-            },
-            primitive: Default::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: samples,
-                ..Default::default()
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fragment"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let pipeline_for = |format, samples| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("draw"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vertex"),
+                    compilation_options: Default::default(),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: (FLOATS * 4) as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &attributes,
+                    })],
+                },
+                primitive: Default::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState {
+                    count: samples,
+                    ..Default::default()
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fragment"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let pipeline = pipeline_for(format, samples);
+        let low_pipeline = pipeline_for(format.remove_srgb_suffix(), 1);
         let view = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("view"),
             size: 16,
@@ -429,20 +442,30 @@ impl Painter {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let view_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("view"),
-            layout: &view_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: view.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: lighting.as_entire_binding(),
-                },
-            ],
+        let low_uniform = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("low view"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
+        let view_group_for = |view: &wgpu::Buffer| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("view"),
+                layout: &view_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: view.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: lighting.as_entire_binding(),
+                    },
+                ],
+            })
+        };
+        let view_group = view_group_for(&view);
+        let low_view_group = view_group_for(&low_uniform);
         let sampler = |label, filter, mipmap_filter| {
             device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some(label),
@@ -489,8 +512,42 @@ impl Painter {
             too_large: Vec::new(),
             vertices,
             multisampled: None,
+            low_pipeline,
+            low_uniform,
+            low_view_group,
+            low: None,
             frame: 0,
         }
+    }
+
+    /// Makes sure [`Painter::low`] is `size` pixels.
+    fn low_target(&mut self, size: (u32, u32)) {
+        if self.low.as_ref().is_some_and(|low| low.2 == size) {
+            return;
+        }
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("low"),
+            size: wgpu::Extent3d {
+                width: size.0,
+                height: size.1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.format.remove_srgb_suffix(),
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&Default::default());
+        let group = bind(
+            &self.device,
+            &self.texture_layout,
+            &view,
+            &self.flat,
+            &self.sharp,
+        );
+        self.low = Some((view, group, size));
     }
 
     /// Whether `texture` is on the GPU now, putting it there if need be.
@@ -584,6 +641,14 @@ impl Painter {
             textures.contains_key(texture) && normals.is_none_or(|n| textures.contains_key(&n))
         });
 
+        // Pixel art is drawn into the low target, then that is drawn into
+        // the window with these vertices, after the rest.
+        let scaled_up = (mesh.floats.len() / FLOATS) as u32;
+        if list.pixel_art {
+            mesh.floats.extend(scale_up(view));
+            self.low_target(list.view);
+        }
+
         let bytes: Vec<u8> = mesh.floats.iter().flat_map(|f| f.to_le_bytes()).collect();
         if bytes.len() as u64 > self.vertices.size() {
             let size = (bytes.len() as u64).next_power_of_two();
@@ -596,6 +661,11 @@ impl Painter {
             .flat_map(|f| f.to_le_bytes())
             .collect();
         self.queue.write_buffer(&self.view, 0, &uniform);
+        let uniform: Vec<u8> = [view.0, view.1, 0.0, 0.0]
+            .iter()
+            .flat_map(|f| f.to_le_bytes())
+            .collect();
+        self.queue.write_buffer(&self.low_uniform, 0, &uniform);
         self.queue
             .write_buffer(&self.lighting, 0, &lighting_bytes(&list.lighting));
 
@@ -626,6 +696,24 @@ impl Painter {
             _ => (&target_view, None),
         };
         let mut encoder = self.device.create_command_encoder(&Default::default());
+        if let Some((low, _, _)) = self.low.as_ref().filter(|_| list.pixel_art) {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("draw low"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: low,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.low_pipeline);
+            pass.set_bind_group(0, &self.low_view_group, &[]);
+            self.draw_batches(&mut pass, &mesh);
+        }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("draw"),
@@ -640,21 +728,37 @@ impl Painter {
                 })],
                 ..Default::default()
             });
-            let (x, y, w, h) = letterbox(list.view, size);
-            pass.set_viewport(x, y, w, h, 0.0, 1.0);
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.view_group, &[]);
-            pass.set_vertex_buffer(0, self.vertices.slice(..));
-            for (batch, range) in &mesh.batches {
-                let group = match batch {
-                    Some(key) => &self.groups[key],
-                    None => &self.white,
-                };
-                pass.set_bind_group(1, group, &[]);
-                pass.draw(range.clone(), 0..1);
+            match &self.low {
+                Some((_, low, _)) if list.pixel_art => {
+                    let (x, y, w, h) = pixel_fit(list.view, size);
+                    pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                    pass.set_vertex_buffer(0, self.vertices.slice(..));
+                    pass.set_bind_group(1, low, &[]);
+                    pass.draw(scaled_up..scaled_up + 6, 0..1);
+                }
+                _ => {
+                    let (x, y, w, h) = letterbox(list.view, size);
+                    pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                    self.draw_batches(&mut pass, &mesh);
+                }
             }
         }
         self.queue.submit([encoder.finish()]);
+    }
+
+    /// Draws `mesh`'s batches, whose vertices are in [`Painter::vertices`].
+    fn draw_batches(&self, pass: &mut wgpu::RenderPass, mesh: &Mesh) {
+        pass.set_vertex_buffer(0, self.vertices.slice(..));
+        for (batch, range) in &mesh.batches {
+            let group = match batch {
+                Some(key) => &self.groups[key],
+                None => &self.white,
+            };
+            pass.set_bind_group(1, group, &[]);
+            pass.draw(range.clone(), 0..1);
+        }
     }
 }
 
@@ -786,6 +890,16 @@ struct Mesh {
 /// Where a vertex samples from, and the bounds samples stay within.
 type Sample = ((f32, f32), [f32; 4]);
 
+/// A quad's two triangles, as corners of a unit square.
+const CORNERS: [(f32, f32); 6] = [
+    (0.0, 0.0),
+    (1.0, 0.0),
+    (0.0, 1.0),
+    (1.0, 0.0),
+    (1.0, 1.0),
+    (0.0, 1.0),
+];
+
 const SOLID: Sample = ((0.5, 0.5), [0.0, 0.0, 1.0, 1.0]);
 
 impl Mesh {
@@ -896,18 +1010,25 @@ impl Mesh {
             on(quad.flip.diagonal),
             on(normals.is_some() && quad.flash.is_none()),
         ];
-        for (cx, cy) in [
-            (0.0, 0.0),
-            (1.0, 0.0),
-            (0.0, 1.0),
-            (1.0, 0.0),
-            (1.0, 1.0),
-            (0.0, 1.0),
-        ] {
+        for (cx, cy) in CORNERS {
             let (at, sample) = corner(cx, cy);
             self.vertex(batch, at, sample, color, flash, lit);
         }
     }
+}
+
+/// The vertices of a texture covering a `view`, sampled sharp: the low
+/// target drawn into the window.
+fn scale_up(view: (f32, f32)) -> Vec<f32> {
+    // Just short of the far edges, as for any pixel art.
+    let shy = 1.0 / 64.0;
+    let bounds = [0.0, 0.0, 1.0 - shy / view.0, 1.0 - shy / view.1];
+    let mut mesh = Mesh::default();
+    for (cx, cy) in CORNERS {
+        let at = (cx * view.0, cy * view.1);
+        mesh.vertex(None, at, ((cx, cy), bounds), [1.0; 4], 0.0, [0.0; 4]);
+    }
+    mesh.floats
 }
 
 fn premultiplied(color: Color, alpha: u8) -> [f32; 4] {
@@ -1076,6 +1197,22 @@ mod tests {
         assert_eq!(out[7], RED);
         let purple = out[3];
         assert!(purple >> 16 > 0x20 && purple & 0xff > 0x20, "{purple:06x}");
+
+        // A pixel-art view is drawn a pixel to a unit, so even the smooth
+        // texture is a texel to a pixel, then scaled up 3 times (not 3.5)
+        // and centred.
+        let mut list = DrawList::new((2, 1));
+        list.pixel_art = true;
+        list.quad(&quad(false));
+        let out = paint(&list, 7, 5).unwrap();
+        #[rustfmt::skip]
+        assert_eq!(out, [
+            0, 0, 0, 0, 0, 0, 0,
+            BLUE, BLUE, BLUE, RED, RED, RED, 0,
+            BLUE, BLUE, BLUE, RED, RED, RED, 0,
+            BLUE, BLUE, BLUE, RED, RED, RED, 0,
+            0, 0, 0, 0, 0, 0, 0,
+        ]);
     }
 
     #[test]

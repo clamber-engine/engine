@@ -74,6 +74,7 @@ pub use cast::{Cast, PLAYER, Pose, Poses};
 pub use clock::Clock;
 pub use controls::{Controls, Request, Row, TIMEOUT};
 pub use credits::{Credits, DEFAULT_CREDITS};
+pub use display::Look;
 pub use feels::Feels;
 pub use game::Game;
 pub use gpu::Gpu;

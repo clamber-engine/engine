@@ -13,8 +13,8 @@ use std::time::Instant;
 
 use clamber_game::{
     Canvas, Clock, Credits, DEFAULT_CREDITS, DrawList, Feels, Fit, GIF_DELAY, Game, Gpu, Prefs,
-    SPRITES, Screen, Session, VIEW, content_dir, display, encode_gif, encode_png, keys, load_game,
-    present, report, rgb,
+    SPRITES, Screen, Session, Surface, VIEW, content_dir, display, encode_gif, encode_png, keys,
+    load_game, present, report, rgb,
 };
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
@@ -622,6 +622,9 @@ impl App {
         };
         match &mut shown.output {
             Output::Gpu(gpu) => {
+                let look = self.session.look();
+                self.list.view = look.view;
+                self.list.pixel_art = look.pixel_art;
                 self.session.draw(&mut self.list, alpha);
                 gpu.present(&self.list)
             }
@@ -632,9 +635,15 @@ impl App {
                 else {
                     return Ok(());
                 };
-                let scale = Fit::new(VIEW, (size.width, size.height)).scale;
-                if self.canvas.scale != scale {
-                    self.canvas = Canvas::scaled(VIEW, scale);
+                // Pixel art is drawn a pixel to a unit and scaled up as
+                // it's presented; the rest is drawn at the window's size.
+                let look = self.session.look();
+                let scale = match look.pixel_art {
+                    true => 1,
+                    false => Fit::new(look.view, (size.width, size.height)).scale,
+                };
+                if self.canvas.scale != scale || self.canvas.view() != look.view {
+                    self.canvas = Canvas::scaled(look.view, scale);
                 }
                 self.session.draw(&mut self.canvas, alpha);
                 surface.resize(w, h).map_err(|e| e.to_string())?;

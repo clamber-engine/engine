@@ -9,6 +9,7 @@ use clamber_sim::{Facing, FlowEvent, HALF_WIDTH, HEIGHT, InputFrame, State, Worl
 use crate::camera::{Camera, VIEW, point};
 use crate::canvas::{Canvas, Color, rgb};
 use crate::cast::{Cast, Poses};
+use crate::display::Look;
 use crate::hud::draw_hud;
 use crate::layers::LayerArt;
 use crate::surface::{Lighting, PointLight, Surface};
@@ -45,6 +46,8 @@ pub struct Game {
     poses: Poses,
     /// Frames left of a pause the world asked for ([`World::pause`]).
     pause: u8,
+    /// How it's drawn while being played.
+    pub look: Look,
 }
 
 impl Game {
@@ -60,6 +63,7 @@ impl Game {
             debug: world.level.layers.is_empty(),
             poses: Poses::new(&cast, &world),
             pause: 0,
+            look: Look::RENDERED,
             world,
             art: Arc::default(),
             cast,
@@ -70,6 +74,15 @@ impl Game {
     pub fn with_art(self, art: LayerArt) -> Game {
         Game {
             art: Arc::new(art),
+            ..self
+        }
+    }
+
+    /// Draws the game the way `look` says, with a camera to match.
+    pub fn with_look(self, look: Look) -> Game {
+        Game {
+            camera: Camera::with_view(&self.world, look.view),
+            look,
             ..self
         }
     }
@@ -92,7 +105,7 @@ impl Game {
             art: self.art.clone(),
             poses: Poses::new(&self.cast, &world),
             cast: self.cast.clone(),
-            ..Game::new(world)
+            ..Game::new(world).with_look(self.look)
         };
     }
 
@@ -128,7 +141,7 @@ impl Game {
         if self.world.flow.events.contains(&FlowEvent::Respawn) {
             // A jump to somewhere else, not a move to draw between.
             self.previous = self.world.player.pos;
-            self.camera = Camera::new(&self.world);
+            self.camera = Camera::with_view(&self.world, self.look.view);
         } else {
             self.camera.update(&self.world);
         }
@@ -142,9 +155,10 @@ impl Game {
     }
 
     /// Draws the world, and the HUD over it, `alpha` of the way from the
-    /// state before the last step to the state after it.
+    /// state before the last step to the state after it. A canvas showing
+    /// more or less than the camera's view is centred where it is.
     pub fn draw(&self, canvas: &mut dyn Surface, alpha: f64) {
-        let origin = self.camera.top_left(alpha);
+        let origin = self.camera.top_left_of(canvas.view(), alpha);
         let to_screen = |p: (f64, f64)| (p.0 - origin.0, p.1 - origin.1);
         canvas.clear(SKY);
 
@@ -439,6 +453,41 @@ mod tests {
         assert_eq!(at(400.0, 250.0), Some(rgb(1, 2, 3)));
         assert_eq!(at(500.0, 290.0), Some(state_color(State::Idle)));
         assert_eq!(at(545.0, 255.0), Some(rgb(4, 5, 6)));
+    }
+
+    #[test]
+    fn draws_pixel_art_without_normal_maps_unlit_at_its_view() {
+        let dim = r##"
+            [lighting]
+            ambient = "#202020"
+
+            [[layers]]
+            name = "wall"
+            image = "wall.png"
+            pixel_art = true
+            parallax = [0, 0]
+            repeat = [true, true]
+        "##;
+        let level = Level::from_toml_str(&format!("{LEVEL}{dim}"), "test").unwrap();
+        let mut image = clamber_sprite::RgbaImage::new(4, 4);
+        image.data.fill([100, 110, 120, 255]);
+        let mut art = LayerArt::default();
+        art.insert("wall.png", image, true);
+        let world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
+        let look = Look {
+            view: (256, 224),
+            pixel_art: true,
+        };
+        let mut game = Game::new(world).with_art(art).with_look(look);
+        game.debug = false;
+        let mut canvas = Canvas::new(256, 224);
+        game.draw(&mut canvas, 1.0);
+        let (left, top) = game.camera.top_left(1.0);
+        assert_eq!(game.camera.view, look.view);
+        let at = |x: f64, y: f64| canvas.get((x - left) as i32, (y - top) as i32).unwrap();
+        // The dim ambient light doesn't touch it.
+        assert_eq!(at(420.0, 220.0), rgb(100, 110, 120));
+        assert_eq!(at(620.0, 330.0), rgb(100, 110, 120));
     }
 
     #[test]

@@ -3,6 +3,11 @@
 
 use std::time::Duration;
 
+use clamber_import::Manifest;
+
+use crate::camera::VIEW;
+use crate::canvas::Fit;
+
 /// The window's size when nothing else decides it, in physical pixels.
 pub const START_SIZE: (u32, u32) = (1280, 720);
 
@@ -64,6 +69,56 @@ pub fn letterbox(canvas: (u32, u32), window: (u32, u32)) -> (f32, f32, f32, f32)
     )
 }
 
+/// Where a `canvas` of pixel art goes in a `window`: scaled by the
+/// largest whole number that fits, centred, as `(x, y, width, height)` in
+/// window pixels. A window too small for it at all gets
+/// [`letterbox`]'s fit instead.
+pub fn pixel_fit(canvas: (u32, u32), window: (u32, u32)) -> (f32, f32, f32, f32) {
+    if window.0 < canvas.0 || window.1 < canvas.1 {
+        return letterbox(canvas, window);
+    }
+    let fit = Fit::new(canvas, window);
+    let size = |n: u32| (n * fit.scale) as f32;
+    (fit.x as f32, fit.y as f32, size(canvas.0), size(canvas.1))
+}
+
+/// How a game is drawn: how much of the world the view shows, and how
+/// it's scaled to the window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Look {
+    /// The view's size in world units.
+    pub view: (u32, u32),
+    /// Drawn as pixel art: the view is drawn at one pixel per unit, then
+    /// scaled up by a whole number with nearest-neighbour filtering and
+    /// letterboxed ([`pixel_fit`]). Otherwise the view is drawn at the
+    /// window's own resolution ([`letterbox`]), and each texture is
+    /// filtered as it says.
+    pub pixel_art: bool,
+}
+
+impl Look {
+    /// The bundled art's look: a [`VIEW`] drawn at the window's resolution.
+    pub const RENDERED: Look = Look {
+        view: VIEW,
+        pixel_art: false,
+    };
+
+    /// The look an imported pack asks for in its manifest. A pack that
+    /// doesn't give its view's size gets [`VIEW`].
+    pub fn of(manifest: &Manifest) -> Look {
+        Look {
+            view: manifest.view.map_or(VIEW, |[w, h]| (w, h)),
+            pixel_art: manifest.pixel_art,
+        }
+    }
+}
+
+impl Default for Look {
+    fn default() -> Look {
+        Look::RENDERED
+    }
+}
+
 /// The least time between drawing frames. With vsync during play it's
 /// none, as presenting waits for the display; without, it's
 /// [`FRAME_CAP`]'s. Behind a menu or out of focus (not `active`), it's
@@ -111,6 +166,25 @@ mod tests {
         assert_eq!(letterbox(VIEW, (1280, 720)), (0.0, 0.0, 1280.0, 720.0));
         assert_eq!(letterbox(VIEW, (1280, 1000)), (0.0, 140.0, 1280.0, 720.0));
         assert_eq!(letterbox(VIEW, (2000, 720)), (360.0, 0.0, 1280.0, 720.0));
+    }
+
+    #[test]
+    fn fits_pixel_art_by_whole_numbers() {
+        // 1280 / 256 is 5, but 720 / 224 is only 3.2.
+        assert_eq!(
+            pixel_fit((256, 224), (1280, 720)),
+            (256.0, 24.0, 768.0, 672.0)
+        );
+        assert_eq!(
+            pixel_fit((256, 224), (1024, 896)),
+            (0.0, 0.0, 1024.0, 896.0)
+        );
+        assert_eq!(pixel_fit((256, 224), (300, 224)), (22.0, 0.0, 256.0, 224.0));
+        // Too small to show whole: shrunk to fit like everything else.
+        assert_eq!(
+            pixel_fit((256, 224), (128, 224)),
+            letterbox((256, 224), (128, 224))
+        );
     }
 
     #[test]

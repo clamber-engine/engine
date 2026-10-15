@@ -30,7 +30,18 @@ pub struct Manifest {
     /// The Clamber version that imported it.
     pub importer: String,
     pub redistribute: bool,
+    /// Whether the pack is pixel art, to be drawn at its view's size and
+    /// scaled up by whole numbers with nearest-neighbour filtering.
+    #[serde(default)]
+    pub pixel_art: bool,
+    /// The view's size in pixels, `[width, height]`: how much of a level
+    /// is seen at once. Packs without one get the engine's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<[u32; 2]>,
 }
+
+/// The largest view, in pixels each way, a manifest can ask for.
+pub const MAX_VIEW: u32 = 4096;
 
 impl Manifest {
     pub fn to_toml(&self) -> String {
@@ -52,6 +63,12 @@ impl Manifest {
         }
         if manifest.redistribute {
             return Err("an imported pack must have `redistribute = false`".into());
+        }
+        let sizes = manifest.view.unwrap_or([1, 1]);
+        if !sizes.iter().all(|n| (1..=MAX_VIEW).contains(n)) {
+            return Err(format!(
+                "the view must be from 1 to {MAX_VIEW} pixels each way"
+            ));
         }
         Ok(manifest)
     }
@@ -104,6 +121,8 @@ mod tests {
             release: "test release".into(),
             importer: "0.1.0".into(),
             redistribute: false,
+            pixel_art: true,
+            view: Some([320, 200]),
         }
     }
 
@@ -112,7 +131,29 @@ mod tests {
         let m = manifest();
         let text = m.to_toml();
         assert!(text.contains("redistribute = false"), "{text}");
+        assert!(text.contains("pixel_art = true"), "{text}");
+        assert!(text.contains("view = [320, 200]"), "{text}");
         assert_eq!(Manifest::from_toml_str(&text), Ok(m));
+    }
+
+    #[test]
+    fn how_to_draw_it_is_optional() {
+        let text = manifest().to_toml();
+        let plain = text
+            .replace("pixel_art = true", "")
+            .replace("view = [320, 200]", "");
+        let m = Manifest::from_toml_str(&plain).unwrap();
+        assert!(!m.pixel_art);
+        assert_eq!(m.view, None);
+    }
+
+    #[test]
+    fn the_view_has_a_size() {
+        let text = manifest().to_toml();
+        for view in ["[0, 200]", "[320, 0]", "[320, 5000]"] {
+            let bad = text.replace("[320, 200]", view);
+            assert!(Manifest::from_toml_str(&bad).is_err(), "{view}");
+        }
     }
 
     #[test]
