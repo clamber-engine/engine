@@ -421,6 +421,7 @@ mod tests {
                     | Param::PutDownAhead
                     | Param::PutDownLift
                     | Param::PutDownRegrab
+                    | Param::CountLife
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

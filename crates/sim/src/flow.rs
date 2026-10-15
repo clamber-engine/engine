@@ -24,6 +24,7 @@ use clamber_level::Vec2;
 
 use clamber_pack::Param;
 
+use crate::collect::{self, Release};
 use crate::loss;
 use crate::player::{Knockout, Player, State};
 use crate::world::{Event, World};
@@ -79,6 +80,8 @@ pub enum FlowEvent {
     Defeat(usize),
     /// The launcher at this index fired.
     Launch(usize),
+    /// The collectible count gave one more life.
+    Life,
 }
 
 /// Progress through the level.
@@ -86,8 +89,14 @@ pub enum FlowEvent {
 pub struct Flow {
     pub outcome: Outcome,
     pub lives: u8,
+    /// The collectible count: gems, and what collectibles add.
     pub gems: u32,
     pub relics: u32,
+    /// Steps on which one more reaches the collectible count, one entry
+    /// each.
+    pub due: Vec<u32>,
+    /// Taken collectibles still releasing what they're worth.
+    pub releases: Vec<Release>,
     /// Indices of the checkpoints reached, in order; the player comes
     /// back at the last.
     pub checkpoints: Vec<usize>,
@@ -156,6 +165,7 @@ pub(crate) fn dying(world: &mut World) -> bool {
 /// from the step before.
 pub(crate) fn update(world: &mut World, hurt_by: Option<usize>) {
     let knockout = world.player_physics()[Param::KnockoutJump] > Fixed::ZERO;
+    let life = u32::try_from(world.feel.world[Param::CountLife].floor()).unwrap_or(0);
     let level = &world.level;
     let flow = &mut world.flow;
     let body = world.player.body();
@@ -179,7 +189,7 @@ pub(crate) fn update(world: &mut World, hurt_by: Option<usize>) {
             }
             GEM | RELIC => {
                 if thing.kind == GEM {
-                    flow.gems += 1;
+                    collect::count(flow, life);
                 } else {
                     flow.relics += 1;
                 }

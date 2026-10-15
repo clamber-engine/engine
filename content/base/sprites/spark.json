@@ -1,0 +1,306 @@
+{
+  "frames": [
+    {
+      "filename": "spark spin 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 62,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 9,
+        "w": 62,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "spark spin 1",
+      "frame": {
+        "x": 66,
+        "y": 2,
+        "w": 56,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12,
+        "y": 9,
+        "w": 56,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "spark spin 2",
+      "frame": {
+        "x": 124,
+        "y": 2,
+        "w": 38,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 9,
+        "w": 38,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "spark spin 3",
+      "frame": {
+        "x": 164,
+        "y": 2,
+        "w": 16,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 32,
+        "y": 9,
+        "w": 16,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "spark spin 4",
+      "frame": {
+        "x": 182,
+        "y": 2,
+        "w": 38,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 9,
+        "w": 38,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "spark spin 5",
+      "frame": {
+        "x": 222,
+        "y": 2,
+        "w": 56,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12,
+        "y": 9,
+        "w": 56,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "spark spin 6",
+      "frame": {
+        "x": 280,
+        "y": 2,
+        "w": 62,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 9,
+        "y": 9,
+        "w": 62,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "spark spin 7",
+      "frame": {
+        "x": 344,
+        "y": 2,
+        "w": 56,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12,
+        "y": 9,
+        "w": 56,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "spark spin 8",
+      "frame": {
+        "x": 402,
+        "y": 2,
+        "w": 38,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 9,
+        "w": 38,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "spark spin 9",
+      "frame": {
+        "x": 442,
+        "y": 2,
+        "w": 16,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 32,
+        "y": 9,
+        "w": 16,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "spark spin 10",
+      "frame": {
+        "x": 460,
+        "y": 2,
+        "w": 38,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 9,
+        "w": 38,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "spark spin 11",
+      "frame": {
+        "x": 500,
+        "y": 2,
+        "w": 56,
+        "h": 62
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12,
+        "y": 9,
+        "w": 56,
+        "h": 62
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "spark.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 558,
+      "h": 66
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "spin",
+        "from": 0,
+        "to": 11,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 40,
+        "y": 40
+      },
+      "scale": 5,
+      "normals": "spark-normals.png"
+    }
+  }
+}

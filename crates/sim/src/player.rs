@@ -160,6 +160,8 @@ pub struct Player {
     pub off_face: Option<(Facing, u8)>,
     /// Frames since the jump under way started, until it lands.
     pub jump_age: Option<u8>,
+    /// Frames since the player last landed, while it stays on the ground.
+    pub since_land: Option<u8>,
     /// The enemy whose touch hurts the player on the next step, found
     /// at the end of this one (`hurt_width` above 0).
     pub hurt_ahead: Option<usize>,
@@ -216,6 +218,7 @@ impl Player {
             roll_jump: false,
             off_face: None,
             jump_age: None,
+            since_land: None,
             hurt_ahead: None,
             knockout: None,
             hop: None,

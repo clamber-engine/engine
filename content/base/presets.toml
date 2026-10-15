@@ -137,6 +137,7 @@ put_down_time = 0
 put_down_ahead = 0
 put_down_lift = 0
 put_down_regrab = 0
+count_life = 0
 
 [presets.snappy]
 label = "Snappy"
@@ -181,8 +182,9 @@ air_acceleration = 0.09375
 # (air-walls.md), when a turn starts while moving: the stride cycle
 # (ground-speed.md, "Standing, walking and running"), and swapping
 # places with the other character (swap.md), losing a character and
-# protection (losing-a-character.md, protection.md), and carrying
-# objects (carrying.md). Classic 1
+# protection (losing-a-character.md, protection.md), carrying
+# objects (carrying.md), and the collectible count (collectibles.md;
+# the collectibles are archetypes.toml's `spark` and `cluster`). Classic 1
 # is the bundled game's starting preset. Jump doesn't cut upward speed
 # when let go (`jump_release_speed` equals `jump_speed`); it ends the
 # lighter `held_jump_gravity` instead.
@@ -319,6 +321,8 @@ put_down_time = 14
 put_down_ahead = 16
 put_down_lift = 3
 put_down_regrab = 2
+# The collectible count (collectibles.md).
+count_life = 100
 
 # The second character (roster slot 1): spec/behavior/second-character.md.
 # It moves by the same rules with its own speeds, jump and crouch

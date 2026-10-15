@@ -11,12 +11,15 @@
 //!
 //! Rendering and audio read a world; they never change it.
 //!
+//! Collectibles add to the collectible count ([`Release`]).
+//!
 //! [`Script`] and [`run`] drive a world headlessly from recorded input,
 //! for tests and the `clamber-sim` command, and [`record`] writes what
 //! happens as a trace (`spec/traces/FORMAT.md`).
 
 mod archetype;
 mod carry;
+mod collect;
 mod columns;
 mod flow;
 mod loss;
@@ -27,9 +30,10 @@ mod swap;
 mod things;
 mod world;
 
-pub use archetype::{Archetype, ArchetypeError, Archetypes, Behavior};
+pub use archetype::{Archetype, ArchetypeError, Archetypes, Behavior, MAX_AIR_STEPS, Reach, Span};
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
+pub use collect::Release;
 pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };

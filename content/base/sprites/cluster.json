@@ -1,0 +1,398 @@
+{
+  "frames": [
+    {
+      "filename": "cluster spin 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 96,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 22,
+        "y": 26,
+        "w": 96,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 1",
+      "frame": {
+        "x": 100,
+        "y": 2,
+        "w": 90,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 27,
+        "w": 90,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 2",
+      "frame": {
+        "x": 192,
+        "y": 2,
+        "w": 74,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 33,
+        "y": 27,
+        "w": 74,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 3",
+      "frame": {
+        "x": 268,
+        "y": 2,
+        "w": 52,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 44,
+        "y": 27,
+        "w": 52,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 4",
+      "frame": {
+        "x": 322,
+        "y": 2,
+        "w": 30,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 55,
+        "y": 26,
+        "w": 30,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 5",
+      "frame": {
+        "x": 354,
+        "y": 2,
+        "w": 52,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 44,
+        "y": 27,
+        "w": 52,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 6",
+      "frame": {
+        "x": 408,
+        "y": 2,
+        "w": 74,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 33,
+        "y": 27,
+        "w": 74,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 7",
+      "frame": {
+        "x": 484,
+        "y": 2,
+        "w": 90,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 27,
+        "w": 90,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 8",
+      "frame": {
+        "x": 576,
+        "y": 2,
+        "w": 96,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 22,
+        "y": 26,
+        "w": 96,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 9",
+      "frame": {
+        "x": 674,
+        "y": 2,
+        "w": 90,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 27,
+        "w": 90,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 10",
+      "frame": {
+        "x": 766,
+        "y": 2,
+        "w": 74,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 33,
+        "y": 27,
+        "w": 74,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 11",
+      "frame": {
+        "x": 842,
+        "y": 2,
+        "w": 52,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 44,
+        "y": 27,
+        "w": 52,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 12",
+      "frame": {
+        "x": 896,
+        "y": 2,
+        "w": 30,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 55,
+        "y": 26,
+        "w": 30,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 13",
+      "frame": {
+        "x": 928,
+        "y": 2,
+        "w": 52,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 44,
+        "y": 27,
+        "w": 52,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 14",
+      "frame": {
+        "x": 982,
+        "y": 2,
+        "w": 74,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 33,
+        "y": 27,
+        "w": 74,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "cluster spin 15",
+      "frame": {
+        "x": 1058,
+        "y": 2,
+        "w": 90,
+        "h": 87
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 27,
+        "w": 90,
+        "h": 87
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 120
+      },
+      "duration": 33,
+      "ticks": 2
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "cluster.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1150,
+      "h": 91
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "spin",
+        "from": 0,
+        "to": 15,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 70,
+        "y": 70
+      },
+      "scale": 5,
+      "normals": "cluster-normals.png"
+    }
+  }
+}

@@ -182,7 +182,7 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics) {
             let origin = level.entities[thing.index].at;
             fly(thing, origin, path, period);
         }
-        Behavior::Launcher { .. } | Behavior::Carry { .. } => {}
+        Behavior::Launcher { .. } | Behavior::Carry { .. } | Behavior::Collect { .. } => {}
     }
 }
 
@@ -531,7 +531,7 @@ fn interact(
                 thing.phase = Phase::Fired(0);
                 world.flow.events.push(FlowEvent::Launch(thing.index));
             }
-            Behavior::Carry { .. } => {}
+            Behavior::Carry { .. } | Behavior::Collect { .. } => {}
             _ => {
                 let middle = Fixed::from_bits((area.1.to_bits() + area.3.to_bits()) / 2);
                 let landed = !boxes && previous_feet <= middle && player.pos.y >= previous_feet;

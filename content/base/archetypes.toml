@@ -37,12 +37,31 @@
 #   it flies until it first touches something: a wall, and it drops
 #   straight down; the floor, and it rests there. It doesn't touch
 #   characters yet.
+# - `collect`: a collectible the player takes by reaching it. It's then
+#   gone, and adds `worth` to the collectible count, one at a time: the
+#   first as it's taken, then one every `release_every` frames, each
+#   arriving `count_delay` frames after that. Its position is its middle.
+#   `reach` is one table, or two: the first character's, then the one
+#   for any other (left out: the first's). Each says where the player
+#   takes it from, as `[past from, to, below from, to]`, whole px, ends
+#   included: how far the player's x, rounded down, is past the
+#   collectible's the way the player faces, and how far the player's
+#   feet, rounded up, are below it. Which applies depends on what the
+#   player is doing at the end of a frame: `stand`, `walk` (walking or
+#   running), `crouch` (down held on the ground), `roll`, `jump` (for the
+#   first `jump_early` frames of a jump, counting the one it starts on),
+#   and `air` (the rest of a jump, or in the air another way, and for the
+#   first `land_hold` frames after landing, counting the landing). In the
+#   air after `jump`, `air_below = [[vy, below], ...]` lifts the lowest
+#   `below`: the first pair whose `vy` is at least the player's vertical
+#   speed gives it, past them all it's `air`'s. Only the character under
+#   control takes collectibles.
 #
 # The player defeats an enemy by landing on it, and bounces off, or by
 # rolling into it. Touching one any other way costs a life.
 #
 # Units: px and frames at 60 Hz, +y down. Speeds are px/frame. These are
-# Clamber's own values.
+# Clamber's own values, except where a comment says otherwise.
 
 [archetypes.crawler]
 behavior = "walker"
@@ -78,3 +97,62 @@ behavior = "carry"
 size = [32, 24]
 offset = 0
 reach = 24
+
+# Collectibles with title-1's measured values. `spark`: a single
+# collectible (spec/behavior/collectibles.md), drawn 16 x 16 around its
+# position. `cluster`: a bunch worth ten (spec/behavior/bunches.md). The
+# spec doesn't cover a bunch taken by the second character, so it uses
+# the first's reach. Not in yet: the view window, and the count delays
+# that depend on where the view is (#62); until then the view is taken
+# to have the collectible well inside it. Where the spec doesn't cover
+# what the player is doing (bouncing, falling without a jump, carried
+# down a face, landing while moving, and so on), the reach is the one
+# for the nearest pose above.
+[archetypes.spark]
+behavior = "collect"
+size = [16, 16]
+offset = 0
+worth = 1
+release_every = 0
+count_delay = 33
+
+[[archetypes.spark.reach]]
+stand = [-16, 22, -7, 41]
+walk = [-16, 22, -7, 41]
+crouch = [-19, 13, -11, 32]
+roll = [-14, 22, -3, 39]
+jump = [-16, 22, -7, 41]
+air = [-16, 19, 16, 58]
+air_below = [[-4.5, 20], [-3.5, 21], [-2.5, 22], [0, 14]]
+jump_early = 7
+land_hold = 7
+
+[[archetypes.spark.reach]]
+stand = [-13, 12, -9, 39]
+walk = [-19, 13, -5, 39]
+crouch = [-20, 15, -8, 16]
+roll = [-19, 13, -5, 39]
+jump = [-19, 13, -5, 39]
+air = [-19, 13, -5, 39]
+air_below = []
+jump_early = 0
+land_hold = 0
+
+[archetypes.cluster]
+behavior = "collect"
+size = [24, 24]
+offset = 0
+worth = 10
+release_every = 6
+count_delay = 17
+
+[[archetypes.cluster.reach]]
+stand = [-15, 21, -8, 40]
+walk = [-15, 21, -8, 40]
+crouch = [-18, 12, -12, 31]
+roll = [-13, 21, -4, 38]
+jump = [-15, 21, -8, 40]
+air = [-15, 18, 13, 57]
+air_below = []
+jump_early = 6
+land_hold = 4

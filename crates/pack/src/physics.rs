@@ -461,6 +461,10 @@ params! {
     /// letting go, still held when the put-down is over, picks the object
     /// up again then. Whole frames.
     PutDownRegrab => "put_down_regrab",
+    /// Above 0, when the collectible count reaches this, it starts again
+    /// from 0 and the player gets one more life. 0: it just goes up.
+    /// Whole collectibles.
+    CountLife => "count_life",
 }
 
 impl Param {

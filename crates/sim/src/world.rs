@@ -9,6 +9,7 @@ use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 
 use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior};
 use crate::carry::{self, Flight};
+use crate::collect;
 use crate::flow::{self, Flow, FlowEvent, Outcome};
 use crate::loss::{self, Loss, Lost};
 use crate::player::{Act, Facing, Player, ROLL, Roll, frames};
@@ -357,6 +358,14 @@ impl World {
         for &i in &f.checkpoints {
             count(&mut out, i);
         }
+        count(&mut out, f.due.len());
+        for &d in &f.due {
+            out.extend(d.to_le_bytes());
+        }
+        count(&mut out, f.releases.len());
+        for r in &f.releases {
+            out.extend([r.left, r.wait, r.every, r.delay]);
+        }
         count(&mut out, f.events.len());
         for e in &f.events {
             let (tag, index) = match *e {
@@ -368,6 +377,7 @@ impl World {
                 FlowEvent::GameOver => (5, 0),
                 FlowEvent::Defeat(i) => (6, i),
                 FlowEvent::Launch(i) => (7, i),
+                FlowEvent::Life => (8, 0),
             };
             out.push(tag);
             count(&mut out, index);
@@ -442,6 +452,7 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
         None => out.push(0),
     }
     out.push(p.jump_age.map_or(0, |n| n.saturating_add(1)));
+    out.push(p.since_land.map_or(0, |n| n.saturating_add(1)));
     match p.hurt_ahead {
         Some(i) => {
             out.push(1);
@@ -499,6 +510,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         return;
     }
     if flow::dying(world) {
+        collect::update(world, false);
         world.frame += 1;
         return;
     }
@@ -539,6 +551,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         flow::update(world, hurt_by);
     }
     carry::after(world, &input.players[0]);
+    collect::update(world, true);
     let landed = world.events.contains(&Event::Land);
     world.recent.note(&input.players[0], landed);
     if let Some(knockout) = world.player.knockout

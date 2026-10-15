@@ -19,6 +19,9 @@ const BUILTIN: &str = include_str!("../../../content/base/archetypes.toml");
 const BUILTIN_ORIGIN: &str = "content/base/archetypes.toml";
 
 /// How a thing behaves, with the values its behavior uses.
+// A collectible's reach makes it the largest by far; there are few
+// things, and being `Copy` keeps them simple.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Behavior {
     /// An enemy that walks along the ground at `speed`, turning at walls
@@ -43,6 +46,61 @@ pub enum Behavior {
     /// An object the player can pick up, carry, throw and put down
     /// (see [`carry`](crate::carry)), from `reach` px away or closer.
     Carry { reach: Fixed },
+    /// A collectible the player takes from within its [`Reach`] (see
+    /// [`collect`](crate::collect)). It adds `worth` to the collectible
+    /// count, one at a time: the first on taking it, then one every
+    /// `release_every` frames, each `count_delay` frames after that.
+    Collect {
+        worth: u8,
+        release_every: u8,
+        count_delay: u8,
+        /// For the first character, and for any other.
+        reach: [Reach; 2],
+    },
+}
+
+/// Where a player can take a collectible from, by what it's doing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Reach {
+    /// Standing still.
+    pub stand: Span,
+    /// Walking or running.
+    pub walk: Span,
+    /// Crouching.
+    pub crouch: Span,
+    pub roll: Span,
+    /// The first `jump_early` frames of a jump, from the one it starts on.
+    pub jump: Span,
+    /// The rest of a jump, other times in the air, and the first
+    /// `land_hold` frames after landing.
+    pub air: Span,
+    /// In the air after `jump`, the lowest `below` while rising: the
+    /// first `(vy, below)` whose `vy` is at least the player's vertical
+    /// speed gives it. Past them all, it's `air`'s. Only the first
+    /// `air_steps` are used.
+    pub air_below: [(Fixed, i32); MAX_AIR_STEPS],
+    pub air_steps: u8,
+    pub jump_early: u8,
+    pub land_hold: u8,
+}
+
+/// The most `air_below` steps a [`Reach`] can have.
+pub const MAX_AIR_STEPS: usize = 8;
+
+/// Offsets from a collectible a player takes it from, in whole px, ends
+/// included: how far the player is past it the way the player faces,
+/// and how far the player's feet are below it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Span {
+    pub past: (i32, i32),
+    pub below: (i32, i32),
+}
+
+impl Span {
+    pub fn contains(self, past: i32, below: i32) -> bool {
+        (self.past.0..=self.past.1).contains(&past)
+            && (self.below.0..=self.below.1).contains(&below)
+    }
 }
 
 /// How a defeated walker leaves: it jumps up at `jump`, then falls
@@ -234,6 +292,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         "patrol" => &["path", "period"],
         "launcher" => &["velocity"],
         "carry" => &["reach"],
+        "collect" => &["worth", "release_every", "count_delay", "reach"],
         _ => return Err(format!("{path}.behavior: unknown behavior `{behavior}`")),
     };
     if let Some(key) = table.keys().find(|k| {
@@ -320,6 +379,31 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             }
             Behavior::Carry { reach }
         }
+        "collect" => {
+            let small = |key: &str, min: i64| match get(key)? {
+                Value::Integer(n) if (min..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
+                _ => Err(format!(
+                    "{path}.{key}: expected a whole number, {min} to {}",
+                    u8::MAX
+                )),
+            };
+            let reach = match get("reach")? {
+                Value::Array(tables) if (1..=2).contains(&tables.len()) => {
+                    let first = parse_reach(&tables[0], &format!("{path}.reach[0]"))?;
+                    match tables.get(1) {
+                        Some(t) => [first, parse_reach(t, &format!("{path}.reach[1]"))?],
+                        None => [first; 2],
+                    }
+                }
+                _ => return Err(format!("{path}.reach: expected one or two tables")),
+            };
+            Behavior::Collect {
+                worth: small("worth", 1)?,
+                release_every: small("release_every", 0)?,
+                count_delay: small("count_delay", 0)?,
+                reach,
+            }
+        }
         _ => Behavior::Launcher {
             velocity: pair("velocity")?,
         },
@@ -328,6 +412,95 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         behavior,
         size,
         offset: number("offset")?,
+    })
+}
+
+/// Reads one character's [`Reach`] table. Errors start with `path`.
+fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
+    let Value::Table(table) = value else {
+        return Err(format!("{path}: expected a table"));
+    };
+    const KEYS: &[&str] = &[
+        "stand",
+        "walk",
+        "crouch",
+        "roll",
+        "jump",
+        "air",
+        "air_below",
+        "jump_early",
+        "land_hold",
+    ];
+    if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
+        return Err(format!("{path}.{key}: no such value"));
+    }
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let whole = |v: &Value, at: &str| match v {
+        Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+        _ => Err(format!("{at}: expected a whole number of px")),
+    };
+    let span = |key: &str| -> Result<Span, String> {
+        let at = format!("{path}.{key}");
+        let n = match get(key)? {
+            Value::Array(items) if items.len() == 4 => items
+                .iter()
+                .enumerate()
+                .map(|(i, v)| whole(v, &format!("{at}[{i}]")))
+                .collect::<Result<Vec<_>, _>>()?,
+            _ => return Err(format!("{at}: expected [past from, to, below from, to]")),
+        };
+        if n[0] > n[1] || n[2] > n[3] {
+            return Err(format!("{at}: a range ends before it starts"));
+        }
+        Ok(Span {
+            past: (n[0], n[1]),
+            below: (n[2], n[3]),
+        })
+    };
+    let frames = |key: &str| match get(key)? {
+        Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
+        _ => Err(format!(
+            "{path}.{key}: expected a whole number of frames, 0 to 255"
+        )),
+    };
+    let mut air_below = [(Fixed::ZERO, 0); MAX_AIR_STEPS];
+    let steps = match get("air_below")? {
+        Value::Array(items) if items.len() <= MAX_AIR_STEPS => items,
+        _ => {
+            return Err(format!(
+                "{path}.air_below: expected a list of up to {MAX_AIR_STEPS} [vy, below] pairs"
+            ));
+        }
+    };
+    for (i, item) in steps.iter().enumerate() {
+        let at = format!("{path}.air_below[{i}]");
+        let Value::Array(pair) = item else {
+            return Err(format!("{at}: expected [vy, below]"));
+        };
+        let [vy, below] = pair.as_slice() else {
+            return Err(format!("{at}: expected [vy, below]"));
+        };
+        let vy = clamber_pack::read_number(vy, "", &format!("{at}[0]")).map_err(|e| e.message)?;
+        if i > 0 && vy <= air_below[i - 1].0 {
+            return Err(format!("{at}: speeds must go up"));
+        }
+        air_below[i] = (vy, whole(below, &format!("{at}[1]"))?);
+    }
+    Ok(Reach {
+        stand: span("stand")?,
+        walk: span("walk")?,
+        crouch: span("crouch")?,
+        roll: span("roll")?,
+        jump: span("jump")?,
+        air: span("air")?,
+        air_below,
+        air_steps: steps.len() as u8,
+        jump_early: frames("jump_early")?,
+        land_hold: frames("land_hold")?,
     })
 }
 
@@ -345,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    fn builtin_archetypes_cover_two_enemies_and_two_objects() {
+    fn builtin_archetypes_cover_enemies_objects_and_collectibles() {
         let a = Archetypes::builtin();
         let resolve = |kind| a.resolve(&entity(kind, ""), "test", "e").unwrap().unwrap();
         assert!(matches!(
@@ -364,6 +537,14 @@ mod tests {
             Behavior::Launcher { .. }
         ));
         assert!(matches!(resolve("crate").behavior, Behavior::Carry { .. }));
+        assert!(matches!(
+            resolve("spark").behavior,
+            Behavior::Collect { worth: 1, .. }
+        ));
+        assert!(matches!(
+            resolve("cluster").behavior,
+            Behavior::Collect { worth: 10, .. }
+        ));
         assert_eq!(a.resolve(&entity("gem", ""), "test", "e"), Ok(None));
     }
 
@@ -454,6 +635,13 @@ mod tests {
         check("launcher", "velocity = [1]", "expected [x, y]");
         check("launcher", "size = [0, 4]", "must be positive");
         check("crate", "reach = -1", "entities[3].params.reach");
+        check("spark", "worth = 0", "entities[3].params.worth");
+        check("spark", "reach = []", "expected one or two tables");
+        check(
+            "spark",
+            "reach = [{ stand = [1, 2, 3] }]",
+            "entities[3].params.reach[0]",
+        );
     }
 
     #[test]
