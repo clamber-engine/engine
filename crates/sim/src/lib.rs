@@ -1,8 +1,8 @@
 //! The deterministic simulation core of the Clamber engine.
 //!
 //! A [`World`] holds a level, its entities (enemies and objects behave
-//! as their [`Archetype`] says), the player and its progress
-//! through the level ([`Flow`]), and advances one logic frame at a time
+//! as their [`Archetype`] says), the player, the [`Other`] character if
+//! there is one, and the player's progress through the level ([`Flow`]), and advances one logic frame at a time
 //! with [`step`], always at 60 Hz. Nothing
 //! inside a step reads the clock, uses floating point or depends on
 //! hash-map iteration order: the same world and the same inputs give the
@@ -20,6 +20,7 @@ mod flow;
 mod player;
 mod record;
 mod script;
+mod swap;
 mod things;
 mod world;
 
@@ -34,6 +35,7 @@ pub use player::{
 };
 pub use record::record;
 pub use script::{InputFrame, Script};
+pub use swap::{Move, Other, Recent, Swap};
 pub use things::{DEFEATED_FRAMES, LAUNCH_REST};
 pub use world::{Event, Phase, Thing, World, generic_feel, run, step};
 

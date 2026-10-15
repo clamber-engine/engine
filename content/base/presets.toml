@@ -100,6 +100,14 @@ knockout_pause_after = 0
 knockout_rebound_1 = 0
 knockout_rebound_2 = 0
 knockout_rest = 0
+swap_moves = 0
+swap_wait = 0
+swap_jump_wait = 0
+swap_lag = 0
+swap_hop = 0
+swap_height = 0
+swap_crouch_wait = 0
+swap_rise_wait = 0
 
 [presets.snappy]
 label = "Snappy"
@@ -141,8 +149,9 @@ air_acceleration = 0.09375
 # walkers and getting hurt by them (bounce.md, walker-contact.md),
 # knock-out (knock-out.md), steep faces on the ground (steep-faces.md),
 # rolling into walkers (rolling-into-walkers.md), walls in the air
-# (air-walls.md) and when a turn starts while moving: the stride cycle
-# (ground-speed.md, "Standing, walking and running"). Classic 1
+# (air-walls.md), when a turn starts while moving: the stride cycle
+# (ground-speed.md, "Standing, walking and running"), and swapping
+# places with the other character (swap.md). Classic 1
 # is the bundled game's starting preset. Jump doesn't cut upward speed
 # when let go (`jump_release_speed` equals `jump_speed`); it ends the
 # lighter `held_jump_gravity` instead.
@@ -238,10 +247,21 @@ knockout_pause_after = 8
 knockout_rebound_1 = 5
 knockout_rebound_2 = 2
 knockout_rest = 154
+swap_moves = 32
+swap_wait = 47
+swap_jump_wait = 1
+swap_lag = 0
+swap_hop = 0.99609375
+swap_height = 8
+swap_crouch_wait = 22
+swap_rise_wait = 9
 
 # The second character (roster slot 1): spec/behavior/second-character.md.
 # It moves by the same rules with its own speeds, jump and crouch
 # recovery; `jump_release_speed` stays equal to `jump_speed`, as above.
+# Swapping with it as the player (swap.md) waits less, the first
+# character follows a frame behind, a jump press just before doesn't
+# shorten the wait, and the crouch windows differ.
 [presets.classic-1.roster.1]
 walk_speed = 2.25
 top_speed = 3.375
@@ -249,6 +269,11 @@ jump_speed = 8.3515625
 jump_release_speed = 8.3515625
 held_jump_gravity = 0.3515625
 crouch_recovery = 13
+swap_wait = 39
+swap_jump_wait = 0
+swap_lag = 1
+swap_crouch_wait = 21
+swap_rise_wait = 12
 
 [presets.classic-2]
 label = "Classic 2"

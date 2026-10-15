@@ -11,6 +11,7 @@ use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
 use crate::player::{Facing, Player, ROLL, Roll, frames};
 use crate::script::{InputFrame, Script};
+use crate::swap::{self, Move, Other, Recent, Swap};
 use crate::things;
 
 /// Something that happened during a step. Names follow
@@ -101,6 +102,13 @@ pub struct World {
     /// Steps taken so far.
     pub frame: u32,
     pub player: Player,
+    /// The character that isn't under control, when the roster has
+    /// another one and characters swap places (`swap_moves` above 0).
+    pub other: Option<Other>,
+    /// The swap under way, if there is one.
+    pub swap: Option<Swap>,
+    /// What was held lately, for whether a swap press starts a swap.
+    pub recent: Recent,
     pub things: Vec<Thing>,
     /// What happened during the last step, in order.
     pub events: Vec<Event>,
@@ -115,7 +123,8 @@ pub struct World {
 
 impl World {
     /// The level at its start, with the lead character at the start
-    /// position. `feel` needs at least one character.
+    /// position, and the next one there too if characters swap places.
+    /// `feel` needs at least one character.
     ///
     /// # Panics
     ///
@@ -130,6 +139,14 @@ impl World {
     pub fn try_new(level: Arc<Level>, feel: Arc<Feel>) -> Result<World, ArchetypeError> {
         assert!(!feel.roster.is_empty(), "a world needs a character");
         let player = Player::new(&level, level.start);
+        // Where the other character joins isn't in the spec yet; it
+        // starts with the player.
+        let other = (feel.roster.len() > 1 && feel.world[Param::SwapMoves] > Fixed::ZERO)
+            .then_some(Other {
+                character: 1,
+                pos: player.pos,
+                facing: player.facing,
+            });
         let archetypes = Archetypes::builtin();
         let things = level
             .entities
@@ -166,6 +183,9 @@ impl World {
             feel,
             frame: 0,
             player,
+            other,
+            swap: None,
+            recent: Recent::default(),
             things,
             events: Vec::new(),
             flow: Flow::new(),
@@ -285,6 +305,53 @@ impl World {
             None => out.push(0),
         }
 
+        match self.other {
+            Some(o) => {
+                out.push(1);
+                count(&mut out, o.character);
+                vec2(&mut out, o.pos);
+                out.push(o.facing as u8);
+            }
+            None => out.push(0),
+        }
+        let moving = |out: &mut Vec<u8>, m: &Move| {
+            vec2(out, m.from);
+            out.extend(m.across.to_le_bytes());
+            for v in [m.target, m.vy, m.gravity, m.max_fall] {
+                fixed(out, v);
+            }
+            out.extend(m.first.to_le_bytes());
+            out.extend(m.moves.to_le_bytes());
+        };
+        match &self.swap {
+            Some(s) => {
+                out.push(1);
+                out.extend(s.frame.to_le_bytes());
+                out.extend(s.end.to_le_bytes());
+                moving(&mut out, &s.player);
+                moving(&mut out, &s.other);
+            }
+            None => out.push(0),
+        }
+        let r = &self.recent;
+        match r.down {
+            Some((since, up)) => {
+                out.push(1);
+                out.extend(since.to_le_bytes());
+                out.extend(up.map_or(0, |n| n.saturating_add(1)).to_le_bytes());
+            }
+            None => out.push(0),
+        }
+        match r.jump {
+            Some((age, kept)) => {
+                out.push(1);
+                out.extend(age.to_le_bytes());
+                out.push(kept.into());
+            }
+            None => out.push(0),
+        }
+        out.push(r.landed.into());
+
         count(&mut out, self.things.len());
         for t in &self.things {
             count(&mut out, t.index);
@@ -369,10 +436,18 @@ pub fn step(world: &mut World, input: &InputFrame) {
             .knocked_out(&world.level, &physics, &mut world.events);
         things::update(world, previous_feet, frozen);
     } else {
-        let hurt_by = world.player.hurt_ahead.take();
+        // What hurting a swapping player does isn't in the spec yet;
+        // nothing does.
+        let hurt_by = world
+            .player
+            .hurt_ahead
+            .take()
+            .filter(|_| world.swap.is_none());
         if hurt_by.is_some() {
             world.player.hit(&mut world.events);
-        } else {
+        } else if !swap::update(world, &physics, &input.players[0]) {
+            // After a swap, the physics are the new player's.
+            let physics = world.player_physics();
             world.player.update(
                 &world.level,
                 &world.feel,
@@ -384,6 +459,8 @@ pub fn step(world: &mut World, input: &InputFrame) {
         things::update(world, previous_feet, frozen);
         flow::update(world, hurt_by);
     }
+    let landed = world.events.contains(&Event::Land);
+    world.recent.note(&input.players[0], landed);
     if let Some(knockout) = world.player.knockout
         && u32::from(knockout.frame) + 1 == u32::from(frames(physics[Param::KnockoutPauseAfter]))
     {

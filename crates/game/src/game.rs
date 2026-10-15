@@ -31,6 +31,8 @@ pub struct Game {
     pub camera: Camera,
     /// The player's position before the last step, for interpolation.
     previous: Vec2,
+    /// The other character's, if there is one.
+    previous_other: Option<Vec2>,
     /// Draw collision geometry, regions and entity markers.
     pub debug: bool,
     /// The images the level's layers draw.
@@ -51,6 +53,7 @@ impl Game {
         Game {
             camera: Camera::new(&world),
             previous: world.player.pos,
+            previous_other: world.other.map(|o| o.pos),
             debug: world.level.layers.is_empty(),
             poses: Poses::new(&cast, &world),
             pause: 0,
@@ -103,6 +106,8 @@ impl Game {
     /// screen for a frame instead, and returns false.
     pub fn step(&mut self, input: &InputFrame) -> bool {
         self.previous = self.world.player.pos;
+        self.previous_other = self.world.other.map(|o| o.pos);
+        let character = self.world.player.character;
         if self.pause > 0 {
             self.pause -= 1;
             self.camera.previous = self.camera.centre;
@@ -110,6 +115,12 @@ impl Game {
         }
         step(&mut self.world, input);
         self.pause = self.world.pause;
+        if self.world.player.character != character {
+            // The characters have traded places: each is where the
+            // other was drawn.
+            self.previous = self.world.player.pos;
+            self.previous_other = self.world.other.map(|o| o.pos);
+        }
         if self.world.flow.events.contains(&FlowEvent::Respawn) {
             // A jump to somewhere else, not a move to draw between.
             self.previous = self.world.player.pos;
@@ -193,6 +204,7 @@ impl Game {
             }
         }
 
+        self.draw_other(canvas, alpha, origin);
         self.draw_player(canvas, alpha, origin);
         self.art.draw(canvas, level, Depth::Front, origin);
         draw_hud(canvas, &self.world);
@@ -202,37 +214,66 @@ impl Game {
     /// state.
     fn draw_player(&self, canvas: &mut dyn Surface, alpha: f64, origin: (f64, f64)) {
         let player = &self.world.player;
-        let (from, to) = (point(self.previous), point(player.pos));
-        let x = from.0 + (to.0 - from.0) * alpha - origin.0;
-        let y = from.1 + (to.1 - from.1) * alpha - origin.1;
+        let (x, y) = between(self.previous, player.pos, alpha, origin);
         if self.cast.has_player() {
             let (x, y) = (x as f32, y as f32);
             self.cast
                 .draw_player(canvas, &self.world, &self.poses.player, x, y);
             return;
         }
-        let (x, y) = (x.round() as i32, y.round() as i32);
-        let half = HALF_WIDTH.floor() as i32;
-        let height = HEIGHT.floor() as i32;
-        // Rolling bodies are drawn crouched so the state reads at a glance.
-        let height = if player.state == State::Roll {
-            height / 2
-        } else {
-            height
-        };
-        canvas.fill_rect(
-            x - half,
-            y - height,
-            half * 2,
-            height,
-            state_color(player.state),
-        );
-        let eye = match player.facing {
-            Facing::Left => x - half + 2,
-            Facing::Right => x + half - 5,
-        };
-        canvas.fill_rect(eye, y - height + 4, 3, 3, EYE);
+        draw_body(canvas, (x, y), player.state, player.facing);
     }
+
+    /// The other character, if there is one, as the player is drawn: in
+    /// the swap state during a swap, idle otherwise.
+    fn draw_other(&self, canvas: &mut dyn Surface, alpha: f64, origin: (f64, f64)) {
+        let Some(other) = &self.world.other else {
+            return;
+        };
+        let previous = self.previous_other.unwrap_or(other.pos);
+        let (x, y) = between(previous, other.pos, alpha, origin);
+        if self.cast.has_player() {
+            let (x, y) = (x as f32, y as f32);
+            self.cast
+                .draw_other(canvas, &self.world, &self.poses.other, x, y);
+            return;
+        }
+        let state = if self.world.swap.is_some() {
+            State::Swap
+        } else {
+            State::Idle
+        };
+        draw_body(canvas, (x, y), state, other.facing);
+    }
+}
+
+/// The view position `alpha` of the way from `from` to `to`, for a view
+/// whose top left is at `origin`.
+fn between(from: Vec2, to: Vec2, alpha: f64, origin: (f64, f64)) -> (f64, f64) {
+    let (from, to) = (point(from), point(to));
+    (
+        from.0 + (to.0 - from.0) * alpha - origin.0,
+        from.1 + (to.1 - from.1) * alpha - origin.1,
+    )
+}
+
+/// A character's body box with its feet at `at`, coloured by `state`.
+fn draw_body(canvas: &mut dyn Surface, at: (f64, f64), state: State, facing: Facing) {
+    let (x, y) = (at.0.round() as i32, at.1.round() as i32);
+    let half = HALF_WIDTH.floor() as i32;
+    let height = HEIGHT.floor() as i32;
+    // Rolling bodies are drawn crouched so the state reads at a glance.
+    let height = if state == State::Roll {
+        height / 2
+    } else {
+        height
+    };
+    canvas.fill_rect(x - half, y - height, half * 2, height, state_color(state));
+    let eye = match facing {
+        Facing::Left => x - half + 2,
+        Facing::Right => x + half - 5,
+    };
+    canvas.fill_rect(eye, y - height + 4, 3, 3, EYE);
 }
 
 fn state_color(state: State) -> Color {
@@ -461,6 +502,42 @@ mod tests {
         assert_eq!(game.world.frame, 1);
         assert!(game.world.player.pos.x > game.previous.x);
         assert!(game.camera.centre.0 > game.camera.previous.0);
+    }
+
+    #[test]
+    fn draws_the_other_character_and_swaps_without_drawing_between() {
+        let level = Level::from_toml_str(LEVEL, "test").unwrap();
+        let mut feel = generic_feel("classic-1").unwrap();
+        feel.roster.push(feel.roster[0].clone());
+        let mut game = Game::new(World::new(Arc::new(level), Arc::new(feel)));
+        // The player walks off; the other character stays at the start.
+        let walk = InputFrame::single(clamber_input::Frame::after(
+            clamber_input::Actions::NONE,
+            clamber_input::Action::Right.into(),
+        ));
+        for _ in 0..40 {
+            game.step(&walk);
+        }
+        game.step(&InputFrame::default());
+        game.debug = false;
+        let mut canvas = Game::canvas();
+        game.draw(&mut canvas, 1.0);
+        let (left, top) = game.camera.top_left(1.0);
+        let at = |x: f64, y: f64| canvas.get((x - left) as i32, (y - top) as i32);
+        assert_eq!(at(500.0, 290.0), Some(state_color(State::Idle)));
+
+        let swap = InputFrame::single(clamber_input::Frame::after(
+            clamber_input::Actions::NONE,
+            clamber_input::Action::Swap.into(),
+        ));
+        game.step(&swap);
+        assert!(game.world.swap.is_some());
+        while game.world.swap.is_some() {
+            game.step(&InputFrame::default());
+        }
+        assert_eq!(game.world.player.character, 1);
+        assert_eq!(game.previous, game.world.player.pos);
+        assert_eq!(game.previous_other, game.world.other.map(|o| o.pos));
     }
 
     #[test]

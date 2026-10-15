@@ -38,7 +38,8 @@ pub(crate) const TINY: Fixed = Fixed::from_bits(1);
 /// The ability a character needs to roll.
 pub const ROLL: &str = "roll";
 
-/// How long swapping to the next character takes, in frames.
+/// How long swapping to the next character in place takes, in frames
+/// (`swap_moves` 0).
 pub const SWAP_FRAMES: u8 = 10;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -446,10 +447,12 @@ impl Player {
             self.remember_roll_press(input, physics);
         }
 
+        // With the other character in the level, swaps are the world's.
         if self.grounded()
             && self.state != State::Roll
             && pressed(Action::Swap)
             && feel.roster.len() > 1
+            && feel.world[Param::SwapMoves] == Fixed::ZERO
         {
             self.character = (self.character + 1) % feel.roster.len();
             self.swap = SWAP_FRAMES;
@@ -1541,7 +1544,7 @@ pub(crate) fn frames(value: Fixed) -> u8 {
 const PLATFORM_LIFT: Fixed = Fixed::from_int(2);
 
 /// The smallest whole number not less than `v`.
-fn ceil(v: Fixed) -> i64 {
+pub(crate) fn ceil(v: Fixed) -> i64 {
     -(-v).floor()
 }
 

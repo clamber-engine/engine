@@ -102,16 +102,37 @@ impl Cast {
         x: f32,
         y: f32,
     ) {
+        let player = &world.player;
+        self.draw_character(canvas, player.character, player.facing, pose, x, y);
+    }
+
+    /// Draws the other character in `pose` with its feet at `(x, y)`, if
+    /// there is one.
+    pub fn draw_other(&self, canvas: &mut dyn Surface, world: &World, pose: &Pose, x: f32, y: f32) {
+        if let Some(other) = &world.other {
+            self.draw_character(canvas, other.character, other.facing, pose, x, y);
+        }
+    }
+
+    /// Draws the character in roster slot `character` with the player's
+    /// sheet, in its palette or variant.
+    fn draw_character(
+        &self,
+        canvas: &mut dyn Surface,
+        character: usize,
+        facing: Facing,
+        pose: &Pose,
+        x: f32,
+        y: f32,
+    ) {
         let Some(id) = self.player else {
             return;
         };
-        let player = &world.player;
-        let palette = player
-            .character
+        let palette = character
             .checked_sub(1)
             .and_then(|slot| self.alternates.get(slot).copied());
         let sprite = Sprite {
-            flip_x: player.facing == Facing::Left,
+            flip_x: facing == Facing::Left,
             palette,
             ..self.sprite(id, pose, x, y)
         };
@@ -176,11 +197,12 @@ pub struct Pose {
     pub playback: Playback,
 }
 
-/// Every actor's pose: the player's, and each thing's by its index in
-/// the world.
+/// Every actor's pose: the player's, the other character's, and each
+/// thing's by its index in the world.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Poses {
     pub player: Pose,
+    pub other: Pose,
     pub things: Vec<Pose>,
 }
 
@@ -189,9 +211,11 @@ impl Poses {
     pub fn new(cast: &Cast, world: &World) -> Poses {
         let mut poses = Poses {
             player: Pose::default(),
+            other: Pose::default(),
             things: vec![Pose::default(); world.things.len()],
         };
         poses.player.animation = cast.animation(cast.player, Some(player_animation(world)));
+        poses.other.animation = cast.animation(cast.player, Some(other_animation(world)));
         for (pose, thing) in poses.things.iter_mut().zip(&world.things) {
             let id = cast.kinds.get(&thing.kind).copied();
             pose.animation = cast.animation(id, thing_animation(world, thing));
@@ -204,6 +228,8 @@ impl Poses {
         let id = cast.player;
         let animation = cast.animation(id, Some(player_animation(world)));
         cast.advance(&mut self.player, id, animation);
+        let animation = cast.animation(id, Some(other_animation(world)));
+        cast.advance(&mut self.other, id, animation);
         self.things.resize(world.things.len(), Pose::default());
         for (pose, thing) in self.things.iter_mut().zip(&world.things) {
             let id = cast.kinds.get(&thing.kind).copied();
@@ -220,6 +246,16 @@ fn player_animation(world: &World) -> &'static str {
         (Outcome::Dying(_) | Outcome::GameOver, _) => "hurt",
         (_, State::Bounce) => "jump",
         (_, state) => state.name(),
+    }
+}
+
+/// The other character's animation: `swap` during a swap, `idle`
+/// otherwise.
+fn other_animation(world: &World) -> &'static str {
+    if world.swap.is_some() {
+        State::Swap.name()
+    } else {
+        State::Idle.name()
     }
 }
 

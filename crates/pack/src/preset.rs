@@ -384,6 +384,14 @@ mod tests {
                     | Param::KnockoutRebound1
                     | Param::KnockoutRebound2
                     | Param::KnockoutRest
+                    | Param::SwapMoves
+                    | Param::SwapWait
+                    | Param::SwapJumpWait
+                    | Param::SwapLag
+                    | Param::SwapHop
+                    | Param::SwapHeight
+                    | Param::SwapCrouchWait
+                    | Param::SwapRiseWait
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

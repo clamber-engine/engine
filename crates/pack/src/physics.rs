@@ -331,6 +331,38 @@ params! {
     /// Frames the player lies still, counting the landing that stops the
     /// flight, before the life is lost. Whole frames.
     KnockoutRest => "knockout_rest",
+    /// Above 0, with more than one character in the roster, the next one
+    /// is in the level with the player, and a swap press trades places
+    /// with it: both hold still, then each moves to where the other
+    /// stood over this many frames, and the other character becomes the
+    /// player. 0: a swap changes the character in place. Whole frames.
+    SwapMoves => "swap_moves",
+    /// Frames both characters hold still, counting the frame of the
+    /// press, before the player moves. The player's character's value
+    /// counts. Whole frames.
+    SwapWait => "swap_wait",
+    /// Frames less of holding still when jump was pressed on one of the
+    /// two frames before the swap press. Whole frames.
+    SwapJumpWait => "swap_jump_wait",
+    /// Frames the other character starts moving after the player. The
+    /// other character becomes the player on the frame after both have
+    /// finished moving. Whole frames.
+    SwapLag => "swap_lag",
+    /// The upward speed each character's swap starts with. Each frame it
+    /// moves adds `gravity`, or `held_jump_gravity` for a player whose
+    /// jump press up to two frames before the swap press is still held,
+    /// up to `max_fall_speed`. A fall that ends below the other's place
+    /// is lifted back by whole pixels.
+    SwapHop => "swap_hop",
+    /// Above 0, no swap starts while the characters' heights, each on a
+    /// whole pixel, differ by this much or more, px.
+    SwapHeight => "swap_height",
+    /// A swap press up to this many frames after the first frame down is
+    /// held, or while it's still held, doesn't start a swap. Whole frames.
+    SwapCrouchWait => "swap_crouch_wait",
+    /// A swap press up to this many frames after the frame down is let go
+    /// doesn't start a swap. Whole frames.
+    SwapRiseWait => "swap_rise_wait",
 }
 
 impl Param {

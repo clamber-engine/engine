@@ -38,6 +38,9 @@ fn second() -> Play {
     let level = Arc::new(Level::from_toml_str(FLAT, "flat").unwrap());
     let mut world = World::new(level, Arc::new(feel));
     world.player.character = 1;
+    if let Some(other) = &mut world.other {
+        other.character = 0;
+    }
     let mut play = Play {
         world,
         held: Actions::NONE,
