@@ -239,6 +239,17 @@ knockout_rebound_1 = 5
 knockout_rebound_2 = 2
 knockout_rest = 154
 
+# The second character (roster slot 1): spec/behavior/second-character.md.
+# It moves by the same rules with its own speeds, jump and crouch
+# recovery; `jump_release_speed` stays equal to `jump_speed`, as above.
+[presets.classic-1.roster.1]
+walk_speed = 2.25
+top_speed = 3.375
+jump_speed = 8.3515625
+jump_release_speed = 8.3515625
+held_jump_gravity = 0.3515625
+crouch_recovery = 13
+
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."

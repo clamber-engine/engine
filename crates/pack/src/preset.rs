@@ -160,6 +160,19 @@ impl Presets {
         Some(physics)
     }
 
+    /// The physics the preset gives the character in roster slot `slot`
+    /// if the character adds nothing of its own: the world physics, then
+    /// each preset's adjustments for the slot, root first.
+    pub fn slot(&self, id: &str, slot: usize) -> Option<Physics> {
+        let mut physics = self.world(id)?;
+        for preset in self.chain(id)? {
+            if let Some(patch) = preset.slots.get(&slot) {
+                physics.apply(&patch.physics);
+            }
+        }
+        Some(physics)
+    }
+
     /// Every base names a preset, and no chain loops.
     fn check(&self, reader: &Reader) -> Result<(), LoadError> {
         for preset in &self.0 {
@@ -405,6 +418,12 @@ mod tests {
             slot.abilities["glide"].0["fall_speed"],
             Adjust::Scale(Fixed::from_ratio_pow2(1, 1))
         );
+        assert_eq!(
+            presets.slot("a", 1).unwrap()[Param::TopSpeed],
+            Fixed::from_int(4)
+        );
+        assert_eq!(presets.slot("a", 0), presets.world("a"));
+        assert_eq!(presets.slot("b", 1), None);
     }
 
     #[test]
