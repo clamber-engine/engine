@@ -21,6 +21,7 @@
 //! The `clamber-import` command and the game's import menu both call
 //! [`Importer::import`].
 
+mod graphics;
 mod ground;
 mod image;
 mod installed;
@@ -32,6 +33,9 @@ use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+pub use graphics::{
+    Background, GridPicture, PaletteSet, Pictures, TILE, TileEntry, TileSet, channels, rgb, unpack,
+};
 pub use ground::{Below, COLUMN_BANDS, Ground, Layout, Surface};
 pub use image::{COPIER_HEADER, Catalog, Image, Known, MAX_IMAGE_SIZE, Outcome, Sha256Hash};
 pub use installed::{Installed, check_shareable, installed};
