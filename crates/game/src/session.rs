@@ -1369,7 +1369,7 @@ mod tests {
     /// file to go back to.
     fn importing_session(name: &str) -> (Session, PathBuf) {
         let dir = scratch(name);
-        let image: Vec<u8> = (0..=255u8).cycle().take(500).collect();
+        let image: Vec<u8> = (0..=255u8).cycle().take(1024).collect();
         let games = dir.join("games");
         std::fs::create_dir_all(&games).unwrap();
         std::fs::write(games.join("game.img"), &image).unwrap();

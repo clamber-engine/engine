@@ -77,8 +77,9 @@ folder, and pause to go back. The pack goes into
 `~/.local/share/clamber/packs` on Linux; `clamber-import <file>` does
 the same from a command line. A personal import is yours alone: it's
 marked as one wherever it's shown, and Clamber won't export it or
-capture it for sharing. This version can't import any games yet: it
-says so, and why, for any file you pick.
+capture it for sharing. This version recognizes the one game image
+it supports (with or without a copier header) but can't convert it yet:
+for any file you pick, it says so, and why.
 
 **Games** on the title screen lists Clamber's own game and the games
 you've imported. Pick one to play it from the title screen.

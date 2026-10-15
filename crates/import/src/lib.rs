@@ -1,8 +1,9 @@
 //! The importer: turns a player's own game image into a personal content
 //! pack.
 //!
-//! An [`Image`] is recognized against a [`Catalog`] of supported images,
-//! then each [`Decoder`] for its title converts part of it to Clamber's
+//! An [`Image`] (a file without its copier header) is recognized against
+//! a [`Catalog`] of supported images, then each [`Decoder`] for its title
+//! finds its data by [`Location`] and converts part of it to Clamber's
 //! own formats, written through a [`PackWriter`]. The pack goes into the
 //! player's [`packs_dir`], never into the game's folder or a source
 //! tree, with a [`Manifest`] marking it as a personal import that can't
@@ -22,6 +23,7 @@
 
 mod image;
 mod installed;
+mod location;
 mod manifest;
 
 use std::collections::BTreeSet;
@@ -29,8 +31,9 @@ use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-pub use image::{Catalog, Image, Known, MAX_IMAGE_SIZE, Sha256Hash};
+pub use image::{COPIER_HEADER, Catalog, Image, Known, MAX_IMAGE_SIZE, Outcome, Sha256Hash};
 pub use installed::{Installed, check_shareable, installed};
+pub use location::{BANK_SIZE, Location};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
 
 /// The folder in a pack that holds its levels.
@@ -173,6 +176,12 @@ impl Importer {
         progress: &mut dyn FnMut(&str),
     ) -> Result<Imported, ImportError> {
         let known = self.catalog.identify(image)?;
+        if !self.decoders.iter().any(|d| d.applies_to(known)) {
+            return Err(ImportError::Unsupported(format!(
+                "it's {}, but this version of Clamber can't convert it yet",
+                known.title
+            )));
+        }
         check_destination(packs_dir)?;
         let write_err =
             |path: &Path, e: std::io::Error| ImportError::Write(format!("{}: {e}", path.display()));

@@ -20,7 +20,7 @@ fn scratch(name: &str) -> PathBuf {
 
 /// A made-up image: not any real game's.
 fn image() -> Image {
-    Image::new((0..=255u8).cycle().take(1000).collect())
+    Image::new((0..=255u8).cycle().take(1024).collect())
 }
 
 /// Copies the image's length into a file, or fails.
@@ -77,7 +77,7 @@ fn writes_a_personal_pack() {
     assert_eq!(imported.decoded, ["probe"]);
     assert_eq!(
         fs::read_to_string(imported.dir.join("levels/size.txt")).unwrap(),
-        "1000"
+        "1024"
     );
     let manifest = Manifest::load(&imported.dir).unwrap();
     assert_eq!(manifest, imported.manifest);
@@ -125,7 +125,7 @@ fn a_failed_import_leaves_nothing_behind() {
     assert_eq!(entries(&packs), ["title-9"]);
     assert_eq!(
         fs::read_to_string(packs.join("title-9/levels/size.txt")).unwrap(),
-        "1000"
+        "1024"
     );
 }
 
@@ -133,7 +133,7 @@ fn a_failed_import_leaves_nothing_behind() {
 fn refuses_unknown_images_before_writing() {
     let packs = scratch("unknown").join("packs");
     let err = importer(false)
-        .import(&Image::new(vec![9; 1000]), &packs, false)
+        .import(&Image::new(vec![9; 1024]), &packs, false)
         .unwrap_err();
     assert!(matches!(err, ImportError::Unsupported(_)), "{err}");
     assert!(err.to_string().contains("modified"), "{err}");
@@ -241,6 +241,35 @@ fn nothing_in_a_personal_import_is_shareable() {
 }
 
 #[test]
+fn reads_images_with_and_without_copier_headers() {
+    let dir = scratch("headers");
+    let mut with_header = vec![0xAA; clamber_import::COPIER_HEADER];
+    with_header.extend(image().bytes());
+    for (name, bytes) in [
+        ("plain.img", image().bytes().to_vec()),
+        ("header.img", with_header),
+    ] {
+        fs::write(dir.join(name), bytes).unwrap();
+        let read = Image::read(&dir.join(name)).unwrap();
+        assert_eq!(read.sha256(), image().sha256(), "{name}");
+    }
+    fs::write(dir.join("odd.img"), [0; 1000]).unwrap();
+    let err = Image::read(&dir.join("odd.img")).unwrap_err();
+    assert!(err.to_string().contains("isn't a game image"), "{err}");
+}
+
+#[test]
+fn refuses_known_images_it_cant_convert() {
+    let packs = scratch("no-decoder").join("packs");
+    let mut importer = importer(false);
+    importer.decoders.clear();
+    let err = importer.import(&image(), &packs, false).unwrap_err();
+    assert!(matches!(err, ImportError::Unsupported(_)), "{err}");
+    assert!(err.to_string().contains("can't convert it yet"), "{err}");
+    assert!(!packs.exists());
+}
+
+#[test]
 fn the_command_refuses_images_it_doesnt_know() {
     let dir = scratch("cli");
     let file = dir.join("game.img");
@@ -253,7 +282,7 @@ fn the_command_refuses_images_it_doesnt_know() {
         .unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("can't import any games yet"), "{stderr}");
+    assert!(stderr.contains("isn't a supported image"), "{stderr}");
     assert!(out.stdout.is_empty());
     assert!(!dir.join("packs").exists());
 
