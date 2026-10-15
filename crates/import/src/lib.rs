@@ -27,6 +27,7 @@ mod image;
 mod installed;
 mod location;
 mod manifest;
+mod placements;
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -41,6 +42,7 @@ pub use image::{COPIER_HEADER, Catalog, Image, Known, MAX_IMAGE_SIZE, Outcome, S
 pub use installed::{Installed, check_shareable, installed};
 pub use location::{BANK_SIZE, Location};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
+pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements};
 
 /// The folder in a pack that holds its levels.
 pub const LEVELS: &str = "levels";
