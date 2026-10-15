@@ -20,6 +20,7 @@ use clamber_pack::physics::MAX_STEP;
 use clamber_pack::{Feel, Param, Physics};
 
 use crate::columns;
+use crate::loss::Lost;
 use crate::world::Event;
 
 /// Half the body's width, px. The body is a box standing on its
@@ -163,6 +164,9 @@ pub struct Player {
     /// The knock-out under way, if the player was hurt and is being
     /// knocked out (`knockout_jump` above 0).
     pub knockout: Option<Knockout>,
+    /// Frames into the hop that ends taking over from a lost character,
+    /// until it lands (see [`crate::Loss`]).
+    pub hop: Option<u8>,
     /// In the air inside a one-way platform, by columns: risen into it
     /// from below its underside, with the feet still between its
     /// underside and top.
@@ -207,6 +211,7 @@ impl Player {
             jump_age: None,
             hurt_ahead: None,
             knockout: None,
+            hop: None,
             inside: false,
             touched: Vec::new(),
         };
@@ -653,7 +658,17 @@ impl Player {
             events.push(Event::Turn);
         }
         let airborne = !self.grounded();
-        if airborne {
+        if let Some(n) = self.hop.filter(|_| airborne) {
+            // The hop has its own speeds, whatever jump does.
+            let n = n.saturating_add(1);
+            self.hop = Some(n);
+            let vy = if n == 3 {
+                -physics[Param::TakeoverHop3]
+            } else {
+                self.vel.y + physics[Param::Gravity]
+            };
+            self.vel.y = vy.min(physics[Param::MaxFallSpeed]);
+        } else if airborne {
             let held_gravity = physics[Param::HeldJumpGravity];
             // A jump pressed during a roll in the air falls under the
             // held gravity from its press.
@@ -777,7 +792,64 @@ impl Player {
         } else {
             self.jump_age.map(|n| n.saturating_add(1))
         };
+        if self.grounded() {
+            self.hop = None;
+        }
         self.state = self.next_state(held(Action::Action), events);
+    }
+
+    /// One step of a character lost on a hit, on its way out of the
+    /// level, under the physics of `character`'s own: it flies straight
+    /// up and down under `gravity` until it lands, holds still on the
+    /// frame after, then runs right at `lose_run_speed`, following the
+    /// ground and falling off ledges.
+    pub(crate) fn run_off(
+        &mut self,
+        level: &Level,
+        physics: &Physics,
+        lost: &mut Lost,
+        events: &mut Vec<Event>,
+    ) {
+        self.touched.clear();
+        let slope = physics[Param::FaceSlope];
+        let by_columns = slope > Fixed::ZERO;
+        match lost.landed {
+            Some(0) => {
+                lost.landed = Some(1);
+                self.vel = Vec2::default();
+                self.state = State::Idle;
+                return;
+            }
+            Some(_) => self.vel.x = physics[Param::LoseRunSpeed],
+            None => {
+                self.vel.x = Fixed::ZERO;
+                self.ground = None;
+            }
+        }
+        if self.grounded() {
+            self.state = State::Run;
+            let x = if by_columns {
+                self.move_by_columns(level, slope);
+                columns::middle(columns::column(self.pos.x))
+            } else {
+                self.move_horizontally(level, HALF_WIDTH, |_| true);
+                self.pos.x
+            };
+            self.follow_ground(level, x, events);
+            return;
+        }
+        self.vel.y = (self.vel.y + lost.gravity).min(physics[Param::MaxFallSpeed]);
+        let moved = self.move_horizontally(level, HALF_WIDTH, |_| true);
+        self.move_vertically(
+            level,
+            moved,
+            physics[Param::LandingReach],
+            by_columns,
+            events,
+        );
+        if self.grounded() && lost.landed.is_none() {
+            lost.landed = Some(0);
+        }
     }
 
     /// Remembers an action press for starting a timed roll, and forgets
@@ -1037,7 +1109,7 @@ impl Player {
 
     /// The state after this step's movement.
     fn next_state(&self, running: bool, events: &[Event]) -> State {
-        if self.swap > 0 {
+        if self.swap > 0 || self.hop.is_some() {
             State::Swap
         } else if self.state == State::Roll && !events.contains(&Event::RollEnd) {
             State::Roll

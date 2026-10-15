@@ -17,6 +17,7 @@
 mod archetype;
 mod columns;
 mod flow;
+mod loss;
 mod player;
 mod record;
 mod script;
@@ -29,6 +30,7 @@ pub use clamber_fixed::Fixed;
 pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };
+pub use loss::{Loss, Lost};
 pub use player::{
     Boost, Crouch, Facing, Gait, HALF_WIDTH, HEIGHT, Knockout, Player, ROLL, Roll, RollSize,
     SWAP_FRAMES, State, Stride,

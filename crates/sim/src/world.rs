@@ -9,6 +9,7 @@ use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 
 use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
+use crate::loss::{self, Loss, Lost};
 use crate::player::{Facing, Player, ROLL, Roll, frames};
 use crate::script::{InputFrame, Script};
 use crate::swap::{self, Move, Other, Recent, Swap};
@@ -109,6 +110,11 @@ pub struct World {
     pub swap: Option<Swap>,
     /// What was held lately, for whether a swap press starts a swap.
     pub recent: Recent,
+    /// The loss of a character under way, until protection after it
+    /// ends.
+    pub loss: Option<Loss>,
+    /// A character lost on a hit, until it has left the level.
+    pub lost: Option<Lost>,
     pub things: Vec<Thing>,
     /// What happened during the last step, in order.
     pub events: Vec<Event>,
@@ -186,6 +192,8 @@ impl World {
             other,
             swap: None,
             recent: Recent::default(),
+            loss: None,
+            lost: None,
             things,
             events: Vec::new(),
             flow: Flow::new(),
@@ -223,87 +231,7 @@ impl World {
 
         out.extend(self.frame.to_le_bytes());
 
-        let p = &self.player;
-        count(&mut out, p.character);
-        vec2(&mut out, p.pos);
-        vec2(&mut out, p.vel);
-        match p.ground {
-            Some(collider) => {
-                out.push(1);
-                count(&mut out, collider);
-            }
-            None => out.push(0),
-        }
-        out.push(match p.facing {
-            Facing::Left => 0,
-            Facing::Right => 1,
-        });
-        out.push(p.state as u8);
-        out.push(p.frozen);
-        out.push(p.jump_buffer.age().map_or(0, |age| age.saturating_add(1)));
-        out.push(p.coyote.map_or(0, |n| n.saturating_add(1)));
-        out.extend([p.lockout, p.jump_needs_hold.into()]);
-        out.extend([p.jump_held_since_press, p.jump_hold, p.takeoff].map(u8::from));
-        out.push(p.swap);
-        out.extend([p.crouch.held, p.crouch.rising]);
-        out.push(p.turn.map_or(0, |n| n.saturating_add(1)));
-        let roll = |out: &mut Vec<u8>, roll: Option<Roll>| match roll {
-            Some(roll) => {
-                out.extend([
-                    1,
-                    roll.left,
-                    roll.dir as u8,
-                    roll.size as u8,
-                    roll.boosts,
-                    roll.defeated.into(),
-                    roll.held.into(),
-                    roll.carry.into(),
-                    roll.still.into(),
-                ]);
-                fixed(out, roll.speed);
-            }
-            None => out.push(0),
-        };
-        roll(&mut out, p.roll);
-        out.push(p.roll_stop);
-        roll(&mut out, p.stopped);
-        match p.boost {
-            Some(b) => out.extend([1, b.dir as u8, b.size as u8, b.boosts]),
-            None => out.push(0),
-        }
-        match p.roll_press {
-            Some((age, window, hold)) => out.extend([1, age, window, hold.into()]),
-            None => out.push(0),
-        }
-        out.push(p.since_run.map_or(0, |n| n.saturating_add(1)));
-        out.extend([p.lone_run, p.roll_jump].map(u8::from));
-        match p.off_face {
-            Some((way, n)) => out.extend([1, way as u8, n]),
-            None => out.push(0),
-        }
-        out.push(p.jump_age.map_or(0, |n| n.saturating_add(1)));
-        match p.hurt_ahead {
-            Some(i) => {
-                out.push(1);
-                count(&mut out, i);
-            }
-            None => out.push(0),
-        }
-        match p.knockout {
-            Some(k) => {
-                out.push(1);
-                match k.by {
-                    Some(i) => {
-                        out.push(1);
-                        count(&mut out, i);
-                    }
-                    None => out.push(0),
-                }
-                out.extend([k.frame, k.landings]);
-                out.push(k.rest.map_or(0, |n| n.saturating_add(1)));
-            }
-            None => out.push(0),
-        }
+        player_bytes(&mut out, &self.player);
 
         match self.other {
             Some(o) => {
@@ -351,6 +279,25 @@ impl World {
             None => out.push(0),
         }
         out.push(r.landed.into());
+        match self.loss {
+            Some(l) => {
+                out.push(1);
+                out.extend(l.frame.to_le_bytes());
+                vec2(&mut out, l.spot);
+                out.extend(l.hop.map_or(0, |t| t.saturating_add(1)).to_le_bytes());
+            }
+            None => out.push(0),
+        }
+        match &self.lost {
+            Some(l) => {
+                out.push(1);
+                player_bytes(&mut out, &l.body);
+                fixed(&mut out, l.gravity);
+                out.push(l.landed.map_or(0, |n| n.saturating_add(1)));
+                out.push(l.apart.into());
+            }
+            None => out.push(0),
+        }
 
         count(&mut out, self.things.len());
         for t in &self.things {
@@ -414,6 +361,97 @@ impl World {
     }
 }
 
+/// Appends a character's state to `out`, for [`World::state_bytes`].
+fn player_bytes(out: &mut Vec<u8>, p: &Player) {
+    let fixed = |out: &mut Vec<u8>, v: Fixed| out.extend(v.to_bits().to_le_bytes());
+    let vec2 = |out: &mut Vec<u8>, v: Vec2| {
+        fixed(out, v.x);
+        fixed(out, v.y);
+    };
+    let count = |out: &mut Vec<u8>, n: usize| out.extend((n as u64).to_le_bytes());
+    count(out, p.character);
+    vec2(out, p.pos);
+    vec2(out, p.vel);
+    match p.ground {
+        Some(collider) => {
+            out.push(1);
+            count(out, collider);
+        }
+        None => out.push(0),
+    }
+    out.push(match p.facing {
+        Facing::Left => 0,
+        Facing::Right => 1,
+    });
+    out.push(p.state as u8);
+    out.push(p.frozen);
+    out.push(p.jump_buffer.age().map_or(0, |age| age.saturating_add(1)));
+    out.push(p.coyote.map_or(0, |n| n.saturating_add(1)));
+    out.extend([p.lockout, p.jump_needs_hold.into()]);
+    out.extend([p.jump_held_since_press, p.jump_hold, p.takeoff].map(u8::from));
+    out.push(p.swap);
+    out.extend([p.crouch.held, p.crouch.rising]);
+    out.push(p.turn.map_or(0, |n| n.saturating_add(1)));
+    let roll = |out: &mut Vec<u8>, roll: Option<Roll>| match roll {
+        Some(roll) => {
+            out.extend([
+                1,
+                roll.left,
+                roll.dir as u8,
+                roll.size as u8,
+                roll.boosts,
+                roll.defeated.into(),
+                roll.held.into(),
+                roll.carry.into(),
+                roll.still.into(),
+            ]);
+            fixed(out, roll.speed);
+        }
+        None => out.push(0),
+    };
+    roll(out, p.roll);
+    out.push(p.roll_stop);
+    roll(out, p.stopped);
+    match p.boost {
+        Some(b) => out.extend([1, b.dir as u8, b.size as u8, b.boosts]),
+        None => out.push(0),
+    }
+    match p.roll_press {
+        Some((age, window, hold)) => out.extend([1, age, window, hold.into()]),
+        None => out.push(0),
+    }
+    out.push(p.since_run.map_or(0, |n| n.saturating_add(1)));
+    out.extend([p.lone_run, p.roll_jump].map(u8::from));
+    match p.off_face {
+        Some((way, n)) => out.extend([1, way as u8, n]),
+        None => out.push(0),
+    }
+    out.push(p.jump_age.map_or(0, |n| n.saturating_add(1)));
+    match p.hurt_ahead {
+        Some(i) => {
+            out.push(1);
+            count(out, i);
+        }
+        None => out.push(0),
+    }
+    match p.knockout {
+        Some(k) => {
+            out.push(1);
+            match k.by {
+                Some(i) => {
+                    out.push(1);
+                    count(out, i);
+                }
+                None => out.push(0),
+            }
+            out.extend([k.frame, k.landings]);
+            out.push(k.rest.map_or(0, |n| n.saturating_add(1)));
+        }
+        None => out.push(0),
+    }
+    out.push(p.hop.map_or(0, |n| n.saturating_add(1)));
+}
+
 /// Advances the world one logic frame (1/60 s). Once the level is
 /// complete or the game is over, nothing changes.
 pub fn step(world: &mut World, input: &InputFrame) {
@@ -427,6 +465,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         world.frame += 1;
         return;
     }
+    loss::tick(world);
     let physics = world.player_physics();
     let previous_feet = world.player.pos.y;
     let frozen = world.player.frozen > 0;
@@ -442,9 +481,11 @@ pub fn step(world: &mut World, input: &InputFrame) {
             .player
             .hurt_ahead
             .take()
-            .filter(|_| world.swap.is_none());
+            .filter(|_| world.swap.is_none() && !world.protected() && !world.losing());
         if hurt_by.is_some() {
             world.player.hit(&mut world.events);
+        } else if loss::update(world) {
+            // The loss moves the characters.
         } else if !swap::update(world, &physics, &input.players[0]) {
             // After a swap, the physics are the new player's.
             let physics = world.player_physics();

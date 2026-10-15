@@ -108,6 +108,18 @@ swap_hop = 0
 swap_height = 0
 swap_crouch_wait = 0
 swap_rise_wait = 0
+lose_jump = 0
+lose_run_speed = 0
+takeover_wait = 0
+takeover_share = 0
+takeover_min_move = 0
+takeover_nudge = 0
+takeover_hop = 0
+takeover_hop_3 = 0
+protect_time = 0
+flash_start = 0
+flash_end = 0
+flash_period = 0
 
 [presets.snappy]
 label = "Snappy"
@@ -255,6 +267,20 @@ swap_hop = 0.99609375
 swap_height = 8
 swap_crouch_wait = 22
 swap_rise_wait = 9
+# Losing a character (losing-a-character.md) and protection
+# (protection.md).
+lose_jump = 8
+lose_run_speed = 4
+takeover_wait = 36
+takeover_share = 16
+takeover_min_move = 3
+takeover_nudge = 0.5
+takeover_hop = 10
+takeover_hop_3 = 7.9140625
+protect_time = 150
+flash_start = 38
+flash_end = 134
+flash_period = 4
 
 # The second character (roster slot 1): spec/behavior/second-character.md.
 # It moves by the same rules with its own speeds, jump and crouch
@@ -274,6 +300,9 @@ swap_jump_wait = 0
 swap_lag = 1
 swap_crouch_wait = 21
 swap_rise_wait = 12
+# The second character being hit isn't specified yet, so it's a hit with
+# one character, as before.
+lose_jump = 0
 
 [presets.classic-2]
 label = "Classic 2"

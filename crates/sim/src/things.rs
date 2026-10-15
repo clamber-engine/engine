@@ -22,6 +22,9 @@
 //! - While the player is knocked out, things don't act on it, and
 //!   enemies other than the one that hurt it hold still for the frames
 //!   it holds still after the hit.
+//! - While a character is being lost, things don't act on the player,
+//!   and while the one that took over is protected, nothing hurts it
+//!   (see [`loss`](crate::loss)).
 //! - A launcher sends the player off at its velocity, then rests for
 //!   [`LAUNCH_REST`] frames before it can fire again.
 //!
@@ -52,8 +55,9 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     let boxes = physics[Param::BounceWidth] > Fixed::ZERO;
     let hurt_boxes = physics[Param::HurtWidth] > Fixed::ZERO;
     let attack_boxes = physics[Param::RollAttackWidth] > Fixed::ZERO;
-    let knocked =
-        |world: &World| world.player.knockout.is_some() || world.events.contains(&Event::Hurt);
+    let knocked = |world: &World| {
+        world.player.knockout.is_some() || world.events.contains(&Event::Hurt) || world.losing()
+    };
     let bounced = if boxes && !knocked(world) {
         bounce_on_boxes(world, &physics)
     } else {
@@ -102,6 +106,9 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
         hurt_boxes,
         attack_boxes,
     );
+    if world.protected() {
+        world.events.retain(|&e| e != Event::Hurt);
+    }
     if hurt_boxes && !knocked(world) {
         world.player.hurt_ahead = hurt_ahead(world, &physics);
     }

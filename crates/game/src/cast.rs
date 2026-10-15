@@ -114,6 +114,21 @@ impl Cast {
         }
     }
 
+    /// Draws the character lost on a hit in `pose` with its feet at
+    /// `(x, y)`, if one is on its way out.
+    pub fn draw_leaving(
+        &self,
+        canvas: &mut dyn Surface,
+        world: &World,
+        pose: &Pose,
+        x: f32,
+        y: f32,
+    ) {
+        if let Some(body) = world.leaving() {
+            self.draw_character(canvas, body.character, body.facing, pose, x, y);
+        }
+    }
+
     /// Draws the character in roster slot `character` with the player's
     /// sheet, in its palette or variant.
     fn draw_character(
@@ -197,12 +212,13 @@ pub struct Pose {
     pub playback: Playback,
 }
 
-/// Every actor's pose: the player's, the other character's, and each
-/// thing's by its index in the world.
+/// Every actor's pose: the player's, the other character's, the lost
+/// character's, and each thing's by its index in the world.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Poses {
     pub player: Pose,
     pub other: Pose,
+    pub leaving: Pose,
     pub things: Vec<Pose>,
 }
 
@@ -212,10 +228,12 @@ impl Poses {
         let mut poses = Poses {
             player: Pose::default(),
             other: Pose::default(),
+            leaving: Pose::default(),
             things: vec![Pose::default(); world.things.len()],
         };
         poses.player.animation = cast.animation(cast.player, Some(player_animation(world)));
         poses.other.animation = cast.animation(cast.player, Some(other_animation(world)));
+        poses.leaving.animation = cast.animation(cast.player, Some(leaving_animation(world)));
         for (pose, thing) in poses.things.iter_mut().zip(&world.things) {
             let id = cast.kinds.get(&thing.kind).copied();
             pose.animation = cast.animation(id, thing_animation(world, thing));
@@ -230,6 +248,8 @@ impl Poses {
         cast.advance(&mut self.player, id, animation);
         let animation = cast.animation(id, Some(other_animation(world)));
         cast.advance(&mut self.other, id, animation);
+        let animation = cast.animation(id, Some(leaving_animation(world)));
+        cast.advance(&mut self.leaving, id, animation);
         self.things.resize(world.things.len(), Pose::default());
         for (pose, thing) in self.things.iter_mut().zip(&world.things) {
             let id = cast.kinds.get(&thing.kind).copied();
@@ -257,6 +277,13 @@ fn other_animation(world: &World) -> &'static str {
     } else {
         State::Idle.name()
     }
+}
+
+/// The lost character's animation: its state's.
+fn leaving_animation(world: &World) -> &'static str {
+    world
+        .leaving()
+        .map_or(State::Idle.name(), |body| body.state.name())
 }
 
 /// A thing's animation, if not its sheet's first.

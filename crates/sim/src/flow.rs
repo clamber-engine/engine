@@ -11,7 +11,9 @@
 //!   Pickups stay picked up after losing a life.
 //!
 //! Getting hurt, by touching a hazard surface or an enemy
-//! ([`things`](crate::things)), or falling below the level costs a life.
+//! ([`things`](crate::things)), or falling below the level costs a life,
+//! unless the other character is there to take over
+//! ([`loss`](crate::loss)).
 //! The player stays where it was for [`DYING_FRAMES`], or is knocked out
 //! if the physics say so (`knockout_jump`), then comes back at the last
 //! checkpoint reached, or the level's start. Losing the last life ends
@@ -22,6 +24,7 @@ use clamber_level::Vec2;
 
 use clamber_pack::Param;
 
+use crate::loss;
 use crate::player::{Knockout, Player, State};
 use crate::world::{Event, World};
 
@@ -192,14 +195,20 @@ pub(crate) fn update(world: &mut World, hurt_by: Option<usize>) {
         .touched
         .iter()
         .any(|&c| level.surface(c).hazard);
-    if hazard && !world.events.contains(&Event::Hurt) {
+    if hazard && !world.events.contains(&Event::Hurt) && !world.protected() {
         world.events.push(Event::Hurt);
     }
     let hurt = world.events.contains(&Event::Hurt);
+    let fell = body.1 > level.size.y;
+    if hurt && !fell && loss::can_start(world) {
+        // The hit character is lost instead of a life.
+        loss::start(world);
+        return;
+    }
+    let flow = &mut world.flow;
     if hurt {
         world.player.state = State::Hurt;
     }
-    let fell = body.1 > level.size.y;
     if hurt || fell {
         flow.lives = flow.lives.saturating_sub(1);
         flow.outcome = Outcome::Dying(DYING_FRAMES);

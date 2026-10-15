@@ -363,6 +363,51 @@ params! {
     /// A swap press up to this many frames after the frame down is let go
     /// doesn't start a swap. Whole frames.
     SwapRiseWait => "swap_rise_wait",
+    /// Above 0, a hit while the other character is in the level loses
+    /// the hit character instead of a life: on the hit frame it stops
+    /// where it is, facing right, with this upward speed, then flies
+    /// straight up and down under `gravity`, or `held_jump_gravity` if
+    /// its jump had jump held since the press, up to `max_fall_speed`.
+    /// The hit character's value counts. 0: a hit is a hit with one
+    /// character.
+    LoseJump => "lose_jump",
+    /// How fast a lost character runs right, out of the level, from the
+    /// second frame after it lands.
+    LoseRunSpeed => "lose_run_speed",
+    /// Frames from the hit, counting the hit frame, before the other
+    /// character is the one under control. It moves toward the hit spot
+    /// from the frame after. Whole frames.
+    TakeoverWait => "takeover_wait",
+    /// On its way to the hit spot, each frame the other character moves
+    /// a share of the gap on each axis: the gap divided by this, while
+    /// that is `takeover_min_move` or more.
+    TakeoverShare => "takeover_share",
+    /// The smallest move on the way to the hit spot, or the gap if that
+    /// is smaller, px.
+    TakeoverMinMove => "takeover_min_move",
+    /// On the frame after it reaches the hit spot, the other character is
+    /// placed this far right of it and this far up, px.
+    TakeoverNudge => "takeover_nudge",
+    /// The upward speed of the hop the other character starts there.
+    /// Each frame after, it moves `gravity` less far up, up to
+    /// `max_fall_speed` down, except on the third.
+    TakeoverHop => "takeover_hop",
+    /// The hop's upward speed on its third frame.
+    TakeoverHop3 => "takeover_hop_3",
+    /// Frames from the hit, counting the hit frame, that the character
+    /// under control can't be hurt after losing a character. Whole
+    /// frames.
+    ProtectTime => "protect_time",
+    /// Frames from the hit to the first on which the character under
+    /// control flashes. Whole frames.
+    FlashStart => "flash_start",
+    /// Frames from the hit to the first on which it no longer flashes.
+    /// Whole frames.
+    FlashEnd => "flash_end",
+    /// Flashing, the character is drawn for the first half of each
+    /// stretch of this many frames, and not drawn for the second, except
+    /// on the frame after its hop starts. Whole frames.
+    FlashPeriod => "flash_period",
 }
 
 impl Param {

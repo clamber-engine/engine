@@ -33,6 +33,8 @@ pub struct Game {
     previous: Vec2,
     /// The other character's, if there is one.
     previous_other: Option<Vec2>,
+    /// The lost character's, if one is on its way out.
+    previous_leaving: Option<Vec2>,
     /// Draw collision geometry, regions and entity markers.
     pub debug: bool,
     /// The images the level's layers draw.
@@ -54,6 +56,7 @@ impl Game {
             camera: Camera::new(&world),
             previous: world.player.pos,
             previous_other: world.other.map(|o| o.pos),
+            previous_leaving: world.leaving().map(|p| p.pos),
             debug: world.level.layers.is_empty(),
             poses: Poses::new(&cast, &world),
             pause: 0,
@@ -107,6 +110,7 @@ impl Game {
     pub fn step(&mut self, input: &InputFrame) -> bool {
         self.previous = self.world.player.pos;
         self.previous_other = self.world.other.map(|o| o.pos);
+        self.previous_leaving = self.world.leaving().map(|p| p.pos);
         let character = self.world.player.character;
         if self.pause > 0 {
             self.pause -= 1;
@@ -204,6 +208,7 @@ impl Game {
             }
         }
 
+        self.draw_leaving(canvas, alpha, origin);
         self.draw_other(canvas, alpha, origin);
         self.draw_player(canvas, alpha, origin);
         self.art.draw(canvas, level, Depth::Front, origin);
@@ -211,8 +216,11 @@ impl Game {
     }
 
     /// The player's sprite, or without one, its body box coloured by
-    /// state.
+    /// state. Not on the frames it flashes off.
     fn draw_player(&self, canvas: &mut dyn Surface, alpha: f64, origin: (f64, f64)) {
+        if !self.world.player_drawn() {
+            return;
+        }
         let player = &self.world.player;
         let (x, y) = between(self.previous, player.pos, alpha, origin);
         if self.cast.has_player() {
@@ -244,6 +252,23 @@ impl Game {
             State::Idle
         };
         draw_body(canvas, (x, y), state, other.facing);
+    }
+
+    /// The character lost on a hit, if one is on its way out of the
+    /// level, as the player is drawn in its state.
+    fn draw_leaving(&self, canvas: &mut dyn Surface, alpha: f64, origin: (f64, f64)) {
+        let Some(body) = self.world.leaving() else {
+            return;
+        };
+        let previous = self.previous_leaving.unwrap_or(body.pos);
+        let (x, y) = between(previous, body.pos, alpha, origin);
+        if self.cast.has_player() {
+            let (x, y) = (x as f32, y as f32);
+            self.cast
+                .draw_leaving(canvas, &self.world, &self.poses.leaving, x, y);
+            return;
+        }
+        draw_body(canvas, (x, y), body.state, body.facing);
     }
 }
 

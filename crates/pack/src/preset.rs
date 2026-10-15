@@ -392,6 +392,18 @@ mod tests {
                     | Param::SwapHeight
                     | Param::SwapCrouchWait
                     | Param::SwapRiseWait
+                    | Param::LoseJump
+                    | Param::LoseRunSpeed
+                    | Param::TakeoverWait
+                    | Param::TakeoverShare
+                    | Param::TakeoverMinMove
+                    | Param::TakeoverNudge
+                    | Param::TakeoverHop
+                    | Param::TakeoverHop3
+                    | Param::ProtectTime
+                    | Param::FlashStart
+                    | Param::FlashEnd
+                    | Param::FlashPeriod
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }
