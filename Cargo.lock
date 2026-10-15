@@ -335,6 +335,8 @@ dependencies = [
 name = "clamber-import"
 version = "0.1.0"
 dependencies = [
+ "clamber-fixed",
+ "clamber-level",
  "serde",
  "sha2",
  "toml",
