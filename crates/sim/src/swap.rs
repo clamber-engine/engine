@@ -180,7 +180,9 @@ fn can_start(world: &World, physics: &Physics, other: &Other) -> bool {
         || p.roll.is_some()
         || p.roll_stop > 0
         || p.frozen > 0
-        || p.knockout.is_some();
+        || p.knockout.is_some()
+        // Swapping with an object in hand isn't in the spec yet.
+        || p.hands.is_some();
     if busy {
         return false;
     }

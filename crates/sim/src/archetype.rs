@@ -40,6 +40,9 @@ pub enum Behavior {
     Patrol { path: Vec2, period: u32 },
     /// Fires the player off at `velocity` on touch.
     Launcher { velocity: Vec2 },
+    /// An object the player can pick up, carry, throw and put down
+    /// (see [`carry`](crate::carry)), from `reach` px away or closer.
+    Carry { reach: Fixed },
 }
 
 /// How a defeated walker leaves: it jumps up at `jump`, then falls
@@ -64,7 +67,8 @@ impl Behavior {
 pub struct Archetype {
     pub behavior: Behavior,
     /// The box it touches the player with: standing on its position for
-    /// a walker, centred on it otherwise.
+    /// a walker or an object that can be carried, centred on it
+    /// otherwise.
     pub size: Vec2,
     /// How far the box's middle is in front of its position, the way it's
     /// going.
@@ -81,7 +85,7 @@ impl Archetype {
             Facing::Right => pos.x + self.offset,
         };
         let (top, bottom) = match self.behavior {
-            Behavior::Walker { .. } => (pos.y - self.size.y, pos.y),
+            Behavior::Walker { .. } | Behavior::Carry { .. } => (pos.y - self.size.y, pos.y),
             _ => {
                 let half_h = half(self.size.y);
                 (pos.y - half_h, pos.y + half_h)
@@ -229,6 +233,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         ],
         "patrol" => &["path", "period"],
         "launcher" => &["velocity"],
+        "carry" => &["reach"],
         _ => return Err(format!("{path}.behavior: unknown behavior `{behavior}`")),
     };
     if let Some(key) = table.keys().find(|k| {
@@ -308,6 +313,13 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 period,
             }
         }
+        "carry" => {
+            let reach = number("reach")?;
+            if reach.is_negative() {
+                return Err(format!("{path}.reach: must not be negative"));
+            }
+            Behavior::Carry { reach }
+        }
         _ => Behavior::Launcher {
             velocity: pair("velocity")?,
         },
@@ -333,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn builtin_archetypes_cover_two_enemies_and_an_object() {
+    fn builtin_archetypes_cover_two_enemies_and_two_objects() {
         let a = Archetypes::builtin();
         let resolve = |kind| a.resolve(&entity(kind, ""), "test", "e").unwrap().unwrap();
         assert!(matches!(
@@ -351,6 +363,7 @@ mod tests {
             resolve("launcher").behavior,
             Behavior::Launcher { .. }
         ));
+        assert!(matches!(resolve("crate").behavior, Behavior::Carry { .. }));
         assert_eq!(a.resolve(&entity("gem", ""), "test", "e"), Ok(None));
     }
 
@@ -440,6 +453,7 @@ mod tests {
         check("flutter", "period = 1", "entities[3].params.period");
         check("launcher", "velocity = [1]", "expected [x, y]");
         check("launcher", "size = [0, 4]", "must be positive");
+        check("crate", "reach = -1", "entities[3].params.reach");
     }
 
     #[test]

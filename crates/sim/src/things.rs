@@ -28,6 +28,9 @@
 //! - A launcher sends the player off at its velocity, then rests for
 //!   [`LAUNCH_REST`] frames before it can fire again.
 //!
+//! Objects that can be carried don't act on the player; the player picks
+//! them up (see [`carry`](crate::carry)).
+//!
 //! A defeated walker jumps up and falls out of the level (see [`fall`]);
 //! other defeated enemies show as defeated for [`DEFEATED_FRAMES`], then
 //! are gone. They stay gone after the player loses a life.
@@ -37,6 +40,7 @@ use clamber_level::{Dir, Level, Vec2};
 use clamber_pack::{Param, Physics};
 
 use crate::archetype::{Archetype, Behavior, Fall};
+use crate::carry;
 use crate::flow::{FlowEvent, overlap};
 use crate::player::{Facing, HEIGHT, STEP, State, TINY, ease, frames, is_wall};
 use crate::world::{Event, Phase, Thing, World};
@@ -81,7 +85,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
         if held.is_some_and(|by| enemy && by != Some(thing.index)) {
             continue;
         }
-        advance(&world.level, thing);
+        advance(&world.level, thing, &physics);
     }
     // Enemies bounced on still moved this frame, as they were.
     let freeze = frames(physics[Param::BounceFreeze]);
@@ -114,7 +118,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     }
 }
 
-fn advance(level: &Level, thing: &mut Thing) {
+fn advance(level: &Level, thing: &mut Thing, physics: &Physics) {
     let Some(archetype) = thing.archetype else {
         return;
     };
@@ -139,6 +143,15 @@ fn advance(level: &Level, thing: &mut Thing) {
             } else {
                 Phase::Fired(since + 1)
             };
+        }
+        Phase::Held => return,
+        Phase::Thrown(flight) => {
+            carry::fly(level, thing, archetype.size, flight);
+            return;
+        }
+        Phase::Placed => {
+            carry::settle(level, thing, physics);
+            return;
         }
         Phase::Ready => {}
     }
@@ -169,7 +182,7 @@ fn advance(level: &Level, thing: &mut Thing) {
             let origin = level.entities[thing.index].at;
             fly(thing, origin, path, period);
         }
-        Behavior::Launcher { .. } => {}
+        Behavior::Launcher { .. } | Behavior::Carry { .. } => {}
     }
 }
 
@@ -518,6 +531,7 @@ fn interact(
                 thing.phase = Phase::Fired(0);
                 world.flow.events.push(FlowEvent::Launch(thing.index));
             }
+            Behavior::Carry { .. } => {}
             _ => {
                 let middle = Fixed::from_bits((area.1.to_bits() + area.3.to_bits()) / 2);
                 let landed = !boxes && previous_feet <= middle && player.pos.y >= previous_feet;

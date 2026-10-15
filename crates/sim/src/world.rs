@@ -8,9 +8,10 @@ use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 
 use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior};
+use crate::carry::{self, Flight};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
 use crate::loss::{self, Loss, Lost};
-use crate::player::{Facing, Player, ROLL, Roll, frames};
+use crate::player::{Act, Facing, Player, ROLL, Roll, frames};
 use crate::script::{InputFrame, Script};
 use crate::swap::{self, Move, Other, Recent, Swap};
 use crate::things;
@@ -93,6 +94,12 @@ pub enum Phase {
     Falling { vy: Fixed, hold: u8 },
     /// A launcher that fired this many frames ago.
     Fired(u8),
+    /// An object in the player's hands, which move it.
+    Held,
+    /// An object thrown or dropped, flying until it lands.
+    Thrown(Flight),
+    /// An object just set down, which comes to rest on the next step.
+    Placed,
 }
 
 /// Everything the simulation advances.
@@ -318,9 +325,17 @@ impl World {
                 Phase::Defeated(left) => [1, left],
                 Phase::Fired(since) => [2, since],
                 Phase::Falling { hold, .. } => [3, hold],
+                Phase::Held => [4, 0],
+                Phase::Thrown(_) => [5, 0],
+                Phase::Placed => [6, 0],
             });
             if let Phase::Falling { vy, .. } = t.phase {
                 fixed(&mut out, vy);
+            }
+            if let Phase::Thrown(f) = t.phase {
+                for v in [f.vx, f.vy, f.target, f.response, f.gravity, f.max_fall] {
+                    fixed(&mut out, v);
+                }
             }
         }
 
@@ -450,6 +465,28 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
         None => out.push(0),
     }
     out.push(p.hop.map_or(0, |n| n.saturating_add(1)));
+    match p.hands {
+        Some(h) => {
+            out.push(1);
+            count(out, h.thing);
+            out.push(match h.act {
+                Act::PickUp => 0,
+                Act::Carry => 1,
+                Act::Throw => 2,
+                Act::PutDown => 3,
+            });
+            out.push(h.frame);
+            out.push(h.press.map_or(0, |n| n.saturating_add(1)));
+        }
+        None => out.push(0),
+    }
+    match p.pick {
+        Some(i) => {
+            out.push(1);
+            count(out, i);
+        }
+        None => out.push(0),
+    }
 }
 
 /// Advances the world one logic frame (1/60 s). Once the level is
@@ -487,6 +524,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         } else if loss::update(world) {
             // The loss moves the characters.
         } else if !swap::update(world, &physics, &input.players[0]) {
+            carry::before(world, &input.players[0]);
             // After a swap, the physics are the new player's.
             let physics = world.player_physics();
             world.player.update(
@@ -500,6 +538,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         things::update(world, previous_feet, frozen);
         flow::update(world, hurt_by);
     }
+    carry::after(world, &input.players[0]);
     let landed = world.events.contains(&Event::Land);
     world.recent.note(&input.players[0], landed);
     if let Some(knockout) = world.player.knockout

@@ -120,6 +120,23 @@ protect_time = 0
 flash_start = 0
 flash_end = 0
 flash_period = 0
+pick_up_time = 0
+pick_up_still = 0
+carry_jump_delay = 0
+throw_time = 0
+throw_still = 0
+throw_release = 0
+throw_roll_press = 0
+throw_lift = 0
+throw_speed = 0
+throw_drop = 0
+throw_glide = 0
+throw_gravity = 0
+throw_max_fall = 0
+put_down_time = 0
+put_down_ahead = 0
+put_down_lift = 0
+put_down_regrab = 0
 
 [presets.snappy]
 label = "Snappy"
@@ -163,7 +180,9 @@ air_acceleration = 0.09375
 # rolling into walkers (rolling-into-walkers.md), walls in the air
 # (air-walls.md), when a turn starts while moving: the stride cycle
 # (ground-speed.md, "Standing, walking and running"), and swapping
-# places with the other character (swap.md). Classic 1
+# places with the other character (swap.md), losing a character and
+# protection (losing-a-character.md, protection.md), and carrying
+# objects (carrying.md). Classic 1
 # is the bundled game's starting preset. Jump doesn't cut upward speed
 # when let go (`jump_release_speed` equals `jump_speed`); it ends the
 # lighter `held_jump_gravity` instead.
@@ -281,6 +300,25 @@ protect_time = 150
 flash_start = 38
 flash_end = 134
 flash_period = 4
+# Carrying, throwing and putting down objects (carrying.md). The speed
+# rule there is `speed_response`. Reach is the object's (archetypes.toml).
+pick_up_time = 15
+pick_up_still = 10
+carry_jump_delay = 1
+throw_time = 43
+throw_still = 22
+throw_release = 21
+throw_roll_press = 15
+throw_lift = 54
+throw_speed = 16
+throw_drop = 1
+throw_glide = 3.5
+throw_gravity = 0.4375
+throw_max_fall = 8
+put_down_time = 14
+put_down_ahead = 16
+put_down_lift = 3
+put_down_regrab = 2
 
 # The second character (roster slot 1): spec/behavior/second-character.md.
 # It moves by the same rules with its own speeds, jump and crouch

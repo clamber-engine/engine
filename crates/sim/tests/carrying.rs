@@ -1,0 +1,497 @@
+//! Picking up, carrying, throwing and putting down objects in Classic 1
+//! (spec/behavior/carrying.md).
+
+use std::sync::Arc;
+
+use clamber_input::{Action, Actions, Frame};
+use clamber_level::{Level, Vec2};
+use clamber_pack::Fixed;
+use clamber_sim::{Act, Event, Facing, InputFrame, Phase, World, generic_feel, step};
+
+use Action::{Down, Jump, Left, Right, Up};
+
+const A: Action = Action::Action;
+
+const FLOOR: f64 = 400.0;
+
+/// Flat ground at y = 400 from x = 0 to `floor_end`, the player at
+/// x = 200 and a crate on the floor at `crate_x`.
+fn level(floor_end: u32, crate_x: u32) -> String {
+    walled(floor_end, crate_x, "")
+}
+
+/// The same with more `collision` after the floor.
+fn walled(floor_end: u32, crate_x: u32, more: &str) -> String {
+    format!(
+        r#"
+        format = 1
+        name = "carry"
+        size = [3000, 800]
+        start = [200, 400]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 400, {floor_end}, 200]
+        {more}
+
+        [[entities]]
+        type = "crate"
+        at = [{crate_x}, 400]
+        "#
+    )
+}
+
+fn f(v: f64) -> Fixed {
+    Fixed::from_f64(v).unwrap()
+}
+
+fn v(x: f64, y: f64) -> Vec2 {
+    Vec2::new(f(x), f(y))
+}
+
+/// 1/256 px per frame.
+fn speed(n: i32) -> Fixed {
+    Fixed::from_ratio_pow2(n, 8)
+}
+
+/// What a step left behind.
+#[derive(Clone, Debug)]
+struct Row {
+    pos: Vec2,
+    vel: Vec2,
+    ground: bool,
+    facing: Facing,
+    turn: Option<u8>,
+    events: Vec<Event>,
+    act: Option<Act>,
+    thing: Vec2,
+    phase: Phase,
+}
+
+struct Play {
+    world: World,
+    held: Actions,
+}
+
+impl Play {
+    fn new(floor_end: u32, crate_x: u32) -> Play {
+        Play::from_src(&level(floor_end, crate_x))
+    }
+
+    fn from_src(src: &str) -> Play {
+        let level = Arc::new(Level::from_toml_str(src, "carry").unwrap());
+        let world = World::new(level, Arc::new(generic_feel("classic-1").unwrap()));
+        let mut play = Play {
+            world,
+            held: Actions::NONE,
+        };
+        play.hold(&[], 2);
+        assert!(play.world.player.grounded());
+        play
+    }
+
+    /// Standing at x = 200 with a crate 20 px to the right, within reach.
+    fn near() -> Play {
+        Play::new(2000, 220)
+    }
+
+    fn step(&mut self, keys: &[Action]) -> Row {
+        let held: Actions = keys.iter().copied().collect();
+        let input = InputFrame::single(Frame::after(self.held, held));
+        self.held = held;
+        step(&mut self.world, &input);
+        let w = &self.world;
+        let p = &w.player;
+        Row {
+            pos: p.pos,
+            vel: p.vel,
+            ground: p.grounded(),
+            facing: p.facing,
+            turn: p.turn,
+            events: w.events.clone(),
+            act: p.hands.map(|h| h.act),
+            thing: w.things[0].pos,
+            phase: w.things[0].phase,
+        }
+    }
+
+    fn hold(&mut self, keys: &[Action], frames: usize) -> Vec<Row> {
+        (0..frames).map(|_| self.step(keys)).collect()
+    }
+
+    /// Picks up the crate standing still, and carries it for a while
+    /// with action held alone.
+    fn carrying() -> Play {
+        let mut play = Play::near();
+        let g = play.step(&[A]);
+        assert_eq!(g.act, Some(Act::PickUp));
+        play.hold(&[A], 20);
+        assert_eq!(play.world.player.hands.unwrap().act, Act::Carry);
+        play
+    }
+}
+
+fn has(row: &Row, event: Event) -> bool {
+    row.events.contains(&event)
+}
+
+#[test]
+fn pressing_action_within_reach_picks_up_without_rolling() {
+    let mut play = Play::near();
+    let rows = play.hold(&[A], 16);
+    assert!(rows.iter().all(|r| !has(r, Event::RollStart)));
+    assert!(rows[..15].iter().all(|r| r.act == Some(Act::PickUp)));
+    assert_eq!(rows[15].act, Some(Act::Carry));
+    assert!(rows.iter().all(|r| r.phase == Phase::Held));
+    // Out of reach, the same press rolls.
+    let mut play = Play::new(2000, 240);
+    let row = play.step(&[A]);
+    assert_eq!(row.act, None);
+    assert!(has(&row, Event::RollStart));
+}
+
+#[test]
+fn moving_into_an_object_without_action_walks_past() {
+    let mut play = Play::new(2000, 300);
+    let rows = play.hold(&[Right], 120);
+    assert!(rows.iter().all(|r| r.act.is_none()));
+    assert!(rows.last().unwrap().pos.x > f(330.0));
+}
+
+/// carrying.md, "A pick-up at full running speed": Right and Action
+/// held into the object. The pick-up starts on the frame after the first
+/// that ends within reach.
+#[test]
+fn a_pick_up_at_full_running_speed() {
+    let mut play = Play::new(2000, 600);
+    let rows = play.hold(&[Right, A], 200);
+    let g = rows.iter().position(|r| r.act.is_some()).unwrap();
+    assert_eq!(rows[g].act, Some(Act::PickUp));
+    let reach = f(24.0);
+    let first_in_reach = rows
+        .iter()
+        .position(|r| f(600.0) - r.pos.x <= reach)
+        .unwrap();
+    assert_eq!(g, first_in_reach + 1);
+    assert_eq!(rows[g - 1].vel.x, speed(768));
+    let x0 = rows[g - 1].pos.x;
+    for (n, vx, x) in [
+        (0, 672, 2.625),
+        (1, 588, 4.921875),
+        (9, 204, 15.51953125),
+        (10, 274, 16.58984375),
+        (14, 477, 22.984375),
+        (15, 513, 24.98828125),
+    ] {
+        let row = &rows[g + n];
+        assert_eq!(row.vel.x, speed(vx), "G + {n}");
+        assert_eq!(row.pos.x - x0, f(x), "G + {n}");
+    }
+    assert_eq!(rows[g + 14].act, Some(Act::PickUp));
+    assert_eq!(rows[g + 15].act, Some(Act::Carry));
+}
+
+#[test]
+fn a_pick_up_keeps_facing_and_a_turn_starts_after_it() {
+    let mut play = Play::near();
+    play.step(&[A]);
+    let rows = play.hold(&[Left, A], 14);
+    assert!(
+        rows.iter()
+            .all(|r| r.facing == Facing::Right && r.turn.is_none())
+    );
+    let row = play.step(&[Left, A]);
+    assert_eq!(row.act, Some(Act::Carry));
+    assert_eq!(row.turn, Some(0));
+}
+
+/// A Jump press on G + 2, held for 20 frames, doesn't jump.
+#[test]
+fn jumps_during_a_pick_up_do_nothing() {
+    let mut play = Play::near();
+    let mut rows = play.hold(&[A], 2);
+    rows.extend(play.hold(&[A, Jump], 20));
+    rows.extend(play.hold(&[A], 20));
+    assert!(rows.iter().all(|r| r.ground && !has(r, Event::JumpStart)));
+}
+
+#[test]
+fn letting_go_during_a_pick_up_throws_even_with_down_held() {
+    let mut play = Play::near();
+    play.hold(&[A], 5);
+    let q = play.step(&[Down]);
+    assert_eq!(q.act, Some(Act::Throw));
+}
+
+#[test]
+fn carrying_moves_at_running_speed_and_down_and_up_do_nothing() {
+    let mut play = Play::carrying();
+    let rows = play.hold(&[Right, Down, A], 60);
+    assert!(play.world.player.crouch.held == 0);
+    assert_eq!(rows.last().unwrap().vel.x, speed(768));
+    let rows = play.hold(&[Up, A], 60);
+    assert_eq!(rows.last().unwrap().vel.x, Fixed::ZERO);
+    assert!(rows.iter().all(|r| r.act == Some(Act::Carry)));
+}
+
+/// Carrying, a jump takes off on P + 2 rather than P + 1.
+#[test]
+fn a_jump_while_carrying_takes_off_a_frame_later() {
+    let mut play = Play::carrying();
+    let before = play.world.player.pos;
+    let rows = play.hold(&[A, Jump], 3);
+    assert!(!has(&rows[0], Event::JumpStart));
+    assert!(!has(&rows[1], Event::JumpStart));
+    let takeoff = &rows[2];
+    assert!(has(takeoff, Event::JumpStart));
+    assert_eq!(takeoff.vel.y, f(-7.0));
+    assert!(takeoff.ground);
+    assert_eq!(takeoff.pos.y, before.y);
+    // Still holding it through the jump and after landing.
+    let rows = play.hold(&[A, Jump], 60);
+    assert!(rows.iter().all(|r| r.act == Some(Act::Carry)));
+    assert!(rows.iter().any(|r| has(r, Event::Land)));
+
+    // Without an object, on P + 1.
+    let mut play = Play::new(2000, 1000);
+    let rows = play.hold(&[Jump], 2);
+    assert!(has(&rows[1], Event::JumpStart));
+}
+
+/// Letting go of action on P + 1 or P + 2 cancels the jump and throws
+/// from the ground; on P + 3, the throw is in the air.
+#[test]
+fn letting_go_just_after_a_jump_press() {
+    for wait in [1, 2] {
+        let mut play = Play::carrying();
+        play.hold(&[A, Jump], wait);
+        let q = play.step(&[Jump]);
+        assert_eq!(q.act, Some(Act::Throw), "P + {wait}");
+        let rows = play.hold(&[Jump], 30);
+        assert!(
+            std::iter::once(&q)
+                .chain(&rows)
+                .all(|r| r.ground && !has(r, Event::JumpStart)),
+            "P + {wait}"
+        );
+    }
+    let mut play = Play::carrying();
+    play.hold(&[A, Jump], 3);
+    let q = play.step(&[Jump]);
+    assert_eq!(q.act, Some(Act::Throw));
+    assert!(!q.ground);
+    // The object leaves the hands on Q + 21, its height rounded toward
+    // the floor.
+    let rows = play.hold(&[Jump], 21);
+    let release = &rows[20];
+    assert_ne!(release.pos.y.floor() as f64, release.pos.y.to_f64());
+    let lift = Fixed::from_int((release.pos.y - f(54.0)).to_f64().ceil() as i32);
+    assert!(matches!(release.phase, Phase::Thrown(_)));
+    assert_eq!(
+        release.thing,
+        Vec2::new(Fixed::from_int(release.pos.x.floor() as i32), lift)
+    );
+    assert!(matches!(rows[19].phase, Phase::Held));
+}
+
+/// carrying.md, "A thrown object", thrown facing right from standing.
+#[test]
+fn a_thrown_object() {
+    // The floor ends before the object comes down.
+    let mut play = Play::new(240, 220);
+    play.step(&[A]);
+    play.hold(&[A], 20);
+    let rows = play.hold(&[], 40);
+    let at = |n: usize| &rows[n];
+    assert_eq!(at(20).phase, Phase::Held);
+    let start = at(21).thing;
+    assert_eq!(start, v(200.0, FLOOR - 54.0));
+    let flight = |n: usize| match at(n).phase {
+        Phase::Thrown(flight) => flight,
+        other => panic!("Q + {n}: {other:?}"),
+    };
+    for (n, x, y, vx, vy) in [
+        (21, 0.0, 0.0, 4096, 256),
+        (22, 14.4375, 1.4375, 3696, 368),
+        (23, 27.5078125, 3.3125, 3346, 480),
+        (24, 39.3828125, 5.625, 3040, 592),
+        (25, 50.2109375, 8.375, 2772, 704),
+        (30, 92.71875, 28.6875, 1860, 1264),
+        (35, 123.0859375, 59.9375, 1393, 1824),
+        (36, 128.28515625, 67.5, 1331, 1936),
+        (37, 133.2734375, 75.5, 1277, 2048),
+    ] {
+        let row = at(n);
+        assert_eq!(row.thing.x - start.x, f(x), "Q + {n}");
+        assert_eq!(row.thing.y - start.y, f(y), "Q + {n}");
+        assert_eq!(flight(n).vx, speed(vx), "Q + {n}");
+        assert_eq!(flight(n).vy, speed(vy), "Q + {n}");
+    }
+    assert_eq!(flight(39).vy, f(8.0));
+}
+
+#[test]
+fn a_thrown_object_rests_where_it_lands() {
+    let mut play = Play::carrying();
+    play.hold(&[], 80);
+    let thing = &play.world.things[0];
+    assert_eq!(thing.phase, Phase::Ready);
+    assert_eq!(thing.pos.y, f(FLOOR));
+    assert!(thing.pos.x > f(300.0));
+}
+
+/// A wall stops it, and it drops straight down from there.
+#[test]
+fn a_thrown_object_drops_down_a_wall() {
+    let wall = "[[collision]]\nshape = \"rect\"\nrect = [300, 200, 20, 200]";
+    let mut play = Play::from_src(&walled(2000, 220, wall));
+    play.step(&[A]);
+    play.hold(&[A], 20);
+    play.hold(&[], 80);
+    let thing = &play.world.things[0];
+    assert_eq!(thing.phase, Phase::Ready);
+    // Its box, 32 wide, is against the wall.
+    assert_eq!(thing.pos, v(284.0, FLOOR));
+}
+
+/// carrying.md, "A throw while running": carrying at full speed to the
+/// right, action let go on Q with Right held throughout.
+#[test]
+fn a_throw_while_running() {
+    let mut play = Play::carrying();
+    let rows = play.hold(&[Right, A], 60);
+    let before = rows.last().unwrap();
+    assert_eq!(before.vel.x, speed(768));
+    let x0 = before.pos.x;
+    let rows = play.hold(&[Right], 44);
+    for (n, vx, x) in [
+        (0, 672, 2.625),
+        (1, 588, 4.921875),
+        (10, 179, 16.21875),
+        (21, 43, 20.046875),
+        (22, 101, 20.44140625),
+        (23, 152, 21.03515625),
+        (42, 480, 49.7890625),
+        (43, 484, 51.6796875),
+    ] {
+        assert_eq!(rows[n].vel.x, speed(vx), "Q + {n}");
+        assert_eq!(rows[n].pos.x - x0, f(x), "Q + {n}");
+    }
+    assert_eq!(rows[42].act, Some(Act::Throw));
+    assert_eq!(rows[43].act, None);
+}
+
+/// On the ground, facing doesn't change during a throw; a turn starts on
+/// Q + 43.
+#[test]
+fn facing_during_a_throw() {
+    let mut play = Play::carrying();
+    let rows = play.hold(&[Left], 44);
+    assert!(
+        rows[..43]
+            .iter()
+            .all(|r| r.facing == Facing::Right && r.turn.is_none())
+    );
+    assert!(rows[30].vel.x.is_negative());
+    assert_eq!(rows[43].turn, Some(0));
+}
+
+#[test]
+fn jumps_during_a_throw() {
+    // Pressed before Q + 22: nothing, now or later.
+    let mut play = Play::carrying();
+    let mut rows = play.hold(&[], 10);
+    rows.extend(play.hold(&[Jump], 30));
+    assert!(rows.iter().all(|r| !has(r, Event::JumpStart)));
+
+    // Pressed on Q + 22: a jump, taking off on the next frame.
+    let mut play = Play::carrying();
+    play.hold(&[], 22);
+    let press = play.step(&[Jump]);
+    assert_eq!(press.act, None);
+    assert!(!has(&press, Event::JumpStart));
+    assert!(has(&play.step(&[Jump]), Event::JumpStart));
+}
+
+#[test]
+fn action_during_a_throw() {
+    let rolls = |presses: &[(usize, usize)]| {
+        let mut play = Play::carrying();
+        let rows: Vec<Row> = (0..60)
+            .map(|n| {
+                let held = presses.iter().any(|&(from, to)| (from..to).contains(&n));
+                play.step(if held { &[A][..] } else { &[] })
+            })
+            .collect();
+        rows.iter().position(|r| has(r, Event::RollStart))
+    };
+    // Pressed on Q + 22 to Q + 42: a roll on the press frame.
+    assert_eq!(rolls(&[(22, 30)]), Some(22));
+    assert_eq!(rolls(&[(30, 40)]), Some(30));
+    // Pressed on Q + 15 to Q + 21 and held on Q + 22: a roll on Q + 22.
+    assert_eq!(rolls(&[(16, 30)]), Some(22));
+    // Let go before Q + 22: nothing.
+    assert_eq!(rolls(&[(16, 20)]), None);
+    // Pressed on Q + 1 to Q + 14: nothing, even if held through Q + 22.
+    assert_eq!(rolls(&[(5, 40)]), None);
+}
+
+#[test]
+fn putting_down() {
+    let mut play = Play::carrying();
+    play.hold(&[Down, A], 3);
+    let x = play.world.player.pos.x;
+    let rows = play.hold(&[Down], 15);
+    assert!(rows[..14].iter().all(|r| r.act == Some(Act::PutDown)));
+    assert!(rows[..14].iter().all(|r| r.vel.x == Fixed::ZERO));
+    assert_eq!(rows[13].phase, Phase::Placed);
+    assert_eq!(rows[13].thing, Vec2::new(x + f(16.0), f(FLOOR - 3.0)));
+    assert_eq!(rows[14].phase, Phase::Ready);
+    assert_eq!(rows[14].thing, Vec2::new(x + f(16.0), f(FLOOR)));
+    assert_eq!(rows[14].act, None);
+    assert!(play.world.player.crouch.held > 0);
+
+    // In the air, Down makes no difference.
+    let mut play = Play::carrying();
+    play.hold(&[A, Jump], 5);
+    assert!(!play.world.player.grounded());
+    assert_eq!(play.step(&[Down]).act, Some(Act::Throw));
+}
+
+#[test]
+fn picking_up_again_after_putting_down() {
+    let put_down = || {
+        let mut play = Play::carrying();
+        play.step(&[Down]);
+        play
+    };
+    // A press on Q + 2 to Q + 13 still held on Q + 14 picks it up then.
+    let mut play = put_down();
+    play.hold(&[], 4);
+    let rows = play.hold(&[A], 10);
+    assert!(rows[..9].iter().all(|r| r.act == Some(Act::PutDown)));
+    assert_eq!(rows[9].act, Some(Act::PickUp));
+    assert!(rows.iter().all(|r| !has(r, Event::RollStart)));
+
+    // On Q + 1, it doesn't.
+    let mut play = put_down();
+    let rows = play.hold(&[A], 20);
+    assert!(rows[13..].iter().all(|r| r.act.is_none()));
+    // A press within reach later does, on the press frame.
+    play.step(&[]);
+    assert_eq!(play.step(&[A]).act, Some(Act::PickUp));
+}
+
+#[test]
+fn falling_out_of_the_level_drops_the_object() {
+    let mut play = Play::carrying();
+    // Off the floor: the player falls out of the level and loses a life.
+    play.world.player.pos = v(2500.0, 300.0);
+    play.world.player.ground = None;
+    play.hold(&[A], 100);
+    assert!(play.world.player.hands.is_none());
+    assert!(matches!(play.world.things[0].phase, Phase::Thrown(_)));
+    // It falls on once the game goes on, out of the level.
+    play.hold(&[], 300);
+    assert!(!play.world.things[0].active);
+}

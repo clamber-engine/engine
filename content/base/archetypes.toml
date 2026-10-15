@@ -30,6 +30,13 @@
 # - `patrol`: an enemy that flies from where it's placed to `path = [x, y]`
 #   away and back, taking `period` frames for the round trip.
 # - `launcher`: fires the player off at `velocity = [x, y]` on touch.
+# - `carry`: an object the player can pick up, carry, throw and put down,
+#   with physics that has `pick_up_time` above 0. It stands on its
+#   position. The player reaches it with its x within `reach` of the
+#   player's and its bottom within 8 px of the player's feet. Thrown,
+#   it flies until it first touches something: a wall, and it drops
+#   straight down; the floor, and it rests there. It doesn't touch
+#   characters yet.
 #
 # The player defeats an enemy by landing on it, and bounces off, or by
 # rolling into it. Touching one any other way costs a life.
@@ -62,3 +69,12 @@ behavior = "launcher"
 size = [24, 16]
 offset = 0
 velocity = [0, -13.5]
+
+# `reach` is a placeholder: spec/behavior/carrying.md doesn't give the
+# reach for Classic 1 yet (clamber-engine/spec#19). 24 is the player's
+# half width and this box's added together, so the boxes touch.
+[archetypes.crate]
+behavior = "carry"
+size = [32, 24]
+offset = 0
+reach = 24

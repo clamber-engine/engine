@@ -404,6 +404,23 @@ mod tests {
                     | Param::FlashStart
                     | Param::FlashEnd
                     | Param::FlashPeriod
+                    | Param::PickUpTime
+                    | Param::PickUpStill
+                    | Param::CarryJumpDelay
+                    | Param::ThrowTime
+                    | Param::ThrowStill
+                    | Param::ThrowRelease
+                    | Param::ThrowRollPress
+                    | Param::ThrowLift
+                    | Param::ThrowSpeed
+                    | Param::ThrowDrop
+                    | Param::ThrowGlide
+                    | Param::ThrowGravity
+                    | Param::ThrowMaxFall
+                    | Param::PutDownTime
+                    | Param::PutDownAhead
+                    | Param::PutDownLift
+                    | Param::PutDownRegrab
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

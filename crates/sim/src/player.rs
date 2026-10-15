@@ -2,7 +2,9 @@
 //!
 //! Each step reads one [`Frame`] of input and moves through the states in
 //! [`State`]: standing, walking and running on the ground, rolling,
-//! jumping and falling, and swapping to the next roster character.
+//! jumping and falling, and swapping to the next roster character. What
+//! its hands are doing with an object ([`Hands`]) changes what the input
+//! does.
 //! Collision keeps the body on slopes and one-way platforms and stops it
 //! at walls and ceilings.
 //! With `face_slope`, a grounded body goes over the ground column by
@@ -167,6 +169,11 @@ pub struct Player {
     /// Frames into the hop that ends taking over from a lost character,
     /// until it lands (see [`crate::Loss`]).
     pub hop: Option<u8>,
+    /// What the hands are doing with an object, if anything.
+    pub hands: Option<Hands>,
+    /// The object a pick-up starts with on this step if action is held,
+    /// found before it (see [`crate::carry`]).
+    pub pick: Option<usize>,
     /// In the air inside a one-way platform, by columns: risen into it
     /// from below its underside, with the feet still between its
     /// underside and top.
@@ -212,6 +219,8 @@ impl Player {
             hurt_ahead: None,
             knockout: None,
             hop: None,
+            hands: None,
+            pick: None,
             inside: false,
             touched: Vec::new(),
         };
@@ -428,6 +437,10 @@ impl Player {
             self.coyote = None;
             self.state = State::Jump;
         }
+        let busy = self.use_hands(input, physics, events);
+        if busy.no_jump {
+            self.jump_buffer.take();
+        }
         let locked = self.lockout > 0;
         self.lockout = self.lockout.saturating_sub(1);
 
@@ -450,6 +463,10 @@ impl Player {
 
         if timed {
             self.remember_roll_press(input, physics);
+            self.roll_after_throw(input, physics);
+        }
+        if busy.no_roll {
+            self.roll_press = None;
         }
 
         // With the other character in the level, swaps are the world's.
@@ -467,7 +484,10 @@ impl Player {
         // A jump pressed during a timed roll can start wherever the roll
         // has taken the player, in the air too.
         let roll_jump = std::mem::take(&mut self.roll_jump) || self.roll.is_some();
-        let ready = self.jump_buffer.age().is_some_and(|age| age >= delay);
+        let ready = self
+            .jump_buffer
+            .age()
+            .is_some_and(|age| age >= delay.saturating_add(busy.jump_delay));
         let can_jump = self.swap == 0
             && !locked
             && face.is_none()
@@ -527,6 +547,7 @@ impl Player {
             && (pressed(Action::Down) || pressed(Action::Action));
         if !timed
             && roll_input
+            && !busy.no_roll
             && self.grounded()
             && self.swap == 0
             && self.state != State::Roll
@@ -537,6 +558,7 @@ impl Player {
             events.push(Event::RollStart);
         }
         let can_roll = timed
+            && !busy.no_roll
             && !events.contains(&Event::JumpStart)
             && feel.roster[self.character].abilities.contains_key(ROLL);
         let boost = if can_roll {
@@ -549,11 +571,13 @@ impl Player {
         if started || boost == Some(true) {
             self.state = State::Roll;
             events.push(Event::RollStart);
+            // A roll ends the throw it starts in.
+            self.hands = None;
         }
         let rolling = self.state == State::Roll;
 
         let crouching = self.crouch.update(
-            held(Action::Down),
+            held(Action::Down) && !busy.no_crouch,
             self.grounded() && !rolling,
             frames(physics[Param::CrouchStart]),
             frames(physics[Param::CrouchMin]),
@@ -566,6 +590,7 @@ impl Player {
         // frame's speed is known.
         let striding = physics[Param::StrideSteps] >= Fixed::ONE
             && turn_time > 0
+            && !busy.keep_facing
             && self.grounded()
             && self.roll.is_none()
             && !rolling
@@ -586,6 +611,9 @@ impl Player {
             } else {
                 Facing::Right
             }
+        } else if busy.keep_facing {
+            self.turn = None;
+            self.facing
         } else if self.roll_stop > slide {
             // Standing still in the stop after a roll, the player turns
             // at once.
@@ -612,7 +640,11 @@ impl Player {
             && !rolling
             && !events.contains(&Event::JumpStart)
             && columns::rise_ahead(level, columns::column(self.pos.x), dir, ahead, self.pos.y);
-        let dir = if crouching || walled { 0 } else { dir };
+        let dir = if crouching || walled || busy.still {
+            0
+        } else {
+            dir
+        };
 
         let cap = if held(Action::Action) {
             physics[Param::TopSpeed]
@@ -849,6 +881,123 @@ impl Player {
         );
         if self.grounded() && lost.landed.is_none() {
             lost.landed = Some(0);
+        }
+    }
+
+    /// Goes on with what the hands are doing at the start of a step, and
+    /// says what that rules out on it. A pick-up starts with the object
+    /// in [`Player::pick`] if action is held. Letting go of action throws
+    /// the object, or puts it down if the player is carrying it on the
+    /// ground with down held.
+    fn use_hands(&mut self, input: &Frame, physics: &Physics, events: &mut Vec<Event>) -> Busy {
+        let held = |a| input.held.contains(a);
+        let time = |param| frames(physics[param]);
+        if let Some(hands) = &mut self.hands {
+            hands.frame = hands.frame.saturating_add(1);
+            let over = match hands.act {
+                Act::PickUp if hands.frame >= time(Param::PickUpTime) => {
+                    hands.act = Act::Carry;
+                    false
+                }
+                Act::Throw => hands.frame >= time(Param::ThrowTime),
+                Act::PutDown => hands.frame >= time(Param::PutDownTime),
+                _ => false,
+            };
+            if over {
+                self.hands = None;
+            }
+        }
+        if let Some(thing) = self.pick.take()
+            && self.hands.is_none()
+            && self.grounded()
+            && held(Action::Action)
+        {
+            // A roll into the object ends.
+            if self.state == State::Roll {
+                events.push(Event::RollEnd);
+            }
+            self.end_roll();
+            self.turn = None;
+            self.hands = Some(Hands::new(thing, Act::PickUp));
+        }
+        if let Some(hands) = self.hands
+            && matches!(hands.act, Act::PickUp | Act::Carry)
+            && !held(Action::Action)
+        {
+            let down = hands.act == Act::Carry && self.grounded() && held(Action::Down);
+            let act = if down { Act::PutDown } else { Act::Throw };
+            self.hands = Some(Hands::new(hands.thing, act));
+        }
+        let pressed = input.pressed.contains(Action::Action);
+        let throw_still = time(Param::ThrowStill);
+        if self.hands.is_some_and(|h| {
+            h.act == Act::Throw && h.frame >= throw_still && input.pressed.contains(Action::Jump)
+        }) {
+            // A jump ends the throw.
+            self.hands = None;
+        }
+        let Some(hands) = &mut self.hands else {
+            return Busy::default();
+        };
+        match hands.act {
+            Act::PickUp => Busy {
+                still: hands.frame < time(Param::PickUpStill),
+                keep_facing: true,
+                no_jump: true,
+                no_roll: true,
+                no_crouch: true,
+                jump_delay: 0,
+            },
+            Act::Carry => Busy {
+                no_roll: true,
+                no_crouch: true,
+                jump_delay: time(Param::CarryJumpDelay),
+                ..Busy::default()
+            },
+            Act::Throw => {
+                let early = hands.frame < throw_still;
+                if pressed && early {
+                    hands.press = Some(hands.frame);
+                }
+                Busy {
+                    still: early,
+                    keep_facing: true,
+                    no_jump: early,
+                    no_roll: early,
+                    ..Busy::default()
+                }
+            }
+            Act::PutDown => {
+                if pressed && hands.frame >= time(Param::PutDownRegrab) {
+                    hands.press = Some(hands.frame);
+                }
+                // Jumps and rolls during a put-down aren't in the spec;
+                // there are none.
+                Busy {
+                    still: true,
+                    keep_facing: true,
+                    no_jump: true,
+                    no_roll: true,
+                    ..Busy::default()
+                }
+            }
+        }
+    }
+
+    /// On the first frame of a throw that a roll can start on, an action
+    /// press made from `throw_roll_press` on and still held starts one.
+    fn roll_after_throw(&mut self, input: &Frame, physics: &Physics) {
+        let Some(hands) = self.hands else {
+            return;
+        };
+        let from = frames(physics[Param::ThrowRollPress]);
+        if hands.act == Act::Throw
+            && hands.frame == frames(physics[Param::ThrowStill])
+            && input.held.contains(Action::Action)
+            && hands.press.is_some_and(|n| n >= from)
+            && self.roll_press.is_none()
+        {
+            self.roll_press = Some((0, 0, false));
         }
     }
 
@@ -1394,6 +1543,59 @@ impl Player {
         self.touched.push(collider);
         events.push(Event::Land);
     }
+}
+
+/// What the player's hands are doing with an object that can be
+/// carried.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Hands {
+    /// The object's index among the things.
+    pub thing: usize,
+    pub act: Act,
+    /// Frames since the act started, which is 0.
+    pub frame: u8,
+    /// During a throw or a put-down, the frame of the latest action press
+    /// that may start a roll or pick the object up again.
+    pub press: Option<u8>,
+}
+
+impl Hands {
+    fn new(thing: usize, act: Act) -> Hands {
+        Hands {
+            thing,
+            act,
+            frame: 0,
+            press: None,
+        }
+    }
+}
+
+/// Something done with an object.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Act {
+    PickUp,
+    /// Holding it after the pick-up.
+    Carry,
+    /// From letting go of action; the object leaves the hands part way.
+    Throw,
+    /// Setting it down in front.
+    PutDown,
+}
+
+/// What the hands rule out on a step.
+#[derive(Clone, Copy, Debug, Default)]
+struct Busy {
+    /// The target speed is 0 whatever is held.
+    still: bool,
+    /// Facing doesn't change and no turn starts.
+    keep_facing: bool,
+    /// Jump presses do nothing, now or later.
+    no_jump: bool,
+    no_roll: bool,
+    /// Down doesn't crouch.
+    no_crouch: bool,
+    /// Frames more before a jump takes off.
+    jump_delay: u8,
 }
 
 /// A knock-out under way.

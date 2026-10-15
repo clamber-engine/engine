@@ -408,6 +408,59 @@ params! {
     /// stretch of this many frames, and not drawn for the second, except
     /// on the frame after its hop starts. Whole frames.
     FlashPeriod => "flash_period",
+    /// Above 0, the player can pick up objects that can be carried, and
+    /// a pick-up lasts this many frames, counting its first; holding an
+    /// object needs action held. 0: nothing can be picked up. Whole
+    /// frames.
+    PickUpTime => "pick_up_time",
+    /// Frames from the start of a pick-up, counting its first, that the
+    /// target speed is 0 whatever is held. Whole frames.
+    PickUpStill => "pick_up_still",
+    /// Frames later a jump takes off while carrying than without an
+    /// object. Whole frames.
+    CarryJumpDelay => "carry_jump_delay",
+    /// Frames a throw lasts, counting the frame action is let go. Facing
+    /// doesn't change during them. Whole frames.
+    ThrowTime => "throw_time",
+    /// Frames from letting go, counting that frame, that the target
+    /// speed is 0 whatever is held, and jump and action presses do
+    /// nothing. Whole frames.
+    ThrowStill => "throw_still",
+    /// The frame of a throw, counting from 0 on letting go, that the
+    /// object leaves the player's hands on. Whole frames.
+    ThrowRelease => "throw_release",
+    /// An action press from this frame of a throw, counting from 0,
+    /// still held when `throw_still` is over, starts a roll then. Whole
+    /// frames.
+    ThrowRollPress => "throw_roll_press",
+    /// How far above the player's feet a thrown object leaves its hands,
+    /// px.
+    ThrowLift => "throw_lift",
+    /// A thrown object's speed across as it leaves the player's hands,
+    /// the way the player faces.
+    ThrowSpeed => "throw_speed",
+    /// A thrown object's downward speed as it leaves the player's hands.
+    ThrowDrop => "throw_drop",
+    /// The speed across a thrown object eases toward, by
+    /// `speed_response`, the way it was thrown.
+    ThrowGlide => "throw_glide",
+    /// Added to a thrown object's downward speed every frame.
+    ThrowGravity => "throw_gravity",
+    /// A thrown object's downward speed never exceeds this.
+    ThrowMaxFall => "throw_max_fall",
+    /// Frames a put-down lasts, counting the frame action is let go; the
+    /// target speed is 0 whatever is held. The object is set down on
+    /// the last. Whole frames.
+    PutDownTime => "put_down_time",
+    /// How far in front of the player's feet an object is set down, px.
+    PutDownAhead => "put_down_ahead",
+    /// How far above the floor an object is set down, the frame before
+    /// it rests on it, px.
+    PutDownLift => "put_down_lift",
+    /// An action press from this frame of a put-down, counting from 0 on
+    /// letting go, still held when the put-down is over, picks the object
+    /// up again then. Whole frames.
+    PutDownRegrab => "put_down_regrab",
 }
 
 impl Param {

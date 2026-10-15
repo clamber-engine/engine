@@ -1,8 +1,9 @@
 //! The deterministic simulation core of the Clamber engine.
 //!
 //! A [`World`] holds a level, its entities (enemies and objects behave
-//! as their [`Archetype`] says), the player, the [`Other`] character if
-//! there is one, and the player's progress through the level ([`Flow`]), and advances one logic frame at a time
+//! as their [`Archetype`] says, and some can be carried), the player,
+//! the [`Other`] character if there is one, and the player's progress
+//! through the level ([`Flow`]), and advances one logic frame at a time
 //! with [`step`], always at 60 Hz. Nothing
 //! inside a step reads the clock, uses floating point or depends on
 //! hash-map iteration order: the same world and the same inputs give the
@@ -15,6 +16,7 @@
 //! happens as a trace (`spec/traces/FORMAT.md`).
 
 mod archetype;
+mod carry;
 mod columns;
 mod flow;
 mod loss;
@@ -26,14 +28,15 @@ mod things;
 mod world;
 
 pub use archetype::{Archetype, ArchetypeError, Archetypes, Behavior};
+pub use carry::Flight;
 pub use clamber_fixed::Fixed;
 pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };
 pub use loss::{Loss, Lost};
 pub use player::{
-    Boost, Crouch, Facing, Gait, HALF_WIDTH, HEIGHT, Knockout, Player, ROLL, Roll, RollSize,
-    SWAP_FRAMES, State, Stride,
+    Act, Boost, Crouch, Facing, Gait, HALF_WIDTH, HEIGHT, Hands, Knockout, Player, ROLL, Roll,
+    RollSize, SWAP_FRAMES, State, Stride,
 };
 pub use record::record;
 pub use script::{InputFrame, Script};
