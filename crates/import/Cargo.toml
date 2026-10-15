@@ -1,0 +1,11 @@
+[package]
+name = "clamber-import"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+description = "The importer: turns a player's own game image into a personal content pack"
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+sha2 = "0.11.1"
+toml = "1.1.8"
