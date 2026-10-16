@@ -125,6 +125,9 @@ pub struct Layer {
     /// Draw the image with sharp texel edges at any size, rather than
     /// filtered smoothly with mipmaps.
     pub pixel_art: bool,
+    /// The layer's colours change with the level's dimming, when a preset
+    /// has one.
+    pub dim: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
@@ -441,6 +444,8 @@ struct LayerFile {
     scale: u32,
     #[serde(default)]
     pixel_art: bool,
+    #[serde(default)]
+    dim: bool,
 }
 
 fn one() -> u32 {
@@ -806,6 +811,7 @@ impl Reader<'_> {
             content,
             scale: l.scale,
             pixel_art: l.pixel_art,
+            dim: l.dim,
         })
     }
 
@@ -1158,6 +1164,9 @@ impl Level {
             }
             if l.pixel_art {
                 lt.insert("pixel_art".into(), Value::Boolean(true));
+            }
+            if l.dim {
+                lt.insert("dim".into(), Value::Boolean(true));
             }
             match &l.content {
                 LayerContent::Image {

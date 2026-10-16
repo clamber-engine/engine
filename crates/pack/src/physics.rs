@@ -711,6 +711,17 @@ params! {
     /// falls out on, with input ignored and the player and the view
     /// still. 0: as for any lost life. Whole frames.
     FallOutTime => "fall_out_time",
+    /// Above 0, a level's `dim` entity starts the dimming of the level's
+    /// background once it's near the view (see `clamber_sim::Dimming`),
+    /// and this is its number of steps. 0: no dimming. Whole steps.
+    DimSteps => "dim_steps",
+    /// Frames from one step of the dimming to the next. Steps fall only on
+    /// frames whose number is a whole multiple of it. Whole frames.
+    DimStepTime => "dim_step_time",
+    /// The dimming's first step is on the first frame it can fall on this
+    /// many frames or more after the one its entity came near the view on.
+    /// Whole frames.
+    DimDelay => "dim_delay",
 }
 
 impl Param {

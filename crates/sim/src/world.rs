@@ -10,6 +10,7 @@ use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior};
 use crate::carry::{self, Flight};
 use crate::collect;
+use crate::dimming::{self, Dimming};
 use crate::ending::{self, Ending};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
 use crate::follow::{self, Lead, Mode};
@@ -157,6 +158,8 @@ pub struct World {
     /// The walk-out after passing the level's end marker, once it has
     /// started.
     pub ending: Option<Ending>,
+    /// The dimming of the level's background, once it has started.
+    pub dimming: Option<Dimming>,
     /// Frames the whole game should stand still after the last step
     /// before the next, as during a knock-out. Whatever runs the world in
     /// real time holds the screen for them; they aren't steps, and a
@@ -243,6 +246,7 @@ impl World {
             events: Vec::new(),
             flow: Flow::new(),
             ending: None,
+            dimming: None,
             pause: 0,
         })
     }
@@ -475,6 +479,13 @@ impl World {
             }
             None => out.push(0),
         }
+        match self.dimming {
+            Some(d) => {
+                out.push(1);
+                out.extend(d.started.to_le_bytes());
+            }
+            None => out.push(0),
+        }
         out.push(self.pause);
         out.extend(f.gems.to_le_bytes());
         out.extend(f.relics.to_le_bytes());
@@ -667,6 +678,8 @@ pub fn step(world: &mut World, input: &InputFrame) {
     if world.flow.outcome.is_over() {
         return;
     }
+    // The dimming starts by where the view was at the start of the step.
+    dimming::start(world);
     if world.join.is_some() {
         // Everything else waits while a character joins.
         join::step(world);
@@ -677,6 +690,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
     if flow::dying(world) {
         if world.flow.events.contains(&FlowEvent::Respawn) {
             view::restart(world);
+            world.dimming = None;
         } else if follow::due(world).is_some() {
             // The other character goes on following a player that fell
             // out of the level.

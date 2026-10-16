@@ -12,6 +12,9 @@ use toml::{Table, Value};
 
 use crate::Kind;
 
+/// The kind of entity that starts the dimming, as in `clamber-sim`.
+pub const DIM: &str = "dim";
+
 /// Bytes in an entry.
 pub const ENTRY_SIZE: usize = 8;
 
@@ -37,7 +40,8 @@ pub enum Class {
     Object,
     /// The members listed at the entry's reference + 8 (class 5).
     Group,
-    /// No object (class 8).
+    /// No object (class 8). The first level's starts the dimming
+    /// (`spec/behavior/dimming.md`).
     Nothing,
     /// A class the spec doesn't cover.
     Other(u16),
@@ -131,7 +135,8 @@ impl Placements {
     /// A group's members get `group`, the group
     /// entry's index in the list, and `appears_at`, the group entry's x:
     /// they all appear when that is in the window. Entries that place
-    /// nothing, and classes the spec doesn't cover, have no entity.
+    /// nothing are [`DIM`] entities at their entry's position, and classes
+    /// the spec doesn't cover have no entity.
     pub fn entities(&self, bottom: i64, kind: impl Fn(u16) -> Option<Kind>) -> Vec<Entity> {
         let entity = |entry: Entry, params: Table| Entity {
             kind: match kind(entry.reference) {
@@ -161,7 +166,13 @@ impl Placements {
                         entities.push(entity(member, params));
                     }
                 }
-                Class::Nothing | Class::Other(_) => {}
+                // The spec only covers the first level's class 8 entry,
+                // which starts the dimming.
+                Class::Nothing => entities.push(Entity {
+                    kind: DIM.to_string(),
+                    ..entity(placement.entry, Table::new())
+                }),
+                Class::Other(_) => {}
             }
         }
         entities
@@ -335,11 +346,17 @@ mod tests {
                 member("small-walker", 500, 392),
                 member("small-walker", 560, 372),
                 member("placed-1310", 420, 416),
+                one(DIM, 600, 256),
                 one("placed-1240", 700, 0),
                 one("placed-1250", 650, 512),
                 one("placed-ffff", 65000, 505),
             ]
         );
+    }
+
+    #[test]
+    fn class_8_entries_start_the_simulations_dimming() {
+        assert_eq!(DIM, clamber_sim::DIM);
     }
 
     #[test]

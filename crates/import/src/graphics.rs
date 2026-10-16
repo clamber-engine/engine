@@ -505,6 +505,9 @@ fn layer(name: &str, parallax: Vec2, offset: Vec2, content: LayerContent) -> Lay
         content,
         scale: 1,
         pixel_art: true,
+        // Its colours are the background's rows, which the dimming
+        // changes (`spec/behavior/dimming.md`).
+        dim: true,
     }
 }
 

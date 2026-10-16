@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use clamber_level::{Area, Depth, Layer, Shape, Vec2};
 use clamber_pack::Feel;
-use clamber_sim::{END, Facing, FlowEvent, HALF_WIDTH, HEIGHT, InputFrame, State, World, step};
+use clamber_sim::{
+    DIM, END, Facing, FlowEvent, HALF_WIDTH, HEIGHT, InputFrame, State, World, step,
+};
 
 use crate::camera::{Camera, VIEW, point};
 use crate::canvas::{Canvas, Color, rgb};
@@ -166,18 +168,19 @@ impl Game {
         let level = &self.world.level;
         canvas.light(&lighting(level, origin, canvas.view()));
         let behind = self.world.behind_scenery();
+        let dim = self.world.dim_step();
         if behind {
             // The characters go behind the scenery, the back layers that
             // move with the world, but in front of backdrops.
             let back = |l: &Layer| l.depth == Depth::Back;
             let scenery = |l: &Layer| l.parallax == Vec2::ints(1, 1);
             self.art
-                .draw_some(canvas, level, origin, |l| back(l) && !scenery(l));
+                .draw_some(canvas, level, origin, dim, |l| back(l) && !scenery(l));
             self.draw_characters(canvas, alpha, origin);
             self.art
-                .draw_some(canvas, level, origin, |l| back(l) && scenery(l));
+                .draw_some(canvas, level, origin, dim, |l| back(l) && scenery(l));
         } else {
-            self.art.draw(canvas, level, Depth::Back, origin);
+            self.art.draw(canvas, level, Depth::Back, origin, dim);
         }
         if self.debug {
             for region in &level.regions {
@@ -220,8 +223,8 @@ impl Game {
         }
 
         for (thing, pose) in self.world.things.iter().zip(&self.poses.things) {
-            // The end marker isn't drawn.
-            if !thing.active || (thing.kind == END && !self.debug) {
+            // The end marker and the dimming's entity aren't drawn.
+            if !thing.active || ([END, DIM].contains(&thing.kind.as_str()) && !self.debug) {
                 continue;
             }
             let (x, y) = to_screen(point(thing.pos));
@@ -240,7 +243,7 @@ impl Game {
         if !behind {
             self.draw_characters(canvas, alpha, origin);
         }
-        self.art.draw(canvas, level, Depth::Front, origin);
+        self.art.draw(canvas, level, Depth::Front, origin, dim);
         draw_hud(canvas, &self.world);
         let (now, full) = self.world.brightness();
         if now < full {

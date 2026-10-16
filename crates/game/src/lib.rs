@@ -42,6 +42,7 @@ mod cast;
 mod clock;
 mod controls;
 mod credits;
+mod dim;
 pub mod display;
 mod feels;
 mod game;

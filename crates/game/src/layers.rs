@@ -4,16 +4,18 @@
 //! scaled by its parallax, so a parallax of 1 moves with the world and 0
 //! stays put on screen. Its image covers one world unit per `scale`
 //! texels, filtered smoothly unless the layer is pixel art, and is lit by
-//! the level's lights if it has a normal map.
+//! the level's lights if it has a normal map. A layer that dims is drawn
+//! in the colours of the dimming's step (`crate::dim`).
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use clamber_level::{Depth, Layer, LayerContent, Level, Tile, TileLayer, Tileset};
 use clamber_sprite::{Rect, RgbaImage, decode_png};
 
 use crate::camera::point;
+use crate::dim::dim_image;
 use crate::surface::{Flip, Quad, Surface, Texture};
 
 /// The images a level's layers draw, by the path the level gives them and
@@ -21,7 +23,12 @@ use crate::surface::{Flip, Quad, Surface, Texture};
 #[derive(Clone, Debug, Default)]
 pub struct LayerArt {
     textures: BTreeMap<(String, bool), Arc<Texture>>,
+    /// Images in the dimming's colours, made as they're first drawn, by
+    /// path, pixel art or not, step and steps.
+    dimmed: Arc<Mutex<BTreeMap<DimKey, Arc<Texture>>>>,
 }
+
+type DimKey = (String, bool, (u32, u32));
 
 impl LayerArt {
     /// Reads every image `level`'s layers use, relative to `dir`, the
@@ -99,28 +106,55 @@ impl LayerArt {
         Ok(())
     }
 
+    /// The image `path` in the colours of step `dim.0` of `dim.1` of the
+    /// dimming.
+    fn dimmed(&self, path: &str, pixel_art: bool, dim: (u32, u32)) -> Option<Arc<Texture>> {
+        let texture = self.get(path, pixel_art)?;
+        if dim.0 == 0 {
+            return Some(texture.clone());
+        }
+        let mut dimmed = self.dimmed.lock().unwrap_or_else(|e| e.into_inner());
+        let key = (path.to_string(), pixel_art, dim);
+        let made = dimmed.entry(key).or_insert_with(|| {
+            Texture::new(dim_image(&texture.levels[0], dim.0, dim.1), pixel_art)
+        });
+        Some(made.clone())
+    }
+
     /// Draws `level`'s layers at `depth` in order, for a view whose top
-    /// left is at `origin` in world units. Layers whose image isn't here
-    /// are skipped.
-    pub fn draw(&self, surface: &mut dyn Surface, level: &Level, depth: Depth, origin: (f64, f64)) {
-        self.draw_some(surface, level, origin, |l| l.depth == depth);
+    /// left is at `origin` in world units, with the dimming at step
+    /// `dim.0` of `dim.1`. Layers whose image isn't here are skipped.
+    pub fn draw(
+        &self,
+        surface: &mut dyn Surface,
+        level: &Level,
+        depth: Depth,
+        origin: (f64, f64),
+        dim: (u32, u32),
+    ) {
+        self.draw_some(surface, level, origin, dim, |l| l.depth == depth);
     }
 
     /// Draws the layers `keep` says to, in order, for a view whose top
-    /// left is at `origin`.
+    /// left is at `origin`, with the dimming at step `dim.0` of `dim.1`.
     pub fn draw_some(
         &self,
         surface: &mut dyn Surface,
         level: &Level,
         origin: (f64, f64),
+        dim: (u32, u32),
         keep: impl Fn(&Layer) -> bool,
     ) {
         for layer in level.layers.iter().filter(|l| keep(l)) {
-            let Some(texture) = self.get(image_path(layer), layer.pixel_art) else {
+            let dim = if layer.dim { dim } else { (0, 0) };
+            let Some(texture) = self.dimmed(image_path(layer), layer.pixel_art, dim) else {
                 continue;
             };
             let normals = normals_path(layer).and_then(|p| self.get(p, layer.pixel_art));
-            let art = Art { texture, normals };
+            let art = Art {
+                texture: &texture,
+                normals,
+            };
             let (offset, parallax) = (point(layer.offset), point(layer.parallax));
             let at = (
                 (offset.0 - origin.0 * parallax.0) as f32,
@@ -293,7 +327,7 @@ fn tile_rect(set: &Tileset, image: &RgbaImage, index: u32) -> Option<Rect> {
 
 #[cfg(test)]
 mod tests {
-    use clamber_sprite::encode_png;
+    use clamber_sprite::{Rgba, encode_png};
 
     use super::*;
     use crate::canvas::{Canvas, Color, rgb};
@@ -323,7 +357,7 @@ mod tests {
     fn draw(art: &LayerArt, level: &Level, depth: Depth, origin: (f64, f64)) -> Canvas {
         let mut canvas = Canvas::new(8, 6);
         canvas.clear(BG);
-        art.draw(&mut canvas, level, depth, origin);
+        art.draw(&mut canvas, level, depth, origin, (0, 0));
         canvas
     }
 
@@ -490,5 +524,35 @@ mod tests {
             "layer `wall`: the normal map is 2x2, but its image is 4x2"
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn layers_that_dim_are_drawn_in_the_steps_colours() {
+        let level = level(
+            "[[layers]]\nname = \"far\"\nimage = \"a.png\"\npixel_art = true\nrepeat = [true, true]\n\
+             dim = true\n\
+             [[layers]]\nname = \"near\"\nimage = \"b.png\"\npixel_art = true\n",
+        );
+        assert!(level.layers[0].dim && !level.layers[1].dim);
+        let colour = [165, 99, 49, 255];
+        let mut solid = RgbaImage::new(4, 2);
+        solid.data.fill(colour);
+        let mut art = LayerArt::default();
+        art.insert("a.png", solid.clone(), true);
+        art.insert("b.png", solid, true);
+        let shown = |dim| {
+            let mut canvas = Canvas::new(8, 6);
+            art.draw(&mut canvas, &level, Depth::Back, (0.0, 0.0), dim);
+            (canvas.get(0, 0).unwrap(), canvas.get(7, 5).unwrap())
+        };
+        let colour_of = |[r, g, b, _]: Rgba| rgb(r, g, b);
+        let before = colour_of(colour);
+        assert_eq!(shown((0, 32)), (before, before));
+        let dimmed = colour_of(crate::dim::dim(colour, 16, 32));
+        assert_ne!(dimmed, before);
+        // The near layer covers the far one at the top left only.
+        assert_eq!(shown((16, 32)), (before, dimmed));
+        // Again, from the images already made.
+        assert_eq!(shown((16, 32)), (before, dimmed));
     }
 }

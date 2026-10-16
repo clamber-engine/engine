@@ -207,6 +207,9 @@ end_fade_time = 0
 end_fade_step = 0
 fall_out_depth = 0
 fall_out_time = 0
+dim_steps = 0
+dim_step_time = 0
+dim_delay = 0
 
 [presets.snappy]
 label = "Snappy"
@@ -499,6 +502,13 @@ end_fade_step = 2
 # frame is 96 frames after that one.
 fall_out_depth = 48
 fall_out_time = 96
+# The dimming near the first level's end (dimming.md): 32 steps 8 frames
+# apart, the first on a frame at least 4 after the dim entry comes into
+# the window. The spec doesn't say where the 8-frame cycle sits; the
+# engine puts steps on frames whose number is a multiple of 8.
+dim_steps = 32
+dim_step_time = 8
+dim_delay = 4
 
 # The second character (roster slot 1): spec/behavior/second-character.md.
 # It moves by the same rules with its own speeds, jump and crouch

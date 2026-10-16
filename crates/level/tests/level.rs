@@ -38,6 +38,7 @@ fn reads_every_part() {
     assert_eq!(l.layers[2].offset, v(0.0, -32.0));
     assert_eq!((l.layers[0].scale, l.layers[0].pixel_art), (1, false));
     assert_eq!((l.layers[1].scale, l.layers[1].pixel_art), (4, true));
+    assert_eq!((l.layers[0].dim, l.layers[1].dim), (false, true));
     let LayerContent::Tiles(tiles) = &l.layers[1].content else {
         panic!("expected tiles");
     };
