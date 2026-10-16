@@ -56,8 +56,10 @@
 #   at that speed, from `throw_from = [x, y]` away from its position. A
 #   thrown ball moves on the frame it's thrown. With a preset that has a
 #   view, a thrower appears and is removed as a walker on its own does,
-#   and starts its timetable again each time it appears. Neither it nor
-#   its balls touch the player or anything else yet.
+#   and starts its timetable again each time it appears. Knocked out (by
+#   the ground action), it stops throwing and leaves as a defeated walker
+#   does, by `defeat_jump`, `defeat_gravity` and `defeat_max_fall`.
+#   Neither it nor its balls touch the player or anything else yet.
 # - `ball`: falls under `gravity`, up to `max_fall`; nothing changes its
 #   speed across. Its floor is the highest in the 1-px column of its x
 #   that's no more than `floor_reach` above where it was at the start of
@@ -169,6 +171,11 @@ offset = 0
 period = 173
 throws = [[2, 0, -7], [33, 3.125, -7], [144, -3.125, -7]]
 throw_from = [0, -8]
+# ground-action-enemies.md: it rises at 5 px per frame and falls as a
+# knocked-out walker does.
+defeat_jump = 5
+defeat_gravity = 0.4375
+defeat_max_fall = 8
 
 [archetypes.ball]
 behavior = "ball"

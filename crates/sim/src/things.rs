@@ -20,9 +20,10 @@
 //!   [`roll_attacks`]). The player and the enemy then hold still for
 //!   `roll_defeat_freeze` frames.
 //! - With a `ground_attack_width` above 0, the ground action knocks out
-//!   walkers its attack box touches on its attack frames (see
-//!   [`ground_attacks`]). For `ground_attack_pause` frames after, the
-//!   player and every walker hold still and nothing hurts the player.
+//!   walkers and throwers its attack box touches on its attack frames
+//!   (see [`ground_attacks`]). For `ground_attack_pause` frames after,
+//!   the player, every walker and every thrower hold still, and nothing
+//!   hurts the player.
 //! - While the player is knocked out, things don't act on it, and
 //!   enemies other than the one that hurt it hold still for the frames
 //!   it holds still after the hit.
@@ -93,8 +94,8 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     } else {
         Vec::new()
     };
-    // Walkers, knocked out or not, hold still on the ground action's
-    // pause frames.
+    // Walkers and throwers, knocked out or not, hold still on the ground
+    // action's pause frames.
     let paused = frozen && world.player.ground_action.is_some();
     // Enemies hold still while a knocked-out player does, after the hit
     // frame, except the one that hurt it.
@@ -112,7 +113,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
         if held.is_some_and(|by| enemy && by != Some(thing.index)) {
             continue;
         }
-        if paused && thing.archetype.is_some_and(|a| a.behavior.is_walker()) {
+        if paused && thing.archetype.is_some_and(|a| a.behavior.fall().is_some()) {
             continue;
         }
         advance(&world.level, thing, &physics, picture);
@@ -185,7 +186,7 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
             return;
         }
         Phase::Falling { vy, hold } => {
-            if let Behavior::Walker { defeat, .. } = archetype.behavior {
+            if let Some(defeat) = archetype.behavior.fall() {
                 fall(level, thing, &archetype, defeat, vy, hold);
             }
             return;
@@ -290,19 +291,20 @@ fn turn_around(thing: &mut Thing, delay: u8) {
     }
 }
 
-/// Defeats an enemy. A walker falls out of the level after holding still
-/// for `hold` frames; anything else shows as defeated for a while.
+/// Defeats an enemy. A walker or a thrower falls out of the level after
+/// holding still for `hold` frames; anything else shows as defeated for a
+/// while.
 fn defeat(thing: &mut Thing, hold: u8) {
-    thing.phase = match thing.archetype.map(|a| a.behavior) {
-        Some(Behavior::Walker { defeat, .. }) => Phase::Falling {
+    thing.phase = match thing.archetype.and_then(|a| a.behavior.fall()) {
+        Some(defeat) => Phase::Falling {
             vy: -defeat.jump,
             hold,
         },
-        _ => Phase::Defeated(DEFEATED_FRAMES),
+        None => Phase::Defeated(DEFEATED_FRAMES),
     };
 }
 
-/// Moves a defeated walker: still while `hold` lasts, then down under
+/// Moves a defeated walker or thrower: still while `hold` lasts, then down under
 /// the fall's gravity, through anything, at the speed it had across. It's
 /// gone once its top is below the level.
 fn fall(
@@ -617,16 +619,17 @@ fn roll_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
     strike(world, reach, |b| b.is_enemy())
 }
 
-/// Knocks out every walker the ground action's attack box touches on an
-/// attack frame, from the player's position after this step's move and
-/// the walkers' before theirs, on whole pixels. The box is
+/// Knocks out every walker and thrower the ground action's attack box
+/// touches on an attack frame, from the player's position after this
+/// step's move and theirs before they move, on whole pixels. The box is
 /// `ground_attack_width` wide, centred `ground_attack_offset` in front of
-/// the player, as tall as the body. Returns the walkers knocked out,
-/// which are put out of action once they've moved this frame.
+/// the player, as tall as the body. Returns the things knocked out,
+/// which are put out of action once they've moved this frame. A thrower
+/// knocked out throws no more.
 ///
-/// The spec only measured walkers walking at full speed on the player's
-/// floor, against which this gives its ranges; other enemies aren't
-/// knocked out.
+/// The spec measured walkers walking at full speed on the player's floor,
+/// against which this gives its ranges, and a thrower only from its own
+/// ledge; other enemies aren't knocked out.
 fn ground_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
     let width = physics[Param::GroundAttackWidth];
     let attack_frames = physics[Param::GroundAttackFrames];
@@ -637,7 +640,7 @@ fn ground_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
         return Vec::new();
     }
     let reach = attack_box(world, width, physics[Param::GroundAttackOffset]);
-    strike(world, reach, |b| b.is_walker())
+    strike(world, reach, |b| b.fall().is_some())
 }
 
 /// The player's attack box on whole pixels: `width` wide, centred

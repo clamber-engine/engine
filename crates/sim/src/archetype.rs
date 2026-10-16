@@ -84,6 +84,9 @@ pub enum Behavior {
         throws: [Throw; MAX_THROWS],
         throw_count: u8,
         from: Vec2,
+        /// How it leaves once knocked out: as a defeated walker, never
+        /// knocked back.
+        defeat: Fall,
     },
     /// A ball that flies, bounces on floors and drops through them (see
     /// [`throwers`](crate::throwers)).
@@ -240,6 +243,14 @@ impl Behavior {
     /// Whether it's a walker.
     pub fn is_walker(self) -> bool {
         matches!(self, Behavior::Walker { .. })
+    }
+
+    /// How it falls out of the level once defeated, if it does.
+    pub fn fall(self) -> Option<Fall> {
+        match self {
+            Behavior::Walker { defeat, .. } | Behavior::Thrower { defeat, .. } => Some(defeat),
+            _ => None,
+        }
     }
 }
 
@@ -418,7 +429,14 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         "patrol" => &["path", "period"],
         "launcher" => &["velocity"],
         "carry" => &["reach", "hit", "hit_early", "hit_early_time"],
-        "thrower" => &["period", "throws", "throw_from"],
+        "thrower" => &[
+            "period",
+            "throws",
+            "throw_from",
+            "defeat_jump",
+            "defeat_gravity",
+            "defeat_max_fall",
+        ],
         "ball" => &[
             "velocity",
             "gravity",
@@ -651,11 +669,24 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                     velocity: Vec2::new(n(vx, 1)?, n(vy, 2)?),
                 };
             }
+            let defeat = Fall {
+                jump: number("defeat_jump")?,
+                gravity: number("defeat_gravity")?,
+                max_fall: number("defeat_max_fall")?,
+                knock: Fixed::ZERO,
+                knock_glide: Fixed::ZERO,
+            };
+            if defeat.gravity <= Fixed::ZERO || defeat.max_fall <= Fixed::ZERO {
+                return Err(format!(
+                    "{path}: `defeat_gravity` and `defeat_max_fall` must be positive"
+                ));
+            }
             Behavior::Thrower {
                 period,
                 throws,
                 throw_count: items.len() as u8,
                 from: pair("throw_from")?,
+                defeat,
             }
         }
         "ball" => {
@@ -1065,6 +1096,7 @@ mod tests {
         );
         check("thrower", "throws = [[2, 0]]", "expected [frame, vx, vy]");
         check("thrower", "period = 0", "entities[3].params.period");
+        check("thrower", "defeat_max_fall = 0", "must be positive");
         check("ball", "window = [1, 2, 3]", "entities[3].params.window");
         check("ball", "gravity = 0", "must be positive");
         check("spark", "worth = 0", "entities[3].params.worth");

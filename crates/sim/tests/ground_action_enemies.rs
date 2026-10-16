@@ -22,7 +22,7 @@ const LARGE: &str = "size = [26, 38], offset = 0.5";
 /// `x` facing `facing`, and a walker of `size` heading `heading` at full
 /// speed for each of `walkers`, out of reach to start with.
 fn world(x: i32, facing: Facing, size: &str, heading: &str, walkers: usize) -> World {
-    let entities: String = (0..walkers)
+    let walkers: String = (0..walkers)
         .map(|n| {
             format!(
                 r#"
@@ -35,6 +35,12 @@ fn world(x: i32, facing: Facing, size: &str, heading: &str, walkers: usize) -> W
             )
         })
         .collect();
+    world_with(x, facing, &walkers)
+}
+
+/// Flat ground at y = 400 from x = 0 to 2000 with `entities`, and the
+/// player standing at `x` facing `facing`.
+fn world_with(x: i32, facing: Facing, entities: &str) -> World {
     let src = format!(
         r#"
         format = 1
@@ -295,4 +301,26 @@ fn not_hurt_until_the_fourth_frame_after_a_knock_out() {
     assert_eq!(struck(&rows), [17]);
     let hurts: Vec<_> = (0..rows.len()).filter(|&k| rows[k].hurt).collect();
     assert_eq!(hurts, [21]);
+}
+
+#[test]
+fn the_thrower_is_knocked_out_from_its_ledge() {
+    // A thrower 1 px above the ground, as on its ledge in thrower.md.
+    let thrower = "[[entities]]\ntype = \"thrower\"\nat = [400, 399]\n";
+    for i in [-51, -44, -37] {
+        let mut w = world_with(400 + i, Facing::Right, thrower);
+        let rows = act(&mut w, &[D, A], &[], 24);
+        assert_eq!(struck(&rows), [17], "I = {i}");
+        assert!(!rows.iter().any(|r| r.hurt));
+        // It doesn't move on K, K + 1 and K + 2, then rises at 5 px per
+        // frame, slowing by 7/16.
+        let y = |k: usize| rows[k].walkers[0].1 - Fixed::from_int(399);
+        for k in 16..=19 {
+            assert_eq!(y(k), Fixed::ZERO, "I = {i}, frame {k}");
+        }
+        assert_eq!(y(20), fx(-4.5625), "I = {i}");
+        assert_eq!(y(21), fx(-8.6875), "I = {i}");
+        assert_eq!(rows[20].walkers[0].0, Fixed::from_int(400));
+        assert_eq!(acting(&rows).len(), 24);
+    }
 }

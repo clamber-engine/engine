@@ -369,7 +369,8 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 /// in the level as placed, at full speed, and the others aren't.
 ///
 /// Throwers appear and are removed as walkers on their own do, starting
-/// their timetable afresh each time they appear, and a ball placed in the
+/// their timetable afresh each time they appear, and stay gone once
+/// knocked out; a ball placed in the
 /// level appears as one would, once (thrower.md). Thrown balls leave by
 /// their own rule (see [`throwers`](crate::throwers)).
 pub(crate) fn walkers(world: &mut World, left: i64, appear: bool) {
@@ -429,7 +430,9 @@ pub(crate) fn walkers(world: &mut World, left: i64, appear: bool) {
         let start = entity.at;
         let start_near = near(start.x.floor(), left, &physics);
         match archetype.behavior {
-            Behavior::Thrower { .. } if appear && !thing.active && start_near => {
+            Behavior::Thrower { .. }
+                if appear && !thing.active && thing.phase == Phase::Ready && start_near =>
+            {
                 thing.active = true;
                 thing.clock = 0;
             }

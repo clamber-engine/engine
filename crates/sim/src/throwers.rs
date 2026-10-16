@@ -83,6 +83,7 @@ pub(crate) fn throw(world: &mut World) {
             throws,
             throw_count,
             from,
+            ..
         }) = thing.archetype.map(|a| a.behavior)
         else {
             continue;
