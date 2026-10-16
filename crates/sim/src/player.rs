@@ -1704,11 +1704,12 @@ impl Knockout {
     }
 }
 
-/// The ground action under way. Enemies it runs into aren't knocked out
-/// yet: the spec doesn't say which, or when they're touched (#103).
+/// The ground action under way. The walkers it knocks out are in
+/// [`things`](crate::things).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct GroundAction {
-    /// Frames since its press frame, which is 0.
+    /// Frames since its press frame, which is 0, leaving out the frames
+    /// it pauses for after knocking something out.
     pub frame: u8,
     /// The way it goes: -1, 0 or 1.
     pub dir: i32,

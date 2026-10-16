@@ -236,6 +236,11 @@ impl Behavior {
     pub fn is_enemy(self) -> bool {
         matches!(self, Behavior::Walker { .. } | Behavior::Patrol { .. })
     }
+
+    /// Whether it's a walker.
+    pub fn is_walker(self) -> bool {
+        matches!(self, Behavior::Walker { .. })
+    }
 }
 
 /// An entity's archetype with its own params applied.

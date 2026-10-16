@@ -79,6 +79,10 @@ roll_defeat_freeze = 0
 roll_boost = 0
 ground_action_time = 0
 ground_action_speed = 0
+ground_attack_width = 0
+ground_attack_offset = 0
+ground_attack_frames = []
+ground_attack_pause = 0
 bounce_speed = 6
 bounce_freeze = 0
 bounce_width = 0
@@ -251,6 +255,9 @@ air_acceleration = 0.09375
 # vertical reach there. The roll's attack box (22 wide, 4 behind),
 # checked against walkers before they move as the bounce box is, gives
 # rolling-into-walkers.md's defeat ranges at the end of the frame for
+# walkers walking at full speed. The ground action's attack box (53 wide,
+# its middle 26.5 ahead), checked the same way, gives
+# ground-action-enemies.md's knock-out ranges at the end of the frame for
 # walkers walking at full speed. The knock-out flight falls under `gravity`,
 # which is knock-out.md's 0.4375 here.
 [presets.classic-1]
@@ -314,6 +321,10 @@ roll_boost = 1
 # character has none (its Down + Action presses roll).
 ground_action_time = 59
 ground_action_speed = 3
+ground_attack_width = 53
+ground_attack_offset = 26.5
+ground_attack_frames = [17, 25, 31]
+ground_attack_pause = 2
 bounce_speed = 7.125
 bounce_freeze = 2
 bounce_width = 36

@@ -254,6 +254,27 @@ params! {
     GroundActionTime => "ground_action_time",
     /// See `ground_action_time`. px/frame.
     GroundActionSpeed => "ground_action_speed",
+    /// Above 0, the ground action knocks out enemies with a box on
+    /// whole-pixel positions, on its attack frames only (see
+    /// `ground_attack_frames`). The box is this wide and stands on the
+    /// player's position, as tall as the body; it's checked after the
+    /// player moves and before enemies do. Each frame something is
+    /// knocked out starts a pause (see `ground_attack_pause`). 0: the
+    /// ground action knocks nothing out.
+    GroundAttackWidth => "ground_attack_width",
+    /// How far the middle of the ground action's attack box is in front
+    /// of the player's position, px. Negative is behind.
+    GroundAttackOffset => "ground_attack_offset",
+    /// The ground action's attack frames, a step set of frames of the
+    /// action counted from its press frame as 0, leaving out pause
+    /// frames.
+    GroundAttackFrames => "ground_attack_frames",
+    /// For this many frames after the ground action knocks something
+    /// out, the player doesn't move and input is ignored, enemies hold
+    /// still, and nothing hurts the player until the frame after them;
+    /// the action then goes on where it was, this many frames longer.
+    /// Whole frames.
+    GroundAttackPause => "ground_attack_pause",
     /// Upward speed after an attack lands on something from above.
     BounceSpeed => "bounce_speed",
     /// For this many frames after a bounce the player doesn't move and
@@ -648,6 +669,7 @@ impl Param {
                 | Param::BounceOffset
                 | Param::HurtOffset
                 | Param::RollAttackOffset
+                | Param::GroundAttackOffset
         )
     }
 
@@ -657,7 +679,10 @@ impl Param {
     pub fn is_step_set(self) -> bool {
         matches!(
             self,
-            Param::WalkTurnSteps | Param::WalkRunSteps | Param::RunTurnSteps
+            Param::WalkTurnSteps
+                | Param::WalkRunSteps
+                | Param::RunTurnSteps
+                | Param::GroundAttackFrames
         )
     }
 }

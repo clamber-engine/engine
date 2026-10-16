@@ -19,6 +19,10 @@
 //!   attack box touches on an attack frame, and nothing else does (see
 //!   [`roll_attacks`]). The player and the enemy then hold still for
 //!   `roll_defeat_freeze` frames.
+//! - With a `ground_attack_width` above 0, the ground action knocks out
+//!   walkers its attack box touches on its attack frames (see
+//!   [`ground_attacks`]). For `ground_attack_pause` frames after, the
+//!   player and every walker hold still and nothing hurts the player.
 //! - While the player is knocked out, things don't act on it, and
 //!   enemies other than the one that hurt it hold still for the frames
 //!   it holds still after the hit.
@@ -84,6 +88,14 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     } else {
         Vec::new()
     };
+    let struck = if !frozen && !knocked(world) {
+        ground_attacks(world, &physics)
+    } else {
+        Vec::new()
+    };
+    // Walkers, knocked out or not, hold still on the ground action's
+    // pause frames.
+    let paused = frozen && world.player.ground_action.is_some();
     // Enemies hold still while a knocked-out player does, after the hit
     // frame, except the one that hurt it.
     let hold = frames(physics[Param::KnockoutHold]);
@@ -98,6 +110,9 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     for thing in world.things.iter_mut().filter(|t| t.active) {
         let enemy = thing.archetype.is_some_and(|a| a.behavior.is_enemy());
         if held.is_some_and(|by| enemy && by != Some(thing.index)) {
+            continue;
+        }
+        if paused && thing.archetype.is_some_and(|a| a.behavior.is_walker()) {
             continue;
         }
         advance(&world.level, thing, &physics, picture);
@@ -126,6 +141,14 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     if !attacked.is_empty() {
         world.player.defeat_rolling(roll_freeze);
     }
+    // They hold still on the pause frames instead of holding here.
+    for &index in &struck {
+        defeat(&mut world.things[index], 0);
+    }
+    let pause = frames(physics[Param::GroundAttackPause]);
+    if !struck.is_empty() {
+        world.player.frozen = pause;
+    }
     if knocked(world) {
         return;
     }
@@ -140,7 +163,10 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     if world.protected() {
         world.events.retain(|&e| e != Event::Hurt);
     }
-    if hurt_boxes && !knocked(world) {
+    // Nothing hurts the player on the frame after a ground action's
+    // pause either.
+    let pausing = world.player.ground_action.is_some() && (frozen || world.player.frozen > 0);
+    if hurt_boxes && !knocked(world) && !pausing {
         world.player.hurt_ahead = hurt_ahead(world, &physics);
     }
 }
@@ -583,20 +609,63 @@ fn roll_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
     if player.roll.is_none() && !stop {
         return Vec::new();
     }
+    let reach = attack_box(
+        world,
+        physics[Param::RollAttackWidth],
+        physics[Param::RollAttackOffset],
+    );
+    strike(world, reach, |b| b.is_enemy())
+}
+
+/// Knocks out every walker the ground action's attack box touches on an
+/// attack frame, from the player's position after this step's move and
+/// the walkers' before theirs, on whole pixels. The box is
+/// `ground_attack_width` wide, centred `ground_attack_offset` in front of
+/// the player, as tall as the body. Returns the walkers knocked out,
+/// which are put out of action once they've moved this frame.
+///
+/// The spec only measured walkers walking at full speed on the player's
+/// floor, against which this gives its ranges; other enemies aren't
+/// knocked out.
+fn ground_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
+    let width = physics[Param::GroundAttackWidth];
+    let attack_frames = physics[Param::GroundAttackFrames];
+    let attacking = world.player.ground_action.is_some_and(|a| {
+        clamber_pack::physics::steps(attack_frames).any(|n| n == u32::from(a.frame))
+    });
+    if width <= Fixed::ZERO || !attacking {
+        return Vec::new();
+    }
+    let reach = attack_box(world, width, physics[Param::GroundAttackOffset]);
+    strike(world, reach, |b| b.is_walker())
+}
+
+/// The player's attack box on whole pixels: `width` wide, centred
+/// `offset` in front of the player, as tall as the body.
+fn attack_box(world: &World, width: Fixed, offset: Fixed) -> (Fixed, Fixed, Fixed, Fixed) {
+    let player = &world.player;
     let at = whole_pixels(player.pos);
-    let offset = physics[Param::RollAttackOffset];
     let middle = match player.facing {
         Facing::Left => at.x - offset,
         Facing::Right => at.x + offset,
     };
-    let half_width = Fixed::from_bits(physics[Param::RollAttackWidth].to_bits() / 2);
-    let reach = (
+    let half_width = Fixed::from_bits(width.to_bits() / 2);
+    (
         middle - half_width,
         at.y - HEIGHT,
         middle + half_width,
         at.y,
-    );
-    let mut attacked = Vec::new();
+    )
+}
+
+/// The things whose behavior `kind` accepts that `reach` touches, before
+/// they move, on whole pixels. Each is noted as defeated.
+fn strike(
+    world: &mut World,
+    reach: (Fixed, Fixed, Fixed, Fixed),
+    kind: impl Fn(Behavior) -> bool,
+) -> Vec<usize> {
+    let mut struck = Vec::new();
     for thing in world
         .things
         .iter()
@@ -605,17 +674,17 @@ fn roll_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
         let Some(archetype) = thing.archetype else {
             continue;
         };
-        if archetype.behavior.is_enemy()
+        if kind(archetype.behavior)
             && overlap(
                 reach,
                 archetype.bounds(whole_pixels(thing.pos), going(thing)),
             )
         {
-            attacked.push(thing.index);
+            struck.push(thing.index);
             world.flow.events.push(FlowEvent::Defeat(thing.index));
         }
     }
-    attacked
+    struck
 }
 
 /// The enemy that hurts the player on the next step, if any: one its

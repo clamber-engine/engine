@@ -364,6 +364,10 @@ mod tests {
                     | Param::RollBoost
                     | Param::GroundActionTime
                     | Param::GroundActionSpeed
+                    | Param::GroundAttackWidth
+                    | Param::GroundAttackOffset
+                    | Param::GroundAttackFrames
+                    | Param::GroundAttackPause
                     | Param::BounceFreeze
                     | Param::BounceWidth
                     | Param::BounceOffset
