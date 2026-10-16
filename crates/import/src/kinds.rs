@@ -6,6 +6,7 @@
 use std::fmt;
 
 use sha2::{Digest, Sha256};
+use toml::{Table, Value};
 
 use crate::{BANK_SIZE, Sha256Hash};
 
@@ -68,7 +69,62 @@ impl Kind {
     pub fn from_name(name: &str) -> Option<Kind> {
         Kind::ALL.into_iter().find(|k| k.name() == name)
     }
+
+    /// The type and params of the entity that places an object of this
+    /// kind: the built-in archetype (`content/base/archetypes.toml`) with
+    /// the behavior the kind's behavior file describes, with title-1's
+    /// values from `spec/behavior/` where the archetype's own differ. What
+    /// the spec leaves to a definition (a walker's heading and its wait
+    /// before its first step, a placed ball's speeds) keeps the
+    /// archetype's values.
+    pub fn entity(self) -> (&'static str, Table) {
+        let mut params = Table::new();
+        let mut set = |key: &str, value: Value| {
+            params.insert(key.into(), value);
+        };
+        let kind = match self {
+            Kind::SmallWalker | Kind::LargeWalker => {
+                // walker.md: full speed 1, closing an eighth of the gap
+                // each frame, turning 4 frames late; bounce.md's fall.
+                // The sizes are the ones the classic-1 preset's bounce
+                // and hurt boxes give walker-contact.md's ranges with.
+                let size = match self {
+                    Kind::SmallWalker => [20, 12],
+                    _ => [26, 38],
+                };
+                set("speed", Value::Integer(1));
+                set("response", Value::Float(0.125));
+                set("size", Value::Array(size.map(Value::Integer).into()));
+                set("offset", Value::Float(0.5));
+                set("turn_delay", Value::Integer(4));
+                set("defeat_jump", Value::Integer(6));
+                set("defeat_gravity", Value::Float(0.4375));
+                set("defeat_max_fall", Value::Integer(8));
+                WALKER
+            }
+            Kind::Thrower => "thrower",
+            Kind::Ball => "ball",
+            Kind::Bunch => "cluster",
+            Kind::Letter(n) => {
+                set("letter", Value::Integer(n.into()));
+                "letter"
+            }
+            Kind::Barrel => "crate",
+            Kind::Holder => {
+                set("holds_character", Value::Boolean(true));
+                "crate"
+            }
+            Kind::EndMarker => END,
+        };
+        (kind, params)
+    }
 }
+
+/// The archetype walkers are, which is the one that takes a `group`.
+pub const WALKER: &str = "crawler";
+
+/// The kind of entity that marks the end of a level, as in `clamber-sim`.
+pub const END: &str = "end";
 
 impl fmt::Display for Kind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -284,5 +340,41 @@ mod tests {
         assert_eq!(want.len(), 15);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
+    }
+
+    #[test]
+    fn every_kind_is_a_builtin_archetype_or_the_end_marker() {
+        use clamber_level::{Entity, Vec2};
+        use clamber_sim::{Archetypes, Behavior};
+
+        assert_eq!(END, clamber_sim::END);
+        for kind in Kind::ALL {
+            let (name, params) = kind.entity();
+            if kind == Kind::EndMarker {
+                assert_eq!(name, END);
+                continue;
+            }
+            let entity = Entity {
+                kind: name.to_string(),
+                id: None,
+                at: Vec2::ints(0, 0),
+                params,
+            };
+            let archetype = Archetypes::builtin()
+                .resolve(&entity, "test", &format!("{kind}"))
+                .unwrap_or_else(|e| panic!("{kind}: {e}"))
+                .unwrap_or_else(|| panic!("{kind}: {name} isn't an archetype"));
+            let walker = matches!(kind, Kind::SmallWalker | Kind::LargeWalker);
+            assert_eq!(archetype.behavior.is_walker(), walker, "{kind}");
+            assert_eq!(name == WALKER, walker, "{kind}");
+            match (kind, archetype.behavior) {
+                (Kind::Letter(n), Behavior::Collect { letter, .. }) => {
+                    assert_eq!(letter, n, "{kind}")
+                }
+                (Kind::Holder, Behavior::Carry { holder, .. }) => assert!(holder.is_some()),
+                (Kind::Barrel, Behavior::Carry { holder, .. }) => assert!(holder.is_none()),
+                _ => {}
+            }
+        }
     }
 }

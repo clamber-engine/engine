@@ -3,17 +3,23 @@
 //! height above the level's bottom edge, read into entries and groups and
 //! turned into Clamber level entities.
 //!
-//! An entity's kind is its reference's [`Kind`] where that is known
-//! ("Kinds"), and otherwise names its reference (`placed-1234`), for a
-//! pack to give each one a definition.
+//! Where its reference's [`Kind`] is known ("Kinds"), an entity is the
+//! engine archetype that behaves as that kind; otherwise its kind names
+//! its reference (`placed-1234`), for a pack to give each one a
+//! definition.
 
 use clamber_level::{Entity, Vec2};
 use toml::{Table, Value};
 
 use crate::Kind;
+use crate::kinds::WALKER;
 
 /// The kind of entity that starts the dimming, as in `clamber-sim`.
 pub const DIM: &str = "dim";
+
+/// How the kind of an object whose kind isn't known starts; its
+/// reference in hex follows.
+const PLACED: &str = "placed-";
 
 /// Bytes in an entry.
 pub const ENTRY_SIZE: usize = 8;
@@ -130,47 +136,55 @@ impl Placements {
     }
 
     /// The objects as level entities, for a level whose bottom edge is at
-    /// `bottom`. Each is at its entry's position, of the kind `kind` gives
-    /// its reference, or else of kind `placed-` and its reference in hex.
-    /// A group's members get `group`, the group
-    /// entry's index in the list, and `appears_at`, the group entry's x:
-    /// they all appear when that is in the window. Entries that place
+    /// `bottom`. Each is at its entry's position, the entity
+    /// [`Kind::entity`] gives for the kind `kind` gives its reference, or
+    /// else of kind `placed-` and its reference in hex. A group's walkers,
+    /// and its members of unknown kinds, get `group`, the group entry's
+    /// index in the list plus one, so the walkers
+    /// appear together when one of them comes near the view (in the first
+    /// level the group entry is at its first member). Entries that place
     /// nothing are [`DIM`] entities at their entry's position, and classes
     /// the spec doesn't cover have no entity.
     pub fn entities(&self, bottom: i64, kind: impl Fn(u16) -> Option<Kind>) -> Vec<Entity> {
-        let entity = |entry: Entry, params: Table| Entity {
-            kind: match kind(entry.reference) {
-                Some(kind) => kind.name().to_string(),
-                None => format!("placed-{:04x}", entry.reference),
-            },
-            id: None,
-            // A u16 x and a bottom edge inside a level fit an i32.
-            at: Vec2::ints(i32::from(entry.x), entry.level_y(bottom) as i32),
-            params,
+        let entity = |entry: Entry| {
+            let (kind, params) = match kind(entry.reference) {
+                Some(kind) => {
+                    let (name, params) = kind.entity();
+                    (name.to_string(), params)
+                }
+                None => (format!("{PLACED}{:04x}", entry.reference), Table::new()),
+            };
+            Entity {
+                kind,
+                id: None,
+                // A u16 x and a bottom edge inside a level fit an i32.
+                at: Vec2::ints(i32::from(entry.x), entry.level_y(bottom) as i32),
+                params,
+            }
         };
         let mut entities = Vec::new();
         for (i, placement) in self.0.iter().enumerate() {
             match placement.entry.kind() {
-                Class::Object => entities.push(entity(placement.entry, Table::new())),
+                Class::Object => entities.push(entity(placement.entry)),
                 Class::Group => {
                     for &member in &placement.members {
                         if member.kind() != Class::Object {
                             continue;
                         }
-                        let mut params = Table::new();
-                        params.insert("group".into(), Value::Integer(i as i64));
-                        params.insert(
-                            "appears_at".into(),
-                            Value::Integer(placement.entry.x.into()),
-                        );
-                        entities.push(entity(member, params));
+                        let mut member = entity(member);
+                        if member.kind == WALKER || member.kind.starts_with(PLACED) {
+                            let group = Value::Integer(i as i64 + 1);
+                            member.params.insert("group".into(), group);
+                        }
+                        entities.push(member);
                     }
                 }
                 // The spec only covers the first level's class 8 entry,
                 // which starts the dimming.
                 Class::Nothing => entities.push(Entity {
                     kind: DIM.to_string(),
-                    ..entity(placement.entry, Table::new())
+                    params: Table::new(),
+                    ..entity(placement.entry)
                 }),
                 Class::Other(_) => {}
             }
@@ -327,24 +341,24 @@ mod tests {
     fn entities_are_at_their_entries() {
         let kind = |r| (r == 0x1300).then_some(Kind::SmallWalker);
         let entities = read(&fragment()).unwrap().entities(BOTTOM, kind);
-        let summary: Vec<(String, Vec2, Option<i64>, Option<i64>)> = entities
+        let summary: Vec<(String, Vec2, Option<i64>)> = entities
             .iter()
             .map(|e| {
-                let int = |k: &str| e.params.get(k).and_then(Value::as_integer);
-                (e.kind.clone(), e.at, int("group"), int("appears_at"))
+                let group = e.params.get("group").and_then(Value::as_integer);
+                (e.kind.clone(), e.at, group)
             })
             .collect();
         let at = Vec2::ints;
-        let one = |kind: &str, x, y| (kind.to_string(), at(x, y), None, None);
-        let member = |kind: &str, x, y| (kind.to_string(), at(x, y), Some(3), Some(500));
+        let one = |kind: &str, x, y| (kind.to_string(), at(x, y), None);
+        let member = |kind: &str, x, y| (kind.to_string(), at(x, y), Some(4));
         assert_eq!(
             summary,
             [
                 one("placed-1234", 16, 412),
                 one("placed-2000", 40, 312),
                 one("placed-1234", 40, 212),
-                member("small-walker", 500, 392),
-                member("small-walker", 560, 372),
+                member(WALKER, 500, 392),
+                member(WALKER, 560, 372),
                 member("placed-1310", 420, 416),
                 one(DIM, 600, 256),
                 one("placed-1240", 700, 0),

@@ -190,7 +190,7 @@ fn writes_the_level_and_its_images() {
 }
 
 /// Objects without a kind fingerprint row are named by their reference;
-/// a group's members carry the group and where it appears.
+/// a group's members carry the group.
 #[test]
 fn places_the_objects_in_the_placement_list() {
     let (level, _) = imported_level("places");
@@ -207,8 +207,7 @@ fn places_the_objects_in_the_placement_list() {
         ]
     );
     let member = &level.entities[1].params;
-    assert_eq!(member["group"].as_integer(), Some(1));
-    assert_eq!(member["appears_at"].as_integer(), Some(300));
+    assert_eq!(member["group"].as_integer(), Some(2));
 }
 
 #[test]
