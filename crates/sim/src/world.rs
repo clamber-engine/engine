@@ -168,7 +168,7 @@ impl World {
             });
         let archetypes = Archetypes::builtin();
         let physics = feel.roster[0].physics;
-        let view = view::enabled(&physics).then(|| View::settled(&player, &physics));
+        let view = view::enabled(&physics).then(|| View::settled(&player, &level, &physics));
         let mut things: Vec<Thing> = level
             .entities
             .iter()
@@ -253,6 +253,15 @@ impl World {
         let view = self.view?;
         let half = self.feel.world[Param::ViewWidth].floor() / 2;
         Some(Fixed::from_int((view.x() + half) as i32))
+    }
+
+    /// The level `y` of the middle of the view, with its top edge
+    /// rounded down to a whole px as it's drawn, if there is a view that
+    /// moves vertically.
+    pub fn view_middle_y(&self) -> Option<Fixed> {
+        let view = self.view?;
+        let height = self.feel.world[Param::ViewHeight].floor();
+        (height > 0).then(|| Fixed::from_int((view.y() + height / 2) as i32))
     }
 
     /// The state the simulation advances, encoded as bytes. Two worlds
@@ -377,6 +386,8 @@ impl World {
                 fixed(&mut out, v.left);
                 fixed(&mut out, v.speed);
                 out.push(v.hold);
+                fixed(&mut out, v.top);
+                fixed(&mut out, v.gap);
             }
             None => out.push(0),
         }

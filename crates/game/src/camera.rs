@@ -3,7 +3,8 @@
 //! The camera is presentation: it reads the world after each step and is
 //! never read by the simulation, so it works in floats. When the world
 //! has a view of its own ([`World::view_middle`]), the camera centres on
-//! it across instead of following the player itself.
+//! it across instead of following the player itself, and up and down too
+//! when that view moves vertically ([`World::view_middle_y`]).
 
 use clamber_level::{CameraRule, Fixed, Level, Rect, Vec2};
 use clamber_sim::{Facing, HEIGHT, World};
@@ -88,7 +89,9 @@ impl Camera {
             approach(self.look.1, target.1, LOOK_SPEED),
         );
         let wanted = across(world, offset(focus(world), self.look));
-        if world.player.grounded() {
+        if world.view_middle_y().is_some() {
+            self.follow_y = wanted.1;
+        } else if world.player.grounded() {
             self.follow_y = approach(self.follow_y, wanted.1, SETTLE_SPEED);
         }
         self.follow_y = self.follow_y.clamp(wanted.1 - BAND_Y, wanted.1 + BAND_Y);
@@ -126,9 +129,12 @@ impl Camera {
     }
 }
 
-/// `free` with the world's own view's middle across, if it has a view.
+/// `free` with the world's own view's middle across, if it has a view,
+/// and up and down, if that view moves vertically.
 fn across(world: &World, free: (f64, f64)) -> (f64, f64) {
-    world.view_middle().map_or(free, |x| (x.to_f64(), free.1))
+    let x = world.view_middle().map_or(free.0, Fixed::to_f64);
+    let y = world.view_middle_y().map_or(free.1, Fixed::to_f64);
+    (x, y)
 }
 
 fn rule_at(world: &World) -> CameraRule {
@@ -346,6 +352,10 @@ mod tests {
         let middle = w.view_middle().unwrap().to_f64();
         assert_eq!(camera.centre.0, middle);
         assert!(middle - 128.0 > 2000.0 - 71.0);
+        // Standing on the floor at 900, the view's top is 160 px above
+        // the feet, rounded down from 740.5.
+        assert_eq!(camera.top_left(1.0).1, 740.0);
+        assert_eq!(camera.centre.1, w.view_middle_y().unwrap().to_f64());
     }
 
     #[test]

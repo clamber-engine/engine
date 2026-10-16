@@ -495,6 +495,45 @@ params! {
     /// Frames the view holds still, counting the frame, when the player
     /// defeats an enemy by bouncing or rolling. Whole frames.
     ViewHold => "view_hold",
+    /// Above 0, the view is this tall and follows the player vertically
+    /// too (see `clamber_sim::View`), kept inside the level's camera
+    /// limits. 0: it doesn't move vertically. Whole px.
+    ViewHeight => "view_height",
+    /// How far below the view's top a standing player's feet are with
+    /// the view settled, less 1/2. Whole px.
+    ViewFeet => "view_feet",
+    /// While the player has ground and its feet are this close below
+    /// the view's top or closer (but not above it), the view aims as if
+    /// the ground were at its top row. Whole px.
+    ViewFeetTop => "view_feet_top",
+    /// In the air, the view aims by the ground below the player when the
+    /// ground is no more than `view_reach` bands of this height below the
+    /// band of the player's feet. Bands start at the level's top, and
+    /// the line on a band's bottom edge is in it. Whole px.
+    ViewBand => "view_band",
+    /// See `view_band`. Whole bands.
+    ViewReach => "view_reach",
+    /// The view's vertical speed is its smoothed gap to where it aims
+    /// divided by this, rounded down to 1/256 px. Whole frames.
+    ViewShareY => "view_share_y",
+    /// Each frame the smoothed gap closes the gap to the actual gap
+    /// divided by this. Whole frames.
+    ViewSpeedShareY => "view_speed_share_y",
+    /// `view_share_y` when the view follows quickly. Whole frames.
+    ViewShareYQuick => "view_share_y_quick",
+    /// `view_speed_share_y` when the view follows quickly. Whole frames.
+    ViewSpeedShareYQuick => "view_speed_share_y_quick",
+    /// The view follows quickly when the player's feet are this far
+    /// below its top or further. Whole px.
+    ViewQuickBelow => "view_quick_below",
+    /// ... or this far or further, and falling faster than
+    /// `view_quick_fall`. Whole px.
+    ViewQuickFallBelow => "view_quick_fall_below",
+    /// See `view_quick_fall_below`. px/frame.
+    ViewQuickFall => "view_quick_fall",
+    /// A gap to where the view aims that's below the view by less than
+    /// this counts as none. px.
+    ViewSlackY => "view_slack_y",
     /// A walker's start is near the view from this far left of the view's
     /// left edge. Whole px.
     AppearLeft => "appear_left",

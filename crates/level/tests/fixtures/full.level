@@ -103,4 +103,4 @@ darkness = 0.75
 [[regions]]
 name = "shaft"
 rect = [1400, 0, 200, 600]
-camera = { lock_x = 1500, limits = [1400, 0, 200, 600] }
+camera = { lock_x = 1500, limits = [1400, 0, 200, 600], quick = true }

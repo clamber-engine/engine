@@ -141,10 +141,12 @@ fn regions_and_camera() {
     assert_eq!(open.look_ahead, Some(v(48.0, 0.0)));
     assert_eq!(open.limits.unwrap().w, f(1600.0));
     assert_eq!(open.lock_x, None);
+    assert_eq!(open.quick, None);
     let shaft = l.camera_at(v(1450.0, 300.0));
     assert_eq!(shaft.lock_x, Some(f(1500.0)));
     assert_eq!(shaft.limits.unwrap().x, f(1400.0));
     assert_eq!(shaft.look_ahead, Some(v(48.0, 0.0)), "inherited");
+    assert_eq!(shaft.quick, Some(true));
 }
 
 #[test]

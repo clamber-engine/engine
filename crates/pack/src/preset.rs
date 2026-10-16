@@ -430,6 +430,19 @@ mod tests {
                     | Param::ViewShare
                     | Param::ViewSpeedShare
                     | Param::ViewHold
+                    | Param::ViewHeight
+                    | Param::ViewFeet
+                    | Param::ViewFeetTop
+                    | Param::ViewBand
+                    | Param::ViewReach
+                    | Param::ViewShareY
+                    | Param::ViewSpeedShareY
+                    | Param::ViewShareYQuick
+                    | Param::ViewSpeedShareYQuick
+                    | Param::ViewQuickBelow
+                    | Param::ViewQuickFallBelow
+                    | Param::ViewQuickFall
+                    | Param::ViewSlackY
                     | Param::AppearLeft
                     | Param::AppearRight
                     | Param::RemoveLeft

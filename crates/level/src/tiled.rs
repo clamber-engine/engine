@@ -20,8 +20,8 @@
 //!     `darkness` (float), `wind_x`/`wind_y` (float), `physics.<param>`
 //!     (float, sets it) or `physics.<param>.scale` (float, scales it), and
 //!     camera rules `camera.lock_x`, `camera.lock_y`,
-//!     `camera.look_ahead_x`/`_y` (float) and `camera.limits` (bool: limit
-//!     the camera to this region's bounds).
+//!     `camera.look_ahead_x`/`_y` (float), `camera.limits` (bool: limit
+//!     the camera to this region's bounds) and `camera.quick` (bool).
 //!   - `start`: where the lead character starts (exactly one).
 //!   - anything else is an entity of that type, placed at the object's
 //!     position (bottom-left for tile objects, as Tiled draws them), with
@@ -541,7 +541,7 @@ impl Out<'_> {
                             t.insert("darkness".into(), value.clone());
                         }
                         "wind_x" | "wind_y" => {}
-                        "camera.lock_x" | "camera.lock_y" => {
+                        "camera.lock_x" | "camera.lock_y" | "camera.quick" => {
                             camera.insert(key["camera.".len()..].into(), value.clone());
                         }
                         "camera.look_ahead_x" | "camera.look_ahead_y" => {}

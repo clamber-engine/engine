@@ -230,6 +230,11 @@ pub struct CameraRule {
     pub lock_y: Option<Fixed>,
     /// How far ahead of the character's facing and motion to look.
     pub look_ahead: Option<Vec2>,
+    /// The simulated view of a preset with `view_height` above 0
+    /// (`clamber_sim::View`) follows vertically at its quick rates, not
+    /// its usual ones. It's also kept inside `limits` vertically, or the
+    /// level's bounds without them.
+    pub quick: Option<bool>,
 }
 
 impl CameraRule {
@@ -240,6 +245,7 @@ impl CameraRule {
             lock_x: other.lock_x.or(self.lock_x),
             lock_y: other.lock_y.or(self.lock_y),
             look_ahead: other.look_ahead.or(self.look_ahead),
+            quick: other.quick.or(self.quick),
         }
     }
 }
@@ -522,6 +528,7 @@ struct CameraFile {
     lock_x: Option<N>,
     lock_y: Option<N>,
     look_ahead: Option<[N; 2]>,
+    quick: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -948,6 +955,7 @@ impl Reader<'_> {
             lock_x: c.lock_x.map(|n| n.0),
             lock_y: c.lock_y.map(|n| n.0),
             look_ahead: c.look_ahead.map(v2),
+            quick: c.quick,
         })
     }
 }
@@ -1046,6 +1054,9 @@ fn camera_table(c: &CameraRule) -> Table {
     }
     if let Some(l) = c.look_ahead {
         t.insert("look_ahead".into(), pair(l));
+    }
+    if let Some(q) = c.quick {
+        t.insert("quick".into(), Value::Boolean(q));
     }
     t
 }

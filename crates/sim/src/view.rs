@@ -19,18 +19,41 @@
 //!   rolling, and for `view_hold` steps in all counting that one, the
 //!   view doesn't move.
 //!
+//! With `view_height` above 0, the view's top also follows the player,
+//! after it has moved:
+//!
+//! - It aims `view_feet` px above a ground line: the player's feet, or
+//!   in the air, the ground below them if it's within `view_reach` bands
+//!   of `view_band` px of theirs, found straight down from the middle of
+//!   the feet. With no ground in reach, it aims by the feet. While there
+//!   is ground and the feet are in the top `view_feet_top` + 1 rows of
+//!   the view, it aims by the view's top row instead, so it moves up.
+//! - That aim is kept inside the camera rule's `limits` for where the
+//!   player is (the level's bounds without them), and the view aims 1/2
+//!   px below it.
+//! - A smoothed gap eases toward the gap from the view's top to its aim
+//!   (a gap of less than `view_slack_y` downward counts as none), and the
+//!   view moves by part of it, both kept to [`Y_GRAIN`]. The view follows
+//!   quickly (`view_share_y_quick`, `view_speed_share_y_quick`) when the
+//!   feet are low in the view, when they're fairly low and falling fast,
+//!   or where the camera rule says `quick`.
+//! - It holds still with the horizontal motion after a defeat.
+//!
 //! The view starts, and starts again when the player comes back after
 //! losing a life, on its target for a player standing still. It isn't
-//! kept inside the level.
+//! kept inside the level horizontally.
 //!
-//! Only the horizontal position is simulated.
+//! The camera rule is chosen by the player's position, not just its `x`
+//! as the spec's list of limits is. The shake during a ground action
+//! isn't simulated: there's no ground action yet (#100).
 
 use clamber_fixed::{FRAC_BITS, Fixed};
+use clamber_level::{Dir, Level, Rect};
 use clamber_pack::{Param, Physics};
 
 use crate::archetype::Behavior;
 use crate::flow::FlowEvent;
-use crate::player::{Facing, Player, frames};
+use crate::player::{Facing, Player, ceil, frames};
 use crate::world::{Phase, World};
 
 /// What the view's speed is kept to, px per frame.
@@ -39,7 +62,13 @@ pub const SPEED_GRAIN: Fixed = Fixed::from_ratio_pow2(1, 13);
 /// What the view moves by, px.
 pub const POS_GRAIN: Fixed = Fixed::from_ratio_pow2(1, 8);
 
-/// The view's horizontal state.
+/// What the view's top and its smoothed gap are kept to, px.
+pub const Y_GRAIN: Fixed = Fixed::from_ratio_pow2(1, 8);
+
+/// How far below its aim, kept inside the limits, the view's top aims.
+const AIM_BELOW: Fixed = Fixed::from_ratio_pow2(1, 1);
+
+/// The view's state.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct View {
     /// The level `x` of the view's left edge.
@@ -48,17 +77,31 @@ pub struct View {
     pub speed: Fixed,
     /// Steps left of holding still.
     pub hold: u8,
+    /// The level `y` of the view's top edge.
+    pub top: Fixed,
+    /// The gap from the top to where it aims, smoothed.
+    pub gap: Fixed,
 }
 
 impl View {
-    /// A view settled on `player`, as if it were standing still.
-    pub fn settled(player: &Player, physics: &Physics) -> View {
+    /// A view settled on `player`, as if it were standing still on the
+    /// ground.
+    pub fn settled(player: &Player, level: &Level, physics: &Physics) -> View {
         let mut still = player.clone();
         still.vel.x = Fixed::ZERO;
+        let top = if vertical(physics) {
+            let feet = ceil(player.pos.y);
+            let aim = feet - whole(physics[Param::ViewFeet]);
+            limit(aim, player, level, physics).0
+        } else {
+            Fixed::ZERO
+        };
         View {
             left: target(&still, physics),
             speed: Fixed::ZERO,
             hold: 0,
+            top,
+            gap: Fixed::ZERO,
         }
     }
 
@@ -67,15 +110,23 @@ impl View {
         self.left.floor()
     }
 
+    /// The top edge rounded down to a whole px.
+    pub fn y(&self) -> i64 {
+        self.top.floor()
+    }
+
     /// One step of following `player`. `defeated` says the player
     /// defeated an enemy by bouncing or rolling on this step.
-    fn follow(&mut self, player: &Player, physics: &Physics, defeated: bool) {
+    fn follow(&mut self, player: &Player, level: &Level, physics: &Physics, defeated: bool) {
         if defeated {
             self.hold = frames(physics[Param::ViewHold]);
         }
         if self.hold > 0 {
             self.hold -= 1;
             return;
+        }
+        if vertical(physics) {
+            self.follow_y(player, level, physics);
         }
         let gap = target(player, physics) - self.left;
         let aim = div_floor(gap, whole(physics[Param::ViewShare]));
@@ -85,6 +136,85 @@ impl View {
         let moved = self.speed.to_bits() / grain * grain;
         self.left += Fixed::from_bits(moved);
     }
+
+    /// One step of following `player` vertically.
+    fn follow_y(&mut self, player: &Player, level: &Level, physics: &Physics) {
+        let feet = ceil(player.pos.y);
+        let top = self.y();
+        let below = feet - top;
+        let near_top = (0..=whole(physics[Param::ViewFeetTop])).contains(&below);
+        let (aim, below) = match ground_below(player, level, physics) {
+            None => (feet, below),
+            Some(_) if near_top => (top, 0),
+            Some(ground) => (ground, below),
+        };
+        let (target, quick_here) = limit(
+            aim - whole(physics[Param::ViewFeet]),
+            player,
+            level,
+            physics,
+        );
+        let quick = quick_here
+            || below >= whole(physics[Param::ViewQuickBelow])
+            || (below >= whole(physics[Param::ViewQuickFallBelow])
+                && player.vel.y > physics[Param::ViewQuickFall]);
+        let (share, speed_share) = if quick {
+            (Param::ViewShareYQuick, Param::ViewSpeedShareYQuick)
+        } else {
+            (Param::ViewShareY, Param::ViewSpeedShareY)
+        };
+        let mut gap = target - self.top;
+        if gap >= Fixed::ZERO && gap < physics[Param::ViewSlackY] {
+            gap = Fixed::ZERO;
+        }
+        let ease = whole(physics[speed_share]);
+        let grain = Y_GRAIN.to_bits();
+        let units = |v: Fixed| v.to_bits().div_euclid(grain);
+        let smoothed = units(self.gap) + (units(gap) - units(self.gap)).div_euclid(ease);
+        self.gap = Fixed::from_bits(smoothed * grain);
+        let moved = smoothed.div_euclid(whole(physics[share]));
+        self.top += Fixed::from_bits(moved * grain);
+    }
+}
+
+/// Whether the view follows the player vertically: its preset's
+/// `view_height` is above 0.
+fn vertical(physics: &Physics) -> bool {
+    physics[Param::ViewHeight] > Fixed::ZERO
+}
+
+/// The line of the ground the view aims by for `player`, whole px: its
+/// feet on the ground, or in the air the ground straight below them if
+/// it's in reach.
+fn ground_below(player: &Player, level: &Level, physics: &Physics) -> Option<i64> {
+    let feet = ceil(player.pos.y);
+    if player.grounded() {
+        return Some(feet);
+    }
+    let band = whole(physics[Param::ViewBand]);
+    let feet_band = (feet - 1).div_euclid(band);
+    let last = band * (feet_band + physics[Param::ViewReach].floor() + 1);
+    let reach = Fixed::from_int(i32::try_from(last).ok()?) - player.pos.y;
+    let hit = level.collision.cast(player.pos, Dir::Down, reach)?;
+    Some(ceil(hit.point.y))
+}
+
+/// Where the view's top aims for an aim `aim` (whole px) for `player`,
+/// kept inside the camera rule's limits there, and whether that rule
+/// says to follow quickly.
+fn limit(aim: i64, player: &Player, level: &Level, physics: &Physics) -> (Fixed, bool) {
+    let rule = level.camera_at(player.pos);
+    let limits = rule.limits.unwrap_or(Rect {
+        x: Fixed::ZERO,
+        y: Fixed::ZERO,
+        w: level.size.x,
+        h: level.size.y,
+    });
+    let highest = limits.y.floor();
+    let lowest = (limits.y + limits.h).floor() - whole(physics[Param::ViewHeight]);
+    let aim = aim.max(highest).min(lowest);
+    let aim = Fixed::from_int(i32::try_from(aim).unwrap_or(i32::MAX));
+    (aim + AIM_BELOW, rule.quick == Some(true))
 }
 
 /// Where the view's left edge aims for `player`.
@@ -145,7 +275,7 @@ pub(crate) fn update(world: &mut World) {
         .iter()
         .any(|e| matches!(e, FlowEvent::Defeat(_)));
     if let Some(view) = &mut world.view {
-        view.follow(&world.player, &physics, defeated);
+        view.follow(&world.player, &world.level, &physics, defeated);
     }
 }
 
@@ -154,7 +284,7 @@ pub(crate) fn update(world: &mut World) {
 pub(crate) fn restart(world: &mut World) {
     let physics = world.player_physics();
     if let Some(view) = &mut world.view {
-        *view = View::settled(&world.player, &physics);
+        *view = View::settled(&world.player, &world.level, &physics);
     }
 }
 
@@ -232,10 +362,22 @@ mod tests {
         clamber_pack::Presets::builtin().world("classic-1").unwrap()
     }
 
+    /// A level with nothing in it.
+    fn level() -> Level {
+        Level::from_toml_str("format = 1\nsize = [4000, 2000]\nstart = [0, 0]", "t").unwrap()
+    }
+
+    /// A level with ground at 400 all along, and `extra` added.
+    fn ground(extra: &str) -> Level {
+        let src = format!(
+            "format = 1\nsize = [4000, 2000]\nstart = [0, 0]\n\
+             [[collision]]\nshape = \"rect\"\nrect = [0, 400, 4000, 100]\n{extra}"
+        );
+        Level::from_toml_str(&src, "t").unwrap()
+    }
+
     fn player(x: f64, vx: f64, facing: Facing) -> Player {
-        let level =
-            Level::from_toml_str("format = 1\nsize = [4000, 400]\nstart = [0, 0]", "t").unwrap();
-        let mut p = Player::new(&level, Vec2::new(fx(x), Fixed::ZERO));
+        let mut p = Player::new(&level(), Vec2::new(fx(x), Fixed::ZERO));
         p.vel.x = fx(vx);
         p.facing = facing;
         p
@@ -275,13 +417,13 @@ mod tests {
     /// frames given.
     fn follow(at: impl Fn(u32) -> Player, expected: &[(u32, f64, i64)]) {
         let physics = physics();
-        let mut view = View::settled(&player(1000.0, 0.0, Facing::Right), &physics);
+        let mut view = View::settled(&player(1000.0, 0.0, Facing::Right), &level(), &physics);
         assert_eq!(view.left, fx(929.0));
         let last = expected.last().unwrap().0;
         let mut rows = expected.iter();
         let mut next = rows.next();
         for frame in 1..=last {
-            view.follow(&at(frame), &physics, false);
+            view.follow(&at(frame), &level(), &physics, false);
             if let Some(&(f, left, speed)) = next
                 && f == frame
             {
@@ -334,13 +476,183 @@ mod tests {
     #[test]
     fn holds_still_after_a_defeat() {
         let physics = physics();
-        let mut view = View::settled(&player(1000.0, 0.0, Facing::Right), &physics);
+        let level = level();
+        let mut view = View::settled(&player(1000.0, 0.0, Facing::Right), &level, &physics);
+        let top = view.top;
         let moved = player(1100.0, 0.0, Facing::Right);
-        view.follow(&moved, &physics, true);
-        view.follow(&moved, &physics, false);
-        assert_eq!(view.left, fx(929.0));
-        view.follow(&moved, &physics, false);
+        let mut moved_down = moved.clone();
+        moved_down.pos.y = fx(300.0);
+        view.follow(&moved_down, &level, &physics, true);
+        view.follow(&moved_down, &level, &physics, false);
+        assert_eq!((view.left, view.top), (fx(929.0), top));
+        view.follow(&moved_down, &level, &physics, false);
         assert!(view.left > fx(929.0));
+        assert!(view.top > top);
+    }
+
+    /// A player at 1000 with its feet at `feet`, falling at `vy`, on the
+    /// ground (collider 0) if `grounded`.
+    fn at_feet(feet: i64, vy: i64, grounded: bool) -> Player {
+        let mut p = player(1000.0, 0.0, Facing::Right);
+        p.pos.y = Fixed::from_int(feet as i32);
+        p.vel.y = Fixed::from_int(vy as i32);
+        p.ground = grounded.then_some(0);
+        p
+    }
+
+    /// Steps a view settled on a player standing with its feet at
+    /// `settle` in `level`, with the player given by `at` before each
+    /// step, checking the view's top and smoothed gap (in 1/256 px) after
+    /// the frames given.
+    fn follow_y(
+        level: &Level,
+        settle: i64,
+        at: impl Fn(u32) -> Player,
+        expected: &[(u32, f64, i64)],
+    ) {
+        let physics = physics();
+        let mut view = View::settled(&at_feet(settle, 0, true), level, &physics);
+        let last = expected.last().unwrap().0;
+        let mut rows = expected.iter();
+        let mut next = rows.next();
+        for frame in 1..=last {
+            view.follow(&at(frame), level, &physics, false);
+            if let Some(&(f, top, gap)) = next
+                && f == frame
+            {
+                assert_eq!(view.top, fx(top), "frame {f}");
+                assert_eq!(view.gap.to_bits() >> (FRAC_BITS - 8), gap, "frame {f}");
+                next = rows.next();
+            }
+        }
+    }
+
+    #[test]
+    fn settles_on_higher_ground() {
+        // spec/behavior/view-vertical.md, example (a).
+        let level = ground("");
+        let physics = physics();
+        let view = View::settled(&at_feet(400, 0, true), &level, &physics);
+        assert_eq!((view.top, view.gap), (fx(240.5), Fixed::ZERO));
+        follow_y(
+            &level,
+            400,
+            |_| at_feet(368, 0, true),
+            &[
+                (1, 240.46875, -512),
+                (2, 240.40625, -992),
+                (3, 240.31640625, -1441),
+                (10, 239.05859375, -3833),
+                (30, 232.4140625, -6052),
+                (60, 222.25390625, -4653),
+                (100, 214.10546875, -2190),
+                (200, 208.8359375, -175),
+            ],
+        );
+    }
+
+    #[test]
+    fn follows_a_jump_out_of_reach_of_the_ground() {
+        // view-vertical.md, example (b).
+        let feet = |f: u32| {
+            let f = i64::from(f);
+            if f <= 15 {
+                400 - 6 * f
+            } else {
+                (310 + 6 * (f - 15)).min(400)
+            }
+        };
+        follow_y(
+            &ground(""),
+            400,
+            |f| at_feet(feet(f), if f <= 15 { -6 } else { 6 }, f >= 30),
+            &[
+                (1, 240.5, 0),
+                (13, 240.5, 0),
+                (14, 240.41796875, -1344),
+                (15, 240.25, -2699),
+                (16, 240.01171875, -3871),
+                (17, 239.7890625, -3622),
+                (30, 237.984375, -1306),
+                (46, 237.45703125, 10),
+                (60, 237.66796875, 450),
+            ],
+        );
+    }
+
+    #[test]
+    fn follows_a_fast_fall_quickly() {
+        // view-vertical.md, example (c).
+        follow_y(
+            &level(),
+            300,
+            |f| at_feet(300 + 8 * i64::from(f), 8, false),
+            &[
+                (1, 140.5625, 256),
+                (2, 140.73828125, 734),
+                (5, 142.3984375, 3197),
+                (10, 150.58984375, 9264),
+                (20, 190.61328125, 21824),
+                (30, 255.71875, 29845),
+            ],
+        );
+    }
+
+    #[test]
+    fn ground_in_reach_depends_on_its_band() {
+        // view-vertical.md, "The ground used": the last feet line that
+        // still uses each ground line.
+        let physics = physics();
+        for (ground_line, last) in [(353, 289), (337, 257), (320, 225)] {
+            let level = Level::from_toml_str(
+                &format!(
+                    "format = 1\nsize = [4000, 2000]\nstart = [0, 0]\n\
+                     [[collision]]\nshape = \"rect\"\nrect = [0, {ground_line}, 4000, 100]"
+                ),
+                "t",
+            )
+            .unwrap();
+            let used = |feet| ground_below(&at_feet(feet, 0, false), &level, &physics);
+            assert_eq!(used(last), Some(ground_line), "{ground_line}");
+            assert_eq!(used(last - 1), None, "{ground_line}");
+        }
+    }
+
+    #[test]
+    fn feet_near_the_top_hold_the_aim() {
+        // view-vertical.md, "The target", case 2: on the ground, feet in
+        // the top 48 rows of the view aim by the view's top row (at 80.5
+        // here, 160 px up), and lower feet by themselves (128.5).
+        let level = ground("");
+        let physics = physics();
+        let settled = View::settled(&at_feet(400, 0, true), &level, &physics);
+        let gap = |feet| {
+            let mut view = settled;
+            view.follow(&at_feet(feet, 0, true), &level, &physics, false);
+            view.gap.to_bits() >> (FRAC_BITS - 8)
+        };
+        assert_eq!(gap(240 + 47), -160 * 256 / 16);
+        assert_eq!(gap(240 + 48), -112 * 256 / 16);
+    }
+
+    #[test]
+    fn limits_and_quick_regions() {
+        // view-vertical.md, "The level's limits": the aim is kept between
+        // the camera rule's top and bottom, and its rate applies.
+        let physics = physics();
+        let level = ground(
+            "[[regions]]\nrect = [900, 0, 200, 2000]\n\
+             camera = { limits = [900, 100, 200, 300], quick = true }",
+        );
+        let settled =
+            |feet, level: &Level| View::settled(&at_feet(feet, 0, true), level, &physics).top;
+        assert_eq!(settled(400, &level), fx(176.5));
+        assert_eq!(settled(150, &level), fx(100.5));
+        assert_eq!(settled(150, &ground("")), fx(0.5), "kept inside the level");
+        // From 240.5, the aim is 176.5: 64 px up, at the quick rates.
+        let mut view = View::settled(&at_feet(400, 0, true), &ground(""), &physics);
+        view.follow(&at_feet(368, 0, true), &level, &physics, false);
+        assert_eq!(view.gap.to_bits() >> (FRAC_BITS - 8), -64 * 256 / 8);
     }
 
     #[test]

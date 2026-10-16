@@ -146,6 +146,19 @@ view_lead_speed = 0
 view_share = 0
 view_speed_share = 0
 view_hold = 0
+view_height = 0
+view_feet = 0
+view_feet_top = 0
+view_band = 0
+view_reach = 0
+view_share_y = 0
+view_speed_share_y = 0
+view_share_y_quick = 0
+view_speed_share_y_quick = 0
+view_quick_below = 0
+view_quick_fall_below = 0
+view_quick_fall = 0
+view_slack_y = 0
 appear_left = 0
 appear_right = 0
 remove_left = 0
@@ -197,8 +210,9 @@ air_acceleration = 0.09375
 # protection (losing-a-character.md, protection.md), carrying
 # objects (carrying.md), the collectible count (collectibles.md;
 # the collectibles are archetypes.toml's `spark` and `cluster`), and the
-# view across and walkers appearing with it (view.md, walker-view.md;
-# not yet its vertical motion, #97, or walker groups, #99). Classic 1
+# view and walkers appearing with it (view.md, view-vertical.md,
+# walker-view.md; not yet the ground action's shake, #100, or walker groups,
+# #99). Classic 1
 # is the bundled game's starting preset. Jump doesn't cut upward speed
 # when let go (`jump_release_speed` equals `jump_speed`); it ends the
 # lighter `held_jump_gravity` instead.
@@ -349,6 +363,22 @@ view_lead_speed = 24
 view_share = 32
 view_speed_share = 8
 view_hold = 2
+# The view's vertical motion (view-vertical.md). The picture is 224 tall.
+# The level's vertical limits and rates are its camera rules' `limits`
+# and `quick`.
+view_height = 224
+view_feet = 160
+view_feet_top = 47
+view_band = 32
+view_reach = 2
+view_share_y = 64
+view_speed_share_y = 16
+view_share_y_quick = 16
+view_speed_share_y_quick = 8
+view_quick_below = 208
+view_quick_fall_below = 64
+view_quick_fall = 6
+view_slack_y = 0.125
 appear_left = 31
 appear_right = 32
 remove_left = 128
