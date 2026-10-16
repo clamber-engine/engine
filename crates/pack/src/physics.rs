@@ -65,6 +65,10 @@ params! {
     /// Downward speed at the end of the frame a body walks off the ground,
     /// when `leave_drop` is above 0.
     LeaveFallSpeed => "leave_fall_speed",
+    /// Above 0, a player falling after walking off the ground keeps
+    /// facing the way they walked off until they land, whatever is held.
+    /// 0: facing follows the direction held, as in a jump.
+    WalkOffKeepsFacing => "walk_off_keeps_facing",
     /// Speed gained per frame when pressing in the direction of motion.
     GroundAcceleration => "ground_acceleration",
     /// Speed lost per frame when pressing against the direction of motion.

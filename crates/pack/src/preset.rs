@@ -344,6 +344,7 @@ mod tests {
                     | Param::LandingReach
                     | Param::LeaveDrop
                     | Param::LeaveFallSpeed
+                    | Param::WalkOffKeepsFacing
                     | Param::GroundedTakeoff
                     | Param::RollTime
                     | Param::RollSpeed

@@ -170,6 +170,8 @@ pub struct Player {
     pub off_face: Option<(Facing, u8)>,
     /// Frames since the jump under way started, until it lands.
     pub jump_age: Option<u8>,
+    /// Falling after walking off the ground, until landing.
+    pub walked_off: bool,
     /// Frames since the player last landed, while it stays on the ground.
     pub since_land: Option<u8>,
     /// The enemy whose touch hurts the player on the next step, found
@@ -233,6 +235,7 @@ impl Player {
             roll_jump: false,
             off_face: None,
             jump_age: None,
+            walked_off: false,
             since_land: None,
             hurt_ahead: None,
             pose: PoseClock::default(),
@@ -274,6 +277,7 @@ impl Player {
         self.ground = None;
         self.coyote = None;
         self.jump_age = None;
+        self.walked_off = false;
         self.jump_hold = false;
         self.takeoff = false;
         self.state = State::Fall;
@@ -288,6 +292,7 @@ impl Player {
         self.coyote = None;
         self.frozen = freeze;
         self.jump_age = None;
+        self.walked_off = false;
         self.jump_hold = true;
         self.takeoff = false;
         self.end_roll();
@@ -658,7 +663,8 @@ impl Player {
             && self.grounded()
             && self.roll.is_none()
             && !rolling
-            && self.roll_stop == 0;
+            && self.roll_stop == 0
+            && !events.contains(&Event::JumpStart);
         let turn_ends = self.turn.is_some_and(|n| n + 1 >= turn_time);
         let facing = if acting.is_some() {
             self.turn = None;
@@ -686,9 +692,14 @@ impl Player {
             // at once.
             self.turn = None;
             facing_toward(dir, self.facing)
-        } else if turn_time > 0 && self.grounded() {
+        } else if self.walked_off && physics[Param::WalkOffKeepsFacing] > Fixed::ZERO {
+            self.turn = None;
+            self.facing
+        } else if turn_time > 0 && self.grounded() && !events.contains(&Event::JumpStart) {
             self.turn_on_ground(dir, turn_time, !striding)
         } else {
+            // In the air, and on the take-off frame, facing follows the
+            // input at once.
             self.turn = None;
             facing_toward(dir, self.facing)
         };
@@ -903,6 +914,11 @@ impl Player {
             None
         } else {
             self.jump_age.map(|n| n.saturating_add(1))
+        };
+        self.walked_off = if events.contains(&Event::JumpStart) || self.grounded() {
+            false
+        } else {
+            self.walked_off || events.contains(&Event::LeaveGround)
         };
         if self.grounded() {
             self.hop = None;

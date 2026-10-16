@@ -596,6 +596,7 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
         None => out.push(0),
     }
     out.push(p.jump_age.map_or(0, |n| n.saturating_add(1)));
+    out.push(p.walked_off.into());
     out.push(p.since_land.map_or(0, |n| n.saturating_add(1)));
     match p.hurt_ahead {
         Some(i) => {
