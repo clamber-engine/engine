@@ -13,6 +13,7 @@ use crate::collect;
 use crate::ending::{self, Ending};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
 use crate::follow::{self, Lead, Mode};
+use crate::join::{self, Join};
 use crate::loss::{self, Loss, Lost};
 use crate::player::{Act, Facing, Player, ROLL, Roll, frames};
 use crate::script::{InputFrame, Script};
@@ -138,6 +139,8 @@ pub struct World {
     pub loss: Option<Loss>,
     /// A character lost on a hit, until it has left the level.
     pub lost: Option<Lost>,
+    /// A missing character joining the player, until it stands there.
+    pub join: Option<Join>,
     pub things: Vec<Thing>,
     /// The view, when the preset has one (`view_width` above 0).
     pub view: Option<View>,
@@ -228,6 +231,7 @@ impl World {
             recent: Recent::default(),
             loss: None,
             lost: None,
+            join: None,
             things,
             view,
             events: Vec::new(),
@@ -365,6 +369,17 @@ impl World {
                 fixed(&mut out, l.gravity);
                 out.push(l.landed.map_or(0, |n| n.saturating_add(1)));
                 out.push(l.apart.into());
+            }
+            None => out.push(0),
+        }
+        match self.join {
+            Some(j) => {
+                out.push(1);
+                out.push(j.frame);
+                for v in [j.from.0, j.from.1, j.to.0, j.to.1] {
+                    out.extend(v.to_le_bytes());
+                }
+                fixed(&mut out, j.lift);
             }
             None => out.push(0),
         }
@@ -628,6 +643,12 @@ pub fn step(world: &mut World, input: &InputFrame) {
     world.flow.events.clear();
     world.pause = 0;
     if world.flow.outcome.is_over() {
+        return;
+    }
+    if world.join.is_some() {
+        // Everything else waits while a character joins.
+        join::step(world);
+        world.frame += 1;
         return;
     }
     let start_view = world.view;

@@ -51,12 +51,14 @@ pub enum Behavior {
     /// An object the player can pick up, carry, throw and put down
     /// (see [`carry`](crate::carry)), from `reach` px away or closer.
     /// Thrown, it hits walkers its `hit` box touches, or its `hit_early`
-    /// box for its first `hit_early_time` frames out of the hands.
+    /// box for its first `hit_early_time` frames out of the hands. With a
+    /// `holder`, it holds the missing character.
     Carry {
         reach: Fixed,
         hit: Hit,
         hit_early: Hit,
         hit_early_time: u8,
+        holder: Option<Holder>,
     },
     /// A collectible the player takes from within its [`Reach`] (see
     /// [`collect`](crate::collect)). It adds `worth` to the collectible
@@ -240,6 +242,36 @@ impl Hit {
         };
         (left, pos.y - self.above, right, pos.y + self.below)
     }
+
+    /// Whether the box of an object at `pos` moving right if `right`
+    /// holds `target`, as whole pixels: both `x` rounded down and both `y`
+    /// rounded up, ends included.
+    pub fn holds(&self, pos: Vec2, right: bool, target: Vec2) -> bool {
+        let whole = |v: Vec2| (v.x.floor(), -(-v.y).floor());
+        let ((x, y), (tx, ty)) = (whole(pos), whole(target));
+        let (behind, ahead) = (self.behind.floor(), self.ahead.floor());
+        let (from, to) = if right {
+            (x - behind, x + ahead)
+        } else {
+            (x - ahead, x + behind)
+        };
+        (from..=to).contains(&tx) && (y - self.above.floor()..=y + self.below.floor()).contains(&ty)
+    }
+}
+
+/// What makes an object hold the missing character: it frees it when it
+/// breaks (see [`carry`](crate::carry)). Thrown, it also breaks outside
+/// `window` around the picture, as a [`Ball`] is removed, and on throwers
+/// and balls its `thrower` and `ball` boxes hold, or their early boxes
+/// for its first `hit_early_time` frames out of the hands
+/// ([`Hit::holds`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Holder {
+    pub window: (i32, i32, i32, i32),
+    pub thrower: Hit,
+    pub thrower_early: Hit,
+    pub ball: Hit,
+    pub ball_early: Hit,
 }
 
 impl Behavior {
@@ -391,6 +423,24 @@ impl Archetypes {
     }
 }
 
+/// Reads a window around the picture, `[left, right, top, bottom]` in
+/// whole px. Errors start with `at`.
+fn edges(value: &Value, at: &str) -> Result<(i32, i32, i32, i32), String> {
+    match value {
+        Value::Array(items) if items.len() == 4 => {
+            let mut ends = [0; 4];
+            for (i, item) in items.iter().enumerate() {
+                ends[i] = match item {
+                    Value::Integer(n) if i32::try_from(*n).is_ok() => *n as i32,
+                    _ => return Err(format!("{at}[{i}]: expected a whole number of px")),
+                };
+            }
+            Ok((ends[0], ends[1], ends[2], ends[3]))
+        }
+        _ => Err(format!("{at}: expected [left, right, top, bottom]")),
+    }
+}
+
 /// Reads one archetype's table. Errors start with `path`.
 fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
     let get = |key: &str| {
@@ -436,7 +486,18 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         ],
         "patrol" => &["path", "period"],
         "launcher" => &["velocity"],
-        "carry" => &["reach", "hit", "hit_early", "hit_early_time"],
+        "carry" => &[
+            "reach",
+            "hit",
+            "hit_early",
+            "hit_early_time",
+            "holds_character",
+            "holder_window",
+            "hit_thrower",
+            "hit_thrower_early",
+            "hit_ball",
+            "hit_ball_early",
+        ],
         "thrower" => &[
             "period",
             "throws",
@@ -585,11 +646,23 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                     ));
                 }
             };
+            let holder = match table.get("holds_character") {
+                None | Some(Value::Boolean(false)) => None,
+                Some(Value::Boolean(true)) => Some(Holder {
+                    window: edges(get("holder_window")?, &format!("{path}.holder_window"))?,
+                    thrower: hit("hit_thrower")?,
+                    thrower_early: hit("hit_thrower_early")?,
+                    ball: hit("hit_ball")?,
+                    ball_early: hit("hit_ball_early")?,
+                }),
+                Some(_) => return Err(format!("{path}.holds_character: expected true or false")),
+            };
             Behavior::Carry {
                 reach,
                 hit: hit("hit")?,
                 hit_early: hit("hit_early")?,
                 hit_early_time,
+                holder,
             }
         }
         "collect" => {
@@ -714,27 +787,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             }
         }
         "ball" => {
-            let window = match get("window")? {
-                Value::Array(items) if items.len() == 4 => {
-                    let mut ends = [0; 4];
-                    for (i, item) in items.iter().enumerate() {
-                        ends[i] = match item {
-                            Value::Integer(n) if i32::try_from(*n).is_ok() => *n as i32,
-                            _ => {
-                                return Err(format!(
-                                    "{path}.window[{i}]: expected a whole number of px"
-                                ));
-                            }
-                        };
-                    }
-                    (ends[0], ends[1], ends[2], ends[3])
-                }
-                _ => {
-                    return Err(format!(
-                        "{path}.window: expected [left, right, top, bottom]"
-                    ));
-                }
-            };
+            let window = edges(get("window")?, &format!("{path}.window"))?;
             let ball = Ball {
                 velocity: pair("velocity")?,
                 gravity: number("gravity")?,
@@ -1142,5 +1195,56 @@ mod tests {
         assert!(e.message.contains("archetypes.x: missing `facing`"), "{e}");
         let unknown = "[archetypes.x]\nbehavior = \"teleporter\"\nsize = [1, 1]\noffset = 0\n";
         assert!(Archetypes::from_toml_str(unknown, "f").is_err());
+    }
+
+    /// holder-breaking.md, "The thrower and its balls": the ranges of I
+    /// and H, ends included, early and late, with the object moving
+    /// right.
+    #[test]
+    fn holders_break_on_throwers_and_balls_in_the_measured_ranges() {
+        let a = Archetypes::builtin();
+        let resolve = |params| {
+            a.resolve(&entity("crate", params), "test", "e")
+                .unwrap()
+                .unwrap()
+                .behavior
+        };
+        assert!(matches!(resolve(""), Behavior::Carry { holder: None, .. }));
+        let Behavior::Carry {
+            holder: Some(holder),
+            ..
+        } = resolve("holds_character = true")
+        else {
+            panic!("no holder");
+        };
+        assert_eq!(holder.window, (31, 32, 31, 32));
+        let rows = [
+            (holder.thrower_early, (-55, 37), (-47, 65)),
+            (holder.thrower, (-30, 36), (-23, 32)),
+            (holder.ball_early, (-47, 27), (-52, 50)),
+            (holder.ball, (-21, 27), (-25, 20)),
+        ];
+        let f = |n: i32, frac: i32| Fixed::from_int(n) + Fixed::from_ratio_pow2(frac, 4);
+        for (hit, (i_from, i_to), (h_from, h_to)) in rows {
+            // The object at x 500.75 and y 300.25 (301 rounded up); a
+            // target at I and H from it, with fractions that round away.
+            let object = Vec2::new(f(500, 12), f(300, 4));
+            let holds = |i: i32, h: i32| {
+                let target = Vec2::new(f(500 - i, 3), f(301 + h - 1, 1));
+                hit.holds(object, true, target)
+            };
+            for (i, h, want) in [
+                (i_from, 0, true),
+                (i_to, 0, true),
+                (i_from - 1, 0, false),
+                (i_to + 1, 0, false),
+                (0, h_from, true),
+                (0, h_to, true),
+                (0, h_from - 1, false),
+                (0, h_to + 1, false),
+            ] {
+                assert_eq!(holds(i, h), want, "{hit:?} I {i} H {h}");
+            }
+        }
     }
 }

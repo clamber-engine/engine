@@ -473,6 +473,19 @@ params! {
     /// The frame of the turn, counting its first as 1, on which it faces
     /// the other way. Whole frames.
     FollowTurnFlip => "follow_turn_flip",
+    /// Frames a character freed from an object flies to the one under
+    /// control for, from the frame after the object breaks. It stands
+    /// there on the frame after, and following starts from the next.
+    /// Meanwhile the one under control, walkers and throwers hold still.
+    /// Whole frames.
+    JoinTime => "join_time",
+    /// The flight's height above the straight line to the one under
+    /// control on its `k`th frame is `join_lift` + `join_rise` × `k` −
+    /// `join_sag` × `k` × (`k` + 1), plus the fraction of the height on
+    /// the frame before.
+    JoinLift => "join_lift",
+    JoinRise => "join_rise",
+    JoinSag => "join_sag",
     /// Above 0, the player can pick up objects that can be carried, and
     /// a pick-up lasts this many frames, counting its first; holding an
     /// object needs action held. 0: nothing can be picked up. Whole

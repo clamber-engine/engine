@@ -11,6 +11,9 @@
 //!
 //! Rendering and audio read a world; they never change it.
 //!
+//! A character missing from the level joins the player when an object
+//! holding it breaks ([`Join`]).
+//!
 //! Collectibles add to the collectible count ([`Release`]), and letters
 //! to the letters taken ([`LetterRow`]).
 //!
@@ -31,6 +34,7 @@ mod columns;
 mod ending;
 mod flow;
 mod follow;
+mod join;
 mod loss;
 mod player;
 mod record;
@@ -42,7 +46,7 @@ mod view;
 mod world;
 
 pub use archetype::{
-    Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Fall, Hit,
+    Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Fall, Hit, Holder,
     MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_LETTERS, MAX_THROWS, Reach, Span, Throw,
 };
 pub use carry::Flight;
@@ -53,6 +57,7 @@ pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };
 pub use follow::{Follow, Mode, Point, point as follow_point};
+pub use join::Join;
 pub use loss::{Loss, Lost};
 pub use player::{
     Act, Boost, Crouch, Facing, Gait, GroundAction, HALF_WIDTH, HEIGHT, Hands, Knockout, Player,

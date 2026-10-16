@@ -55,9 +55,9 @@ impl Picture {
         }
     }
 
-    /// Whether a ball at `pos` is inside `window` around the picture,
+    /// Whether a ball or an object at `pos` is inside `window` around the picture,
     /// with its `x` rounded down and its `y` up.
-    fn holds(self, pos: Vec2, window: (i32, i32, i32, i32)) -> bool {
+    pub(crate) fn holds(self, pos: Vec2, window: (i32, i32, i32, i32)) -> bool {
         let (left, right, top, bottom) = window;
         let x = pos.x.floor() - self.left;
         let y = ceil(pos.y) - self.top;

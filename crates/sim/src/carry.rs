@@ -22,18 +22,28 @@
 //! `spec/behavior/thrown-objects.md` describes ([`fly`]). Touching
 //! characters and other enemies isn't in the spec yet; it doesn't.
 //! Dropped, it falls straight down and rests where it lands.
+//!
+//! An object that holds the missing character ([`Holder`]) moves the
+//! same way, but breaks sooner, as `spec/behavior/holder-breaking.md`
+//! describes: on its first touch of the floor, outside the picture, and
+//! on throwers and balls as well as walkers ([`things`](crate::things)).
+//! Against a wall it still falls on that frame. Breaking, it frees the
+//! character ([`join`](crate::join)). The spec doesn't cover how it
+//! moves when a bounce on a walker makes the player let go of it; here
+//! the player keeps it. Barriers that stop walkers aren't in the engine.
 
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame};
 use clamber_level::{Dir, Level, Vec2};
 use clamber_pack::{Param, Physics};
 
-use crate::archetype::{Archetype, Behavior};
+use crate::archetype::{Archetype, Behavior, Holder};
 use crate::columns::{self, column};
 use crate::flow::Outcome;
 use crate::player::{
-    Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, ceil, ease, frames, is_wall,
+    Act, Facing, HEIGHT, Player, SPEED_GRAIN, STEP, State, TINY, ceil, ease, frames, is_wall,
 };
+use crate::throwers::Picture;
 use crate::world::{Event, Phase, Thing, World};
 
 /// A thrown or dropped object's flight.
@@ -123,11 +133,12 @@ pub(crate) fn after(world: &mut World, input: &Frame) {
         Facing::Right => Fixed::ONE,
     };
     let thing = &mut world.things[hands.thing];
-    if thing.phase != Phase::Held && hands.act != Act::PickUp {
+    // An object that broke in the hands stays gone.
+    if !thing.active || (thing.phase != Phase::Held && hands.act != Act::PickUp) {
         return;
     }
     thing.phase = Phase::Held;
-    thing.pos = Vec2::new(x, at(HEIGHT));
+    thing.pos = in_hands(p);
     let release = frames(physics[Param::ThrowRelease]);
     let set_down = frames(physics[Param::PutDownTime]).saturating_sub(1);
     match hands.act {
@@ -157,6 +168,15 @@ pub(crate) fn after(world: &mut World, input: &Frame) {
         }
         _ => {}
     }
+}
+
+/// Where an object in `player`'s hands is: on its head, with `x` and `y`
+/// whole px.
+pub(crate) fn in_hands(player: &Player) -> Vec2 {
+    Vec2::new(
+        Fixed::from_int(player.pos.x.floor() as i32),
+        Fixed::from_int(ceil(player.pos.y - HEIGHT) as i32),
+    )
 }
 
 /// Whether the player can go on holding an object after this step.
@@ -239,21 +259,53 @@ fn drop(thing: &mut Thing, physics: &Physics) {
 }
 
 /// One frame of a thrown or dropped object's flight. It's gone once it's
-/// below the level.
-pub(crate) fn fly(level: &Level, thing: &mut Thing, size: Vec2, mut flight: Flight, slope: Fixed) {
+/// below the level. A thrown one holding the missing character breaks
+/// instead, also once outside its window around the `picture`, where the
+/// view was at the start of the step. Returns whether it broke holding
+/// the character, which it then frees where it is.
+pub(crate) fn fly(
+    level: &Level,
+    thing: &mut Thing,
+    archetype: &Archetype,
+    mut flight: Flight,
+    slope: Fixed,
+    picture: Option<Picture>,
+) -> bool {
     flight.age = flight.age.saturating_add(1);
     flight.vx = if flight.response > Fixed::ZERO {
         ease(flight.vx, flight.target, flight.response)
     } else {
         flight.target
     };
+    let holder = holder(archetype).filter(|_| flight.thrown);
     if flight.thrown {
-        bounce_and_roll(level, thing, flight, slope);
+        if bounce_and_roll(level, thing, flight, slope, holder.is_some()) {
+            thing.active = false;
+            return true;
+        }
     } else {
-        drop_and_rest(level, thing, size, flight);
+        drop_and_rest(level, thing, archetype.size, flight);
     }
-    if thing.pos.y - size.y > level.size.y {
+    let below = thing.pos.y - archetype.size.y > level.size.y;
+    if let Some(holder) = holder
+        && thing.active
+        && (below || picture.is_some_and(|p| !p.holds(thing.pos, holder.window)))
+    {
         thing.active = false;
+        return true;
+    }
+    if below {
+        thing.active = false;
+    }
+    false
+}
+
+/// What makes an object of `archetype` hold the missing character, if
+/// it does.
+pub(crate) fn holder(archetype: &Archetype) -> Option<Holder> {
+    match archetype.behavior {
+        Behavior::Carry { holder, .. } => holder,
+        _ => None,
     }
 }
 
@@ -265,23 +317,48 @@ pub(crate) fn fly(level: &Level, thing: &mut Thing, size: Vec2, mut flight: Flig
 /// above it, and is put on it: falling at `bounce_min` or faster before
 /// this frame, it bounces up at `bounce` of that speed; slower, it rolls
 /// from then on. Rolling off the floor, it falls again.
-fn bounce_and_roll(level: &Level, thing: &mut Thing, mut flight: Flight, slope: Fixed) {
+///
+/// One that `holds` the missing character breaks instead of bouncing,
+/// and also on passing such a column on the way to another. Against a
+/// wall it stays where it is across but still falls in its own column,
+/// and touching the floor there, is put on it. Returns whether it broke
+/// holding the character; it's left where it broke.
+fn bounce_and_roll(
+    level: &Level,
+    thing: &mut Thing,
+    mut flight: Flight,
+    slope: Fixed,
+    holds: bool,
+) -> bool {
     let pos = thing.pos;
     let x = pos.x + flight.vx;
     let to = column(x);
     let dir = if flight.right() { 1 } else { -1 };
     let from = column(pos.x);
-    if to != from && columns::hits_side(level, from, to, dir, pos.y, slope) {
+    let wall = if holds {
+        (1..=(to - from).abs()).any(|n| {
+            let into = from + i64::from(dir) * n;
+            columns::hits_side(level, into - i64::from(dir), into, dir, pos.y, slope)
+        })
+    } else {
+        to != from && columns::hits_side(level, from, to, dir, pos.y, slope)
+    };
+    if wall && holds {
+        let (y, touch) = fall(level, from, pos.y, &mut flight);
+        thing.pos = Vec2::new(pos.x, touch.unwrap_or(y));
+        return true;
+    }
+    if wall {
         // Its pieces aren't in the spec.
         thing.active = false;
-        return;
+        return false;
     }
     if flight.rolling {
         match columns::floor(level, to, pos.y) {
             Some(f) => {
                 thing.pos = Vec2::new(x, f.y);
                 thing.phase = Phase::Thrown(flight);
-                return;
+                return false;
             }
             // Rolling off a ledge isn't in the spec: it falls from rest.
             None => {
@@ -291,25 +368,43 @@ fn bounce_and_roll(level: &Level, thing: &mut Thing, mut flight: Flight, slope: 
         }
     }
     let before = flight.vy;
-    flight.vy = (flight.vy + flight.gravity).min(flight.max_fall);
-    let y = pos.y + flight.vy;
-    let touch = (flight.vy > Fixed::ZERO)
-        .then(|| columns::floor_in_air(level, to, pos.y))
-        .flatten()
-        .filter(|f| y > f.y - flight.margin);
+    let (y, touch) = fall(level, to, pos.y, &mut flight);
+    if let Some(floor) = touch
+        && holds
+        && before >= flight.bounce_min
+    {
+        thing.pos = Vec2::new(x, floor);
+        return true;
+    }
     thing.pos = match touch {
-        Some(f) => {
+        Some(floor) => {
             if before >= flight.bounce_min {
                 flight.vy = -down_to_grain(before * flight.bounce);
             } else {
                 flight.rolling = true;
                 flight.vy = Fixed::ZERO;
             }
-            Vec2::new(x, f.y)
+            Vec2::new(x, floor)
         }
         None => Vec2::new(x, y),
     };
     thing.phase = Phase::Thrown(flight);
+    false
+}
+
+/// A thrown object's fall in the air in `column` from `feet` on one
+/// frame: `vy` grows by gravity up to its most, and it touches the floor
+/// once it's moving down and ends less than `margin` above it. Returns
+/// its `y` after the fall, and the floor's if it touches it.
+fn fall(level: &Level, column: i64, feet: Fixed, flight: &mut Flight) -> (Fixed, Option<Fixed>) {
+    flight.vy = (flight.vy + flight.gravity).min(flight.max_fall);
+    let y = feet + flight.vy;
+    let touch = (flight.vy > Fixed::ZERO)
+        .then(|| columns::floor_in_air(level, column, feet))
+        .flatten()
+        .filter(|f| y > f.y - flight.margin)
+        .map(|f| f.y);
+    (y, touch)
 }
 
 /// `v`, at least 0, rounded down to a whole [`SPEED_GRAIN`].

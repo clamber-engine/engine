@@ -484,6 +484,10 @@ mod tests {
                     | Param::EndFadeAt
                     | Param::EndFadeTime
                     | Param::EndFadeStep
+                    | Param::JoinTime
+                    | Param::JoinLift
+                    | Param::JoinRise
+                    | Param::JoinSag
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

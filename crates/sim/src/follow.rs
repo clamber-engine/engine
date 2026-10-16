@@ -17,9 +17,10 @@
 //! The follower turns to face the lead, in a turn of `follow_turn` frames
 //! on the ground, or at once in the air.
 //!
-//! A swap and the loss of a character move the characters their own
-//! ways; the follower doesn't follow during them, and neither does it
-//! during the frames the lead is held still after a bounce or a defeat.
+//! A swap, the loss of a character and a character joining move the
+//! characters their own ways; the follower doesn't follow during them,
+//! and neither does it during the frames the lead is held still after a
+//! bounce or a defeat.
 
 use std::collections::VecDeque;
 
@@ -144,7 +145,8 @@ pub(crate) fn due(world: &World) -> Option<bool> {
     let other = world.other.as_ref()?;
     let following = world.feel.world[Param::FollowTrail] > Fixed::ZERO
         && world.swap.is_none()
-        && world.loss.is_none();
+        && world.loss.is_none()
+        && world.join.is_none();
     let physics = &world.feel.roster[other.character].physics;
     following.then_some(physics[Param::FollowLag] > Fixed::ZERO)
 }
