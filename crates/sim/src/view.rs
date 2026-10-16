@@ -367,6 +367,11 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 ///
 /// At the start of the level, walkers whose start is near the view are
 /// in the level as placed, at full speed, and the others aren't.
+///
+/// Throwers appear and are removed as walkers on their own do, starting
+/// their timetable afresh each time they appear, and a ball placed in the
+/// level appears as one would, once (thrower.md). Thrown balls leave by
+/// their own rule (see [`throwers`](crate::throwers)).
 pub(crate) fn walkers(world: &mut World, left: i64, appear: bool) {
     let physics = world.player_physics();
     let level = &world.level;
@@ -416,11 +421,38 @@ pub(crate) fn walkers(world: &mut World, left: i64, appear: bool) {
             thing.active = false;
         }
     }
+    for thing in &mut world.things {
+        let (Some(archetype), Some(entity)) = (thing.archetype, level.entities.get(thing.index))
+        else {
+            continue;
+        };
+        let start = entity.at;
+        let start_near = near(start.x.floor(), left, &physics);
+        match archetype.behavior {
+            Behavior::Thrower { .. } if appear && !thing.active && start_near => {
+                thing.active = true;
+                thing.clock = 0;
+            }
+            Behavior::Thrower { .. }
+                if !appear && thing.active && far(start.x.floor(), left, &physics) =>
+            {
+                thing.active = false;
+            }
+            Behavior::Ball(_)
+                if appear && !thing.active && thing.phase == Phase::Ready && start_near =>
+            {
+                thing.active = true;
+                thing.pos = start;
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Whether each thing is in the level at the start of a level with a
 /// view whose left edge is at `left`: walkers only when their start, or
-/// another start in their group, is near the view; everything else is.
+/// another start in their group, is near the view, throwers only when
+/// theirs is, and balls not yet; everything else is.
 pub(crate) fn at_start(things: &[Thing], level: &Level, left: i64, physics: &Physics) -> Vec<bool> {
     let walker = |thing: &Thing| match thing.archetype.map(|a| a.behavior) {
         Some(Behavior::Walker { group, .. }) => Some(group),
@@ -433,9 +465,11 @@ pub(crate) fn at_start(things: &[Thing], level: &Level, left: i64, physics: &Phy
         .collect();
     things
         .iter()
-        .map(|t| match walker(t) {
-            None => true,
-            Some(g) => near_start(t) || near_groups.contains(&g),
+        .map(|t| match t.archetype.map(|a| a.behavior) {
+            Some(Behavior::Walker { group, .. }) => near_start(t) || near_groups.contains(&group),
+            Some(Behavior::Thrower { .. }) => near_start(t),
+            Some(Behavior::Ball(_)) => false,
+            _ => true,
         })
         .collect()
 }

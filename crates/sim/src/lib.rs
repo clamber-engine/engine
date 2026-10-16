@@ -14,7 +14,7 @@
 //! Collectibles add to the collectible count ([`Release`]).
 //!
 //! With a preset that has one, a [`View`] follows the player, and
-//! walkers are in the level only near it.
+//! walkers and throwers are in the level only near it.
 //!
 //! [`Script`] and [`run`] drive a world headlessly from recorded input,
 //! for tests and the `clamber-sim` command, and [`record`] writes what
@@ -32,12 +32,13 @@ mod record;
 mod script;
 mod swap;
 mod things;
+mod throwers;
 mod view;
 mod world;
 
 pub use archetype::{
-    Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Behavior, Fall, Hit, MAX_AIR_STEPS,
-    MAX_ARRIVE_RULES, Reach, Span,
+    Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Fall, Hit,
+    MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_THROWS, Reach, Span, Throw,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
@@ -55,6 +56,7 @@ pub use record::record;
 pub use script::{InputFrame, Script};
 pub use swap::{Move, Other, Recent, Swap};
 pub use things::{DEFEATED_FRAMES, LAUNCH_REST};
+pub use throwers::BALL;
 pub use view::View;
 pub use world::{Event, Phase, Thing, World, generic_feel, run, step};
 

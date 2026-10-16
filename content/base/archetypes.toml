@@ -50,6 +50,28 @@
 #   position with x rounded down, behind and ahead of it the way it
 #   moves, or `hit_early` for its first `hit_early_time` frames out of
 #   the hands. It doesn't touch characters yet.
+# - `thrower`: never moves, and throws a `ball` on a timetable:
+#   `throws = [[frame, vx, vy], ...]`, up to four, each on that frame of
+#   every `period` frames, counting from 0 on the frame it appeared on,
+#   at that speed, from `throw_from = [x, y]` away from its position. A
+#   thrown ball moves on the frame it's thrown. With a preset that has a
+#   view, a thrower appears and is removed as a walker on its own does,
+#   and starts its timetable again each time it appears. Neither it nor
+#   its balls touch the player or anything else yet.
+# - `ball`: falls under `gravity`, up to `max_fall`; nothing changes its
+#   speed across. Its floor is the highest in the 1-px column of its x
+#   that's no more than `floor_reach` above where it was at the start of
+#   the frame. Moving down to less than `touch` above that floor, or
+#   below it, it bounces: it's put on the floor moving up at `bounce`,
+#   then passes through every floor until it's more than `drop` below
+#   that one. It passes through walls. With a view, it's removed outside
+#   `window = [left, right, top, bottom]`, how many px past each edge of
+#   the picture its x, rounded down, and its y, rounded up, may be, with
+#   the view where it was at the start of the frame; not on a frame on
+#   which it bounced or stopped passing through floors, though. Without
+#   a view, it's removed once its top is below the level. Placed in a
+#   level, it starts at `velocity = [x, y]`, and with a view appears as
+#   a walker on its own would, moving on the frame it appears, once.
 # - `collect`: a collectible the player takes by reaching it. It's then
 #   gone, and adds `worth` to the collectible count, one at a time: the
 #   first as it's taken, then one every `release_every` frames, each
@@ -135,6 +157,31 @@ reach = 24
 hit = [18, 13, 13, 18]
 hit_early = [19, 38, 13, 51]
 hit_early_time = 16
+
+# title-1's thrower and balls (spec/behavior/thrower.md). The spec
+# doesn't say how big either is; the sizes are Clamber's own and only
+# draw them. It doesn't say what speeds a placed ball gets either; the
+# level gives them.
+[archetypes.thrower]
+behavior = "thrower"
+size = [24, 24]
+offset = 0
+period = 173
+throws = [[2, 0, -7], [33, 3.125, -7], [144, -3.125, -7]]
+throw_from = [0, -8]
+
+[archetypes.ball]
+behavior = "ball"
+size = [12, 12]
+offset = 0
+velocity = [0, 0]
+gravity = 0.4375
+max_fall = 8
+bounce = 5
+floor_reach = 8
+touch = 5
+drop = 47
+window = [31, 32, 31, 32]
 
 # Collectibles with title-1's measured values. `spark`: a single
 # collectible (spec/behavior/collectibles.md), drawn 16 x 16 around its

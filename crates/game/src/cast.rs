@@ -293,7 +293,7 @@ fn thing_animation(world: &World, thing: &Thing) -> Option<&'static str> {
             return Some("defeated");
         }
         Phase::Fired(_) => return Some("fire"),
-        Phase::Ready | Phase::Held | Phase::Thrown(_) | Phase::Placed => {}
+        Phase::Ready | Phase::Held | Phase::Thrown(_) | Phase::Placed | Phase::Flying { .. } => {}
     }
     let reached = thing.kind == CHECKPOINT && world.flow.checkpoints.contains(&thing.index);
     reached.then_some("reached")

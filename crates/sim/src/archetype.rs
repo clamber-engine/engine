@@ -75,6 +75,49 @@ pub enum Behavior {
         window: Option<(i32, i32)>,
         arrive: Arrive,
     },
+    /// Sits where it's placed and throws a [`BALL`](crate::BALL) on each
+    /// of its first `throw_count` `throws`, `from` its position, on that
+    /// frame of every `period` counted from the one it appeared on (see
+    /// [`throwers`](crate::throwers)).
+    Thrower {
+        period: u32,
+        throws: [Throw; MAX_THROWS],
+        throw_count: u8,
+        from: Vec2,
+    },
+    /// A ball that flies, bounces on floors and drops through them (see
+    /// [`throwers`](crate::throwers)).
+    Ball(Ball),
+}
+
+/// One of a thrower's throws: on `frame` of its period, a ball at
+/// `velocity`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Throw {
+    pub frame: u32,
+    pub velocity: Vec2,
+}
+
+/// The most throws a thrower can have.
+pub const MAX_THROWS: usize = 4;
+
+/// How a ball moves. Placed in a level, it starts at `velocity`. It falls
+/// under `gravity` up to `max_fall`. Falling onto a floor no more than
+/// `floor_reach` above where it was, to less than `touch` above it, it
+/// bounces up at `bounce` and passes through floors until it's more than
+/// `drop` below that one. With a view, it's removed outside `window`:
+/// `(left, right, top, bottom)`, how far past each edge of the picture,
+/// whole px, it may be.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Ball {
+    pub velocity: Vec2,
+    pub gravity: Fixed,
+    pub max_fall: Fixed,
+    pub bounce: Fixed,
+    pub floor_reach: Fixed,
+    pub touch: Fixed,
+    pub drop: Fixed,
+    pub window: (i32, i32, i32, i32),
 }
 
 /// With a view, when each released part of a collectible reaches the
@@ -290,6 +333,11 @@ impl Archetypes {
         self.tables.keys().map(String::as_str)
     }
 
+    /// The archetype called `name` as written, if there is one.
+    pub fn named(&self, name: &str) -> Option<Archetype> {
+        parse(self.tables.get(name)?, &format!("archetypes.{name}")).ok()
+    }
+
     /// What `entity` is: its archetype with its params applied, or `None`
     /// if its type isn't an archetype. `origin` and `path` name the
     /// entity in errors.
@@ -365,6 +413,17 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         "patrol" => &["path", "period"],
         "launcher" => &["velocity"],
         "carry" => &["reach", "hit", "hit_early", "hit_early_time"],
+        "thrower" => &["period", "throws", "throw_from"],
+        "ball" => &[
+            "velocity",
+            "gravity",
+            "max_fall",
+            "bounce",
+            "floor_reach",
+            "touch",
+            "drop",
+            "window",
+        ],
         "collect" => &[
             "worth",
             "release_every",
@@ -543,6 +602,93 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 window,
                 arrive: parse_arrive(table, path, count_delay)?,
             }
+        }
+        "thrower" => {
+            let period = match get("period")? {
+                Value::Integer(n) if *n >= 1 && *n <= i64::from(u32::MAX) => *n as u32,
+                _ => {
+                    return Err(format!(
+                        "{path}.period: expected a whole number of frames, at least 1"
+                    ));
+                }
+            };
+            let at = format!("{path}.throws");
+            let items = match get("throws")? {
+                Value::Array(items) if items.len() <= MAX_THROWS => items,
+                _ => {
+                    return Err(format!(
+                        "{at}: expected a list of up to {MAX_THROWS} [frame, vx, vy]"
+                    ));
+                }
+            };
+            let mut throws = [Throw::default(); MAX_THROWS];
+            for (i, item) in items.iter().enumerate() {
+                let at = format!("{at}[{i}]");
+                let Value::Array(parts) = item else {
+                    return Err(format!("{at}: expected [frame, vx, vy]"));
+                };
+                let [frame, vx, vy] = parts.as_slice() else {
+                    return Err(format!("{at}: expected [frame, vx, vy]"));
+                };
+                let frame = match frame {
+                    Value::Integer(n) if (0..i64::from(period)).contains(n) => *n as u32,
+                    _ => {
+                        return Err(format!(
+                            "{at}[0]: expected a whole number of frames, less than `period`"
+                        ));
+                    }
+                };
+                let n = |v: &Value, i: usize| {
+                    clamber_pack::read_number(v, "", &format!("{at}[{i}]")).map_err(|e| e.message)
+                };
+                throws[i] = Throw {
+                    frame,
+                    velocity: Vec2::new(n(vx, 1)?, n(vy, 2)?),
+                };
+            }
+            Behavior::Thrower {
+                period,
+                throws,
+                throw_count: items.len() as u8,
+                from: pair("throw_from")?,
+            }
+        }
+        "ball" => {
+            let window = match get("window")? {
+                Value::Array(items) if items.len() == 4 => {
+                    let mut ends = [0; 4];
+                    for (i, item) in items.iter().enumerate() {
+                        ends[i] = match item {
+                            Value::Integer(n) if i32::try_from(*n).is_ok() => *n as i32,
+                            _ => {
+                                return Err(format!(
+                                    "{path}.window[{i}]: expected a whole number of px"
+                                ));
+                            }
+                        };
+                    }
+                    (ends[0], ends[1], ends[2], ends[3])
+                }
+                _ => {
+                    return Err(format!(
+                        "{path}.window: expected [left, right, top, bottom]"
+                    ));
+                }
+            };
+            let ball = Ball {
+                velocity: pair("velocity")?,
+                gravity: number("gravity")?,
+                max_fall: number("max_fall")?,
+                bounce: number("bounce")?,
+                floor_reach: number("floor_reach")?,
+                touch: number("touch")?,
+                drop: number("drop")?,
+                window,
+            };
+            if ball.gravity <= Fixed::ZERO || ball.max_fall <= Fixed::ZERO {
+                return Err(format!("{path}: `gravity` and `max_fall` must be positive"));
+            }
+            Behavior::Ball(ball)
         }
         _ => Behavior::Launcher {
             velocity: pair("velocity")?,
@@ -748,6 +894,16 @@ mod tests {
         ));
         assert!(matches!(resolve("crate").behavior, Behavior::Carry { .. }));
         assert!(matches!(
+            resolve("thrower").behavior,
+            Behavior::Thrower {
+                period: 173,
+                throw_count: 3,
+                ..
+            }
+        ));
+        assert!(matches!(resolve("ball").behavior, Behavior::Ball(_)));
+        assert_eq!(a.named("ball"), Some(resolve("ball")));
+        assert!(matches!(
             resolve("spark").behavior,
             Behavior::Collect { worth: 1, .. }
         ));
@@ -897,6 +1053,15 @@ mod tests {
         check("launcher", "velocity = [1]", "expected [x, y]");
         check("launcher", "size = [0, 4]", "must be positive");
         check("crate", "reach = -1", "entities[3].params.reach");
+        check(
+            "thrower",
+            "throws = [[173, 0, -7]]",
+            "entities[3].params.throws[0][0]",
+        );
+        check("thrower", "throws = [[2, 0]]", "expected [frame, vx, vy]");
+        check("thrower", "period = 0", "entities[3].params.period");
+        check("ball", "window = [1, 2, 3]", "entities[3].params.window");
+        check("ball", "gravity = 0", "must be positive");
         check("spark", "worth = 0", "entities[3].params.worth");
         check("spark", "reach = []", "expected one or two tables");
         check(

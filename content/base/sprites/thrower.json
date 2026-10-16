@@ -1,0 +1,214 @@
+{
+  "frames": [
+    {
+      "filename": "thrower idle 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 120,
+        "h": 118
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 24,
+        "w": 120,
+        "h": 118
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 160
+      },
+      "duration": 100,
+      "ticks": 6
+    },
+    {
+      "filename": "thrower idle 1",
+      "frame": {
+        "x": 124,
+        "y": 2,
+        "w": 119,
+        "h": 122
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18,
+        "y": 22,
+        "w": 119,
+        "h": 122
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 160
+      },
+      "duration": 100,
+      "ticks": 6
+    },
+    {
+      "filename": "thrower idle 2",
+      "frame": {
+        "x": 245,
+        "y": 2,
+        "w": 121,
+        "h": 124
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 16,
+        "y": 21,
+        "w": 121,
+        "h": 124
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 160
+      },
+      "duration": 100,
+      "ticks": 6
+    },
+    {
+      "filename": "thrower idle 3",
+      "frame": {
+        "x": 368,
+        "y": 2,
+        "w": 119,
+        "h": 122
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 18,
+        "y": 22,
+        "w": 119,
+        "h": 122
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 160
+      },
+      "duration": 100,
+      "ticks": 6
+    },
+    {
+      "filename": "thrower idle 4",
+      "frame": {
+        "x": 489,
+        "y": 2,
+        "w": 120,
+        "h": 118
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 24,
+        "w": 120,
+        "h": 118
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 160
+      },
+      "duration": 100,
+      "ticks": 6
+    },
+    {
+      "filename": "thrower idle 5",
+      "frame": {
+        "x": 611,
+        "y": 2,
+        "w": 119,
+        "h": 122
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 22,
+        "w": 119,
+        "h": 122
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 160
+      },
+      "duration": 100,
+      "ticks": 6
+    },
+    {
+      "filename": "thrower idle 6",
+      "frame": {
+        "x": 732,
+        "y": 2,
+        "w": 120,
+        "h": 124
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 21,
+        "w": 120,
+        "h": 124
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 160
+      },
+      "duration": 100,
+      "ticks": 6
+    },
+    {
+      "filename": "thrower idle 7",
+      "frame": {
+        "x": 854,
+        "y": 2,
+        "w": 119,
+        "h": 122
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 22,
+        "w": 119,
+        "h": 122
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 160
+      },
+      "duration": 100,
+      "ticks": 6
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "thrower.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 975,
+      "h": 128
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "idle",
+        "from": 0,
+        "to": 7,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 80,
+        "y": 80
+      },
+      "scale": 5,
+      "normals": "thrower-normals.png"
+    }
+  }
+}

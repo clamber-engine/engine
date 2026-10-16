@@ -1,0 +1,214 @@
+{
+  "frames": [
+    {
+      "filename": "ball spin 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 70,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 5,
+        "y": 8,
+        "w": 70,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "ball spin 1",
+      "frame": {
+        "x": 74,
+        "y": 2,
+        "w": 68,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 6,
+        "w": 68,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "ball spin 2",
+      "frame": {
+        "x": 144,
+        "y": 2,
+        "w": 64,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 5,
+        "w": 64,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "ball spin 3",
+      "frame": {
+        "x": 210,
+        "y": 2,
+        "w": 68,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 6,
+        "w": 68,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "ball spin 4",
+      "frame": {
+        "x": 280,
+        "y": 2,
+        "w": 70,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 5,
+        "y": 8,
+        "w": 70,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "ball spin 5",
+      "frame": {
+        "x": 352,
+        "y": 2,
+        "w": 68,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 6,
+        "w": 68,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "ball spin 6",
+      "frame": {
+        "x": 422,
+        "y": 2,
+        "w": 64,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 5,
+        "w": 64,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "ball spin 7",
+      "frame": {
+        "x": 488,
+        "y": 2,
+        "w": 68,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 6,
+        "w": 68,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 33,
+      "ticks": 2
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "ball.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 558,
+      "h": 74
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "spin",
+        "from": 0,
+        "to": 7,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 40,
+        "y": 40
+      },
+      "scale": 5,
+      "normals": "ball-normals.png"
+    }
+  }
+}

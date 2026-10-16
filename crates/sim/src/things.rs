@@ -34,6 +34,9 @@
 //! A thrown object defeats the walkers it hits (see [`throw_hits`]),
 //! which are knocked back the way it came (see [`knocked`]).
 //!
+//! Throwers throw balls, which don't act on the player yet (see
+//! [`throwers`](crate::throwers)).
+//!
 //! A defeated walker jumps up and falls out of the level (see [`fall`]);
 //! other defeated enemies show as defeated for [`DEFEATED_FRAMES`], then
 //! are gone. They stay gone after the player loses a life.
@@ -46,6 +49,7 @@ use crate::archetype::{Archetype, Behavior, Fall};
 use crate::carry;
 use crate::flow::{FlowEvent, overlap};
 use crate::player::{Facing, HEIGHT, STEP, State, TINY, ease, frames, is_wall};
+use crate::throwers::{self, Picture};
 use crate::view;
 use crate::world::{Event, Phase, Thing, World};
 
@@ -84,12 +88,15 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
         .knockout
         .filter(|k| k.frame >= 1 && k.frame < hold)
         .map(|k| k.by);
+    throwers::throw(world);
+    // Balls leave by where the view was at the start of the step.
+    let picture = world.view.map(|v| Picture::of(v, &physics));
     for thing in world.things.iter_mut().filter(|t| t.active) {
         let enemy = thing.archetype.is_some_and(|a| a.behavior.is_enemy());
         if held.is_some_and(|by| enemy && by != Some(thing.index)) {
             continue;
         }
-        advance(&world.level, thing, &physics);
+        advance(&world.level, thing, &physics, picture);
     }
     throw_hits(world);
     if let Some(view) = world.view {
@@ -134,7 +141,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     }
 }
 
-fn advance(level: &Level, thing: &mut Thing, physics: &Physics) {
+fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<Picture>) {
     let Some(archetype) = thing.archetype else {
         return;
     };
@@ -182,6 +189,12 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics) {
             carry::settle(level, thing, physics);
             return;
         }
+        Phase::Flying { .. } => {
+            if let Behavior::Ball(ball) = archetype.behavior {
+                throwers::fly(level, thing, &ball, archetype.size, picture);
+            }
+            return;
+        }
         Phase::Ready => {}
     }
     if thing.wait > 0 {
@@ -215,7 +228,11 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics) {
             let origin = level.entities[thing.index].at;
             fly(thing, origin, path, period);
         }
-        Behavior::Launcher { .. } | Behavior::Carry { .. } | Behavior::Collect { .. } => {}
+        Behavior::Ball(ball) => throwers::fly(level, thing, &ball, archetype.size, picture),
+        Behavior::Launcher { .. }
+        | Behavior::Carry { .. }
+        | Behavior::Collect { .. }
+        | Behavior::Thrower { .. } => {}
     }
 }
 
@@ -696,7 +713,10 @@ fn interact(
                 thing.phase = Phase::Fired(0);
                 world.flow.events.push(FlowEvent::Launch(thing.index));
             }
-            Behavior::Carry { .. } | Behavior::Collect { .. } => {}
+            Behavior::Carry { .. }
+            | Behavior::Collect { .. }
+            | Behavior::Thrower { .. }
+            | Behavior::Ball(_) => {}
             _ => {
                 let middle = Fixed::from_bits((area.1.to_bits() + area.3.to_bits()) / 2);
                 let landed = !boxes && previous_feet <= middle && player.pos.y >= previous_feet;

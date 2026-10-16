@@ -62,7 +62,8 @@ impl Event {
 /// One of the level's entities, as it is now.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Thing {
-    /// Index into the level's entities.
+    /// Index into the level's entities, or for a thrown ball, which comes
+    /// after them, into the things.
     pub index: usize,
     pub kind: String,
     pub pos: Vec2,
@@ -79,7 +80,8 @@ pub struct Thing {
     pub turn: u8,
     /// Horizontal speed, px per frame, for a walker.
     pub vx: Fixed,
-    /// Steps it has moved, which a patrol follows its path by.
+    /// Steps it has moved, which a patrol follows its path by, or since
+    /// a thrower appeared.
     pub clock: u32,
     /// Steps a walker that just appeared waits before it moves.
     pub wait: u8,
@@ -110,6 +112,9 @@ pub enum Phase {
     Thrown(Flight),
     /// An object just set down, which comes to rest on the next step.
     Placed,
+    /// A ball moving at `vy` down, ignoring floors until it's below the
+    /// one it bounced on, if `ignoring` has it.
+    Flying { vy: Fixed, ignoring: Option<Fixed> },
 }
 
 /// Everything the simulation advances.
@@ -383,9 +388,20 @@ impl World {
                 Phase::Thrown(_) => [5, 0],
                 Phase::Placed => [6, 0],
                 Phase::Knocked { vy } => [7, vy.is_some().into()],
+                Phase::Flying { ignoring, .. } => [8, ignoring.is_some().into()],
             });
-            if let Phase::Falling { vy, .. } | Phase::Knocked { vy: Some(vy) } = t.phase {
+            if let Phase::Falling { vy, .. }
+            | Phase::Knocked { vy: Some(vy) }
+            | Phase::Flying { vy, .. } = t.phase
+            {
                 fixed(&mut out, vy);
+            }
+            if let Phase::Flying {
+                ignoring: Some(floor),
+                ..
+            } = t.phase
+            {
+                fixed(&mut out, floor);
             }
             if let Phase::Thrown(f) = t.phase {
                 for v in [f.vx, f.vy, f.target, f.response, f.gravity, f.max_fall] {
