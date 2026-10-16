@@ -30,6 +30,7 @@ mod level;
 mod location;
 mod manifest;
 mod placements;
+mod songs;
 mod sound;
 mod sprites;
 
@@ -48,6 +49,10 @@ pub use level::{LevelDecoder, LevelParts};
 pub use location::{BANK_SIZE, Location};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements};
+pub use songs::{
+    CHANNELS, GAIN, HEADER_SIZE, OUTPUTS_PER_PERIOD, Player, START_PERIOD, Settings, SettingsSet,
+    Step, UNIT_PITCH, Voice, VoiceStep,
+};
 pub use sound::{
     BLOCK_SIZE, BlockHeader, END_OF_LIST, Loop, Passes, Read, STEPS, Sample, SampleAudio, Song,
     read_list, read_samples, read_set, read_song, song_samples,

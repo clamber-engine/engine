@@ -2,9 +2,9 @@
 //! sample points with exact loop points, which samples each song has, and
 //! each song's block of data.
 //!
-//! The rate a sample is played at, and what a song's data means, aren't
-//! in the spec yet, so [`SampleAudio::wav`] takes the rate from its
-//! caller and songs are kept as bytes.
+//! A song's data is played by [`crate::Player`] (`songs.md`); the rate a
+//! sample plays at is the pitch a note hands its voice, so
+//! [`SampleAudio::wav`] takes the rate from its caller.
 
 use crate::Location;
 
