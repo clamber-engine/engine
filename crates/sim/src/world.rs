@@ -199,14 +199,9 @@ impl World {
         // With a view, walkers whose start is near it are in the level as
         // placed, and the others appear later.
         if let Some(v) = view {
-            for thing in &mut things {
-                let walker = matches!(
-                    thing.archetype.map(|a| a.behavior),
-                    Some(Behavior::Walker { .. })
-                );
-                if walker && !view::near(thing.pos.x.floor(), v.x(), &physics) {
-                    thing.active = false;
-                }
+            let present = view::at_start(&things, &level, v.x(), &physics);
+            for (thing, present) in things.iter_mut().zip(present) {
+                thing.active &= present;
             }
         }
         Ok(World {

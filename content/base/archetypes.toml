@@ -29,7 +29,10 @@
 #   frames, as the player does. With a preset that has a view
 #   (`view_width` above 0), a walker is in the level only near the view;
 #   when it appears there, it waits `appear_wait` frames, counting the one
-#   it appears on, before it moves (0: it moves on that frame).
+#   it appears on, before it moves (0: it moves on that frame). Walkers
+#   given the same `group` above 0 appear together, as soon as any of
+#   their starts is near the view, and are removed together, once all of
+#   them would be (`group = 0`: on its own).
 # - `patrol`: an enemy that flies from where it's placed to `path = [x, y]`
 #   away and back, taking `period` frames for the round trip.
 # - `launcher`: fires the player off at `velocity = [x, y]` on touch.
@@ -89,6 +92,7 @@ response = 0
 facing = "left"
 turn_delay = 0
 appear_wait = 0
+group = 0
 range = []
 defeat_jump = 5
 defeat_gravity = 0.375

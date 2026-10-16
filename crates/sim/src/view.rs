@@ -47,6 +47,8 @@
 //! as the spec's list of limits is. The shake during a ground action
 //! isn't simulated: there's no ground action yet (#100).
 
+use std::collections::{HashMap, HashSet};
+
 use clamber_fixed::{FRAC_BITS, Fixed};
 use clamber_level::{Dir, Level, Rect};
 use clamber_pack::{Param, Physics};
@@ -54,7 +56,7 @@ use clamber_pack::{Param, Physics};
 use crate::archetype::Behavior;
 use crate::flow::FlowEvent;
 use crate::player::{Facing, Player, ceil, frames};
-use crate::world::{Phase, World};
+use crate::world::{Phase, Thing, World};
 
 /// What the view's speed is kept to, px per frame.
 pub const SPEED_GRAIN: Fixed = Fixed::from_ratio_pow2(1, 13);
@@ -316,22 +318,48 @@ fn far(x: i64, left: i64, physics: &Physics) -> bool {
 ///   that is far from it is removed. One that hadn't been defeated comes
 ///   back afresh when its start is near the view again.
 ///
+/// The walkers of a group (the same `group` above 0) appear together
+/// when any of their starts is near the view (walker-view.md, "Groups").
+/// The spec doesn't say how a group is removed; the engine's own rule is
+/// that its walkers are removed together, once none of their starts is
+/// near the view and every one of them in the level is far from it.
+///
 /// At the start of the level, walkers whose start is near the view are
 /// in the level as placed, at full speed, and the others aren't.
 pub(crate) fn walkers(world: &mut World, left: i64, appear: bool) {
     let physics = world.player_physics();
     let level = &world.level;
+    // Each group's walkers: whether any start is near the view, and
+    // whether every one in the level could be removed.
+    let mut groups: HashMap<u32, (bool, bool)> = HashMap::new();
+    for thing in &world.things {
+        if let Some(Behavior::Walker { group, .. }) = thing.archetype.map(|a| a.behavior)
+            && group > 0
+        {
+            let start = level.entities[thing.index].at.x.floor();
+            let (near_any, far_all) = groups.entry(group).or_insert((false, true));
+            *near_any |= near(start, left, &physics);
+            *far_all &= !thing.active || far(thing.pos.x.floor(), left, &physics);
+        }
+    }
     for thing in &mut world.things {
         let Some(Behavior::Walker {
             facing,
             appear_wait,
+            group,
             ..
         }) = thing.archetype.map(|a| a.behavior)
         else {
             continue;
         };
         let start = level.entities[thing.index].at;
-        let start_near = near(start.x.floor(), left, &physics);
+        let (start_near, far) = match groups.get(&group) {
+            Some(&(near_any, far_all)) => (near_any, far_all),
+            None => (
+                near(start.x.floor(), left, &physics),
+                far(thing.pos.x.floor(), left, &physics),
+            ),
+        };
         if appear {
             if !thing.active && thing.phase == Phase::Ready && start_near {
                 thing.active = true;
@@ -343,10 +371,32 @@ pub(crate) fn walkers(world: &mut World, left: i64, appear: bool) {
                 thing.clock = 0;
                 thing.wait = appear_wait;
             }
-        } else if thing.active && !start_near && far(thing.pos.x.floor(), left, &physics) {
+        } else if thing.active && !start_near && far {
             thing.active = false;
         }
     }
+}
+
+/// Whether each thing is in the level at the start of a level with a
+/// view whose left edge is at `left`: walkers only when their start, or
+/// another start in their group, is near the view; everything else is.
+pub(crate) fn at_start(things: &[Thing], level: &Level, left: i64, physics: &Physics) -> Vec<bool> {
+    let walker = |thing: &Thing| match thing.archetype.map(|a| a.behavior) {
+        Some(Behavior::Walker { group, .. }) => Some(group),
+        _ => None,
+    };
+    let near_start = |thing: &Thing| near(level.entities[thing.index].at.x.floor(), left, physics);
+    let near_groups: HashSet<u32> = things
+        .iter()
+        .filter_map(|t| walker(t).filter(|&g| g > 0 && near_start(t)))
+        .collect();
+    things
+        .iter()
+        .map(|t| match walker(t) {
+            None => true,
+            Some(g) => near_start(t) || near_groups.contains(&g),
+        })
+        .collect()
 }
 
 #[cfg(test)]

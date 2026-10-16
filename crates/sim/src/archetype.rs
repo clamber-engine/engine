@@ -31,13 +31,15 @@ pub enum Behavior {
     /// Its facing follows a turn `turn_delay` frames later. Defeated, it
     /// falls as `defeat` says. When it appears with the view (see
     /// [`View`](crate::View)), it waits `appear_wait` frames, counting
-    /// the one it appears on, before it moves.
+    /// the one it appears on, before it moves. Walkers with the same
+    /// `group` above 0 appear and are removed with the view together.
     Walker {
         speed: Fixed,
         response: Fixed,
         facing: Facing,
         turn_delay: u8,
         appear_wait: u8,
+        group: u32,
         range: Option<(Fixed, Fixed)>,
         defeat: Fall,
     },
@@ -317,6 +319,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "facing",
             "turn_delay",
             "appear_wait",
+            "group",
             "range",
             "defeat_jump",
             "defeat_gravity",
@@ -370,6 +373,10 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             };
             let turn_delay = frames("turn_delay")?;
             let appear_wait = frames("appear_wait")?;
+            let group = match get("group")? {
+                Value::Integer(n) if (0..=i64::from(u32::MAX)).contains(n) => *n as u32,
+                _ => return Err(format!("{path}.group: expected a whole number, 0 or more")),
+            };
             let range = match get("range")? {
                 Value::Array(items) if items.is_empty() => None,
                 Value::Array(items) if items.len() == 2 => {
@@ -397,6 +404,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 facing,
                 turn_delay,
                 appear_wait,
+                group,
                 range,
                 defeat,
             }

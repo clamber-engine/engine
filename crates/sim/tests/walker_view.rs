@@ -128,3 +128,122 @@ fn the_view_follows_the_player_on_its_own() {
     }
     assert!(w.view.unwrap().left > start);
 }
+
+/// Like [`world`], with a walker heading left at each of `starts`, all
+/// in group 1.
+fn group(starts: &[i32]) -> World {
+    let mut src = String::from(
+        r#"
+        format = 1
+        size = [4000, 600]
+        start = [300, 400]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 400, 4000, 200]
+        "#,
+    );
+    for x in starts {
+        src += &format!(
+            r#"
+            [[entities]]
+            type = "crawler"
+            at = [{x}, 400]
+            params = {{ speed = 1, facing = "left", size = [20, 12], offset = 0.5, response = 0.125, turn_delay = 4, appear_wait = 0, group = 1, defeat_jump = 6, defeat_gravity = 0.4375, defeat_max_fall = 8 }}
+            "#
+        );
+    }
+    let level = Level::from_toml_str(&src, "test").unwrap();
+    World::new(
+        Arc::new(level),
+        Arc::new(generic_feel("classic-1").unwrap()),
+    )
+}
+
+/// One step with the view's left edge at `left` when it starts. Returns
+/// each walker's `x` if it's in the level after the step.
+fn group_step_at(world: &mut World, left: i32) -> Vec<Option<f64>> {
+    world.view = Some(View {
+        left: Fixed::from_int(left),
+        ..View::default()
+    });
+    step(world, &InputFrame::default());
+    world
+        .things
+        .iter()
+        .map(|w| w.active.then(|| w.pos.x.to_f64()))
+        .collect()
+}
+
+#[test]
+fn a_group_appears_together_when_its_nearest_start_comes_near() {
+    // walker-view.md, "Groups": three in a row, heading the same way,
+    // appear on the frame the nearest one's start enters the window.
+    let mut w = group(&[1000, 1040, 1080]);
+    assert_eq!(group_step_at(&mut w, 711), [None, None, None]);
+    assert_eq!(
+        group_step_at(&mut w, 712),
+        [Some(999.875), Some(1039.875), Some(1079.875)]
+    );
+
+    // Coming in from the right, the nearest start is the last one.
+    let mut w = group(&[1000, 1040, 1080]);
+    assert_eq!(group_step_at(&mut w, 1112), [None, None, None]);
+    assert_eq!(
+        group_step_at(&mut w, 1111),
+        [Some(999.875), Some(1039.875), Some(1079.875)]
+    );
+}
+
+#[test]
+fn a_group_is_removed_together_once_all_of_it_could_be() {
+    // The engine's own rule: walker-view.md doesn't say how a group is
+    // removed.
+    let mut w = group(&[1000, 1040, 1080]);
+    group_step_at(&mut w, 712);
+    for (thing, x) in w.things.iter_mut().zip([900.5, 940.5, 1100.5]) {
+        thing.pos.x = fx(x);
+        thing.vx = fx(-1.0);
+    }
+    // All starts are out of the window, and the first two are far, but
+    // the last isn't: they all stay.
+    assert_eq!(
+        group_step_at(&mut w, 1200),
+        [Some(899.5), Some(939.5), Some(1099.5)]
+    );
+    w.things[2].pos.x = fx(1072.5);
+    assert_eq!(group_step_at(&mut w, 1200), [None, None, None]);
+    // They come back together, afresh.
+    assert_eq!(
+        group_step_at(&mut w, 1111),
+        [Some(999.875), Some(1039.875), Some(1079.875)]
+    );
+}
+
+#[test]
+fn a_defeated_member_stays_away_when_its_group_comes_back() {
+    let mut w = group(&[1000, 1040, 1080]);
+    group_step_at(&mut w, 712);
+    w.things[1].phase = Phase::Falling {
+        vy: Fixed::ZERO,
+        hold: 0,
+    };
+    w.things[1].active = false;
+    for (thing, x) in w.things.iter_mut().zip([900.5, 0.0, 900.5]) {
+        thing.pos.x = fx(x);
+    }
+    assert_eq!(group_step_at(&mut w, 1200), [None, None, None]);
+    assert_eq!(
+        group_step_at(&mut w, 712),
+        [Some(999.875), None, Some(1079.875)]
+    );
+}
+
+#[test]
+fn a_group_near_the_view_at_the_start_is_all_there() {
+    // The view starts at 229, so only the first start is in the window.
+    let w = group(&[500, 600, 700]);
+    assert!(w.things.iter().all(|t| t.active));
+    let w = group(&[600, 700]);
+    assert!(w.things.iter().all(|t| !t.active));
+}
