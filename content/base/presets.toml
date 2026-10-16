@@ -22,11 +22,14 @@ description = "Clamber's standard feel."
 gravity = 0.375
 fall_gravity = 0.5625
 held_jump_gravity = 0
+held_gravity_until_top = 0
 max_fall_speed = 15
 landing_reach = 0
 leave_drop = 0
 leave_fall_speed = 0
 walk_off_keeps_facing = 0
+leave_step_speed = 0
+leave_facing_wait = 0
 ground_acceleration = 0.1875
 ground_deceleration = 0.5
 ground_friction = 0.1875
@@ -40,6 +43,7 @@ crouch_recovery = 0
 crouch_up_holds = 0
 crouch_turn_lock = 0
 crouch_takeoff_cancel = 0
+crouch_in_air = 0
 turn_time = 0
 stride_steps = 0
 walk_stride = 0
@@ -543,16 +547,22 @@ lose_jump = 0
 ground_action_time = 0
 
 # Classic 2: the `title-2` values. Filled in so far: jump input timing
-# (jump-input.md and walk-off.md, "In `title-2`") and crouching on the
-# ground (ground-speed.md, "Crouching (`title-2`)"). A jump starts on a
-# press held on that frame, up to 15 frames after it, and takes off two
-# frames later, still on the ground; a jump can start on the frame after
-# a jump's landing, or on the second frame after a walk-off fall's
-# landing, and on the leave frame and the one after it. A crouch starts
-# on Down without Up, goes on while exactly one of them is held, stops
-# the player on the frame it ends too, and keeps turns from starting
-# for 11 frames from then; a jump started in it doesn't take off if it
-# ends first. Everything else plays like Default for now.
+# (jump-input.md and walk-off.md, "In `title-2`"), crouching on the
+# ground (ground-speed.md, "Crouching (`title-2`)"), the vertical part of
+# the jump arc (jump-arc.md, "In `title-2`") and falls off a ledge
+# (walk-off.md, "In `title-2`"). A jump starts on a press held on that
+# frame, up to 15 frames after it, and takes off two frames later, still
+# on the ground; a jump can start on the frame after a jump's landing, or
+# on the second frame after a walk-off fall's landing, and on the leave
+# frame and the one after it. A crouch starts on Down without Up, goes on
+# while exactly one of them is held, stops the player on the frame it
+# ends too, and keeps turns from starting for 11 frames from then; a jump
+# started in it doesn't take off if it ends first. A jump rises at
+# 8.21875 under the lighter gravity while held, until the top. Walking
+# off a ledge drops 3.4375 px, then falls from 1.4375 px per frame, or
+# from 1/256 while crouching, which goes on in the air; facing stays for
+# the first two frames. Horizontal motion in the air plays like Default
+# for now.
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."
@@ -575,6 +585,19 @@ crouch_recovery = 1
 crouch_up_holds = 1
 crouch_turn_lock = 11
 crouch_takeoff_cancel = 1
+crouch_in_air = 1
+gravity = 0.4375
+fall_gravity = 0.4375
+held_jump_gravity = 0.3515625
+held_gravity_until_top = 1
+max_fall_speed = 8
+landing_reach = 0
+jump_speed = 8.21875
+jump_release_speed = 8.21875
+leave_drop = 3.4375
+leave_fall_speed = 0.00390625
+leave_step_speed = 1.4375
+leave_facing_wait = 2
 
 [presets.classic-3]
 label = "Classic 3"

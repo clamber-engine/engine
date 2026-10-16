@@ -331,6 +331,7 @@ mod tests {
                     | Param::CrouchUpHolds
                     | Param::CrouchTurnLock
                     | Param::CrouchTakeoffCancel
+                    | Param::CrouchInAir
                     | Param::TurnTime
                     | Param::StrideSteps
                     | Param::WalkStride
@@ -355,6 +356,9 @@ mod tests {
                     | Param::LeaveDrop
                     | Param::LeaveFallSpeed
                     | Param::WalkOffKeepsFacing
+                    | Param::LeaveStepSpeed
+                    | Param::LeaveFacingWait
+                    | Param::HeldGravityUntilTop
                     | Param::GroundedTakeoff
                     | Param::RollTime
                     | Param::RollSpeed

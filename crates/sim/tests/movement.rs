@@ -48,8 +48,12 @@ struct Play {
 
 impl Play {
     fn new(feel: Feel) -> Play {
+        Play::on(level(), feel)
+    }
+
+    fn on(level: Arc<Level>, feel: Feel) -> Play {
         Play {
-            world: World::new(level(), Arc::new(feel)),
+            world: World::new(level, Arc::new(feel)),
             held: Actions::NONE,
         }
     }
@@ -1133,11 +1137,367 @@ fn classic_2_jumps_from_a_crouch() {
     assert_eq!(jumps(&[&[Jump], &[Down]]), [G + 2]);
 }
 
+#[test]
+fn classic_2_jump_held_from_take_off_to_landing() {
+    // spec/behavior/jump-arc.md, "Held from take-off to landing
+    // (`title-2`)". G is step 0 and T step 2.
+    let steps = jump_in(classic_2, usize::MAX);
+    assert!(steps[2].0.events.contains(&Event::JumpStart));
+    for (n, y, vy) in [
+        (0, 0.0, -8.21875),
+        (1, -7.8671875, -7.8671875),
+        (2, -15.3828125, -7.515625),
+        (5, -35.8203125, -6.4609375),
+        (10, -62.8515625, -4.703125),
+        (20, -90.546875, -1.1875),
+        (23, -92.0, -0.1328125),
+        (24, -91.78125, 0.21875),
+        (25, -91.125, 0.65625),
+        (30, -81.28125, 2.84375),
+        (40, -28.78125, 7.21875),
+        (41, -21.125, 7.65625),
+        (42, -13.125, 8.0),
+        (43, -5.125, 8.0),
+    ] {
+        let (_, sy, svy) = &steps[2 + n];
+        assert_eq!((*sy, *svy), (y, vy), "T + {n}");
+    }
+    // T + 44 lands, placed on the floor.
+    assert_eq!(steps.len(), 2 + 45);
+    assert!(steps[2 + 44].0.events.contains(&Event::Land));
+    assert_eq!(steps[2 + 44].1, 0.0);
+}
+
+#[test]
+fn classic_2_jump_height_and_airtime_by_hold() {
+    // spec/behavior/jump-arc.md, "How long jump is held (`title-2`)", for
+    // H frames held from G, and "Example (`title-2`)" (H = 20 lands on
+    // G + 45).
+    for (held, apex, airtime) in [
+        (1, 73.125, 37),
+        (2, 73.125, 37),
+        (3, 73.125, 37),
+        (4, 74.671875, 37),
+        (5, 76.2109375, 38),
+        (6, 77.671875, 38),
+        (8, 80.3359375, 39),
+        (10, 82.7265625, 40),
+        (12, 84.875, 40),
+        (15, 87.515625, 41),
+        (18, 89.578125, 42),
+        (20, 90.578125, 43),
+        (22, 91.3515625, 43),
+        (25, 91.9140625, 44),
+        (26, 92.0, 44),
+        (40, 92.0, 44),
+        (usize::MAX, 92.0, 44),
+    ] {
+        let steps = jump_in(classic_2, held);
+        let top = steps.iter().map(|s| -s.1).fold(0.0, f64::max);
+        assert_eq!(top, apex, "held {held}");
+        // the jump takes off on step 2 and lands on the last
+        assert!(steps[2].0.events.contains(&Event::JumpStart));
+        assert_eq!(steps.len() - 3, airtime, "held {held}");
+    }
+}
+
+/// Flat ground at y = 400 from x = 0 to 1600, and floor 64 px lower
+/// beyond it.
+const LEDGE_64: &str = r#"
+    format = 1
+    name = "ledge"
+    size = [4096, 600]
+    start = [64, 400]
+
+    [[collision]]
+    shape = "rect"
+    rect = [0, 400, 1600, 200]
+
+    [[collision]]
+    shape = "rect"
+    rect = [1600, 464, 2496, 136]
+"#;
+
+/// Classic 2 walking right from x = 1560 off the ledge at x = 1600 of
+/// `level`, holding `held(n)` on frame L + n, where L is the frame it
+/// leaves the ground on with Right alone held; `held` should hold Right
+/// before L. Rows from frame L to L + `after`.
+fn classic_2_off(level: &str, after: usize, held: impl Fn(i64) -> Vec<Action>) -> Vec<Row> {
+    let new = || {
+        let level = Arc::new(Level::from_toml_str(level, "ledge").unwrap());
+        let mut w = Play::on(level, generic_feel("classic-2").unwrap());
+        w.player.pos.x = Fixed::from_int(1560);
+        w
+    };
+    let probe = play(&mut new(), 60, |_| vec![Action::Right]);
+    let l = frames_with(&probe, Event::LeaveGround)[0];
+    let mut w = new();
+    let rows = play(&mut w, l + after + 1, |f| held(f as i64 - l as i64));
+    assert_eq!(
+        frames_with(&rows, Event::LeaveGround),
+        [l],
+        "the leave frame"
+    );
+    rows.into_iter().skip(l).collect()
+}
+
+/// `y` after each frame, measured down from the ledge at y = 400.
+fn below_ledge(rows: &[Row]) -> Vec<f64> {
+    rows.iter().map(|r| r.y - 400.0).collect()
+}
+
+#[test]
+fn classic_2_walking_off_a_ledge() {
+    // spec/behavior/walk-off.md, "The leave frame (`title-2`)" and
+    // "Falling (`title-2`)": `vy` after the frame and the total fallen
+    // below the ledge, by frames after L.
+    let rows = classic_2_off(FIELD, 22, |_| vec![Action::Right]);
+    let fallen = below_ledge(&rows);
+    for (n, vy, total) in [
+        (0, 0.00390625, 3.4375),
+        (1, 1.4375, 4.875),
+        (2, 1.875, 6.75),
+        (5, 3.1875, 15.0),
+        (10, 5.375, 37.5),
+        (15, 7.5625, 70.9375),
+        (16, 8.0, 78.9375),
+        (20, 8.0, 110.9375),
+    ] {
+        assert_eq!((rows[n].vy, fallen[n]), (vy, total), "L + {n}");
+    }
+    assert!(rows.iter().all(|r| !r.grounded));
+}
+
+#[test]
+fn classic_2_lands_on_reaching_the_floor() {
+    // spec/behavior/walk-off.md, "Falling (`title-2`)", the example off a
+    // 64 px ledge: 60.5625 px above the floor after L, 0.625 px after
+    // L + 14, which stays airborne, and it lands on L + 15.
+    let rows = classic_2_off(LEDGE_64, 16, |_| vec![Action::Right]);
+    let above = |n: usize| 464.0 - rows[n].y;
+    assert_eq!(above(0), 60.5625);
+    assert_eq!(above(14), 0.625);
+    assert!(!rows[14].grounded);
+    assert_eq!(frames_with(&rows, Event::Land), [15]);
+    assert_eq!(above(15), 0.0);
+    assert!(rows[15].grounded);
+}
+
+#[test]
+fn classic_2_facing_waits_two_frames_after_walking_off() {
+    // spec/behavior/walk-off.md, "Falling (`title-2`)": facing doesn't
+    // change on L or L + 1; holding the other way from L on turns the
+    // player on L + 2.
+    use Action::{Left, Right};
+    let rows = classic_2_off(FIELD, 4, |n| vec![if n < 0 { Right } else { Left }]);
+    let facing: Vec<Facing> = rows.iter().map(|r| r.facing).collect();
+    use Facing::Left as FL;
+    use Facing::Right as FR;
+    assert_eq!(facing, [FR, FR, FL, FL, FL]);
+    assert_eq!(frames_with(&rows, Event::Turn), [2]);
+}
+
+#[test]
+fn classic_2_jumps_near_the_edge_fall_until_take_off() {
+    // spec/behavior/walk-off.md, "Jumping near the edge (`title-2`)",
+    // the example: Jump pressed on L - 1, L or L + 1 and held for 20
+    // frames, height below the ledge after frames L to L + 4. `vy` is
+    // -8.21875 on T and -7.8671875 on T + 1.
+    use Action::{Jump, Right};
+    for (press, heights) in [
+        (
+            -1,
+            [
+                3.3515625,
+                3.70703125,
+                -4.16015625,
+                -11.67578125,
+                -18.83984375,
+            ],
+        ),
+        (0, [3.3515625, 3.70703125, 4.4140625, -3.453125, -10.96875]),
+        (1, [3.4375, 3.79296875, 4.5, 5.55859375, -2.30859375]),
+    ] {
+        let rows = classic_2_off(FIELD, 4, |n| {
+            if (press..press + 20).contains(&n) {
+                vec![Right, Jump]
+            } else {
+                vec![Right]
+            }
+        });
+        assert_eq!(below_ledge(&rows), heights, "pressed on L + {press}");
+        let t = (press + 2) as usize;
+        assert_eq!(frames_with(&rows, Event::JumpStart), [t]);
+        assert_eq!((rows[t].vy, rows[t + 1].vy), (-8.21875, -7.8671875));
+    }
+
+    // A tap on L - 1 isn't held on L, so L moves 3.4375 px and L + 1
+    // (T) falls under 0.4375, as does the jump after it.
+    let rows = classic_2_off(FIELD, 2, |n| {
+        if n == -1 {
+            vec![Right, Jump]
+        } else {
+            vec![Right]
+        }
+    });
+    assert_eq!(below_ledge(&rows), [3.4375, 3.87890625, -3.90234375]);
+    assert_eq!((rows[1].vy, rows[2].vy), (-8.21875, -7.78125));
+
+    // Facing doesn't change from L to T, and follows the input from
+    // T + 1.
+    let rows = classic_2_off(FIELD, 5, |n| match n {
+        ..=-1 => vec![Right],
+        1 => vec![Action::Left, Jump],
+        _ => vec![Action::Left],
+    });
+    let facing: Vec<Facing> = rows.iter().map(|r| r.facing).collect();
+    use Facing::Left as FL;
+    use Facing::Right as FR;
+    assert_eq!(facing, [FR, FR, FR, FR, FL, FL]);
+}
+
+#[test]
+fn classic_2_crouching_in_a_fall() {
+    // spec/behavior/walk-off.md, "Crouching on the leave frame
+    // (`title-2`)", the example: Down pressed on L and held until
+    // L + 11, released with Right held (U = L + 12). The target is 0 to
+    // U, `vy` grows by 0.4375 from 1/256 to U, and is 1.4375 on U + 1.
+    use Action::{Down, Left, Right};
+    let rows = classic_2_off(FIELD, 14, |n| match n {
+        0..=11 => vec![Right, Down],
+        _ => vec![Right],
+    });
+    for (n, row) in rows.iter().enumerate().take(13) {
+        assert_eq!(row.target, 0.0, "L + {n}");
+        assert_eq!(row.vy, 1.0 / 256.0 + 0.4375 * n as f64, "L + {n}");
+    }
+    assert_eq!(rows[12].vy, 5.25390625);
+    assert_eq!(rows[13].vy, 1.4375);
+    assert!(rows[13].target > 0.0);
+    assert!(rows.iter().all(|r| !r.grounded));
+
+    // Up alone keeps it going in the air too.
+    let rows = classic_2_off(FIELD, 6, |n| match n {
+        0..=1 => vec![Right, Down],
+        2..=4 => vec![Right, Action::Up],
+        _ => vec![Right],
+    });
+    assert!(rows[..6].iter().all(|r| r.target == 0.0));
+    assert_eq!(
+        (rows[5].vy, rows[6].vy),
+        (1.0 / 256.0 + 0.4375 * 5.0, 1.4375)
+    );
+
+    // Facing doesn't change while crouched, on U or on U + 1, and follows
+    // the input from U + 2.
+    let rows = classic_2_off(FIELD, 14, |n| match n {
+        ..0 => vec![Right],
+        0..=11 => vec![Left, Down],
+        _ => vec![Left],
+    });
+    assert!(rows[..14].iter().all(|r| r.facing == Facing::Right));
+    assert_eq!(rows[14].facing, Facing::Left);
+
+    // A crouch held through the landing lands crouched.
+    let rows = classic_2_off(FIELD, 40, |n| {
+        if n < 0 {
+            vec![Right]
+        } else {
+            vec![Right, Down]
+        }
+    });
+    let land = frames_with(&rows, Event::Land)[0];
+    assert!(rows[land..].iter().all(|r| r.target == 0.0));
+    // and keeps falling from 1/256 without a step to 1.4375
+    assert_eq!(rows[land - 1].vy, 8.0);
+    assert_eq!(rows[16].vy, 1.0 / 256.0 + 0.4375 * 16.0);
+}
+
+#[test]
+fn classic_2_jumping_while_crouched_in_the_air() {
+    // spec/behavior/walk-off.md, "Jumping while crouched in the air
+    // (`title-2`)".
+    use Action::{Down, Jump, Right};
+    let crouched_then = |inputs: Vec<(i64, Vec<Action>)>| {
+        classic_2_off(FIELD, 8, move |n| match n {
+            ..0 => vec![Right],
+            _ => inputs
+                .iter()
+                .find(|(m, _)| *m == n)
+                .map_or(vec![Down], |(_, keys)| keys.clone()),
+        })
+    };
+
+    // The example: Down from L, Down and Jump on L + 3, then Down alone.
+    // G = L + 3, T = L + 5, with 0.3515625 from G to T.
+    let rows = crouched_then(vec![(3, vec![Down, Jump])]);
+    assert_eq!(frames_with(&rows, Event::JumpStart), [5]);
+    let vy: Vec<f64> = rows[2..5].iter().map(|r| r.vy).collect();
+    assert_eq!(vy, [0.87890625, 1.23046875, 1.58203125]);
+    assert_eq!(rows[5].y - rows[4].y, 1.93359375);
+    assert_eq!(rows[5].vy, -8.21875);
+
+    // However long the crouch has lasted.
+    let rows = crouched_then(vec![(6, vec![Down, Jump])]);
+    assert_eq!(frames_with(&rows, Event::JumpStart), [8]);
+
+    // A press on U (Jump as Down is let go) is a normal jump, with the
+    // target 0 on G; on U + 1 it starts a jump too, but not on U + 2.
+    let neither = |from: i64, press: i64| {
+        crouched_then(
+            (from..9)
+                .map(|n| (n, if n == press { vec![Jump] } else { vec![] }))
+                .collect(),
+        )
+    };
+    let rows = neither(3, 3);
+    assert_eq!(frames_with(&rows, Event::JumpStart), [5]);
+    assert_eq!(rows[3].target, 0.0);
+    // jump is let go on G + 1, so the 0.4375 there and on T
+    assert_eq!(rows[3].vy, 1.23046875);
+    assert_eq!(rows[4].vy, 1.66796875);
+    assert_eq!(frames_with(&neither(3, 4), Event::JumpStart), [6]);
+    assert_eq!(frames_with(&neither(3, 5), Event::JumpStart), NONE);
+    // without that press, U + 1 is the 1.4375 frame
+    assert_eq!(neither(3, 99)[4].vy, 1.4375);
+
+    // The crouch ending on G + 1 cancels the jump. U is still under
+    // 0.3515625 and U + 1 is the 1.4375 frame.
+    let rows = crouched_then(vec![(3, vec![Down, Jump]), (4, vec![]), (5, vec![])]);
+    assert_eq!(frames_with(&rows, Event::JumpStart), NONE);
+    assert_eq!((rows[4].vy, rows[5].vy), (1.58203125, 1.4375));
+    // With Jump held on U, a new jump starts there: G = U = L + 4.
+    let rows = crouched_then(vec![
+        (3, vec![Down, Jump]),
+        (4, vec![Jump]),
+        (5, vec![Jump]),
+        (6, vec![Jump]),
+    ]);
+    assert_eq!(frames_with(&rows, Event::JumpStart), [6]);
+    assert_eq!(rows[4].target, 0.0);
+    assert_eq!(rows[5].vy, 1.58203125 + 0.3515625);
+
+    // No jump in the air without a crouch.
+    let rows = classic_2_off(FIELD, 8, |n| {
+        if n == 4 {
+            vec![Right, Jump]
+        } else {
+            vec![Right]
+        }
+    });
+    assert_eq!(frames_with(&rows, Event::JumpStart), NONE);
+}
+
 /// A Classic 1 jump from standing, pressed on step 0 and held for `held`
 /// steps: `y` relative to the start and `vy` after each step, up to and
 /// including the landing.
 fn classic_jump(held: usize) -> Vec<(Step, f64, f64)> {
-    let mut w = classic();
+    jump_in(classic, held)
+}
+
+/// As [`classic_jump`], in the world `new` makes.
+fn jump_in(new: fn() -> Play, held: usize) -> Vec<(Step, f64, f64)> {
+    let mut w = new();
     let floor = w.player.pos.y;
     let mut steps = Vec::new();
     while steps.len() < 200 {
@@ -1529,6 +1889,7 @@ struct Row {
     y: f64,
     vx: f64,
     vy: f64,
+    target: f64,
     facing: Facing,
     grounded: bool,
 }
@@ -1546,6 +1907,7 @@ fn play(w: &mut Play, n: usize, held: impl Fn(usize) -> Vec<Action>) -> Vec<Row>
                 y: p.pos.y.to_f64(),
                 vx: p.vel.x.to_f64(),
                 vy: p.vel.y.to_f64(),
+                target: p.target.to_f64(),
                 facing: p.facing,
                 grounded: p.grounded(),
             }

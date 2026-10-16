@@ -52,6 +52,10 @@ params! {
     /// `gravity` and `fall_gravity`. Once let go, the jump goes back to
     /// those for good. 0 turns it off.
     HeldJumpGravity => "held_jump_gravity",
+    /// Above 0, `held_jump_gravity` stops at the top of a jump: a frame
+    /// that starts with the body not rising uses `fall_gravity`, even with
+    /// jump still held.
+    HeldGravityUntilTop => "held_gravity_until_top",
     /// Downward speed never exceeds this.
     MaxFallSpeed => "max_fall_speed",
     /// A falling body lands when it ends a frame less than this far above
@@ -69,6 +73,19 @@ params! {
     /// facing the way they walked off until they land, whatever is held.
     /// 0: facing follows the direction held, as in a jump.
     WalkOffKeepsFacing => "walk_off_keeps_facing",
+    /// Above 0, on the frame after a body walks off the ground its
+    /// downward speed becomes this, instead of growing by gravity. Not
+    /// while it crouches in the air (`crouch_in_air`), where the frame
+    /// after the crouch ends is the one, nor while a jump waits to take
+    /// off.
+    LeaveStepSpeed => "leave_step_speed",
+    /// Above 0, a player who walks off the ground keeps facing for this
+    /// many frames, counting the leave frame, whatever is held, and so
+    /// does one whose crouch ends in that fall, counting the frame it
+    /// ends. Facing then also stays in the air while crouching and while
+    /// a jump waits to take off, its take-off frame included. Whole
+    /// frames.
+    LeaveFacingWait => "leave_facing_wait",
     /// Speed gained per frame when pressing in the direction of motion.
     GroundAcceleration => "ground_acceleration",
     /// Speed lost per frame when pressing against the direction of motion.
@@ -111,6 +128,12 @@ params! {
     /// if the crouch ends before it would. If jump is held on the frame
     /// the crouch ends, a jump starts again there.
     CrouchTakeoffCancel => "crouch_takeoff_cancel",
+    /// Above 0, a crouch going on when the player walks off the ground,
+    /// or starting on that frame, goes on in the fall, under the usual
+    /// rules; the player slows as on the ground. A jump can start while
+    /// it does, and for `coyote_time` frames after it ends. A jump's
+    /// take-off ends it. 0: a crouch ends on leaving the ground.
+    CrouchInAir => "crouch_in_air",
     /// Turning around on the ground takes this many frames, and facing
     /// changes halfway through. A turn, once started, finishes. 0: facing
     /// follows the direction held at once. Whole frames.
@@ -191,6 +214,9 @@ params! {
     /// nothing about it shows (no `jump_start` event, no upward speed),
     /// the player moves as before and may leave the ground, and no other
     /// jump starts. 0 takes off on the start frame. Whole frames.
+    /// While a jump waits in the air, its take-off frame included, it
+    /// falls under `held_jump_gravity`, moving down or not, if jump has
+    /// been held since it started or it started while crouching.
     TakeoffWait => "takeoff_wait",
     /// Speed lost per frame while rolling with no direction pressed.
     RollFriction => "roll_friction",

@@ -177,6 +177,12 @@ pub struct Player {
     pub jump_age: Option<u8>,
     /// Falling after walking off the ground, until landing.
     pub walked_off: bool,
+    /// The next frame of the fall steps its downward speed up to
+    /// `leave_step_speed`.
+    pub fall_step: bool,
+    /// Frames left in which facing stays as it is in a fall
+    /// (`leave_facing_wait`).
+    pub fall_facing: u8,
     /// Frames since the player last landed, while it stays on the ground.
     pub since_land: Option<u8>,
     /// The enemy whose touch hurts the player on the next step, found
@@ -243,6 +249,8 @@ impl Player {
             off_face: None,
             jump_age: None,
             walked_off: false,
+            fall_step: false,
+            fall_facing: 0,
             since_land: None,
             hurt_ahead: None,
             pose: PoseClock::default(),
@@ -285,6 +293,8 @@ impl Player {
         self.coyote = None;
         self.jump_age = None;
         self.walked_off = false;
+        self.fall_step = false;
+        self.fall_facing = 0;
         self.jump_hold = false;
         self.takeoff = false;
         self.takeoff_wait = None;
@@ -301,6 +311,8 @@ impl Player {
         self.frozen = freeze;
         self.jump_age = None;
         self.walked_off = false;
+        self.fall_step = false;
+        self.fall_facing = 0;
         self.jump_hold = true;
         self.takeoff = false;
         self.takeoff_wait = None;
@@ -323,6 +335,16 @@ impl Player {
         self.ground_action = None;
         self.turn = None;
         events.push(Event::Hurt);
+    }
+
+    /// The gravity of a frame on which a jump waits to take off in the
+    /// air, if it's `held_jump_gravity`: when jump has been held since the
+    /// jump started, or it started while crouching. `crouched` is for the
+    /// frame such a jump is cancelled on, which keeps that gravity.
+    fn waiting_gravity(&self, crouched: bool, physics: &Physics) -> Option<Fixed> {
+        let held = physics[Param::HeldJumpGravity];
+        (held > Fixed::ZERO && (crouched || self.takeoff_crouched || self.jump_held_since_press))
+            .then_some(held)
     }
 
     /// Ends the timed roll under way or the stop after one, with any
@@ -454,6 +476,9 @@ impl Player {
         };
         let timed = physics[Param::RollTime] > Fixed::ZERO;
         let start_vx = self.vel.x;
+        let start_facing = self.facing;
+        let crouch_in_air = physics[Param::CrouchInAir] > Fixed::ZERO;
+        let facing_wait = frames(physics[Param::LeaveFacingWait]);
 
         // A press waits out the jump delay in the buffer, however short
         // the buffer is.
@@ -560,7 +585,8 @@ impl Player {
             .takeoff_wait
             .and_then(|n| n.checked_sub(1))
             .filter(|&n| n > 0);
-        if pending && self.takeoff_crouched && crouch_ends {
+        let cancelled = pending && self.takeoff_crouched && crouch_ends;
+        if cancelled {
             // A jump started while crouching doesn't take off once the
             // crouch ends. With jump held it starts again on this frame,
             // where the crouch has ended.
@@ -587,8 +613,9 @@ impl Player {
         if starts && wait > 0 {
             // Nothing shows yet: the player goes on as before.
             self.takeoff_wait = Some(wait);
-            self.takeoff_crouched =
-                physics[Param::CrouchTakeoffCancel] > Fixed::ZERO && down && self.grounded();
+            self.takeoff_crouched = physics[Param::CrouchTakeoffCancel] > Fixed::ZERO
+                && down
+                && (self.grounded() || self.crouch.held > 0);
             self.coyote = None;
         }
         if (starts && wait == 0) || due {
@@ -696,9 +723,11 @@ impl Player {
             self.crouch = Crouch::default();
             false
         } else {
+            // With `crouch_in_air`, a crouch goes on in a fall off a ledge.
+            let in_fall = crouch_in_air && self.walked_off && self.crouch.held > 0;
             self.crouch.update(
                 down && !busy.no_crouch,
-                self.grounded() && !rolling,
+                (self.grounded() || in_fall) && !rolling,
                 physics,
             )
         };
@@ -717,6 +746,11 @@ impl Player {
             && self.roll_stop == 0
             && !events.contains(&Event::JumpStart);
         let turn_ends = self.turn.is_some_and(|n| n + 1 >= turn_time);
+        // A jump waits to take off, or takes off on this frame.
+        let waits = due || self.takeoff_wait.is_some();
+        let keep_fall_facing =
+            facing_wait > 0 && !self.grounded() && (self.fall_facing > 0 || crouching || waits);
+        self.fall_facing = self.fall_facing.saturating_sub(1);
         let facing = if acting.is_some() {
             self.turn = None;
             self.facing
@@ -743,7 +777,9 @@ impl Player {
             // at once.
             self.turn = None;
             facing_toward(dir, self.facing)
-        } else if self.walked_off && physics[Param::WalkOffKeepsFacing] > Fixed::ZERO {
+        } else if keep_fall_facing
+            || (self.walked_off && physics[Param::WalkOffKeepsFacing] > Fixed::ZERO)
+        {
             self.turn = None;
             self.facing
         } else if physics[Param::CrouchTurnLock] > Fixed::ZERO
@@ -843,6 +879,13 @@ impl Player {
             events.push(Event::Turn);
         }
         let airborne = !self.grounded();
+        let fall_step = std::mem::take(&mut self.fall_step);
+        // The gravity of a jump waiting to take off, if it's the held one.
+        let waiting_gravity = if waits || cancelled {
+            self.waiting_gravity(cancelled, physics)
+        } else {
+            None
+        };
         if let Some(n) = self.hop.filter(|_| airborne) {
             // The hop has its own speeds, whatever jump does.
             let n = n.saturating_add(1);
@@ -858,14 +901,25 @@ impl Player {
             // A jump pressed during a roll in the air falls under the
             // held gravity from its press.
             let jump_hold = self.jump_hold || (self.roll_jump && self.jump_held_since_press);
-            let gravity = if jump_hold && held_gravity > Fixed::ZERO {
+            let until_top = physics[Param::HeldGravityUntilTop] > Fixed::ZERO;
+            let gravity = if let Some(gravity) = waiting_gravity {
+                gravity
+            } else if jump_hold
+                && held_gravity > Fixed::ZERO
+                && !(until_top && !self.vel.y.is_negative())
+            {
                 held_gravity
             } else if self.vel.y.is_negative() {
                 physics[Param::Gravity]
             } else {
                 physics[Param::FallGravity]
             };
-            self.vel.y = (self.vel.y + gravity).min(physics[Param::MaxFallSpeed]);
+            self.vel.y = if fall_step && !waits {
+                physics[Param::LeaveStepSpeed]
+            } else {
+                self.vel.y + gravity
+            }
+            .min(physics[Param::MaxFallSpeed]);
         }
         let hold = self.jump_hold;
         let feet = self.pos.y;
@@ -892,8 +946,12 @@ impl Player {
             };
             if self.follow_ground(level, x, events) && drop > Fixed::ZERO {
                 // There's no ground within a step below, so the drop
-                // can't land.
-                self.vel.y = drop;
+                // can't land. A jump waiting to take off drops under its
+                // own gravity instead of `fall_gravity`.
+                self.vel.y = match waiting_gravity {
+                    Some(gravity) => drop - physics[Param::FallGravity] + gravity,
+                    None => drop,
+                };
                 self.move_vertically(level, moved, Fixed::ZERO, slope > Fixed::ZERO, events);
                 self.vel.y = physics[Param::LeaveFallSpeed];
             }
@@ -925,9 +983,33 @@ impl Player {
             && columns::layer(level, columns::column(self.pos.x), self.pos.y)
                 .is_some_and(|p| self.inside || feet > p.bottom);
 
+        let leaving = events.contains(&Event::LeaveGround);
+        if leaving && facing_wait > 0 && self.facing != start_facing {
+            // Facing doesn't change on the leave frame.
+            self.facing = start_facing;
+            events.retain(|&e| e != Event::Turn);
+        }
+        if events.contains(&Event::JumpStart) && crouch_in_air {
+            // Taking off ends a crouch.
+            self.crouch.held = 0;
+            self.crouch.rising = 0;
+        }
+        // Leaving the ground without crouching, or ending a crouch in that
+        // fall, starts the fall proper on the next frame.
+        let crouched_fall = crouch_in_air && self.crouch.held > 0;
+        let starts_fall = !self.grounded()
+            && ((leaving && !crouched_fall) || (airborne && self.walked_off && crouch_ends));
+        if starts_fall {
+            self.fall_step = physics[Param::LeaveStepSpeed] > Fixed::ZERO;
+            self.fall_facing = facing_wait.saturating_sub(1);
+        }
+
         self.coyote = if self.grounded() {
             None
-        } else if events.contains(&Event::LeaveGround) {
+        } else if crouched_fall {
+            // A jump can start while crouching in the air.
+            Some(0)
+        } else if leaving {
             Some(1)
         } else {
             self.coyote.map(|n| n.saturating_add(1))
