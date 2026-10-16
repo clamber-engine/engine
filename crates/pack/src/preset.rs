@@ -400,6 +400,8 @@ mod tests {
                     | Param::BounceBelow
                     | Param::BounceMaxRise
                     | Param::FaceSlope
+                    | Param::SlopeLandingReach
+                    | Param::SlopePiece
                     | Param::FaceSpeed
                     | Param::FaceExit
                     | Param::StartRiseAhead

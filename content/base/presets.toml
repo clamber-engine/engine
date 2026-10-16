@@ -25,6 +25,8 @@ held_jump_gravity = 0
 held_gravity_until_top = 0
 max_fall_speed = 15
 landing_reach = 0
+slope_landing_reach = 0
+slope_piece = 0
 leave_drop = 0
 leave_fall_speed = 0
 walk_off_keeps_facing = 0
@@ -655,6 +657,9 @@ roll_air_lengthen = 28
 roll_hover = 12
 roll_jump_held_gravity = 1
 roll_air_stop_wait = 1
+face_slope = 3
+slope_landing_reach = 3
+slope_piece = 16
 
 [presets.classic-3]
 label = "Classic 3"

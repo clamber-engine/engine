@@ -92,12 +92,12 @@ fn placeholder_presets_warn() {
         "the `classic-2` preset is a placeholder and its values may change"
     );
     // Only some of it is filled in so far, such as its jump timing,
-    // gravity, speeds, turns and rolls; the rest, such as steep faces, is
-    // Default's.
+    // gravity, speeds, turns, rolls and slopes; the rest, such as
+    // knock-out, is Default's.
     let default = Presets::builtin().world("default").unwrap();
     assert_eq!(
-        selection.feel.world[Param::FaceSlope],
-        default[Param::FaceSlope]
+        selection.feel.world[Param::KnockoutJump],
+        default[Param::KnockoutJump]
     );
     assert_ne!(
         selection.feel.world[Param::Gravity],

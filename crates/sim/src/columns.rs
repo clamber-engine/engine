@@ -76,6 +76,21 @@ pub(crate) fn floor_in_air(level: &Level, column: i64, feet: Fixed) -> Option<Fl
         })
 }
 
+/// Whether `column` is in a sloped piece of ground: of the runs of
+/// `piece` columns from x = 0, one where the floor, as seen by a body
+/// with its feet at `feet`, climbs or falls between two neighbouring
+/// columns by no more than `slope`.
+pub(crate) fn sloped(level: &Level, column: i64, feet: Fixed, slope: Fixed, piece: i64) -> bool {
+    let first = column.div_euclid(piece) * piece;
+    let floors: Vec<_> = (first..first + piece)
+        .map(|c| floor(level, c, feet).map(|f| f.y))
+        .collect();
+    floors.windows(2).any(|w| match w {
+        [Some(a), Some(b)] => a != b && (*a - *b).abs() <= slope,
+        _ => false,
+    })
+}
+
 /// Where the ground is under the middle of `column`, from the top down.
 pub(crate) fn spans(level: &Level, column: i64) -> Vec<Span> {
     level.collision.spans(middle(column))

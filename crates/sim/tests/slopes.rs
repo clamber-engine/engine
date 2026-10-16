@@ -1,12 +1,13 @@
-//! 1-in-4 slopes on the `classic-1` preset, from the examples in
-//! `spec/behavior/slopes.md`. Heights in the spec are below the flat
-//! floor at its left; here that floor is at y = 300.
+//! Slopes from `spec/behavior/slopes.md`: 1-in-4 slopes on the
+//! `classic-1` preset, and "In `title-2`" on `classic-2`. Heights in the
+//! spec are below the flat floor at its left; here that floor is at
+//! y = 300.
 
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
-use clamber_sim::{Event, Facing, Fixed, InputFrame, World, generic_feel, step};
+use clamber_sim::{Event, Facing, Fixed, InputFrame, State, World, generic_feel, step};
 
 const FLOOR: i32 = 300;
 
@@ -36,24 +37,26 @@ fn flat() -> World {
     ground(|_| 0, 94.26953125)
 }
 
-/// A level whose floor in column `c` is `height(c)` px below y = 300,
-/// with the player standing at `x`.
+/// A `classic-1` level whose floor in column `c` is `height(c)` px below
+/// y = 300, with the player standing at `x`.
 fn ground(height: impl Fn(i32) -> i32, x: f64) -> World {
-    let mut points: Vec<[i32; 2]> = (0..600)
+    ground_on("classic-1", 600, height, x)
+}
+
+/// The same on `preset`, with columns 0 to `width` - 1.
+fn ground_on(preset: &str, width: i32, height: impl Fn(i32) -> i32, x: f64) -> World {
+    let mut points: Vec<[i32; 2]> = (0..width)
         .flat_map(|c| [[c, FLOOR + height(c)], [c + 1, FLOOR + height(c)]])
         .collect();
-    points.extend([[600, 580], [0, 580]]);
+    points.extend([[width, 580], [0, 580]]);
     points.dedup();
     let src = format!(
-        "format = 1\nname = \"slopes\"\nsize = [600, 600]\nstart = [{x}, {}]\n\
+        "format = 1\nname = \"slopes\"\nsize = [{width}, 600]\nstart = [{x}, {}]\n\
          [[collision]]\nshape = \"polygon\"\npoints = {points:?}\n",
         FLOOR + height(x as i32)
     );
     let level = Level::from_toml_str(&src, "slopes").unwrap();
-    let mut world = World::new(
-        Arc::new(level),
-        Arc::new(generic_feel("classic-1").unwrap()),
-    );
+    let mut world = World::new(Arc::new(level), Arc::new(generic_feel(preset).unwrap()));
     world.player.pos.x = fx(x);
     world
 }
@@ -296,4 +299,244 @@ fn standing_still_on_a_slope_stays_put() {
             assert_eq!(row(&world), (fx(110.0), Fixed::from_int(3), 0, 0, true));
         }
     }
+}
+
+/// The synthetic floor of "Examples (`title-2`)": columns 0 to 15 flat
+/// at 0, then two sloped pieces going down 1 px every 2 columns to the
+/// right (16 to 47), then flat at 16.
+fn height_2(c: i32) -> i32 {
+    match c {
+        ..16 => 0,
+        16..48 => (c - 16) / 2,
+        _ => 16,
+    }
+}
+
+/// A `classic-2` level with the floor of [`height_2`], with the player
+/// standing at `x`.
+fn slope_2(x: f64) -> World {
+    ground_on("classic-2", 600, height_2, x)
+}
+
+/// `y` below the flat floor at the left, as in the spec.
+fn below(world: &World) -> Fixed {
+    world.player.pos.y - Fixed::from_int(FLOOR)
+}
+
+/// 1/256 px.
+fn grain() -> Fixed {
+    Fixed::from_ratio_pow2(1, 8)
+}
+
+#[test]
+fn classic_2_walking_down_follows_the_floor_of_each_column() {
+    // "Examples (`title-2`)", "Walking down": right at 2.25 px per frame
+    // from `x` = 30.5, over a 1-in-2 slope.
+    let mut world = slope_2(30.5);
+    world.player.vel.x = fx(2.25);
+    let r = [Action::Right];
+    for (x, y) in [(32.75, 8), (35.0, 9), (37.25, 10), (39.5, 11)] {
+        press(&mut world, &r, &r);
+        assert_eq!(row(&world), (fx(x), Fixed::from_int(y), 576, 0, true));
+    }
+}
+
+/// Runs at `vx` from `x`, Action held with the direction since before,
+/// with jump pressed on G, the first frame, and held. Every frame up to
+/// T has `y` on the floor of its column. Gives `x`, `y` and `vy` on T
+/// and T + 1.
+fn classic_2_takeoff(x: f64, vx: f64) -> [(Fixed, Fixed, Fixed); 2] {
+    let mut world = slope_2(x);
+    let p = &mut world.player;
+    p.vel.x = fx(vx);
+    p.ran = true;
+    let dir = if vx < 0.0 {
+        p.facing = Facing::Left;
+        Action::Left
+    } else {
+        Action::Right
+    };
+    let run = [dir, Action::Action];
+    let jump = [dir, Action::Action, Action::Jump];
+    press(&mut world, &run, &jump);
+    for frame in ["G", "G + 1", "T"] {
+        if frame != "G" {
+            press(&mut world, &jump, &jump);
+        }
+        let column = world.player.pos.x.floor() as i32;
+        assert!(world.player.grounded(), "{frame}");
+        assert_eq!(below(&world), Fixed::from_int(height_2(column)), "{frame}");
+        assert_eq!(world.events.contains(&Event::JumpStart), frame == "T");
+    }
+    let t = (world.player.pos.x, below(&world), world.player.vel.y);
+    press(&mut world, &jump, &jump);
+    assert!(!world.player.grounded());
+    [t, (world.player.pos.x, below(&world), world.player.vel.y)]
+}
+
+#[test]
+fn classic_2_jump_takes_off_from_the_higher_floor() {
+    // "Jumping from a slope (`title-2`)" and "Examples (`title-2`)",
+    // "Taking off": T + 1 starts from the higher of `y` on T and the floor
+    // under T + 1's `x`.
+    let on = |x: f64, y: i32, vy: f64| (fx(x), Fixed::from_int(y), fx(vy));
+    let air = |x: f64, y: f64, vy: f64| (fx(x), fx(y), fx(vy));
+    // Downhill, from `y` on T.
+    assert_eq!(
+        classic_2_takeoff(25.875, 3.375),
+        [on(36.0, 10, -8.21875), air(39.375, 2.1328125, -7.8671875)]
+    );
+    // Uphill, from the floor under T + 1's `x`, 1 px higher than on T.
+    assert_eq!(
+        classic_2_takeoff(49.5, -3.375),
+        [on(39.375, 11, -8.21875), air(36.0, 2.1328125, -7.8671875)]
+    );
+}
+
+/// One frame falling at `vy` from `x` and `y` (below the flat floor at
+/// the left), moving right at 2.25 with Right held.
+fn classic_2_fall_from(x: f64, y: Fixed, vy: f64) -> World {
+    let mut world = slope_2(x);
+    let p = &mut world.player;
+    p.pos.y = y + Fixed::from_int(FLOOR);
+    p.vel.x = fx(2.25);
+    p.vel.y = fx(vy);
+    p.ground = None;
+    p.state = State::Fall;
+    let r = [Action::Right];
+    press(&mut world, &r, &r);
+    world
+}
+
+/// Whether that frame lands, and `y` after it.
+fn classic_2_falls(x: f64, y: Fixed, vy: f64) -> (bool, Fixed) {
+    let world = classic_2_fall_from(x, y, vy);
+    assert_eq!(world.player.grounded(), world.events.contains(&Event::Land));
+    (world.player.grounded(), below(&world))
+}
+
+#[test]
+fn classic_2_lands_within_3_px_of_a_sloped_piece() {
+    // "Landing (`title-2`)" and "Examples (`title-2`)", "Landing on a
+    // sloped piece": from 40.5 to 42.75 (floor 13), moving by 8 to 12.
+    let int = Fixed::from_int;
+    assert_eq!(classic_2_falls(40.5, int(4), 8.0), (true, int(13)));
+    // Exactly 3 px above lands; 1/256 px short of it doesn't.
+    assert_eq!(classic_2_falls(40.5, int(2), 8.0), (true, int(13)));
+    assert_eq!(
+        classic_2_falls(40.5, int(2) - grain(), 8.0),
+        (false, int(10) - grain())
+    );
+    // The first columns of a slope, still at the flat floor's height,
+    // belong to a sloped piece: from 14.5 to 16.75 (floor 0), moving by 8
+    // to 3 px above it.
+    assert_eq!(classic_2_falls(14.5, int(-11), 8.0), (true, int(0)));
+}
+
+#[test]
+fn classic_2_lands_only_on_reaching_a_flat_piece() {
+    // "Examples (`title-2`)", "Not landing on a flat piece": from 50.5 to
+    // 52.75 (floor 16), moving by 8 to 0.5 px above it, then landing on
+    // the next frame.
+    let int = Fixed::from_int;
+    let mut world = classic_2_fall_from(50.5, fx(7.5), 8.0);
+    assert_eq!((world.player.grounded(), below(&world)), (false, fx(15.5)));
+    let r = [Action::Right];
+    press(&mut world, &r, &r);
+    assert!(world.events.contains(&Event::Land));
+    assert_eq!(row(&world), (fx(55.0), int(16), 576, 0, true));
+    // Reaching the floor exactly lands; 1/256 px short of it doesn't.
+    assert_eq!(classic_2_falls(50.5, int(8), 8.0), (true, int(16)));
+    assert_eq!(
+        classic_2_falls(50.5, int(8) - grain(), 8.0),
+        (false, int(16) - grain())
+    );
+    // No margin on the first flat column after the slope: from 45.75 to
+    // 48 (floor 16), moving by 8 to 2 px above it.
+    assert_eq!(classic_2_falls(45.75, int(6), 8.0), (false, int(14)));
+}
+
+/// Hills of 16-column pieces, repeating every 128 columns: flat, two
+/// pieces down 1 px every 2 columns, flat, two up 1 px every 4 columns
+/// (the first columns still at the flat floor's height), one up 1 px
+/// every 2 columns and flat again.
+fn hills(c: i32) -> i32 {
+    let i = c.rem_euclid(16);
+    match c.rem_euclid(128) / 16 {
+        1 => i / 2,
+        2 => 8 + i / 2,
+        3 => 16,
+        4 => 16 - i / 4,
+        5 => 12 - i / 4,
+        6 => 8 - i / 2,
+        _ => 0,
+    }
+}
+
+#[test]
+fn classic_2_slopes_dont_change_horizontal_motion() {
+    // "Horizontal speed (`title-2`)": the same inputs on hills and on flat
+    // floor give the same `vx`, target, state and facing, and `vy`, on
+    // every frame up to the first one grounded on one floor and not on
+    // the other. "Grounded on a slope (`title-2`)": `y` is the floor of
+    // the column on each grounded frame.
+    use Action::{Action as Act, Down, Jump, Left, Right};
+    let choices: [&[Action]; 12] = [
+        &[],
+        &[Right],
+        &[Left],
+        &[Right, Act],
+        &[Left, Act],
+        &[Act],
+        &[Down],
+        &[Down, Right],
+        &[Right, Jump],
+        &[Left, Act, Jump],
+        &[Jump],
+        &[Right, Act, Jump],
+    ];
+    let mut seed = 0x2545_f491_u32;
+    let mut next = || {
+        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        seed >> 8
+    };
+    let (mut on_slope, mut rolling) = (0, 0);
+    for run in 0..80 {
+        let x = 320.0 + f64::from(run * 3) + 0.25 * f64::from(run % 4);
+        let mut on_hills = ground_on("classic-2", 768, hills, x);
+        let mut on_flat = ground_on("classic-2", 768, |_| 0, x);
+        let (mut previous, mut held): (&[Action], &[Action]) = (&[], &[]);
+        let mut left = 0;
+        for frame in 0..300 {
+            if left == 0 {
+                held = choices[next() as usize % choices.len()];
+                left = 1 + next() % 30;
+            }
+            left -= 1;
+            press(&mut on_hills, previous, held);
+            press(&mut on_flat, previous, held);
+            previous = held;
+            let (h, f) = (&on_hills.player, &on_flat.player);
+            // The ends of the level aren't part of this.
+            let inside = |x: Fixed| (64..704).contains(&x.floor());
+            if h.grounded() != f.grounded() || !inside(h.pos.x) || !inside(f.pos.x) {
+                break;
+            }
+            assert_eq!(
+                (h.vel.x, h.vel.y, h.target, h.state, h.facing),
+                (f.vel.x, f.vel.y, f.target, f.state, f.facing),
+                "run {run}, frame {frame}"
+            );
+            if h.grounded() {
+                let column = h.pos.x.floor() as i32;
+                let height = Fixed::from_int(hills(column));
+                assert_eq!(below(&on_hills), height, "run {run}, frame {frame}");
+                if !matches!(column.rem_euclid(128) / 16, 0 | 3 | 7) {
+                    on_slope += 1;
+                    rolling += usize::from(h.state == State::Roll);
+                }
+            }
+        }
+    }
+    assert!(on_slope > 2500 && rolling > 500, "{on_slope}, {rolling}");
 }

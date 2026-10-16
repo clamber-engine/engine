@@ -61,6 +61,16 @@ params! {
     /// A falling body lands when it ends a frame less than this far above
     /// the ground, and is placed on it. 0: only on reaching the ground.
     LandingReach => "landing_reach",
+    /// Above 0, with `face_slope` and `slope_piece`, a falling body whose
+    /// column is in a sloped piece of ground lands when it ends a frame
+    /// this far above the ground or less, and is placed on it. Elsewhere
+    /// `landing_reach` applies.
+    SlopeLandingReach => "slope_landing_reach",
+    /// The ground is made of pieces this many columns wide, the first
+    /// starting at x = 0. A piece is sloped if the floor climbs or falls
+    /// between two of its neighbouring columns, by no more than
+    /// `face_slope`. Whole columns. 0: no piece is sloped.
+    SlopePiece => "slope_piece",
     /// Above 0, how far a body that walks off the ground without jumping
     /// moves down on the frame it leaves, whatever is below; it ends that
     /// frame falling at `leave_fall_speed`. 0: it doesn't move down until

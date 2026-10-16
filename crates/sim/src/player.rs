@@ -439,13 +439,7 @@ impl Player {
         self.vel.y = (self.vel.y + gravity).min(physics[Param::KnockoutMaxFall]);
         let moved = self.move_horizontally(level, HALF_WIDTH, |_| true);
         let mut landed = Vec::new();
-        self.move_vertically(
-            level,
-            moved,
-            physics[Param::LandingReach],
-            false,
-            &mut landed,
-        );
+        self.move_vertically(level, moved, Reach::new(physics), false, &mut landed);
         if landed.is_empty() {
             return;
         }
@@ -1023,7 +1017,7 @@ impl Player {
                     Some(gravity) => drop - physics[Param::FallGravity] + gravity,
                     None => drop,
                 };
-                self.move_vertically(level, moved, Fixed::ZERO, slope > Fixed::ZERO, events);
+                self.move_vertically(level, moved, Reach::NONE, slope > Fixed::ZERO, events);
                 self.vel.y = physics[Param::LeaveFallSpeed];
             }
         } else {
@@ -1032,7 +1026,7 @@ impl Player {
                 self.move_vertically(
                     level,
                     moved,
-                    physics[Param::LandingReach],
+                    Reach::new(physics),
                     slope > Fixed::ZERO,
                     events,
                 );
@@ -1196,13 +1190,7 @@ impl Player {
         }
         self.vel.y = (self.vel.y + lost.gravity).min(physics[Param::MaxFallSpeed]);
         let moved = self.move_horizontally(level, HALF_WIDTH, |_| true);
-        self.move_vertically(
-            level,
-            moved,
-            physics[Param::LandingReach],
-            by_columns,
-            events,
-        );
+        self.move_vertically(level, moved, Reach::new(physics), by_columns, events);
         if self.grounded() && lost.landed.is_none() {
             lost.landed = Some(0);
         }
@@ -1836,15 +1824,15 @@ impl Player {
     }
 
     /// Moves up or down as far as the level allows, after moving `moved`
-    /// sideways. Falling, the body lands if it ends less than `reach`
-    /// above the ground. `by_columns`, rising is stopped by the feet, not
+    /// sideways. Falling, the body lands if it ends near enough the ground
+    /// for `reach`. `by_columns`, rising is stopped by the feet, not
     /// the head (see [`Player::rise_by_columns`]), and a fall that ends
     /// below a one-way platform's underside doesn't land on its top.
     fn move_vertically(
         &mut self,
         level: &Level,
         moved: Fixed,
-        reach: Fixed,
+        reach: Reach,
         by_columns: bool,
         events: &mut Vec<Event>,
     ) {
@@ -1878,7 +1866,7 @@ impl Player {
         let reach = if self.vel.y > Fixed::ZERO {
             reach
         } else {
-            Fixed::ZERO
+            Reach::NONE
         };
         let to = feet + self.vel.y;
         let spans = if by_columns {
@@ -1899,12 +1887,12 @@ impl Player {
         let ground = level.collision.sweep(
             from,
             Dir::Down,
-            above + self.vel.y + reach,
+            above + self.vel.y + reach.most(),
             (Fixed::ZERO, Fixed::ZERO),
             |hit| !hit.one_way || (hit.point.y >= feet && !below_underside(hit)),
         );
         match ground {
-            Some(hit) if hit.point.y <= to || hit.point.y - to < reach => {
+            Some(hit) if reach.lands(level, self.pos.x, hit.point.y, to) => {
                 self.land(hit.point.y, hit.collider, events);
             }
             _ => self.pos.y += self.vel.y,
@@ -1941,6 +1929,55 @@ impl Player {
         self.jump_hold = false;
         self.touched.push(collider);
         events.push(Event::Land);
+    }
+}
+
+/// How near the ground a falling body lands.
+#[derive(Clone, Copy, Debug)]
+struct Reach {
+    /// `landing_reach`.
+    flat: Fixed,
+    /// `slope_landing_reach`, over a column of a sloped piece.
+    sloped: Fixed,
+    /// `slope_piece`, in columns.
+    piece: i64,
+    /// `face_slope`.
+    slope: Fixed,
+}
+
+impl Reach {
+    /// Only on reaching the ground.
+    const NONE: Reach = Reach {
+        flat: Fixed::ZERO,
+        sloped: Fixed::ZERO,
+        piece: 0,
+        slope: Fixed::ZERO,
+    };
+
+    fn new(physics: &Physics) -> Reach {
+        Reach {
+            flat: physics[Param::LandingReach],
+            sloped: physics[Param::SlopeLandingReach],
+            piece: physics[Param::SlopePiece].floor(),
+            slope: physics[Param::FaceSlope],
+        }
+    }
+
+    /// The farthest above the ground it lands.
+    fn most(self) -> Fixed {
+        self.flat.max(self.sloped)
+    }
+
+    /// Whether a body at `x` that would end a frame with its feet at `to`
+    /// lands on ground at `ground`.
+    fn lands(self, level: &Level, x: Fixed, ground: Fixed, to: Fixed) -> bool {
+        let above = ground - to;
+        above <= Fixed::ZERO
+            || above < self.flat
+            || (above <= self.sloped
+                && self.piece > 0
+                && self.slope > Fixed::ZERO
+                && columns::sloped(level, columns::column(x), ground, self.slope, self.piece))
     }
 }
 
