@@ -14,7 +14,8 @@
 //! too.
 //!
 //! A pack's levels are in its [`LEVELS`] folder, in Clamber's level
-//! format, and its sprite sheets in [`SPRITES`]. [`installed`] lists the
+//! format, written by a [`LevelDecoder`], and its sprite sheets in
+//! [`SPRITES`]. [`installed`] lists the
 //! packs in a folder, and [`check_shareable`] refuses to let anything
 //! inside a personal import be exported or shared.
 //!
@@ -25,6 +26,7 @@ mod graphics;
 mod ground;
 mod image;
 mod installed;
+mod level;
 mod location;
 mod manifest;
 mod placements;
@@ -42,6 +44,7 @@ pub use graphics::{
 pub use ground::{Below, COLUMN_BANDS, Ground, Layout, Surface};
 pub use image::{COPIER_HEADER, Catalog, Image, Known, MAX_IMAGE_SIZE, Outcome, Sha256Hash};
 pub use installed::{Installed, check_shareable, installed};
+pub use level::{LevelDecoder, LevelParts};
 pub use location::{BANK_SIZE, Location};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements};

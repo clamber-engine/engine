@@ -336,7 +336,9 @@ name = "clamber-import"
 version = "0.1.0"
 dependencies = [
  "clamber-fixed",
+ "clamber-input",
  "clamber-level",
+ "clamber-sim",
  "clamber-sprite",
  "serde",
  "serde_json",
