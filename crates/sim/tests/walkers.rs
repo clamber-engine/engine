@@ -1,14 +1,15 @@
 //! Classic 2: walkers (spec/behavior/walker.md, "In `title-2`"), when
 //! they touch the player (walker-contact.md, "In `title-2`") and bouncing
-//! off them (bounce.md, "In `title-2`").
+//! off them (bounce.md, "In `title-2`"), and being knocked out by them
+//! (knock-out.md, "In `title-2`").
 
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_sim::{
-    Behavior, Event, Facing, Fixed, InputFrame, Phase, Stance, State, World, generic_feel, stance,
-    step,
+    Behavior, Event, Facing, Fixed, FlowEvent, InputFrame, Outcome, Phase, Stance, State, World,
+    generic_feel, stance, step,
 };
 
 /// The values `title-2` walkers have, with the contact ranges of
@@ -554,4 +555,170 @@ fn classic_2_stances_switch_inside_the_measured_frames() {
     let l = rows.iter().position(|r| r.2).expect("lands");
     assert!(rows[..l + 18].iter().all(|r| r.0 == Some(Stance::Air)));
     assert_eq!(rows[l + 18].0, Some(Stance::Standing));
+}
+
+/// One row of a knock-out: the player's position, speed, whether it's
+/// on the ground, its facing and state, the step's events and flow
+/// events, the pause after it, and the walker's `x`.
+type Row = (
+    Vec2,
+    Vec2,
+    bool,
+    Facing,
+    State,
+    Vec<Event>,
+    Vec<FlowEvent>,
+    u8,
+    Fixed,
+);
+
+/// Steps `w` `frames` times with `held` held throughout, recording rows.
+fn record(w: &mut World, frames: usize, held: Actions) -> Vec<Row> {
+    (0..frames)
+        .map(|_| {
+            once(w, held, held);
+            (
+                w.player.pos,
+                w.player.vel,
+                w.player.grounded(),
+                w.player.facing,
+                w.player.state,
+                w.events.clone(),
+                w.flow.events.clone(),
+                w.pause,
+                w.things[0].pos.x,
+            )
+        })
+        .collect()
+}
+
+/// A classic-2 player standing on flat floor facing `facing`, hurt by a
+/// walker heading left on the third frame (walker-contact.md, "Examples
+/// (`title-2`)"), then `frames` more frames holding `held`. Returns the
+/// rows and H's index.
+fn knocked_out(facing: Facing, frames: usize, held: Actions) -> (World, Vec<Row>, usize) {
+    let mut w = standing(76.5, &walker(900, "1", "left"), (101.875, 400.0), -1.0);
+    w.player.facing = facing;
+    let rows = record(&mut w, 3 + frames, held);
+    assert_eq!(rows[2].5.first(), Some(&Event::Hurt));
+    (w, rows, 2)
+}
+
+#[test]
+fn classic_2_knock_out_follows_the_example() {
+    let (w, rows, h) = knocked_out(Facing::Right, 191, Actions::NONE);
+    let at = rows[h].0;
+    let row = |k: usize| {
+        let r = &rows[h + k];
+        (r.0.x - at.x, r.0.y - at.y, r.1.x, r.1.y)
+    };
+    // On H the player stands where it stood, with the flight's speeds.
+    assert_eq!(at, Vec2::new(fx(76.5), fx(400.0)));
+    let table = [
+        (0, 0.0, 0.0, -1.0, -5.5),
+        (1, -1.0, -5.265625, -1.0, -5.265625),
+        (2, -2.0, -10.296875, -1.0, -5.03125),
+        (23, -23.0, -61.8125, -1.0, -0.109375),
+        (46, -46.0, 0.0, -1.0, 0.0),
+        (47, -47.0, 0.0, -1.0, 0.0),
+        (48, -48.0, 0.0, -1.0, -2.5),
+        (49, -48.875, -2.265625, -0.875, -2.265625),
+        (50, -49.640625, -4.296875, -0.765625, -2.03125),
+        (58, -53.22265625, -12.109375, -0.2734375, -0.15625),
+        (69, -54.79296875, 0.0, -0.07421875, 0.0),
+        (79, -55.24609375, 0.0, -0.02734375, 0.0),
+        (80, -55.24609375, 0.0, 0.0, 0.0),
+        (189, -55.24609375, 0.0, 0.0, 0.0),
+    ];
+    for (k, x, y, vx, vy) in table {
+        assert_eq!(row(k), (fx(x), fx(y), fx(vx), fx(vy)), "H + {k}");
+    }
+    // In the air from H + 1 to H + 45 and from the hop to H + 68; on the
+    // ground otherwise, landing on H + 46 and H + 69.
+    for k in 0..=189 {
+        let air = (1..=45).contains(&k) || (49..=68).contains(&k);
+        assert_eq!(rows[h + k].2, !air, "H + {k}");
+        assert_eq!(rows[h + k].3, Facing::Right, "H + {k}");
+        assert_eq!(rows[h + k].4, State::Hurt, "H + {k}");
+        let events: &[Event] = match k {
+            0 => &[Event::Hurt],
+            46 | 69 => &[Event::Land],
+            _ => &[],
+        };
+        assert_eq!(rows[h + k].5, events, "H + {k}");
+        assert!(rows[h + k].6.iter().all(|e| *e != FlowEvent::Respawn));
+    }
+    // vx is -7/256 on P + 31 and 0 from P + 32.
+    assert_eq!(row(48 + 31).2, speed(-7));
+    // The 6-frame pause comes between H + 1 and H + 2.
+    for (k, r) in rows.iter().enumerate() {
+        assert_eq!(r.7, if k == h + 1 { 6 } else { 0 }, "frame {k}");
+    }
+    // H + 189 is the last frame; the life is lost after it.
+    assert_eq!(rows[h + 190].6, [FlowEvent::Respawn]);
+    assert_eq!(w.flow.outcome, Outcome::Playing);
+    assert_eq!(w.player.knockout, None);
+}
+
+#[test]
+fn classic_2_walkers_hold_on_h_plus_1_and_catch_up() {
+    let (_, rows, h) = knocked_out(Facing::Right, 4, Actions::NONE);
+    let x = |k: usize| rows[h + k].8;
+    // It moves on H, not on H + 1, and by H + 2 it's where it would have
+    // been with no stop; then 1 px a frame.
+    assert_eq!(x(0), rows[h - 1].8 - fx(1.0));
+    assert_eq!(x(1), x(0));
+    assert_eq!(x(2), x(0) - fx(2.0));
+    assert_eq!(x(3), x(0) - fx(3.0));
+}
+
+#[test]
+fn classic_2_knock_out_faces_right_and_flies_left_from_either_facing() {
+    let (_, right, h) = knocked_out(Facing::Right, 60, Actions::NONE);
+    let (_, left, _) = knocked_out(Facing::Left, 60, Actions::NONE);
+    // Facing left on H - 1, H is a turn; otherwise the same.
+    assert_eq!(left[h].5, [Event::Hurt, Event::Turn]);
+    assert_eq!(left[h].3, Facing::Right);
+    for k in 0..=60 {
+        assert_eq!(left[h + k].0, right[h + k].0, "H + {k}");
+        assert_eq!(left[h + k].1, right[h + k].1, "H + {k}");
+    }
+}
+
+#[test]
+fn classic_2_knock_out_ignores_input() {
+    let (_, still, h) = knocked_out(Facing::Right, 191, Actions::NONE);
+    for held in [
+        Actions::from(Action::Right),
+        Actions::from(Action::Left) | Actions::from(Action::Jump),
+        Actions::from(Action::Action) | Actions::from(Action::Down),
+    ] {
+        let mut w = standing(76.5, &walker(900, "1", "left"), (101.875, 400.0), -1.0);
+        let mut rows = record(&mut w, 3, Actions::NONE);
+        rows.extend(record(&mut w, 191, held));
+        for k in 0..=190 {
+            assert_eq!(rows[h + k].0, still[h + k].0, "H + {k}, {held:?}");
+            assert_eq!(rows[h + k].5, still[h + k].5, "H + {k}, {held:?}");
+        }
+    }
+}
+
+#[test]
+fn classic_2_a_late_landing_hops_on_landing_and_lasts_to_p_plus_140() {
+    // knock-out.md, "The hop (`title-2`)": still in the air on H + 48,
+    // the hop comes on the landing frame, and the last frame is P + 140.
+    let (mut w, mut rows, h) = knocked_out(Facing::Right, 20, Actions::NONE);
+    w.player.pos.y -= fx(96.0);
+    rows.extend(record(&mut w, 300, Actions::NONE));
+    let p = (h + 48..rows.len()).find(|&i| rows[i].2).expect("lands");
+    assert!(p > h + 50, "P = H + {}", p - h);
+    assert_eq!(rows[p].5, [Event::Land]);
+    assert_eq!(rows[p].1.y, fx(-2.5));
+    assert!(!rows[p + 1].2);
+    assert_eq!(rows[p + 1].1.x, fx(-0.875));
+    let respawn = rows
+        .iter()
+        .position(|r| r.6.contains(&FlowEvent::Respawn))
+        .expect("comes back");
+    assert_eq!(respawn, p + 141);
 }

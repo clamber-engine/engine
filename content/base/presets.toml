@@ -143,6 +143,13 @@ knockout_pause_after = 0
 knockout_rebound_1 = 0
 knockout_rebound_2 = 0
 knockout_rest = 0
+knockout_gravity = 0
+knockout_with_enemy = 0
+knockout_enemy_wait = 0
+knockout_hop_at = 0
+knockout_hop = 0
+knockout_hop_slowing = 0
+knockout_time = 0
 swap_moves = 0
 swap_wait = 0
 swap_jump_wait = 0
@@ -622,6 +629,14 @@ ground_action_time = 0
 # table (walker-contact.md, "In `title-2`") read the player's stance:
 # standing at 0.125 px per frame or slower and running above 2.5 are
 # the engine's choices, inside the frames the spec saw the switches on.
+# Hurt alone (knock-out.md, "In `title-2`"), the player moves as usual on
+# the hit frame, then leaves at 5.5 up and 1 back, facing the other way,
+# under gravity 0.234375 up to 8; the game pauses 6 frames after H + 1,
+# and walkers hold still on H + 1 and catch up. Landing, it slides on;
+# from H + 48, on the ground, it hops at 2.5 and slows by an eighth each
+# frame, and it's gone after H + 189 or P + 140, whichever is later.
+# The spec only saw walkers heading left knock the player left; going
+# with the walker's heading is the engine's choice.
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."
@@ -700,6 +715,20 @@ bounce_freeze = 2
 bounce_holds_walkers = 1
 stance_stand_speed = 0.125
 stance_run_speed = 2.5
+knockout_jump = 5.5
+knockout_speed = 1
+knockout_max_fall = 8
+knockout_hold = 0
+knockout_pause = 6
+knockout_pause_after = 2
+knockout_rest = 141
+knockout_gravity = 0.234375
+knockout_with_enemy = 1
+knockout_enemy_wait = 1
+knockout_hop_at = 48
+knockout_hop = 2.5
+knockout_hop_slowing = 0.125
+knockout_time = 190
 
 [presets.classic-3]
 label = "Classic 3"

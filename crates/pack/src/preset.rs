@@ -431,6 +431,13 @@ mod tests {
                     | Param::KnockoutRebound1
                     | Param::KnockoutRebound2
                     | Param::KnockoutRest
+                    | Param::KnockoutGravity
+                    | Param::KnockoutWithEnemy
+                    | Param::KnockoutEnemyWait
+                    | Param::KnockoutHopAt
+                    | Param::KnockoutHop
+                    | Param::KnockoutHopSlowing
+                    | Param::KnockoutTime
                     | Param::SwapMoves
                     | Param::SwapWait
                     | Param::SwapJumpWait

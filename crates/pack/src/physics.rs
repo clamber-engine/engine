@@ -521,7 +521,9 @@ params! {
     KnockoutMaxFall => "knockout_max_fall",
     /// Frames a knocked-out player holds still, counting the hit frame,
     /// before the flight. Enemies other than the one that hurt the player
-    /// hold still on the same frames, after the hit frame. Whole frames.
+    /// hold still on the same frames, after the hit frame. 0: the hit
+    /// frame moves as any other, the flight's speeds are set at its end,
+    /// and the flight starts on the next frame. Whole frames.
     KnockoutHold => "knockout_hold",
     /// Above 0, the whole game stands still this many frames during a
     /// knock-out: nothing moves or changes on screen. Pause frames aren't
@@ -536,8 +538,36 @@ params! {
     /// The same on its second landing.
     KnockoutRebound2 => "knockout_rebound_2",
     /// Frames the player lies still, counting the landing that stops the
-    /// flight, before the life is lost. Whole frames.
+    /// flight, before the life is lost. With a hop (`knockout_hop_at`),
+    /// the knock-out goes on at least this many frames counting the
+    /// hop's. Whole frames.
     KnockoutRest => "knockout_rest",
+    /// Above 0, the knock-out flight falls under this instead of
+    /// `gravity` and `fall_gravity`.
+    KnockoutGravity => "knockout_gravity",
+    /// Above 0, a player knocked out by an enemy flies the way the enemy
+    /// is heading and faces the other way. 0, or hurt by something else:
+    /// away from the way it faces.
+    KnockoutWithEnemy => "knockout_with_enemy",
+    /// Above 0, every enemy holds still this many frames after the hit
+    /// frame, then makes up the moves it missed on the next one. Whole
+    /// frames.
+    KnockoutEnemyWait => "knockout_enemy_wait",
+    /// Above 0, the knock-out has a hop instead of rebounds: the flight
+    /// doesn't stop on landing but slides on along the ground, and the
+    /// first frame from this many after the hit frame on which the
+    /// player is on the ground, it leaves at `knockout_hop`. Whole
+    /// frames.
+    KnockoutHopAt => "knockout_hop_at",
+    /// The upward speed of the knock-out's hop.
+    KnockoutHop => "knockout_hop",
+    /// After the hop, the horizontal speed moves toward 0 by this share
+    /// of itself each frame, rounded toward 0 to a whole grain; once that
+    /// rounds to nothing, it's 0.
+    KnockoutHopSlowing => "knockout_hop_slowing",
+    /// With a hop, the knock-out goes on at least this many frames,
+    /// counting the hit frame. Whole frames.
+    KnockoutTime => "knockout_time",
     /// Above 0, with more than one character in the roster, the next one
     /// is in the level with the player, and a swap press trades places
     /// with it: both hold still, then each moves to where the other

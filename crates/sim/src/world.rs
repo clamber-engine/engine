@@ -653,8 +653,10 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
                 }
                 None => out.push(0),
             }
-            out.extend([k.frame, k.landings]);
+            out.extend(k.frame.to_le_bytes());
+            out.push(k.landings);
             out.push(k.rest.map_or(0, |n| n.saturating_add(1)));
+            out.extend(k.hop.map_or(0, |n| n.saturating_add(1)).to_le_bytes());
         }
         None => out.push(0),
     }
@@ -734,6 +736,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
     if !frozen && follow::due(world) == Some(true) {
         follow::update(world, Lead::of(&world.player));
     }
+    let facing = world.player.facing;
     if world.player.knockout.is_some() {
         world
             .player
@@ -763,8 +766,8 @@ pub fn step(world: &mut World, input: &InputFrame) {
                 &mut world.events,
             );
         }
-        things::update(world, previous_feet, frozen);
-        flow::update(world, hurt_by);
+        let hurt_now = things::update(world, previous_feet, frozen);
+        flow::update(world, hurt_by.or(hurt_now), facing);
         ending::pass(world, &input.players[0]);
     }
     if !frozen && follow::due(world) == Some(false) {

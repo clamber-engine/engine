@@ -28,7 +28,7 @@ use clamber_pack::Param;
 
 use crate::collect::{self, Release};
 use crate::loss;
-use crate::player::{Knockout, Player, State, frames};
+use crate::player::{Facing, Knockout, Player, State, frames};
 use crate::swap::Other;
 use crate::world::{Event, World};
 
@@ -184,9 +184,9 @@ pub(crate) fn dying(world: &mut World) -> bool {
 }
 
 /// Applies what the player touched during the step just taken.
-/// `hurt_by` is the enemy that hurt the player on this step, if one did
-/// from the step before.
-pub(crate) fn update(world: &mut World, hurt_by: Option<usize>) {
+/// `hurt_by` is the enemy that hurt the player on this step, if one did;
+/// `facing` is the way the player faced before it.
+pub(crate) fn update(world: &mut World, hurt_by: Option<usize>, facing: Facing) {
     let knockout = world.player_physics()[Param::KnockoutJump] > Fixed::ZERO;
     let life = u32::try_from(world.feel.world[Param::CountLife].floor()).unwrap_or(0);
     let level = &world.level;
@@ -264,5 +264,19 @@ pub(crate) fn update(world: &mut World, hurt_by: Option<usize>) {
         // The life is lost on the step after the knock-out's last.
         world.player.knockout = Some(Knockout::new(hurt_by));
         flow.outcome = Outcome::Dying(1);
+        let physics = world.player_physics();
+        if physics[Param::KnockoutHold] == Fixed::ZERO {
+            // The hit frame moved as any other; the flight starts on the
+            // next. Facing changes only from the way it faced before.
+            let toward = hurt_by
+                .filter(|_| physics[Param::KnockoutWithEnemy] > Fixed::ZERO)
+                .and_then(|i| world.things.get(i))
+                .map(|t| t.heading);
+            world.player.knock(&physics, toward);
+            world.events.retain(|&e| e != Event::Turn);
+            if world.player.facing != facing {
+                world.events.push(Event::Turn);
+            }
+        }
     }
 }

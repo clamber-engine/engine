@@ -76,8 +76,9 @@ pub const LAUNCH_REST: u8 = 20;
 
 /// Moves every thing one step, then applies what the player touched.
 /// `previous_feet` is the player's `pos.y` before this step; `frozen`
-/// says the player was held still on it.
-pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
+/// says the player was held still on it. Returns the walker with a
+/// contact table that hurt the player on this step, if one did.
+pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> Option<usize> {
     let physics = world.player_physics();
     pose::note(&mut world.player, &world.events, &physics);
     let boxes = physics[Param::BounceWidth] > Fixed::ZERO;
@@ -98,6 +99,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     // Walkers with a contact table decide for themselves, on the frames
     // the player moves.
     let holds_walkers = physics[Param::BounceHoldsWalkers] > Fixed::ZERO;
+    let mut hurt_by = None;
     if !frozen && !knocked(world) {
         match walker_contact(world, &physics) {
             Some((index, true)) => {
@@ -115,7 +117,10 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
                     bounced.push(index);
                 }
             }
-            Some((_, false)) => world.events.push(Event::Hurt),
+            Some((index, false)) => {
+                world.events.push(Event::Hurt);
+                hurt_by = Some(index);
+            }
             None => {}
         }
     }
@@ -137,19 +142,25 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     let held_by_bounce = holds_walkers && frozen && world.player.state == State::Bounce;
     // Enemies hold still while a knocked-out player does, after the hit
     // frame, except the one that hurt it.
-    let hold = frames(physics[Param::KnockoutHold]);
+    let hold = u16::from(frames(physics[Param::KnockoutHold]));
     let held = world
         .player
         .knockout
         .filter(|k| k.frame >= 1 && k.frame < hold)
         .map(|k| k.by);
+    // With `knockout_enemy_wait`, every enemy holds still for that many
+    // frames after the hit frame, and makes up for them on the next.
+    let wait = u16::from(frames(physics[Param::KnockoutEnemyWait]));
+    let knockout_frame = world.player.knockout.map(|k| k.frame);
+    let waiting = wait > 0 && knockout_frame.is_some_and(|f| f >= 1 && f <= wait);
+    let catch_up = wait > 0 && knockout_frame == Some(wait + 1);
     throwers::throw(world);
     // Balls leave by where the view was at the start of the step.
     let picture = world.view.map(|v| Picture::of(v, &physics));
     let mut freed = Vec::new();
     for thing in world.things.iter_mut().filter(|t| t.active) {
         let enemy = thing.archetype.is_some_and(|a| a.behavior.is_enemy());
-        if held.is_some_and(|by| enemy && by != Some(thing.index)) {
+        if held.is_some_and(|by| enemy && by != Some(thing.index)) || (waiting && enemy) {
             continue;
         }
         if paused && thing.archetype.is_some_and(|a| a.behavior.fall().is_some()) {
@@ -158,8 +169,11 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
         if held_by_bounce && thing.archetype.is_some_and(|a| a.behavior.is_walker()) {
             continue;
         }
-        if advance(&world.level, thing, &physics, picture) {
-            freed.push(thing.pos);
+        let moves = if catch_up && enemy { wait + 1 } else { 1 };
+        for _ in 0..moves {
+            if advance(&world.level, thing, &physics, picture) {
+                freed.push(thing.pos);
+            }
         }
     }
     freed.extend(throw_hits(world));
@@ -200,7 +214,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
         world.player.frozen = pause;
     }
     if knocked(world) {
-        return;
+        return hurt_by;
     }
     interact(
         world,
@@ -224,6 +238,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
         };
         world.player.hurt_ahead = walker.or_else(|| throwers::hurt_ahead(world));
     }
+    hurt_by
 }
 
 /// Moves a thing one step. Returns whether it was an object holding the

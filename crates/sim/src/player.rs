@@ -407,7 +407,13 @@ impl Player {
             return;
         };
         knockout.frame = knockout.frame.saturating_add(1);
-        let hold = frames(physics[Param::KnockoutHold]);
+        if physics[Param::KnockoutHopAt] > Fixed::ZERO {
+            let over = self.slide_knocked_out(level, physics, &mut knockout, events);
+            let over = over || self.body().1 > level.size.y;
+            self.knockout = (!over).then_some(knockout);
+            return;
+        }
+        let hold = u16::from(frames(physics[Param::KnockoutHold]));
         if let Some(left) = knockout.rest {
             knockout.rest = Some(left.saturating_sub(1));
         } else if knockout.frame >= hold {
@@ -424,6 +430,109 @@ impl Player {
         }
         let over = knockout.rest == Some(0) || self.body().1 > level.size.y;
         self.knockout = (!over).then_some(knockout);
+    }
+
+    /// Sends a player hurt on this step flying at the knock-out's speeds
+    /// at the end of it (`knockout_hold` 0), back from the way it faces
+    /// or, if given, the way `toward`, and then facing the other way.
+    pub fn knock(&mut self, physics: &Physics, toward: Option<Facing>) {
+        self.frozen = 0;
+        self.takeoff = false;
+        self.takeoff_wait = None;
+        self.end_roll();
+        self.ground_action = None;
+        self.turn = None;
+        self.hop = None;
+        self.coyote = None;
+        self.jump_age = None;
+        self.jump_hold = false;
+        self.walked_off = false;
+        self.fall_step = false;
+        self.fall_facing = 0;
+        let back = match toward {
+            Some(way) => way,
+            None => match self.facing {
+                Facing::Left => Facing::Right,
+                Facing::Right => Facing::Left,
+            },
+        };
+        let speed = physics[Param::KnockoutSpeed];
+        self.vel.x = match back {
+            Facing::Left => -speed,
+            Facing::Right => speed,
+        };
+        self.vel.y = -physics[Param::KnockoutJump];
+        if toward.is_some() {
+            self.facing = match back {
+                Facing::Left => Facing::Right,
+                Facing::Right => Facing::Left,
+            };
+        }
+    }
+
+    /// One frame of a knock-out with a hop (`knockout_hop_at`): flying,
+    /// sliding along the ground once landed, then the hop, which slows
+    /// down to a stop. Only landings are events. Returns whether the
+    /// knock-out is over after this frame.
+    fn slide_knocked_out(
+        &mut self,
+        level: &Level,
+        physics: &Physics,
+        knockout: &mut Knockout,
+        events: &mut Vec<Event>,
+    ) -> bool {
+        if knockout.hop.is_some() {
+            self.vel.x = ease(self.vel.x, Fixed::ZERO, physics[Param::KnockoutHopSlowing]);
+        }
+        if self.vel.y.is_negative() {
+            // Leaving the ground, as on a jump's first airborne frame.
+            self.ground = None;
+        }
+        let slope = physics[Param::FaceSlope];
+        let by_columns = slope > Fixed::ZERO;
+        let mut moves = Vec::new();
+        if self.grounded() {
+            let (x, below) = if by_columns {
+                self.move_by_columns(level, slope, None);
+                let below = match physics[Param::FollowDrop] {
+                    d if d > Fixed::ZERO => d,
+                    _ => STEP,
+                };
+                (columns::middle(columns::column(self.pos.x)), below)
+            } else {
+                self.move_horizontally(level, HALF_WIDTH, |_| true);
+                (self.pos.x, STEP)
+            };
+            self.follow_ground(level, x, below, &mut moves);
+        } else {
+            let gravity = match physics[Param::KnockoutGravity] {
+                g if g > Fixed::ZERO => g,
+                _ if self.vel.y.is_negative() => physics[Param::Gravity],
+                _ => physics[Param::FallGravity],
+            };
+            self.vel.y = (self.vel.y + gravity).min(physics[Param::KnockoutMaxFall]);
+            let moved = if by_columns {
+                self.move_in_air_by_columns(level, physics, &mut moves)
+            } else {
+                self.move_horizontally(level, HALF_WIDTH, |_| true)
+            };
+            if !self.grounded() {
+                self.move_vertically(level, moved, Reach::new(physics), by_columns, &mut moves);
+            }
+        }
+        events.extend(moves.into_iter().filter(|&e| e == Event::Land));
+        let hop_at = u16::from(frames(physics[Param::KnockoutHopAt]));
+        if knockout.hop.is_none() && knockout.frame >= hop_at && self.grounded() {
+            knockout.hop = Some(knockout.frame);
+            self.vel.y = -physics[Param::KnockoutHop];
+        }
+        let Some(hop) = knockout.hop else {
+            return false;
+        };
+        let rest = u16::from(frames(physics[Param::KnockoutRest]));
+        let time = u16::from(frames(physics[Param::KnockoutTime]));
+        let last = (hop + rest).max(time).saturating_sub(1);
+        knockout.frame >= last
     }
 
     /// One frame of the knock-out flight. The first two landings rebound
@@ -2130,12 +2239,14 @@ pub struct Knockout {
     /// The enemy that hurt the player, if it was one.
     pub by: Option<usize>,
     /// Frames since the hit frame, which is 0.
-    pub frame: u8,
+    pub frame: u16,
     /// Landings so far in the flight.
     pub landings: u8,
     /// Once the flight has stopped, how many more frames the player lies
     /// still.
     pub rest: Option<u8>,
+    /// The frame of the hop (`knockout_hop_at`), once it has come.
+    pub hop: Option<u16>,
 }
 
 impl Knockout {
@@ -2146,6 +2257,7 @@ impl Knockout {
             frame: 0,
             landings: 0,
             rest: None,
+            hop: None,
         }
     }
 }
