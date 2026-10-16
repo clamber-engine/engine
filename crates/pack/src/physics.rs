@@ -242,6 +242,18 @@ params! {
     /// started plus this much for each such boost in the chain of rolls.
     /// One boost per enemy defeated.
     RollBoost => "roll_boost",
+    /// Above 0, the ground action's length: an action press on the
+    /// ground with down held starts it, instead of a roll, and it lasts
+    /// this many frames counting the press frame. The speed starts from 0
+    /// and eases by `speed_response` toward `ground_action_speed` the way
+    /// held on the press frame, or toward 0 with neither or both held;
+    /// facing and other presses don't change it, and swaps are refused.
+    /// On the frame after, it's over but the speed stays as it was. A
+    /// jump press ends it early. 0: there's no ground action. Whole
+    /// frames.
+    GroundActionTime => "ground_action_time",
+    /// See `ground_action_time`. px/frame.
+    GroundActionSpeed => "ground_action_speed",
     /// Upward speed after an attack lands on something from above.
     BounceSpeed => "bounce_speed",
     /// For this many frames after a bounce the player doesn't move and
@@ -566,6 +578,18 @@ params! {
     /// A gap to where the view aims that's below the view by less than
     /// this counts as none. px.
     ViewSlackY => "view_slack_y",
+    /// Above 0, a ground action makes the view's top shake this many
+    /// times: it moves by an extra offset, first down by
+    /// `view_shake_size`, then alternately up and down, the size halving
+    /// after each pair. Whole times.
+    ViewShakeCount => "view_shake_count",
+    /// The first shake is this many frames after the ground action's
+    /// press frame. Whole frames.
+    ViewShakeDelay => "view_shake_delay",
+    /// The shakes are this many frames apart. Whole frames.
+    ViewShakePeriod => "view_shake_period",
+    /// See `view_shake_count`. px.
+    ViewShakeSize => "view_shake_size",
     /// A walker's start is near the view from this far left of the view's
     /// left edge. Whole px.
     AppearLeft => "appear_left",

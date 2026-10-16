@@ -48,8 +48,8 @@ pub use flow::{
 pub use follow::{Follow, Mode, Point, point as follow_point};
 pub use loss::{Loss, Lost};
 pub use player::{
-    Act, Boost, Crouch, Facing, Gait, HALF_WIDTH, HEIGHT, Hands, Knockout, Player, ROLL, Roll,
-    RollSize, SWAP_FRAMES, State, Stride,
+    Act, Boost, Crouch, Facing, Gait, GroundAction, HALF_WIDTH, HEIGHT, Hands, Knockout, Player,
+    ROLL, Roll, RollSize, SWAP_FRAMES, State, Stride,
 };
 pub use record::record;
 pub use script::{InputFrame, Script};

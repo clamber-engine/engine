@@ -396,6 +396,7 @@ impl World {
                 out.push(v.hold);
                 fixed(&mut out, v.top);
                 fixed(&mut out, v.gap);
+                out.push(v.shake.map_or(0, |n| n.saturating_add(1)));
             }
             None => out.push(0),
         }
@@ -499,6 +500,10 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     roll(out, p.roll);
     out.push(p.roll_stop);
     roll(out, p.stopped);
+    match p.ground_action {
+        Some(a) => out.extend([1, a.frame, a.dir as u8]),
+        None => out.push(0),
+    }
     match p.boost {
         Some(b) => out.extend([1, b.dir as u8, b.size as u8, b.boosts]),
         None => out.push(0),

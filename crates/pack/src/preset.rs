@@ -362,6 +362,8 @@ mod tests {
                     | Param::RollStopGuard
                     | Param::RollDefeatFreeze
                     | Param::RollBoost
+                    | Param::GroundActionTime
+                    | Param::GroundActionSpeed
                     | Param::BounceFreeze
                     | Param::BounceWidth
                     | Param::BounceOffset
@@ -452,6 +454,10 @@ mod tests {
                     | Param::ViewQuickFallBelow
                     | Param::ViewQuickFall
                     | Param::ViewSlackY
+                    | Param::ViewShakeCount
+                    | Param::ViewShakeDelay
+                    | Param::ViewShakePeriod
+                    | Param::ViewShakeSize
                     | Param::AppearLeft
                     | Param::AppearRight
                     | Param::RemoveLeft

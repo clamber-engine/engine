@@ -2,9 +2,9 @@
 //!
 //! Each step reads one [`Frame`] of input and moves through the states in
 //! [`State`]: standing, walking and running on the ground, rolling,
-//! jumping and falling, and swapping to the next roster character. What
-//! its hands are doing with an object ([`Hands`]) changes what the input
-//! does.
+//! jumping and falling, the ground action, and swapping to the next
+//! roster character. What its hands are doing with an object ([`Hands`])
+//! changes what the input does.
 //! Collision keeps the body on slopes and one-way platforms and stops it
 //! at walls and ceilings.
 //! With `face_slope`, a grounded body goes over the ground column by
@@ -74,6 +74,9 @@ pub enum State {
     Bounce,
     /// Hurt, and losing a life; control is suspended.
     Hurt,
+    /// In the ground action, started by down and action on the ground
+    /// (`ground_action_time` above 0).
+    GroundAction,
 }
 
 impl State {
@@ -88,6 +91,7 @@ impl State {
             State::Swap => "swap",
             State::Bounce => "bounce",
             State::Hurt => "hurt",
+            State::GroundAction => "ground_action",
         }
     }
 }
@@ -142,6 +146,8 @@ pub struct Player {
     pub roll_stop: u8,
     /// The timed roll whose stop this is, during a stop.
     pub stopped: Option<Roll>,
+    /// The ground action under way, if there is one.
+    pub ground_action: Option<GroundAction>,
     /// A boost waiting for action to be held, after a roll or its stop
     /// defeated an enemy (`roll_boost` above 0).
     pub boost: Option<Boost>,
@@ -215,6 +221,7 @@ impl Player {
             roll: None,
             roll_stop: 0,
             stopped: None,
+            ground_action: None,
             boost: None,
             roll_press: None,
             since_run: None,
@@ -257,6 +264,7 @@ impl Player {
             events.push(Event::RollEnd);
         }
         self.end_roll();
+        self.ground_action = None;
         self.vel = vel;
         self.ground = None;
         self.coyote = None;
@@ -278,6 +286,7 @@ impl Player {
         self.jump_hold = true;
         self.takeoff = false;
         self.end_roll();
+        self.ground_action = None;
         if !events.contains(&Event::Bounce) {
             events.push(Event::Bounce);
         }
@@ -291,6 +300,7 @@ impl Player {
         self.frozen = 0;
         self.takeoff = false;
         self.end_roll();
+        self.ground_action = None;
         self.turn = None;
         events.push(Event::Hurt);
     }
@@ -444,6 +454,17 @@ impl Player {
             self.coyote = None;
             self.state = State::Jump;
         }
+        // The ground action under way goes on to its next frame. Its frame
+        // after the last is over, but still moves by its rules.
+        let action_time = frames(physics[Param::GroundActionTime]);
+        let mut acting = self.ground_action.take().map(|a| GroundAction {
+            frame: a.frame.saturating_add(1),
+            ..a
+        });
+        if acting.is_some() {
+            // Nothing is picked up during it.
+            self.pick = None;
+        }
         let busy = self.use_hands(input, physics, events);
         if busy.no_jump {
             self.jump_buffer.take();
@@ -472,13 +493,14 @@ impl Player {
             self.remember_roll_press(input, physics);
             self.roll_after_throw(input, physics);
         }
-        if busy.no_roll {
+        if busy.no_roll || acting.is_some() {
             self.roll_press = None;
         }
 
         // With the other character in the level, swaps are the world's.
         if self.grounded()
             && self.state != State::Roll
+            && acting.is_none()
             && pressed(Action::Swap)
             && feel.roster.len() > 1
             && feel.world[Param::SwapMoves] == Fixed::ZERO
@@ -548,6 +570,28 @@ impl Player {
         if self.roll.is_some() && pressed(Action::Jump) {
             self.roll_jump = true;
         }
+        // So does one pressed during the ground action, which still moves
+        // by its rules on this frame.
+        let mut goes_on = acting.is_some_and(|a| a.frame < action_time) && !pressed(Action::Jump);
+        if acting.is_none()
+            && action_time > 0
+            && pressed(Action::Action)
+            && held(Action::Down)
+            && self.grounded()
+            && self.swap == 0
+            && !busy.no_roll
+            && self.roll.is_none()
+            && self.roll_stop == 0
+            && !events.contains(&Event::JumpStart)
+        {
+            // It goes the way held now, whatever the player was doing.
+            acting = Some(GroundAction {
+                frame: 0,
+                dir: held_dir,
+            });
+            goes_on = true;
+            self.vel.x = Fixed::ZERO;
+        }
 
         let roll_input = held(Action::Down)
             && held(Action::Action)
@@ -583,13 +627,20 @@ impl Player {
         }
         let rolling = self.state == State::Roll;
 
-        let crouching = self.crouch.update(
-            held(Action::Down) && !busy.no_crouch,
-            self.grounded() && !rolling,
-            frames(physics[Param::CrouchStart]),
-            frames(physics[Param::CrouchMin]),
-            frames(physics[Param::CrouchRecovery]),
-        );
+        // The ground action stands the player up, and down held during it
+        // only counts from the frame after it's over.
+        let crouching = if acting.is_some() {
+            self.crouch = Crouch::default();
+            false
+        } else {
+            self.crouch.update(
+                held(Action::Down) && !busy.no_crouch,
+                self.grounded() && !rolling,
+                frames(physics[Param::CrouchStart]),
+                frames(physics[Param::CrouchMin]),
+                frames(physics[Param::CrouchRecovery]),
+            )
+        };
 
         let turn_time = frames(physics[Param::TurnTime]);
         let slide = frames(physics[Param::RollStopSlide]);
@@ -598,12 +649,16 @@ impl Player {
         let striding = physics[Param::StrideSteps] >= Fixed::ONE
             && turn_time > 0
             && !busy.keep_facing
+            && acting.is_none()
             && self.grounded()
             && self.roll.is_none()
             && !rolling
             && self.roll_stop == 0;
         let turn_ends = self.turn.is_some_and(|n| n + 1 >= turn_time);
-        let facing = if let Some(mut roll) = self.roll {
+        let facing = if acting.is_some() {
+            self.turn = None;
+            self.facing
+        } else if let Some(mut roll) = self.roll {
             if !started {
                 roll.steer(dir, boosted, physics);
             }
@@ -660,7 +715,14 @@ impl Player {
         };
         let response = physics[Param::SpeedResponse];
         self.target = Fixed::ZERO;
-        self.vel.x = if let Some(roll) = self.roll {
+        self.vel.x = if let Some(action) = acting {
+            self.target = physics[Param::GroundActionSpeed] * Fixed::from_int(action.dir);
+            if action.frame < action_time {
+                ease(self.vel.x, self.target, response)
+            } else {
+                self.vel.x
+            }
+        } else if let Some(roll) = self.roll {
             if roll.still {
                 Fixed::ZERO
             } else {
@@ -815,7 +877,7 @@ impl Player {
         if timed {
             // Running frames before a roll make it fast; the roll's own
             // frames don't count.
-            if self.roll.is_none() {
+            if self.roll.is_none() && acting.is_none() {
                 if held(Action::Action) && run_dir != 0 {
                     self.lone_run = self.since_run != Some(1) && start_vx == Fixed::ZERO;
                     self.since_run = Some(0);
@@ -840,6 +902,8 @@ impl Player {
         if self.grounded() {
             self.hop = None;
         }
+        // Going off a ledge ends the ground action.
+        self.ground_action = acting.filter(|_| goes_on && self.grounded());
         self.state = self.next_state(held(Action::Action), events);
     }
 
@@ -1024,8 +1088,9 @@ impl Player {
                 .map(|(age, window, hold)| (age.saturating_add(1), window, hold))
         } else if !self.grounded() {
             Some((0, frames(physics[Param::RollAirBuffer]), true))
-        } else if held(Action::Down) {
-            // Down and action on the ground don't roll.
+        } else if held(Action::Down) && physics[Param::GroundActionTime] > Fixed::ZERO {
+            // Down and action on the ground start the ground action
+            // instead.
             None
         } else if self.roll.is_some() || self.roll_stop > 0 {
             Some((0, frames(physics[Param::RollBuffer]), false))
@@ -1273,6 +1338,8 @@ impl Player {
     fn next_state(&self, running: bool, events: &[Event]) -> State {
         if self.swap > 0 || self.hop.is_some() {
             State::Swap
+        } else if self.ground_action.is_some() {
+            State::GroundAction
         } else if self.state == State::Roll && !events.contains(&Event::RollEnd) {
             State::Roll
         } else if self.grounded() {
@@ -1635,6 +1702,16 @@ impl Knockout {
             rest: None,
         }
     }
+}
+
+/// The ground action under way. Enemies it runs into aren't knocked out
+/// yet: the spec doesn't say which, or when they're touched (#103).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct GroundAction {
+    /// Frames since its press frame, which is 0.
+    pub frame: u8,
+    /// The way it goes: -1, 0 or 1.
+    pub dir: i32,
 }
 
 /// A timed roll.

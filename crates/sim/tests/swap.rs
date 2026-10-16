@@ -336,6 +336,25 @@ fn down_or_action_pressed_with_swap_does_nothing() {
     assert!(rows.iter().all(|r| r.events.is_empty()));
 }
 
+/// Whether a swap press `after` frames after the press frame of a
+/// ground action in place starts a swap.
+fn swaps_after_ground_action(after: usize) -> bool {
+    let mut play = Play::flat();
+    assert_eq!(play.step(&[D, A]).state, State::GroundAction);
+    play.idle(after - 1);
+    play.step(&[S]).state == State::Swap
+}
+
+#[test]
+fn no_swap_during_the_ground_action() {
+    // spec/behavior/ground-action.md, "Inputs during the action": refused
+    // up to and including E = P + 59, possible from E + 1.
+    for after in [1, 30, 58, 59] {
+        assert!(!swaps_after_ground_action(after), "P + {after}");
+    }
+    assert!(swaps_after_ground_action(60));
+}
+
 #[test]
 fn heights_7_px_apart_swap_and_8_px_dont() {
     for (other, swaps) in [(392.0, false), (393.0, true), (407.0, true), (408.0, false)] {

@@ -77,6 +77,8 @@ roll_attack_stop = 0
 roll_stop_guard = 0
 roll_defeat_freeze = 0
 roll_boost = 0
+ground_action_time = 0
+ground_action_speed = 0
 bounce_speed = 6
 bounce_freeze = 0
 bounce_width = 0
@@ -168,6 +170,10 @@ view_quick_below = 0
 view_quick_fall_below = 0
 view_quick_fall = 0
 view_slack_y = 0
+view_shake_count = 0
+view_shake_delay = 0
+view_shake_period = 0
+view_shake_size = 0
 appear_left = 0
 appear_right = 0
 remove_left = 0
@@ -219,10 +225,9 @@ air_acceleration = 0.09375
 # protection (losing-a-character.md, protection.md), the other
 # character following (following.md), carrying
 # objects (carrying.md), the collectible count (collectibles.md;
-# the collectibles are archetypes.toml's `spark` and `cluster`), and the
+# the collectibles are archetypes.toml's `spark` and `cluster`), the
 # view and walkers appearing with it (view.md, view-vertical.md,
-# walker-view.md; not yet the ground action's shake, #100, or walker groups,
-# #99). Classic 1
+# walker-view.md), and the ground action (ground-action.md). Classic 1
 # is the bundled game's starting preset. Jump doesn't cut upward speed
 # when let go (`jump_release_speed` equals `jump_speed`); it ends the
 # lighter `held_jump_gravity` instead.
@@ -295,6 +300,10 @@ roll_attack_stop = 8
 roll_stop_guard = 11
 roll_defeat_freeze = 2
 roll_boost = 1
+# The first character's ground action (ground-action.md). The second
+# character has none (its Down + Action presses roll).
+ground_action_time = 59
+ground_action_speed = 3
 bounce_speed = 7.125
 bounce_freeze = 2
 bounce_width = 36
@@ -400,6 +409,13 @@ view_quick_below = 208
 view_quick_fall_below = 64
 view_quick_fall = 6
 view_slack_y = 0.125
+# The view's shake during the ground action (view-vertical.md). The spec
+# puts the first shake 25 to 28 frames after the press without saying
+# which; 26 is the engine's choice.
+view_shake_count = 22
+view_shake_delay = 26
+view_shake_period = 4
+view_shake_size = 4
 appear_left = 31
 appear_right = 32
 remove_left = 128
@@ -428,6 +444,7 @@ follow_lag = 0
 # The second character being hit isn't specified yet, so it's a hit with
 # one character, as before.
 lose_jump = 0
+ground_action_time = 0
 
 [presets.classic-2]
 label = "Classic 2"

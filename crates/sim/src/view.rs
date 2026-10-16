@@ -38,14 +38,19 @@
 //!   feet are low in the view, when they're fairly low and falling fast,
 //!   or where the camera rule says `quick`.
 //! - It holds still with the horizontal motion after a defeat.
+//! - With `view_shake_count` above 0, a ground action makes it shake:
+//!   from `view_shake_delay` frames after the press frame, every
+//!   `view_shake_period` frames, an offset is added to its top after it
+//!   has moved. The offsets alternate down and up, starting with
+//!   `view_shake_size` down and halving after each pair. The smoothed gap
+//!   isn't changed by them.
 //!
 //! The view starts, and starts again when the player comes back after
 //! losing a life, on its target for a player standing still. It isn't
 //! kept inside the level horizontally.
 //!
 //! The camera rule is chosen by the player's position, not just its `x`
-//! as the spec's list of limits is. The shake during a ground action
-//! isn't simulated: there's no ground action yet (#100).
+//! as the spec's list of limits is.
 
 use std::collections::{HashMap, HashSet};
 
@@ -83,6 +88,9 @@ pub struct View {
     pub top: Fixed,
     /// The gap from the top to where it aims, smoothed.
     pub gap: Fixed,
+    /// Frames since the press frame of the ground action whose shake is
+    /// under way, if one is.
+    pub shake: Option<u8>,
 }
 
 impl View {
@@ -104,6 +112,7 @@ impl View {
             hold: 0,
             top,
             gap: Fixed::ZERO,
+            shake: None,
         }
     }
 
@@ -120,6 +129,19 @@ impl View {
     /// One step of following `player`. `defeated` says the player
     /// defeated an enemy by bouncing or rolling on this step.
     fn follow(&mut self, player: &Player, level: &Level, physics: &Physics, defeated: bool) {
+        self.shake = if player.ground_action.is_some_and(|a| a.frame == 0) {
+            Some(0)
+        } else {
+            self.shake.map(|n| n.saturating_add(1))
+        };
+        let count = u32::try_from(physics[Param::ViewShakeCount].floor()).unwrap_or(0);
+        let last = frames(physics[Param::ViewShakeDelay]).saturating_add(
+            frames(physics[Param::ViewShakePeriod])
+                .saturating_mul(u8::try_from(count.saturating_sub(1)).unwrap_or(u8::MAX)),
+        );
+        if count == 0 || self.shake.is_some_and(|n| n > last) {
+            self.shake = None;
+        }
         if defeated {
             self.hold = frames(physics[Param::ViewHold]);
         }
@@ -176,6 +198,25 @@ impl View {
         self.gap = Fixed::from_bits(smoothed * grain);
         let moved = smoothed.div_euclid(whole(physics[share]));
         self.top += Fixed::from_bits(moved * grain);
+        self.top += self.shake_offset(physics);
+    }
+
+    /// The shake's offset to the top on this frame, down positive.
+    fn shake_offset(&self, physics: &Physics) -> Fixed {
+        let Some(since) = self.shake else {
+            return Fixed::ZERO;
+        };
+        let delay = frames(physics[Param::ViewShakeDelay]);
+        let period = whole(physics[Param::ViewShakePeriod]);
+        let Some(after) = since.checked_sub(delay).map(i64::from) else {
+            return Fixed::ZERO;
+        };
+        if after % period != 0 {
+            return Fixed::ZERO;
+        }
+        let n = after / period;
+        let size = physics[Param::ViewShakeSize].to_bits() >> (n / 2).min(63);
+        Fixed::from_bits(if n % 2 == 0 { size } else { -size })
     }
 }
 

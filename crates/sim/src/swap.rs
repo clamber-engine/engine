@@ -195,6 +195,7 @@ fn can_start(world: &World, physics: &Physics, other: &Other) -> bool {
     let busy = p.state == State::Roll
         || p.roll.is_some()
         || p.roll_stop > 0
+        || p.ground_action.is_some()
         || p.frozen > 0
         || p.knockout.is_some()
         // Swapping with an object in hand isn't in the spec yet.

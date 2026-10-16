@@ -202,7 +202,7 @@ fn span(reach: &Reach, player: &Player, crouch_start: u8) -> Span {
         return reach.crouch;
     }
     match player.state {
-        State::Idle => reach.stand,
+        State::Idle | State::GroundAction => reach.stand,
         _ => reach.walk,
     }
 }
