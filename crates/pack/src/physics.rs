@@ -540,6 +540,38 @@ params! {
     /// from 0 and the player gets one more life. 0: it just goes up.
     /// Whole collectibles.
     CountLife => "count_life",
+    /// Above 0, a level's letters spell a word of this many, numbered
+    /// from 1 (see `clamber_sim::Flow::letters`). Once every one of them
+    /// has joined the letters taken, the player gets one more life and
+    /// the letters taken start again from none. 0: letters give nothing.
+    /// Whole letters, up to 8.
+    LetterCount => "letter_count",
+    /// The letter row is first drawn this many frames after the frame a
+    /// letter is taken. Whole frames.
+    LetterRowIn => "letter_row_in",
+    /// Frames the row slides in for, counting the first it's drawn on.
+    /// Each frame it's `letter_row_speed` px lower, from
+    /// `letter_row_rise` px above `letter_row_y`; on the frame after,
+    /// it's at `letter_row_y`, even if it went past it. Whole frames.
+    LetterRowSlide => "letter_row_slide",
+    /// From this many frames after the frame a letter is taken, the row
+    /// slides back up at `letter_row_speed` px a frame. It's no longer
+    /// drawn after the frame it's `letter_row_rise` px above
+    /// `letter_row_y` or more. Whole frames.
+    LetterRowOut => "letter_row_out",
+    /// Where the top of the letter row's images is in the picture while
+    /// it's shown, px below the picture's top. Whole px.
+    LetterRowY => "letter_row_y",
+    /// See `letter_row_slide` and `letter_row_out`. Whole px.
+    LetterRowRise => "letter_row_rise",
+    /// See `letter_row_slide` and `letter_row_out`. Whole px.
+    LetterRowSpeed => "letter_row_speed",
+    /// The left edge of the image for letter 1, px right of the
+    /// picture's left edge. Whole px.
+    LetterRowX => "letter_row_x",
+    /// Each letter's image is this far right of the one before. Whole
+    /// px.
+    LetterRowGap => "letter_row_gap",
     /// Above 0, the world has a view this wide that follows the player
     /// (see `clamber_sim::View`), and walkers are in the level only near
     /// it: one appears at its start, at rest, when its start comes within

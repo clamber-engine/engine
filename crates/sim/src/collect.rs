@@ -19,11 +19,22 @@
 //! reaches the count, or whether it ever does, is then up to the
 //! collectible's `arrive` rules, by where it is in the view on its
 //! release step (see [`Arrive`]).
+//!
+//! A collectible with a `letter` is that letter of the level's word.
+//! Taken, it joins the letters taken `join_delay` steps later, and the
+//! letter row is shown (see [`World::letter_row`]). On the step the last
+//! of the `letter_count` letters joins, the player gets one more life
+//! and the letters taken start again from none. The letters taken last
+//! for the visit to the level, losing a life included.
+//!
+//! Engine choices where the spec says nothing: a letter taken while the
+//! row is shown for another shows it again from the start, and the row
+//! shows no sequence for the last letter, only the life.
 
 use clamber_fixed::Fixed;
 use clamber_pack::Param;
 
-use crate::archetype::{Arrive, Behavior, Reach, Span};
+use crate::archetype::{Arrive, Behavior, MAX_LETTERS, Reach, Span};
 use crate::flow::{Flow, FlowEvent, Outcome};
 use crate::player::{Facing, Player, State, frames};
 use crate::view::{self, View};
@@ -39,6 +50,69 @@ pub struct Release {
     pub every: u8,
     /// Index into the world's things.
     pub thing: usize,
+}
+
+/// The letter row as drawn in a picture: where the top of its images
+/// is, px below the picture's top, and the left edge of each letter's
+/// image, px right of its left edge, letter 1 first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct LetterRow {
+    pub y: i32,
+    pub x: [i32; MAX_LETTERS as usize],
+    /// How many of `x` are the level's word's.
+    pub count: u8,
+    /// The letters to draw in it: bit `k - 1` for letter `k`.
+    pub letters: u8,
+}
+
+impl World {
+    /// The letter row in the picture made from the last step, if it's
+    /// drawn in it.
+    pub fn letter_row(&self) -> Option<LetterRow> {
+        let physics = &self.feel.world;
+        let int = |p: Param| i32::try_from(physics[p].floor()).unwrap_or(0);
+        let count = whole(physics[Param::LetterCount]).min(u32::from(MAX_LETTERS));
+        let taken = self.flow.letter_taken?;
+        let since = self.frame.checked_sub(1)?.checked_sub(taken)?;
+        if count == 0 {
+            return None;
+        }
+        let since = i64::from(since);
+        let (into, slide, out) = (
+            i64::from(int(Param::LetterRowIn)),
+            i64::from(int(Param::LetterRowSlide)),
+            i64::from(int(Param::LetterRowOut)),
+        );
+        let (rest, rise, speed) = (
+            i64::from(int(Param::LetterRowY)),
+            i64::from(int(Param::LetterRowRise)),
+            i64::from(int(Param::LetterRowSpeed)),
+        );
+        let y = if since < into {
+            return None;
+        } else if since < into + slide {
+            rest - rise + speed * (since - into)
+        } else if since < out {
+            rest
+        } else {
+            let y = rest - speed * (since - out + 1);
+            if speed == 0 || y < rest - rise {
+                return None;
+            }
+            y
+        };
+        let (left, gap) = (int(Param::LetterRowX), int(Param::LetterRowGap));
+        let mut x = [0; MAX_LETTERS as usize];
+        for (k, x) in x.iter_mut().enumerate() {
+            *x = left.saturating_add(gap.saturating_mul(k as i32));
+        }
+        Some(LetterRow {
+            y: i32::try_from(y).unwrap_or(i32::MAX),
+            x,
+            count: count as u8,
+            letters: self.flow.letters,
+        })
+    }
 }
 
 /// Takes what the player reaches, if it can take anything on this step,
@@ -89,6 +163,30 @@ pub(crate) fn update(world: &mut World, can_take: bool, start: Option<View>) {
     flow.due.retain(|&f| f != frame);
     for _ in 0..arrived {
         count(flow, life);
+    }
+    let word = whole(world.feel.world[Param::LetterCount]).min(u32::from(MAX_LETTERS));
+    let joined: Vec<u8> = flow
+        .joining
+        .iter()
+        .filter(|&&(at, _)| at == frame)
+        .map(|&(_, k)| k)
+        .collect();
+    flow.joining.retain(|&(at, _)| at != frame);
+    for k in joined {
+        join(flow, k, word);
+    }
+}
+
+/// Adds letter `k` to the letters taken, with one more life and none
+/// taken again once they hold all `word` letters (above 0).
+fn join(flow: &mut Flow, k: u8, word: u32) {
+    flow.letters |= 1 << (k - 1);
+    flow.events.push(FlowEvent::Letter(k));
+    let all = (1u16 << word) - 1;
+    if word > 0 && u16::from(flow.letters) & all == all {
+        flow.letters = 0;
+        flow.lives = flow.lives.saturating_add(1);
+        flow.events.push(FlowEvent::Life);
     }
 }
 
@@ -142,6 +240,8 @@ fn take(world: &mut World) {
             release_every,
             reach,
             window,
+            letter,
+            join_delay,
             ..
         }) = thing.archetype.map(|a| a.behavior)
         else {
@@ -169,13 +269,21 @@ fn take(world: &mut World) {
             continue;
         }
         thing.active = false;
-        world.flow.events.push(FlowEvent::Collect(thing.index));
-        world.flow.releases.push(Release {
-            left: worth,
-            wait: 0,
-            every: release_every,
-            thing: i,
-        });
+        let flow = &mut world.flow;
+        flow.events.push(FlowEvent::Collect(thing.index));
+        if worth > 0 {
+            flow.releases.push(Release {
+                left: worth,
+                wait: 0,
+                every: release_every,
+                thing: i,
+            });
+        }
+        if letter > 0 {
+            flow.joining
+                .push((world.frame + u32::from(join_delay), letter));
+            flow.letter_taken = Some(world.frame);
+        }
     }
 }
 

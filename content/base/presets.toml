@@ -156,6 +156,15 @@ put_down_ahead = 0
 put_down_lift = 0
 put_down_regrab = 0
 count_life = 0
+letter_count = 0
+letter_row_in = 0
+letter_row_slide = 0
+letter_row_out = 0
+letter_row_y = 0
+letter_row_rise = 0
+letter_row_speed = 0
+letter_row_x = 0
+letter_row_gap = 0
 view_width = 0
 view_back = 0
 view_back_left = 0
@@ -406,6 +415,20 @@ put_down_lift = 3
 put_down_regrab = 2
 # The collectible count (collectibles.md).
 count_life = 100
+# The letters (letters.md): four of them, and the letter row. It's
+# first drawn at y -12 two frames after a letter is taken, slides down
+# 4 px a frame to 16, is at 12 from the frame after, and slides back up
+# from 122 frames after, last drawn at -12. Images 16 x 16, from x 84,
+# 24 apart.
+letter_count = 4
+letter_row_in = 2
+letter_row_slide = 8
+letter_row_out = 122
+letter_row_y = 12
+letter_row_rise = 24
+letter_row_speed = 4
+letter_row_x = 84
+letter_row_gap = 24
 # The view (view.md) and walkers appearing and being removed with it
 # (walker-view.md). The picture is 256 wide; the window for a walker's
 # start runs from 31 left of it to 32 right of it, and a walker is

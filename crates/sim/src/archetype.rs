@@ -63,7 +63,10 @@ pub enum Behavior {
     /// count, one at a time: the first on taking it, then one every
     /// `release_every` frames, each `count_delay` frames after that.
     /// With a view, it can only be taken inside its `window`, and
-    /// `arrive` decides when each one reaches the count.
+    /// `arrive` decides when each one reaches the count. A `letter`
+    /// above 0 is that letter of the level's word: taken, it joins the
+    /// letters taken `join_delay` frames later (see
+    /// [`Flow::letters`](crate::Flow::letters)).
     Collect {
         worth: u8,
         release_every: u8,
@@ -74,6 +77,8 @@ pub enum Behavior {
         /// px, ends included, for it to be taken. `None`: anywhere.
         window: Option<(i32, i32)>,
         arrive: Arrive,
+        letter: u8,
+        join_delay: u8,
     },
     /// Sits where it's placed and throws a [`BALL`](crate::BALL) on each
     /// of its first `throw_count` `throws`, `from` its position, on that
@@ -148,6 +153,9 @@ pub struct ArriveRule {
     pub y: (i32, i32),
     pub delay: Option<u8>,
 }
+
+/// The most letters a level's word can have.
+pub const MAX_LETTERS: u8 = 8;
 
 /// The most rules an [`Arrive`] can have.
 pub const MAX_ARRIVE_RULES: usize = 4;
@@ -456,6 +464,8 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "arrive",
             "arrive_view",
             "arrive_else",
+            "letter",
+            "join_delay",
         ],
         _ => return Err(format!("{path}.behavior: unknown behavior `{behavior}`")),
     };
@@ -617,13 +627,27 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 }
                 Some(_) => return Err(format!("{path}.window: expected [] or [from, to]")),
             };
+            let optional = |key: &str, max: u8| match table.get(key) {
+                None => Ok(0),
+                Some(Value::Integer(n)) if (0..=i64::from(max)).contains(n) => Ok(*n as u8),
+                Some(_) => Err(format!("{path}.{key}: expected a whole number, 0 to {max}")),
+            };
+            let letter = optional("letter", MAX_LETTERS)?;
+            let worth = small("worth", 0)?;
+            if worth == 0 && letter == 0 {
+                return Err(format!(
+                    "{path}.worth: must be at least 1, unless it's a `letter`"
+                ));
+            }
             Behavior::Collect {
-                worth: small("worth", 1)?,
+                worth,
                 release_every: small("release_every", 0)?,
                 count_delay,
                 reach,
                 window,
                 arrive: parse_arrive(table, path, count_delay)?,
+                letter,
+                join_delay: optional("join_delay", u8::MAX)?,
             }
         }
         "thrower" => {
@@ -1100,6 +1124,9 @@ mod tests {
         check("ball", "window = [1, 2, 3]", "entities[3].params.window");
         check("ball", "gravity = 0", "must be positive");
         check("spark", "worth = 0", "entities[3].params.worth");
+        check("letter", "letter = 0", "entities[3].params.worth");
+        check("letter", "letter = 9", "entities[3].params.letter");
+        check("letter", "join_delay = -1", "entities[3].params.join_delay");
         check("spark", "reach = []", "expected one or two tables");
         check(
             "spark",

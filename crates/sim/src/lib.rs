@@ -11,7 +11,8 @@
 //!
 //! Rendering and audio read a world; they never change it.
 //!
-//! Collectibles add to the collectible count ([`Release`]).
+//! Collectibles add to the collectible count ([`Release`]), and letters
+//! to the letters taken ([`LetterRow`]).
 //!
 //! Walking past a level's [`END`] marker finishes it, after a walk-out
 //! and a fade if the preset has them ([`Ending`]).
@@ -42,11 +43,11 @@ mod world;
 
 pub use archetype::{
     Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Fall, Hit,
-    MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_THROWS, Reach, Span, Throw,
+    MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_LETTERS, MAX_THROWS, Reach, Span, Throw,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
-pub use collect::Release;
+pub use collect::{LetterRow, Release};
 pub use ending::{END, Ending};
 pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,

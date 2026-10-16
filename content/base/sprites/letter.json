@@ -1,0 +1,398 @@
+{
+  "frames": [
+    {
+      "filename": "letter sway 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 60,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10,
+        "y": 10,
+        "w": 60,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 1",
+      "frame": {
+        "x": 64,
+        "y": 2,
+        "w": 60,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10,
+        "y": 10,
+        "w": 60,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 2",
+      "frame": {
+        "x": 126,
+        "y": 2,
+        "w": 58,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 10,
+        "w": 58,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 3",
+      "frame": {
+        "x": 186,
+        "y": 2,
+        "w": 58,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 10,
+        "w": 58,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 4",
+      "frame": {
+        "x": 246,
+        "y": 2,
+        "w": 56,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12,
+        "y": 10,
+        "w": 56,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 5",
+      "frame": {
+        "x": 304,
+        "y": 2,
+        "w": 58,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 10,
+        "w": 58,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 6",
+      "frame": {
+        "x": 364,
+        "y": 2,
+        "w": 58,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 10,
+        "w": 58,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 7",
+      "frame": {
+        "x": 424,
+        "y": 2,
+        "w": 60,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10,
+        "y": 10,
+        "w": 60,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 8",
+      "frame": {
+        "x": 486,
+        "y": 2,
+        "w": 60,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10,
+        "y": 10,
+        "w": 60,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 9",
+      "frame": {
+        "x": 548,
+        "y": 2,
+        "w": 60,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10,
+        "y": 10,
+        "w": 60,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 10",
+      "frame": {
+        "x": 610,
+        "y": 2,
+        "w": 58,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 10,
+        "w": 58,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 11",
+      "frame": {
+        "x": 670,
+        "y": 2,
+        "w": 58,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 10,
+        "w": 58,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 12",
+      "frame": {
+        "x": 730,
+        "y": 2,
+        "w": 56,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 12,
+        "y": 10,
+        "w": 56,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 13",
+      "frame": {
+        "x": 788,
+        "y": 2,
+        "w": 58,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 10,
+        "w": 58,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 14",
+      "frame": {
+        "x": 848,
+        "y": 2,
+        "w": 58,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 11,
+        "y": 10,
+        "w": 58,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "letter sway 15",
+      "frame": {
+        "x": 908,
+        "y": 2,
+        "w": 60,
+        "h": 60
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10,
+        "y": 10,
+        "w": 60,
+        "h": 60
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 80
+      },
+      "duration": 50,
+      "ticks": 3
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "letter.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 970,
+      "h": 64
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "sway",
+        "from": 0,
+        "to": 15,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 40,
+        "y": 40
+      },
+      "scale": 5,
+      "normals": "letter-normals.png"
+    }
+  }
+}

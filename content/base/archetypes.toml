@@ -106,7 +106,11 @@
 #   frames after the release, or "never"; with none, `arrive_else` does
 #   (left out: `count_delay`). `arrive_view` says which view: "end", where
 #   it is after moving on that frame (the default), or "start", where it
-#   was before.
+#   was before. `worth` may be 0. With `letter` above 0 (up to 8; left
+#   out: 0), it's that letter of the level's word: taken, it joins the
+#   letters taken `join_delay` frames later (left out: 0), and the
+#   letter row is shown. The preset's `letter_count` says how many
+#   letters the word has, and all of them give one more life.
 #
 # The player defeats an enemy by landing on it, and bounces off, or by
 # rolling into it. Touching one any other way costs a life.
@@ -247,6 +251,35 @@ arrive = [{ x_from = 9, y_from = 11, delay = 17 }]
 arrive_else = 0
 
 [[archetypes.cluster.reach]]
+stand = [-15, 21, -8, 40]
+walk = [-15, 21, -8, 40]
+crouch = [-18, 12, -12, 31]
+roll = [-13, 21, -4, 38]
+jump = [-15, 21, -8, 40]
+air = [-15, 18, 13, 57]
+air_below = []
+jump_early = 6
+land_hold = 4
+
+# A letter of the level's word (spec/behavior/letters.md): entities set
+# which with `letter`, from 1 to the preset's `letter_count`. It's
+# taken from a bunch's offsets, with the ranges letters.md measured
+# (the same as a bunch's, the Down + Action ground action standing).
+# It joins the letters taken 30 frames after: the spec measured 30, 31
+# and 33 and leaves the exact frame open. It adds nothing to the count.
+# Landing wasn't measured for letters, so it's a bunch's. The size is
+# Clamber's own and only draws it.
+[archetypes.letter]
+behavior = "collect"
+size = [16, 16]
+offset = 0
+worth = 0
+release_every = 0
+count_delay = 0
+letter = 1
+join_delay = 30
+
+[[archetypes.letter.reach]]
 stand = [-15, 21, -8, 40]
 walk = [-15, 21, -8, 40]
 crouch = [-18, 12, -12, 31]

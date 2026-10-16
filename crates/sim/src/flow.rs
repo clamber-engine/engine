@@ -81,8 +81,10 @@ pub enum FlowEvent {
     Defeat(usize),
     /// The launcher at this index fired.
     Launch(usize),
-    /// The collectible count gave one more life.
+    /// One more life, from the collectible count or the letters.
     Life,
+    /// This letter joined the letters taken.
+    Letter(u8),
 }
 
 /// Progress through the level.
@@ -98,6 +100,17 @@ pub struct Flow {
     pub due: Vec<u32>,
     /// Taken collectibles still releasing what they're worth.
     pub releases: Vec<Release>,
+    /// The letters taken, as bits: bit `k - 1` for letter `k`. A letter
+    /// joins them a while after it's taken (its `join_delay`). With all
+    /// of the level's word (`letter_count`), the player gets one more
+    /// life, and they start again from none.
+    pub letters: u8,
+    /// Letters taken that haven't joined yet: the step each joins on,
+    /// and the letter.
+    pub joining: Vec<(u32, u8)>,
+    /// The step the last letter was taken on, for the letter row
+    /// ([`World::letter_row`](crate::World::letter_row)).
+    pub letter_taken: Option<u32>,
     /// Indices of the checkpoints reached, in order; the player comes
     /// back at the last.
     pub checkpoints: Vec<usize>,

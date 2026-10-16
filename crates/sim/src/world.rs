@@ -468,6 +468,19 @@ impl World {
             out.extend([r.left, r.wait, r.every]);
             count(&mut out, r.thing);
         }
+        out.push(f.letters);
+        count(&mut out, f.joining.len());
+        for &(at, k) in &f.joining {
+            out.extend(at.to_le_bytes());
+            out.push(k);
+        }
+        match f.letter_taken {
+            Some(at) => {
+                out.push(1);
+                out.extend(at.to_le_bytes());
+            }
+            None => out.push(0),
+        }
         count(&mut out, f.events.len());
         for e in &f.events {
             let (tag, index) = match *e {
@@ -480,6 +493,7 @@ impl World {
                 FlowEvent::Defeat(i) => (6, i),
                 FlowEvent::Launch(i) => (7, i),
                 FlowEvent::Life => (8, 0),
+                FlowEvent::Letter(k) => (9, usize::from(k)),
             };
             out.push(tag);
             count(&mut out, index);

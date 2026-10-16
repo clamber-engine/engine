@@ -440,6 +440,15 @@ mod tests {
                     | Param::PutDownLift
                     | Param::PutDownRegrab
                     | Param::CountLife
+                    | Param::LetterCount
+                    | Param::LetterRowIn
+                    | Param::LetterRowSlide
+                    | Param::LetterRowOut
+                    | Param::LetterRowY
+                    | Param::LetterRowRise
+                    | Param::LetterRowSpeed
+                    | Param::LetterRowX
+                    | Param::LetterRowGap
                     | Param::ViewWidth
                     | Param::ViewBack
                     | Param::ViewBackLeft
