@@ -1,7 +1,8 @@
 //! A made-up image with a level's ground and background in it, imported
 //! with a [`LevelDecoder`], loaded from the pack and played. None of the
 //! data is any real game's: it's made up from the format specs,
-//! `spec/formats/level-ground.md` and `spec/formats/graphics.md`.
+//! `spec/formats/level-ground.md`, `spec/formats/graphics.md` and
+//! `spec/formats/placements.md`.
 
 use std::fs;
 use std::path::PathBuf;
@@ -75,6 +76,26 @@ fn pictures() -> Vec<u8> {
         .collect()
 }
 
+/// Bytes of placement entries, from (class, x, h, reference) words.
+fn entries(words: &[[u16; 4]]) -> Vec<u8> {
+    words
+        .iter()
+        .flatten()
+        .flat_map(|w| w.to_le_bytes())
+        .collect()
+}
+
+/// A placement list: an object at x 200, 40 above the bottom edge, then
+/// a group at x 300 whose members are listed at 0x7208, then the end.
+fn placement_list() -> Vec<u8> {
+    entries(&[[1, 200, 40, 0x7100], [5, 300, 0, 0x7200], [0; 4]])
+}
+
+/// The group's one member, an object at x 320, 64 above the bottom edge.
+fn group_members() -> Vec<u8> {
+    entries(&[[2, 320, 64, 0x7180], [0; 4]])
+}
+
 /// Where each part goes in the made-up image.
 fn parts() -> LevelParts {
     LevelParts {
@@ -86,6 +107,7 @@ fn parts() -> LevelParts {
         palettes: Location::new(BANK, 0x5000),
         picture_table: Location::new(BANK, 0x6000),
         pictures: 5,
+        placements: Some(Location::new(BANK, 0x7000)),
     }
 }
 
@@ -99,6 +121,8 @@ fn image() -> Image {
         (p.tiles, packed_tiles()),
         (p.palettes, palettes()),
         (p.picture_table, pictures()),
+        (p.placements.unwrap(), placement_list()),
+        (Location::new(BANK, 0x7208), group_members()),
     ] {
         let start = at.position(bytes.len()).unwrap();
         bytes[start..start + data.len()].copy_from_slice(&data);
@@ -163,6 +187,28 @@ fn writes_the_level_and_its_images() {
     assert_eq!(names, ["far", "ground"]);
     assert!(level.surfaces.contains_key("normal"));
     assert!(!level.collision.colliders.is_empty());
+}
+
+/// Objects without a kind fingerprint row are named by their reference;
+/// a group's members carry the group and where it appears.
+#[test]
+fn places_the_objects_in_the_placement_list() {
+    let (level, _) = imported_level("places");
+    let placed: Vec<(&str, Vec2)> = level
+        .entities
+        .iter()
+        .map(|e| (e.kind.as_str(), e.at))
+        .collect();
+    assert_eq!(
+        placed,
+        [
+            ("placed-7100", Vec2::ints(200, 472)),
+            ("placed-7180", Vec2::ints(320, 448)),
+        ]
+    );
+    let member = &level.entities[1].params;
+    assert_eq!(member["group"].as_integer(), Some(1));
+    assert_eq!(member["appears_at"].as_integer(), Some(300));
 }
 
 #[test]

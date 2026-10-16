@@ -2,17 +2,21 @@
 //! `spec/formats/level-ground.md` for its collision and
 //! `spec/formats/graphics.md` for its layers.
 //!
-//! `spec/formats/locators.md` doesn't say where these parts are yet, nor
-//! does any format spec say where a level's grid size and type count are
-//! stored, so a [`LevelDecoder`] is given each part's location and size.
+//! Its objects come from its placement list
+//! (`spec/formats/placements.md`).
+//!
+//! No format spec says where a level's grid size and type count are
+//! stored, so a [`LevelDecoder`] is given each part's location and size;
+//! [`first_level`](crate::first_level) has them where the spec does.
 
 use std::collections::BTreeMap;
 
-use clamber_level::{Collision, FORMAT, Level};
+use clamber_level::{Collision, Entity, FORMAT, Level};
 
 use crate::{
-    Background, COLUMN_BANDS, Decoder, GridPicture, Ground, Image, Known, LEVELS, Layout, Location,
-    PackWriter, PaletteSet, Pictures, TileSet, unpack,
+    BANK_SIZE, Background, COLUMN_BANDS, Decoder, GridPicture, Ground, Image, Known, LEVELS,
+    Layout, Location, PackWriter, PaletteSet, Pictures, Placements, TileSet, kind_of, kind_rows,
+    unpack,
 };
 
 /// Lines in a band.
@@ -48,6 +52,8 @@ pub struct LevelParts {
     /// The picture table, for types 0 to `pictures` − 1.
     pub picture_table: Location,
     pub pictures: usize,
+    /// The placement list, if the level has its objects.
+    pub placements: Option<Location>,
 }
 
 /// Writes one level of a title as `levels/<file>.level`, with the images
@@ -106,7 +112,26 @@ impl LevelDecoder {
         let mut level = Level::from_toml_str(&src, &self.file).map_err(|e| e.to_string())?;
         level.layers = background.layers;
         level.collision = Collision::new(ground.colliders(0..width, SURFACE));
+        if let Some(list) = p.placements {
+            level.entities = self.entities(image, list, height)?;
+        }
         Ok((level, background.images))
+    }
+
+    /// The objects in the placement list at `list`, for a level whose
+    /// bottom edge is at `bottom`, with their kinds where `title`'s kind
+    /// fingerprint rows give them.
+    fn entities(&self, image: &Image, list: Location, bottom: i64) -> Result<Vec<Entity>, String> {
+        let bank = |address| {
+            let start = list.in_bank(address).position(image.len())?;
+            let end = (start / BANK_SIZE + 1) * BANK_SIZE;
+            image.bytes().get(start..end.min(image.len()))
+        };
+        let placements = Placements::read(bank, list.address)
+            .map_err(|e| format!("the level's placement list: {e}"))?;
+        let rows = kind_rows(&self.title);
+        let kind = |reference| kind_of(image.bytes(), reference, &rows).map(|(_, kind)| kind);
+        Ok(placements.entities(bottom, kind))
     }
 }
 

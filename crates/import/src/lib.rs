@@ -3,7 +3,7 @@
 //!
 //! An [`Image`] (a file without its copier header) is recognized against
 //! a [`Catalog`] of supported images, then each [`Decoder`] for its title
-//! finds its data by [`Location`] and converts part of it to Clamber's
+//! finds its data by [`Location`] (from [`locate`]) and converts part of it to Clamber's
 //! own formats, written through a [`PackWriter`]. The pack goes into the
 //! player's [`packs_dir`], never into the game's folder or a source
 //! tree, with a [`Manifest`] marking it as a personal import that can't
@@ -29,6 +29,7 @@ mod installed;
 mod kinds;
 mod level;
 mod location;
+mod locators;
 mod manifest;
 mod placements;
 mod songs;
@@ -49,6 +50,7 @@ pub use installed::{Installed, check_shareable, installed};
 pub use kinds::{FINGERPRINT_SIZE, Kind, KindRow, candidate, kind_of, kind_rows};
 pub use level::{LevelDecoder, LevelParts};
 pub use location::{BANK_SIZE, Location};
+pub use locators::{Data, first_level, locate};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements};
 pub use songs::{
@@ -66,6 +68,9 @@ pub use sprites::{
 
 /// The folder in a pack that holds its levels.
 pub const LEVELS: &str = "levels";
+
+/// The file name, without `.level`, of an imported title's first level.
+pub const FIRST_LEVEL: &str = "level-1";
 
 /// The folder in a pack that holds its sprite sheets.
 pub const SPRITES: &str = "sprites";
@@ -173,12 +178,22 @@ pub struct Importer {
 }
 
 impl Importer {
-    /// The images and decoders this build supports.
+    /// The images and decoders this build supports: each supported
+    /// title's first level, where the spec says where its parts are.
     pub fn builtin() -> Importer {
-        Importer {
-            catalog: Catalog::builtin(),
-            decoders: Vec::new(),
+        let catalog = Catalog::builtin();
+        let mut decoders: Vec<Box<dyn Decoder>> = Vec::new();
+        for known in &catalog.known {
+            if let Some(parts) = first_level(&known.title) {
+                decoders.push(Box::new(LevelDecoder {
+                    title: known.title.clone(),
+                    file: FIRST_LEVEL.to_string(),
+                    name: "First level".to_string(),
+                    parts,
+                }));
+            }
         }
+        Importer { catalog, decoders }
     }
 
     /// Imports `image` as a pack in `packs_dir`, named after its title.

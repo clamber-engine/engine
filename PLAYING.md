@@ -78,8 +78,11 @@ folder, and pause to go back. The pack goes into
 the same from a command line. A personal import is yours alone: it's
 marked as one wherever it's shown, and Clamber won't export it or
 capture it for sharing. This version recognizes the one game image
-it supports (with or without a copier header) but can't convert it yet:
-for any file you pick, it says so, and why.
+it supports (with or without a copier header) and converts its first
+level's ground and background, and where its objects are. Most of the
+objects don't appear or act yet, you start near the level's left end,
+and there's no way to finish it yet. For any other file, it says it can't
+import it, and why.
 
 **Games** on the title screen lists Clamber's own game and the games
 you've imported. Pick one to play it from the title screen.
