@@ -566,7 +566,7 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     out.extend([p.lockout, p.jump_needs_hold.into()]);
     out.extend([p.jump_held_since_press, p.jump_hold, p.takeoff].map(u8::from));
     out.push(p.takeoff_wait.map_or(0, |n| n.saturating_add(1)));
-    out.push(p.takeoff_crouched.into());
+    out.extend([p.takeoff_crouched, p.takeoff_rolled].map(u8::from));
     out.push(p.swap);
     out.extend([p.crouch.held, p.crouch.rising, p.crouch.turn_lock]);
     out.push(p.turn.map_or(0, |n| n.saturating_add(1)));
@@ -583,6 +583,8 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
                 roll.held.into(),
                 roll.carry.into(),
                 roll.still.into(),
+                roll.since_press,
+                roll.air,
             ]);
             fixed(out, roll.speed);
         }
@@ -591,6 +593,7 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     roll(out, p.roll);
     out.push(p.roll_stop);
     roll(out, p.stopped);
+    out.push(p.air_stopped.into());
     match p.ground_action {
         Some(a) => out.extend([1, a.frame, a.dir as u8]),
         None => out.push(0),

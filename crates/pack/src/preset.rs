@@ -378,6 +378,10 @@ mod tests {
                     | Param::RollBuffer
                     | Param::RollBufferHold
                     | Param::RollAirBuffer
+                    | Param::RollAirLengthen
+                    | Param::RollHover
+                    | Param::RollJumpHeldGravity
+                    | Param::RollAirStopWait
                     | Param::RollAttackWidth
                     | Param::RollAttackOffset
                     | Param::RollAttackStop

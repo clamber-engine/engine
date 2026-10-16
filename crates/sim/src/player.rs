@@ -134,6 +134,9 @@ pub struct Player {
     pub takeoff_wait: Option<u8>,
     /// The jump waiting to take off started while a crouch went on.
     pub takeoff_crouched: bool,
+    /// The jump waiting to take off started during a timed roll
+    /// (`roll_jump_held_gravity`).
+    pub takeoff_rolled: bool,
     /// Frames of swapping left.
     pub swap: u8,
     /// Frames left that the player is held still after a bounce.
@@ -154,6 +157,9 @@ pub struct Player {
     pub roll_stop: u8,
     /// The timed roll whose stop this is, during a stop.
     pub stopped: Option<Roll>,
+    /// A timed roll ended in a stop in the air, and the frame after the
+    /// landing hasn't ended yet (`roll_air_stop_wait`).
+    pub air_stopped: bool,
     /// The ground action under way, if there is one.
     pub ground_action: Option<GroundAction>,
     /// A boost waiting for action to be held, after a roll or its stop
@@ -239,6 +245,7 @@ impl Player {
             takeoff: false,
             takeoff_wait: None,
             takeoff_crouched: false,
+            takeoff_rolled: false,
             swap: 0,
             frozen: 0,
             crouch: Crouch::default(),
@@ -248,6 +255,7 @@ impl Player {
             roll: None,
             roll_stop: 0,
             stopped: None,
+            air_stopped: false,
             ground_action: None,
             boost: None,
             roll_press: None,
@@ -349,12 +357,14 @@ impl Player {
 
     /// The gravity of a frame on which a jump waits to take off in the
     /// air, if it's `held_jump_gravity`: when jump has been held since the
-    /// jump started, or it started while crouching. `crouched` is for the
-    /// frame such a jump is cancelled on, which keeps that gravity.
+    /// jump started, or it started while crouching or during a timed roll
+    /// (`roll_jump_held_gravity`). `crouched` is for the frame such a jump
+    /// is cancelled on, which keeps that gravity.
     fn waiting_gravity(&self, crouched: bool, physics: &Physics) -> Option<Fixed> {
         let held = physics[Param::HeldJumpGravity];
-        (held > Fixed::ZERO && (crouched || self.takeoff_crouched || self.jump_held_since_press))
-            .then_some(held)
+        let light =
+            crouched || self.takeoff_crouched || self.takeoff_rolled || self.jump_held_since_press;
+        (held > Fixed::ZERO && light).then_some(held)
     }
 
     /// Ends the timed roll under way or the stop after one, with any
@@ -363,6 +373,7 @@ impl Player {
         self.roll = None;
         self.roll_stop = 0;
         self.stopped = None;
+        self.air_stopped = false;
         self.boost = None;
     }
 
@@ -630,6 +641,8 @@ impl Player {
             self.takeoff_crouched = physics[Param::CrouchTakeoffCancel] > Fixed::ZERO
                 && down
                 && (self.grounded() || self.crouch.held > 0);
+            self.takeoff_rolled =
+                physics[Param::RollJumpHeldGravity] > Fixed::ZERO && self.roll.is_some();
             self.coyote = None;
         }
         if (starts && wait == 0) || due {
@@ -925,6 +938,14 @@ impl Player {
         }
         let airborne = !self.grounded();
         let fall_step = std::mem::take(&mut self.fall_step);
+        // A timed roll that left the ground soon enough after its press
+        // hangs in the air from its second frame after leaving it.
+        let hover = frames(physics[Param::RollHover]);
+        let hovering = airborne
+            && hover > 0
+            && self
+                .roll
+                .is_some_and(|r| r.air >= 2 && r.since_press <= hover);
         // The gravity of a jump waiting to take off, if it's the held one.
         let waiting_gravity = if waits || cancelled {
             self.waiting_gravity(cancelled, physics)
@@ -959,7 +980,9 @@ impl Player {
             } else {
                 physics[Param::FallGravity]
             };
-            self.vel.y = if fall_step && !waits {
+            self.vel.y = if hovering {
+                Fixed::ZERO
+            } else if fall_step && !waits {
                 physics[Param::LeaveStepSpeed]
             } else {
                 self.vel.y + gravity
@@ -1032,8 +1055,9 @@ impl Player {
                 .is_some_and(|p| self.inside || feet > p.bottom);
 
         let leaving = events.contains(&Event::LeaveGround);
-        if leaving && facing_wait > 0 && self.facing != start_facing {
-            // Facing doesn't change on the leave frame.
+        if leaving && facing_wait > 0 && self.facing != start_facing && self.roll.is_none() {
+            // Facing doesn't change on the leave frame, but follows a
+            // timed roll.
             self.facing = start_facing;
             events.retain(|&e| e != Event::Turn);
         }
@@ -1042,11 +1066,12 @@ impl Player {
             self.crouch.held = 0;
             self.crouch.rising = 0;
         }
-        // Leaving the ground without crouching, or ending a crouch in that
-        // fall, starts the fall proper on the next frame.
+        // Leaving the ground without crouching or rolling, or ending a
+        // crouch in that fall, starts the fall proper on the next frame.
         let crouched_fall = crouch_in_air && self.crouch.held > 0;
         let starts_fall = !self.grounded()
-            && ((leaving && !crouched_fall) || (airborne && self.walked_off && crouch_ends));
+            && ((leaving && !crouched_fall && self.roll.is_none())
+                || (airborne && self.walked_off && crouch_ends));
         if starts_fall {
             self.fall_step = physics[Param::LeaveStepSpeed] > Fixed::ZERO;
             self.fall_facing = facing_wait.saturating_sub(1);
@@ -1100,6 +1125,9 @@ impl Player {
                 }
             }
             self.advance_timed_roll(held(Action::Action), physics, events);
+            if self.grounded() && !events.contains(&Event::Land) {
+                self.air_stopped = false;
+            }
         } else if rolling && (!self.grounded() || self.vel.x.abs() < physics[Param::RollMinSpeed]) {
             events.push(Event::RollEnd);
         }
@@ -1314,6 +1342,10 @@ impl Player {
             // Down and action on the ground start the ground action, or
             // a crouch, instead.
             None
+        } else if self.air_stopped {
+            // On the frame after landing from a stop in the air, a press
+            // waits a frame.
+            Some((0, 1, true))
         } else if self.roll.is_some() || self.roll_stop > 0 {
             let hold = physics[Param::RollBufferHold] > Fixed::ZERO;
             Some((0, frames(physics[Param::RollBuffer]), hold))
@@ -1335,6 +1367,7 @@ impl Player {
         let can_start = self.grounded()
             && self.swap == 0
             && self.roll.is_none()
+            && !self.air_stopped
             && (self.roll_stop == 0 || (self.roll_stop == stop_time && !after_stop));
         if !can_start {
             return false;
@@ -1383,6 +1416,8 @@ impl Player {
             held: true,
             carry: false,
             still,
+            since_press: age,
+            air: 0,
         });
         self.roll_press = None;
         self.roll_stop = 0;
@@ -1423,6 +1458,8 @@ impl Player {
             held: true,
             carry: false,
             still: false,
+            since_press: 0,
+            air: 0,
         });
         self.roll_stop = 0;
         self.stopped = None;
@@ -1434,20 +1471,34 @@ impl Player {
     /// lengthening it as it runs out, and goes on with the stop after one.
     fn advance_timed_roll(&mut self, action: bool, physics: &Physics, events: &mut Vec<Event>) {
         let stop_time = frames(physics[Param::RollStopTime]);
+        let lengthen = frames(physics[Param::RollAirLengthen]);
+        let airborne = !self.grounded();
         // A jump waiting to take off holds the roll or stop where it is.
         let waiting = self.takeoff_wait.is_some();
         if self.roll_stop > 0 && !waiting {
-            self.roll_stop = if self.roll_stop >= stop_time || !self.grounded() {
-                0
-            } else {
-                self.roll_stop + 1
-            };
+            // Without `roll_air_lengthen`, the stop ends in the air.
+            let over = self.roll_stop >= stop_time || (airborne && lengthen == 0);
+            self.roll_stop = if over { 0 } else { self.roll_stop + 1 };
+            if airborne && lengthen > 0 {
+                if over {
+                    self.fall_after_roll(physics);
+                } else {
+                    // A jump can start on any frame of the stop.
+                    self.coyote = Some(0);
+                }
+            }
         }
         let Some(mut roll) = self.roll.take() else {
             return;
         };
         roll.held &= action;
         roll.still = false;
+        roll.since_press = roll.since_press.saturating_add(1);
+        roll.air = if airborne {
+            roll.air.saturating_add(1)
+        } else {
+            0
+        };
         let carry_time = frames(physics[Param::RollCarryTime]);
         let carries = roll.defeated || (roll.held && roll.size != RollSize::Fast);
         let end = if waiting {
@@ -1455,12 +1506,19 @@ impl Player {
             false
         } else if self.roll_jump {
             true
-        } else if events.contains(&Event::Land) {
+        } else if lengthen == 0 && events.contains(&Event::Land) {
             // A roll off a ledge ends as if it started just after landing.
             roll.left = frames(physics[Param::RollTime]);
             false
-        } else if !self.grounded() || roll.left > 0 {
-            // It doesn't end in the air.
+        } else if (lengthen == 0 && airborne) || roll.left > 0 {
+            // It doesn't end in the air, or it's lengthened there every
+            // `roll_air_lengthen` frames from its first.
+            if lengthen > 0
+                && airborne
+                && roll.left == frames(physics[Param::RollTime]).saturating_sub(lengthen)
+            {
+                roll.left = roll.left.saturating_add(lengthen);
+            }
             roll.left = roll.left.saturating_sub(1);
             false
         } else if !roll.carry && carries && carry_time > 0 {
@@ -1475,6 +1533,12 @@ impl Player {
                     // With no slide, the roll's last frame ends standing.
                     self.vel.x = Fixed::ZERO;
                 }
+                if airborne {
+                    self.air_stopped = physics[Param::RollAirStopWait] > Fixed::ZERO;
+                    self.coyote = Some(0);
+                }
+            } else if airborne {
+                self.fall_after_roll(physics);
             }
             true
         };
@@ -1483,6 +1547,15 @@ impl Player {
         } else {
             self.roll = Some(roll);
         }
+    }
+
+    /// Makes the frame after a timed roll, or its stop, ends in the air
+    /// fall as the frame after leaving the ground does. A jump can start
+    /// on it.
+    fn fall_after_roll(&mut self, physics: &Physics) {
+        self.fall_step = physics[Param::LeaveStepSpeed] > Fixed::ZERO;
+        self.fall_facing = frames(physics[Param::LeaveFacingWait]).saturating_sub(1);
+        self.coyote = (frames(physics[Param::CoyoteTime]) >= 1).then_some(1);
     }
 
     /// Goes on with the turn under way, or, if `start`, starts one if
@@ -1982,6 +2055,10 @@ pub struct Roll {
     pub carry: bool,
     /// The roll doesn't move on this frame, its first.
     pub still: bool,
+    /// Frames since the action press that started it.
+    pub since_press: u8,
+    /// Frames it has ended in the air in a row.
+    pub air: u8,
 }
 
 /// Which roll speed a timed roll eases toward.

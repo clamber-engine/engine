@@ -997,6 +997,8 @@ fn classic_roll_defeats_at(
         held: false,
         carry: false,
         still: false,
+        since_press: 0,
+        air: 0,
     });
     let rows = roll_rows(&mut world, 1, |_| Actions::NONE);
     assert_eq!(rows[0].x, Fixed::from_int(p));

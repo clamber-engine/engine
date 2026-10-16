@@ -302,6 +302,29 @@ params! {
     /// to this many frames after the press, if action stays held until
     /// then. Whole frames.
     RollAirBuffer => "roll_air_buffer",
+    /// Above 0, a timed roll ends in the air as it does on the ground,
+    /// the stop after it goes on in the air, and landing doesn't change
+    /// when it ends. At the end of the roll's frame this many frames
+    /// after its first, a roll in the air is lengthened by this many
+    /// frames, and again every this many frames for as long as it keeps
+    /// being lengthened. The frame after a roll, or its stop, ends in the
+    /// air falls as the frame after leaving the ground does, and a jump
+    /// can start on it and during the stop. 0: a roll doesn't end in the
+    /// air, and one that lands ends as if it had started just after
+    /// landing. Whole frames.
+    RollAirLengthen => "roll_air_lengthen",
+    /// Above 0, a timed roll that leaves the ground hangs in the air from
+    /// its second frame after leaving it until this many frames after
+    /// the action press that started the roll: it doesn't move up or
+    /// down, and falls from rest after that. Whole frames.
+    RollHover => "roll_hover",
+    /// Above 0, a jump started during a timed roll waits to take off
+    /// under `held_jump_gravity`, whether jump is held or not.
+    RollJumpHeldGravity => "roll_jump_held_gravity",
+    /// Above 0, after a timed roll's stop in the air no roll starts on
+    /// the frame after landing. An action press on it, or one in the
+    /// air, starts one on the next frame if action is held until then.
+    RollAirStopWait => "roll_air_stop_wait",
     /// Above 0, a timed roll defeats an enemy with a box on whole-pixel
     /// positions instead of by touching it, and only on its attack
     /// frames: every frame of the roll before its `roll_end` frame, and

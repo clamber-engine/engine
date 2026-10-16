@@ -3235,3 +3235,372 @@ fn classic_2_jumping_out_of_a_roll() {
     assert_eq!(frames_with(&rows, Event::JumpStart), [47]);
     assert!(rows[31..48].iter().all(|r| r.vx == 0.0));
 }
+
+fn classic_2_ledge() -> Play {
+    let level = Arc::new(Level::from_toml_str(LEDGE_64, "ledge").unwrap());
+    Play::on(level, generic_feel("classic-2").unwrap())
+}
+
+/// Classic 2 on `LEDGE_64` walking right at +2.25 from x = 1300, then
+/// holding `held(f)` on frame S + f: the world at the start of S, and
+/// S, chosen so that the roll started by Action on S leaves the ground
+/// on S + `lead`.
+fn classic_2_before_roll_off(lead: usize, held: &impl Fn(usize) -> Vec<Action>) -> (Play, usize) {
+    let new = || {
+        let mut w = classic_2_ledge();
+        w.player.pos.x = Fixed::from_int(1300);
+        w
+    };
+    let walk = |f: usize, s: usize| {
+        if f < s {
+            vec![Action::Right]
+        } else {
+            held(f - s)
+        }
+    };
+    for s in 1..200 {
+        let rows = play(&mut new(), s + lead + 1, |f| walk(f, s));
+        if frames_with(&rows, Event::LeaveGround).first() == Some(&(s + lead)) {
+            assert_eq!(rows[s - 1].vx, 2.25, "walking at +2.25 before S");
+            assert_eq!(frames_with(&rows, Event::RollStart)[0], s);
+            let mut w = new();
+            play(&mut w, s, |f| walk(f, s));
+            return (w, s);
+        }
+    }
+    panic!("no roll leaves the ground on S + {lead}");
+}
+
+/// The rows of [`classic_2_before_roll_off`] from S to S + `n` - 1.
+fn classic_2_roll_off(lead: usize, n: usize, held: impl Fn(usize) -> Vec<Action>) -> Vec<Row> {
+    let (mut w, _) = classic_2_before_roll_off(lead, &held);
+    play(&mut w, n, held)
+}
+
+/// Classic 2 on `LEDGE_64` standing still facing right, the nearest
+/// whole pixel to the edge from which a roll started by Action and
+/// Right on frame 0, with Right held after it, leaves the ground on D =
+/// 31. Holds `held(f)` on frame f; the rows and how far from the edge
+/// it stood.
+fn classic_2_stop_off(n: usize, held: impl Fn(usize) -> Vec<Action>) -> (Vec<Row>, i32) {
+    for from in (60..120).rev() {
+        let level = Arc::new(Level::from_toml_str(LEDGE_64, "ledge").unwrap());
+        let mut w = Play::on(level, generic_feel("classic-2").unwrap());
+        w.player.pos.x = Fixed::from_int(1600 - from);
+        let rows = play(&mut w, n, &held);
+        if frames_with(&rows, Event::LeaveGround).first() == Some(&31) {
+            return (rows, from);
+        }
+    }
+    panic!("no roll leaves the ground on D");
+}
+
+/// Right held, with `extra` on frames in `on`.
+fn right_and(extra: &[Action], on: impl Fn(usize) -> bool) -> impl Fn(usize) -> Vec<Action> {
+    let extra = extra.to_vec();
+    move |f| {
+        let mut held = vec![Action::Right];
+        if on(f) {
+            held.extend(&extra);
+        }
+        held
+    }
+}
+
+#[test]
+fn classic_2_roll_hovers_off_a_ledge() {
+    // spec/behavior/rolling-off-ledges.md, "Examples (`title-2`)",
+    // Hover: Action pressed on S, 3 frames before the edge. Heights below
+    // the ledge and `vy` after each frame.
+    let rows = classic_2_roll_off(3, 80, right_and(&[Action::Action], |f| f == 0));
+    let below = below_ledge(&rows);
+    let check = |k: usize, height: f64, vy: f64| {
+        assert_eq!((below[k], rows[k].vy), (height, vy), "S + {k}");
+        assert!(!rows[k].grounded, "S + {k}");
+    };
+    check(3, 3.4375, 0.00390625);
+    check(4, 3.87890625, 0.44140625);
+    for k in 5..=12 {
+        check(k, 3.87890625, 0.0);
+    }
+    check(13, 4.31640625, 0.4375);
+    check(28, 63.37890625, 7.0);
+    assert_eq!(frames_with(&rows, Event::Land), [29]);
+    assert_eq!(below[29], 64.0);
+    // In the air at the end of S + 28, so D = S + 59: the roll goes on
+    // along the floor to S + 58, and the stop is S + 59 to S + 73.
+    assert!(rows[..59].iter().all(|r| r.state == State::Roll));
+    assert_eq!(frames_with(&rows, Event::RollEnd), [59]);
+    assert!(rows[30..59].iter().all(|r| r.grounded && r.vx > 3.0));
+    assert!(rows[59..74].iter().all(|r| r.vx == 0.0));
+    assert!(rows[74].vx > 0.0);
+}
+
+#[test]
+fn classic_2_long_roll_off_a_ledge() {
+    // spec/behavior/rolling-off-ledges.md, "Examples (`title-2`)", Long
+    // roll: Action pressed 24 frames before the edge doesn't hover, lands
+    // on S + 41, rolls on along the floor to S + 58, and stops on S + 59.
+    let rows = classic_2_roll_off(24, 75, right_and(&[Action::Action], |f| f == 0));
+    assert_eq!(rows[25].vy, 0.44140625);
+    assert_eq!(rows[26].vy, 0.87890625);
+    assert_eq!(frames_with(&rows, Event::Land), [41]);
+    assert!(rows[..59].iter().all(|r| r.state == State::Roll));
+    assert_eq!(frames_with(&rows, Event::RollEnd), [59]);
+    assert!(rows[59..74].iter().all(|r| r.vx == 0.0));
+}
+
+#[test]
+fn classic_2_roll_stops_in_the_air() {
+    // spec/behavior/rolling-off-ledges.md, "Examples (`title-2`)", Stop in
+    // the air: standing about 84 px from the edge, Right held, Action
+    // tapped on S = 0. D = 31 is also L.
+    let (rows, from) = classic_2_stop_off(60, right_and(&[Action::Action], |f| f == 0));
+    assert!((80..=88).contains(&from), "{from} px from the edge");
+    assert_eq!(frames_with(&rows, Event::RollEnd), [31]);
+    assert_eq!(rows[31].vx, 0.0);
+    // D + 1 to D + 14: straight down, `vy` rising by 0.4375 from
+    // 0.44140625 to 6.12890625, 49.4296875 px below the ledge.
+    let below = below_ledge(&rows);
+    for n in 1..=14 {
+        let r = &rows[31 + n];
+        assert_eq!((r.vx, r.x), (0.0, rows[31].x), "D + {n}");
+        assert_eq!(r.vy, 0.00390625 + 0.4375 * n as f64, "D + {n}");
+    }
+    assert_eq!(rows[45].vy, 6.12890625);
+    assert_eq!(below[45], 49.4296875);
+    // D + 15: `vy` 1.4375, and the air rules move the player right again
+    // until it lands on D + 20.
+    assert_eq!(rows[46].vy, 1.4375);
+    assert_eq!(rows[46].vx, 0.28125);
+    assert_eq!(rows[47].vy, 1.875);
+    assert_eq!(frames_with(&rows, Event::Land), [51]);
+    assert!(rows[46..=51].iter().all(|r| r.vx > 0.0));
+}
+
+#[test]
+fn classic_2_roll_steers_in_the_air() {
+    // spec/behavior/rolling-off-ledges.md, "The roll in the air
+    // (`title-2`)": the roll's speed rule and steering on every frame, L
+    // included, with no air targets. The other way reverses the roll and
+    // facing at once.
+    use Action::{Action as A, Left, Right};
+    let rows = classic_2_roll_off(3, 12, |f| match f {
+        0 => vec![A, Right],
+        1 | 2 | 7.. => vec![Right],
+        _ => vec![Left],
+    });
+    assert!(rows[2].grounded && rows[3].events.contains(&Event::LeaveGround));
+    let steer = |r: &Row| (r.facing, r.target);
+    assert!(
+        rows[3..7]
+            .iter()
+            .all(|r| steer(r) == (Facing::Left, -3.375))
+    );
+    assert!(
+        rows[7..12]
+            .iter()
+            .all(|r| steer(r) == (Facing::Right, 3.375))
+    );
+    assert_eq!(frames_with(&rows, Event::Turn), [3, 7]);
+    // Action, Down and Up change nothing.
+    let plain = classic_2_roll_off(10, 40, |f| match f {
+        0 => vec![A, Right],
+        _ => vec![Right],
+    });
+    let busy = classic_2_roll_off(10, 40, |f| match f {
+        0 => vec![A, Right],
+        f if f % 3 == 0 => vec![A, Right, Action::Down],
+        f if f % 3 == 1 => vec![Right, Action::Up],
+        _ => vec![Right],
+    });
+    let path = |rows: &[Row]| rows.iter().map(|r| (r.x, r.y)).collect::<Vec<_>>();
+    assert_eq!(path(&busy[..40]), path(&plain[..40]));
+}
+
+#[test]
+fn classic_2_roll_lengthened_again_in_a_long_fall() {
+    // spec/behavior/rolling-off-ledges.md, "How long the roll lasts
+    // (`title-2`)": still in the air at the end of S + 56, the roll is
+    // lengthened again, to D = S + 87. Moved up 300 px partway through
+    // the fall.
+    use Action::{Action as A, Right};
+    let held = |f: usize| if f == 0 { vec![A, Right] } else { vec![Right] };
+    let (mut w, _) = classic_2_before_roll_off(3, &held);
+    let mut rows = play(&mut w, 20, held);
+    w.player.pos.y -= Fixed::from_int(300);
+    rows.extend(play(&mut w, 90, |f| held(f + 20)));
+    let land = frames_with(&rows, Event::Land)[0];
+    assert!((57..87).contains(&land), "lands on S + {land}");
+    assert!(rows[..87].iter().all(|r| r.state == State::Roll));
+    assert_eq!(frames_with(&rows, Event::RollEnd), [87]);
+
+    // Landing on S + 28 or earlier leaves D = S + 31: a roll leaving on
+    // S + 11 doesn't hover and lands on S + 28.
+    let rows = classic_2_roll_off(11, 40, held);
+    assert_eq!(frames_with(&rows, Event::Land), [28]);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [31]);
+}
+
+#[test]
+fn classic_2_roll_carries_on_in_the_air() {
+    // spec/behavior/rolling-off-ledges.md, "A roll that ends in the air
+    // (`title-2`)": with Action held from S to D, D is a roll frame and
+    // `vy` becomes 1.4375 on D + 1, from where the air rules apply.
+    use Action::{Action as A, Right};
+    let (rows, _) = classic_2_stop_off(40, |_| vec![A, Right]);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [31]);
+    assert_eq!(rows[31].target, 3.375);
+    assert!(rows[31].vx > 3.0);
+    assert_eq!(rows[31].vy, 0.00390625);
+    assert_eq!(rows[32].vy, 1.4375);
+    assert_eq!(rows[33].vy, 1.875);
+    assert_eq!(rows[32].state, State::Fall);
+}
+
+/// The frames a jump starts on (`jump_start`, its take-off frame T).
+fn takeoffs(rows: &[Row]) -> Vec<usize> {
+    frames_with(rows, Event::JumpStart)
+}
+
+#[test]
+fn classic_2_jumps_on_roll_frames_in_the_air() {
+    // spec/behavior/rolling-off-ledges.md, "Jumping (`title-2`)": a Jump
+    // press on a roll frame in the air starts a jump there, under
+    // 0.3515625 until T even with Jump tapped, and the roll's target
+    // until T.
+    use Action::{Action as A, Jump as J, Right};
+    let rows = classic_2_roll_off(24, 40, |f| match f {
+        0 => vec![A, Right],
+        30 => vec![J, Right],
+        _ => vec![Right],
+    });
+    assert_eq!(takeoffs(&rows), [32]);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [32]);
+    for k in 30..=31 {
+        assert_eq!(rows[k].vy, rows[k - 1].vy + 0.3515625, "S + {k}");
+    }
+    assert!(rows[30..=32].iter().all(|r| r.target == 3.375));
+    assert_eq!(rows[32].y - rows[31].y, rows[31].vy + 0.3515625);
+    assert_eq!(rows[32].vy, -8.21875);
+    assert_eq!(rows[33].vy, -8.21875 + 0.4375);
+    assert_eq!(rows[33].target, 2.25);
+
+    // On D = L itself: the move on L is 3 + 0.3515625, and the roll's
+    // target goes on after D until T, with no stop.
+    let (rows, _) = classic_2_stop_off(40, |f| match f {
+        0 => vec![A, Right],
+        31 => vec![J, Right],
+        _ => vec![Right],
+    });
+    assert_eq!(below_ledge(&rows)[31], 3.3515625);
+    assert_eq!(takeoffs(&rows), [33]);
+    assert!(
+        rows[31..=33]
+            .iter()
+            .all(|r| r.target == 3.375 && r.vx > 3.0)
+    );
+}
+
+#[test]
+fn classic_2_jumps_while_hovering() {
+    // spec/behavior/rolling-off-ledges.md, "Jumping (`title-2`)": during
+    // a hover the player stays still on G to T, T included.
+    use Action::{Action as A, Jump as J, Right};
+    let rows = classic_2_roll_off(3, 14, |f| match f {
+        0 => vec![A, Right],
+        7 => vec![J, Right],
+        _ => vec![Right],
+    });
+    assert_eq!(takeoffs(&rows), [9]);
+    for k in 7..=9 {
+        assert_eq!(below_ledge(&rows)[k], 3.87890625, "S + {k}");
+    }
+    assert_eq!(rows[9].vy, -8.21875);
+    assert!(below_ledge(&rows)[10] < 0.0);
+}
+
+#[test]
+fn classic_2_jumps_after_a_roll_ends_in_the_air() {
+    // spec/behavior/rolling-off-ledges.md, "Jumping (`title-2`)": after a
+    // stop in the air, Jump starts a jump on D + 1 to D + 15 but not
+    // later; after a carry-on, on D + 1 only. During the stop `vx` stays
+    // 0 until T, and the gravity is the lighter one only with Jump held.
+    use Action::{Action as A, Jump as J, Right};
+    let stop = |jump: &dyn Fn(usize) -> bool| {
+        classic_2_stop_off(52, |f| {
+            let mut held = vec![Right];
+            if f == 0 {
+                held.push(A);
+            }
+            if jump(f) {
+                held.push(J);
+            }
+            held
+        })
+        .0
+    };
+    for g in 32..=46 {
+        assert_eq!(takeoffs(&stop(&|f| f == g)), [g + 2], "D + {}", g - 31);
+    }
+    assert_eq!(takeoffs(&stop(&|f| f == 47)), NONE);
+    assert_eq!(takeoffs(&stop(&|f| f >= 47)), NONE);
+
+    let tapped = stop(&|f| f == 34);
+    let held = stop(&|f| f >= 34);
+    // Jump is held on G either way.
+    assert_eq!(tapped[34].vy, tapped[33].vy + 0.3515625);
+    assert_eq!(tapped[35].vy, tapped[34].vy + 0.4375);
+    assert_eq!(held[35].vy, held[34].vy + 0.3515625);
+    assert!(tapped[31..=36].iter().all(|r| r.vx == 0.0));
+    assert_eq!(tapped[36].vy, -8.21875);
+    assert!(tapped[37].vx > 0.0);
+
+    let carry = |g: usize| {
+        let (rows, _) = classic_2_stop_off(45, |f| {
+            if f == g {
+                vec![A, J, Right]
+            } else {
+                vec![A, Right]
+            }
+        });
+        takeoffs(&rows)
+    };
+    assert_eq!(carry(32), [34]);
+    assert_eq!(carry(33), NONE);
+}
+
+#[test]
+fn classic_2_rolls_after_landing_from_a_stop_in_the_air() {
+    // spec/behavior/rolling-off-ledges.md, "Action in the fall
+    // (`title-2`)": after a stop in the air (landing on A = D + 20), a
+    // press on A - 9 to A + 1 held through A + 2 rolls on A + 2.
+    use Action::{Action as A, Right};
+    let a = 51;
+    let rolls = |action: &dyn Fn(usize) -> bool| {
+        let (rows, _) = classic_2_stop_off(a + 6, |f| {
+            if f == 0 || action(f) {
+                vec![A, Right]
+            } else {
+                vec![Right]
+            }
+        });
+        assert_eq!(frames_with(&rows, Event::Land), [a]);
+        frames_with(&rows, Event::RollStart)
+            .into_iter()
+            .filter(|&f| f > 0)
+            .collect::<Vec<_>>()
+    };
+    for p in a - 9..=a + 1 {
+        assert_eq!(
+            rolls(&|f| (p..=a + 2).contains(&f)),
+            [a + 2],
+            "A - {}",
+            a as i64 - p as i64
+        );
+    }
+    assert_eq!(rolls(&|f| (a - 10..=a + 2).contains(&f)), NONE);
+    assert_eq!(rolls(&|f| (a..=a + 1).contains(&f)), NONE);
+    assert_eq!(rolls(&|f| f == a + 1), NONE);
+    assert_eq!(rolls(&|f| f == a + 2), [a + 2]);
+}

@@ -89,6 +89,10 @@ roll_stop_slide = 0
 roll_buffer = 0
 roll_buffer_hold = 0
 roll_air_buffer = 0
+roll_air_lengthen = 0
+roll_hover = 0
+roll_jump_held_gravity = 0
+roll_air_stop_wait = 0
 roll_attack_width = 0
 roll_attack_offset = 0
 roll_attack_stop = 0
@@ -582,8 +586,15 @@ ground_action_time = 0
 # turns it at once. With Action held all through, it carries on into
 # running; otherwise the player stands for 14 frames, and a press held
 # into the end of that stop, or into a landing, starts the next roll if
-# made within 11 frames of it. Rolls off ledges still play like Classic
-# 1's.
+# made within 11 frames of it. A roll off a ledge (rolling-off-ledges.md,
+# "In `title-2`") keeps its speed rule in the air and falls without the
+# step to 1.4375, hanging still from its second airborne frame to 12
+# frames after the press if it left within 10; in the air at the end of
+# its frame S + 28 (and every 28 frames after) it lasts 28 frames more.
+# It can end in the air: a stop falls straight down for 14 frames, then
+# steps to 1.4375; a carry-on steps on the next frame. A jump can start
+# on any roll frame in the air, under the lighter gravity until take-off,
+# during a stop in the air, and on the frame after either ends.
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."
@@ -640,6 +651,10 @@ roll_stop_slide = 0
 roll_buffer = 11
 roll_buffer_hold = 1
 roll_air_buffer = 11
+roll_air_lengthen = 28
+roll_hover = 12
+roll_jump_held_gravity = 1
+roll_air_stop_wait = 1
 
 [presets.classic-3]
 label = "Classic 3"
