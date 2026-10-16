@@ -204,6 +204,8 @@ end_rise = 0
 end_fade_at = 0
 end_fade_time = 0
 end_fade_step = 0
+fall_out_depth = 0
+fall_out_time = 0
 
 [presets.snappy]
 label = "Snappy"
@@ -487,6 +489,11 @@ end_rise = 0.125
 end_fade_at = 240
 end_fade_time = 28
 end_fade_step = 2
+# Falling out of the level (falling-out.md): the life is lost once the
+# feet are more than 48 px below the level's bottom, and the level's last
+# frame is 96 frames after that one.
+fall_out_depth = 48
+fall_out_time = 96
 
 # The second character (roster slot 1): spec/behavior/second-character.md.
 # It moves by the same rules with its own speeds, jump and crouch

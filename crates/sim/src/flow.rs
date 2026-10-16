@@ -13,7 +13,9 @@
 //! Getting hurt, by touching a hazard surface or an enemy
 //! ([`things`](crate::things)), or falling below the level costs a life,
 //! unless the other character is there to take over
-//! ([`loss`](crate::loss)).
+//! ([`loss`](crate::loss)). With `fall_out_depth`, a fall costs the life
+//! only that far below the bottom, and with `fall_out_time` the level
+//! goes on that long after it (falling-out.md).
 //! The player stays where it was for [`DYING_FRAMES`], or is knocked out
 //! if the physics say so (`knockout_jump`), then comes back at the last
 //! checkpoint reached, or the level's start. Losing the last life ends
@@ -26,7 +28,7 @@ use clamber_pack::Param;
 
 use crate::collect::{self, Release};
 use crate::loss;
-use crate::player::{Knockout, Player, State};
+use crate::player::{Knockout, Player, State, frames};
 use crate::swap::Other;
 use crate::world::{Event, World};
 
@@ -156,6 +158,7 @@ pub(crate) fn dying(world: &mut World) -> bool {
         return false;
     }
     if left > 1 {
+        world.player.vel = Vec2::default();
         world.flow.outcome = Outcome::Dying(left - 1);
     } else if world.flow.lives == 0 {
         world.flow.outcome = Outcome::GameOver;
@@ -229,7 +232,15 @@ pub(crate) fn update(world: &mut World, hurt_by: Option<usize>) {
         world.events.push(Event::Hurt);
     }
     let hurt = world.events.contains(&Event::Hurt);
-    let fell = body.1 > level.size.y;
+    // falling-out.md: past the bottom by more than the depth, measured
+    // after this step's move.
+    let depth = world.feel.world[Param::FallOutDepth];
+    let fell = if depth > Fixed::ZERO {
+        world.player.pos.y > level.size.y + depth
+    } else {
+        body.1 > level.size.y
+    };
+    let fall_out_time = frames(world.feel.world[Param::FallOutTime]);
     if hurt && !fell && loss::can_start(world) {
         // The hit character is lost instead of a life.
         loss::start(world);
@@ -243,6 +254,11 @@ pub(crate) fn update(world: &mut World, hurt_by: Option<usize>) {
         flow.lives = flow.lives.saturating_sub(1);
         flow.outcome = Outcome::Dying(DYING_FRAMES);
         flow.events.push(FlowEvent::Die);
+    }
+    if fell && fall_out_time > 0 {
+        // The level's last frame is `fall_out_time` steps on; the player
+        // comes back on the step after it.
+        flow.outcome = Outcome::Dying(fall_out_time.saturating_add(1));
     }
     if hurt && !fell && knockout {
         // The life is lost on the step after the knock-out's last.

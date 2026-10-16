@@ -484,6 +484,8 @@ mod tests {
                     | Param::EndFadeAt
                     | Param::EndFadeTime
                     | Param::EndFadeStep
+                    | Param::FallOutDepth
+                    | Param::FallOutTime
                     | Param::JoinTime
                     | Param::JoinLift
                     | Param::JoinRise

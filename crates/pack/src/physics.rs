@@ -699,6 +699,14 @@ params! {
     /// Frames the picture stays at each brightness during the fade. Whole
     /// frames.
     EndFadeStep => "end_fade_step",
+    /// Above 0, a player falls out of the level on the first frame it
+    /// ends with its feet more than this far below the level's bottom.
+    /// 0: once the top of its body is below the bottom. px.
+    FallOutDepth => "fall_out_depth",
+    /// Above 0, frames the level goes on for after the frame the player
+    /// falls out on, with input ignored and the player and the view
+    /// still. 0: as for any lost life. Whole frames.
+    FallOutTime => "fall_out_time",
 }
 
 impl Param {
