@@ -195,6 +195,34 @@ fn scenario_test_levels_fit_their_scenarios() {
         .cast(Vec2::new(x, l.start.y), Dir::Down, f(1000.0))
         .unwrap();
     assert!(drop.distance >= f(96.0), "drop of {}", drop.distance);
+
+    // walk-off-ledge on title-2: the same ledge, then a drop of exactly 128
+    let l = Level::load(&dir.join("title-2/walk-off-ledge.level")).unwrap();
+    let mut x = l.start.x;
+    while l
+        .collision
+        .cast(Vec2::new(x, l.start.y), Dir::Down, f(1.0))
+        .is_some()
+    {
+        x += Fixed::ONE;
+    }
+    let ahead = x - l.start.x;
+    assert!(
+        ahead >= f(48.0) && ahead <= f(64.0),
+        "ledge {ahead} px ahead"
+    );
+    let drop = l
+        .collision
+        .cast(Vec2::new(x, l.start.y), Dir::Down, f(1000.0))
+        .unwrap();
+    assert_eq!(drop.distance, f(128.0));
+    for x in [x, x + f(200.0)] {
+        let hit = l
+            .collision
+            .cast(Vec2::new(x, Fixed::ZERO), Dir::Down, f(1000.0))
+            .unwrap();
+        assert_eq!(hit.point.y, l.start.y + f(128.0), "flat at x = {x}");
+    }
 }
 
 #[test]

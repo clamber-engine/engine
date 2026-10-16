@@ -49,22 +49,27 @@ git diff tests/golden/    # review exactly what moved
 
 ## 5. Conformance against the original
 
-For every scenario in `spec/scenarios/` that has a reference trace in
-`spec/traces/reference/`, the harness:
+For every scenario in `spec/scenarios/` and every title that has a
+reference trace for it (`spec/traces/reference/<id>.trace` for `title-1`,
+`spec/traces/reference/<title>/<id>.trace` for the others), the harness:
 
-1. builds the scenario's test level from `content/test/<id>.level`
-2. runs the engine headlessly with the scenario's inputs, on the
-   `classic-1` preset (the reference traces were measured on `title-1`,
-   and `classic-1` says so with `title = "title-1"`, so its traces carry
-   a `# title: title-1` line; a trace whose title differs from the
-   reference's is a title mismatch and isn't compared)
+1. builds the scenario's test level from `content/test/<id>.level`, or
+   from `content/test/<title>/<id>.level` when the scenario's
+   `requires:` line asks something different of that title
+2. runs the engine headlessly with the scenario's inputs, on the title's
+   preset: `classic-1` for `title-1`, `classic-2` for `title-2`
+   (`CONFORMANCE_TITLES` in `crates/conformance`). A preset says which
+   title its values were measured on (`title = "title-1"`), so its traces
+   carry a `# title:` line; a trace whose title differs from the
+   reference's is a title mismatch and isn't compared
 3. computes every metric in the scenario's `[metrics]` section for both
    traces (definitions in `spec/traces/METRICS.md`)
 4. reports pass or fail per metric, with the first divergence for curves
 
-Each scenario shows up as its own named test, `conformance::<id>`, so
-`cargo test --test conformance run-jump` runs one. Scenarios without a
-reference trace show up as ignored.
+Each scenario shows up as its own named test per title,
+`conformance::<id>` for `title-1` and `conformance::<title>/<id>` for the
+others, so `cargo test --test conformance run-jump` runs one. Scenarios
+without a reference trace for a title show up as ignored.
 
 ### The ratchet
 
@@ -76,6 +81,8 @@ Conformance will be incomplete for a long time, so CI tracks it with
 [run-jump-flat]
 expected_failures = ["airtime", "curve y,vy from jump_start"]
 ```
+
+Title-1 scenarios are listed by id; the others as `["title-2/<id>"]`.
 
 - A metric that is **not** listed and fails → CI fails (a regression).
 - A metric that **is** listed and now passes → CI fails too, asking you to

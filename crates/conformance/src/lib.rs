@@ -2,10 +2,13 @@
 //! (TESTING.md layers 4 and 5), and the `clamber-trace` CLI.
 //!
 //! Every scenario is recorded with its level, on the [`PRESET`] preset
-//! for golden traces and [`CONFORMANCE_PRESET`] for conformance:
+//! for golden traces and, for conformance, on each title's preset in
+//! [`CONFORMANCE_TITLES`]:
 //!
 //! - spec scenarios (`spec/scenarios/<id>.scn`) play
-//!   `content/test/<id>.level`, built to satisfy their `requires:` line;
+//!   `content/test/<id>.level`, built to satisfy their `requires:` line
+//!   (or, for a title other than `title-1` whose requirements differ,
+//!   `content/test/<title>/<id>.level`, see [`title_level`]);
 //! - playthroughs (`tests/playthrough/<id>.scn`) name their level in
 //!   `requires:`, relative to the repository root.
 
@@ -23,9 +26,56 @@ use serde::Deserialize;
 /// traces.
 pub const PRESET: &str = "default";
 
-/// The preset compared against the reference traces directly in
-/// `spec/traces/reference/`, which were measured on `title-1`.
-pub const CONFORMANCE_PRESET: &str = "classic-1";
+/// A title with reference traces, and the preset that holds its
+/// measured values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConformanceTitle {
+    pub title: &'static str,
+    pub preset: &'static str,
+}
+
+/// The titles compared against their reference traces, each on its own
+/// preset.
+pub const CONFORMANCE_TITLES: [ConformanceTitle; 2] = [
+    ConformanceTitle {
+        title: "title-1",
+        preset: "classic-1",
+    },
+    ConformanceTitle {
+        title: "title-2",
+        preset: "classic-2",
+    },
+];
+
+/// The title whose reference traces are directly in
+/// `spec/traces/reference/` and whose test levels are directly in
+/// `content/test/` (`spec/traces/FORMAT.md`, "Where reference traces
+/// live").
+pub const FIRST_TITLE: &str = "title-1";
+
+impl ConformanceTitle {
+    /// The scenario's reference trace for this title, relative to the
+    /// repository root `root`; it may not exist.
+    pub fn reference(&self, root: &Path, id: &str) -> PathBuf {
+        let dir = root.join("spec/traces/reference");
+        let dir = if self.title == FIRST_TITLE {
+            dir
+        } else {
+            dir.join(self.title)
+        };
+        dir.join(format!("{id}.trace"))
+    }
+
+    /// The name a scenario goes by for this title: in test names and in
+    /// [`STATUS_FILE`]. `<id>` for `title-1`, `<title>/<id>` for the others.
+    pub fn key(&self, id: &str) -> String {
+        if self.title == FIRST_TITLE {
+            id.to_string()
+        } else {
+            format!("{}/{id}", self.title)
+        }
+    }
+}
 
 /// Expected conformance failures, relative to the repository root.
 pub const STATUS_FILE: &str = "tests/conformance-status.toml";
@@ -48,6 +98,21 @@ pub fn root() -> PathBuf {
 /// The test level for a spec scenario.
 pub fn test_level(root: &Path, id: &str) -> PathBuf {
     root.join("content/test").join(format!("{id}.level"))
+}
+
+/// The test level a spec scenario plays for `title`: the title's own
+/// `content/test/<title>/<id>.level` if there is one (for scenarios whose
+/// `requires:` line differs by title), otherwise the shared one.
+pub fn title_level(root: &Path, id: &str, title: &str) -> PathBuf {
+    let own = root
+        .join("content/test")
+        .join(title)
+        .join(format!("{id}.level"));
+    if title != FIRST_TITLE && own.exists() {
+        own
+    } else {
+        test_level(root, id)
+    }
 }
 
 /// Every spec scenario with its test level, sorted by id.
@@ -92,7 +157,8 @@ pub fn record(scenario: &Scenario, level: &Path, preset: &str) -> Result<Trace, 
 }
 
 /// `tests/conformance-status.toml`: per scenario, the labels of metrics
-/// expected to fail today.
+/// expected to fail today. Scenarios are keyed as
+/// [`ConformanceTitle::key`] names them.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Status {
     pub expected_failures: BTreeMap<String, Vec<String>>,
@@ -207,6 +273,30 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(status.check("other", &[outcome("final_x", false)]).len(), 1);
+    }
+
+    #[test]
+    fn titles_have_their_own_paths_and_keys() {
+        let root = root();
+        let [first, second] = CONFORMANCE_TITLES;
+        assert_eq!(first.key("hop"), "hop");
+        assert_eq!(second.key("hop"), "title-2/hop");
+        assert_eq!(
+            first.reference(Path::new("r"), "hop"),
+            Path::new("r/spec/traces/reference/hop.trace")
+        );
+        assert_eq!(
+            second.reference(Path::new("r"), "hop"),
+            Path::new("r/spec/traces/reference/title-2/hop.trace")
+        );
+        assert_eq!(
+            title_level(&root, "walk-off-ledge", "title-2"),
+            root.join("content/test/title-2/walk-off-ledge.level")
+        );
+        assert_eq!(
+            title_level(&root, "roll-flat", "title-2"),
+            test_level(&root, "roll-flat")
+        );
     }
 
     #[test]

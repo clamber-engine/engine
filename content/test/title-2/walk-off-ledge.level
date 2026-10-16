@@ -1,0 +1,21 @@
+# clamber level v1
+#
+# For scenario walk-off-ledge on title-2: "a plain edge 48 to 64 px ahead;
+# below it, flat ground exactly 128 px (title-2) below the ground the
+# player starts on". The ledge is 56 px ahead of the start, as in the
+# shared level, and the drop is 128 px, so the landing falls within the
+# scenario's 30-frame curve where the reference's does.
+format = 1
+name = "Test: walk off a ledge (title-2)"
+size = [1024, 480]
+start = [64, 272]
+
+# upper ground, ending at the ledge
+[[collision]]
+shape = "rect"
+rect = [0, 272, 120, 208]
+
+# lower ground
+[[collision]]
+shape = "rect"
+rect = [120, 400, 904, 80]

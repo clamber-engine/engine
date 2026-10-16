@@ -6,6 +6,7 @@
 # [run-jump-flat]
 # expected_failures = ["airtime", "curve y,vy from jump_start"]  # #NN
 #
-# Labels are written as `clamber-trace diff` prints them. Scenarios are
-# compared on `classic-1`, which doesn't have its measured values yet
-# (#42 and the issues split from it).
+# Labels are written as `clamber-trace diff` prints them. Title-1
+# scenarios are listed by id and compared on `classic-1`; other titles'
+# are listed as ["title-2/<id>"] and compared on that title's preset
+# (TESTING.md, layer 5).
