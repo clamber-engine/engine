@@ -1066,7 +1066,8 @@ mod tests {
 
     #[test]
     fn picking_a_preset_plays_it_and_remembers_it() {
-        let dir = std::env::temp_dir().join(format!("clamber-prefs-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("clamber-session-prefs-{}", std::process::id()));
         let path = dir.join("prefs.toml");
         let mut s = session(LEVEL);
         s.prefs_path = Some(path.clone());
