@@ -28,6 +28,7 @@ mod installed;
 mod location;
 mod manifest;
 mod placements;
+mod sound;
 mod sprites;
 
 use std::collections::BTreeSet;
@@ -44,6 +45,10 @@ pub use installed::{Installed, check_shareable, installed};
 pub use location::{BANK_SIZE, Location};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements};
+pub use sound::{
+    BLOCK_SIZE, BlockHeader, END_OF_LIST, Loop, Passes, Read, STEPS, Sample, SampleAudio, Song,
+    read_list, read_samples, read_set, read_song, song_samples,
+};
 pub use sprites::{
     Form, Frame, FrameTable, Header, LAST_SHORT, Mirror, Picture, Piece, Runs, SheetFiles, Size,
     SpritePalette, TABLE_ENTRY_SIZE, TableEntry, read_frames, sprite_sheet,
