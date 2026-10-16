@@ -14,7 +14,7 @@ use serde::Deserialize;
 use toml::{Table, Value};
 
 use crate::player::Facing;
-use crate::pose::Pose;
+use crate::pose::{Pose, Stance};
 
 const BUILTIN: &str = include_str!("../../../content/base/archetypes.toml");
 const BUILTIN_ORIGIN: &str = "content/base/archetypes.toml";
@@ -28,15 +28,26 @@ pub enum Behavior {
     /// An enemy that walks along the ground at `speed`, turning at walls
     /// and ledges, and at the ends of its `range` if it has one. Above 0,
     /// `response` is the part of the gap to that speed it closes each
-    /// frame, as the player's `speed_response`; 0 changes speed at once.
-    /// Its facing follows a turn `turn_delay` frames later. Defeated, it
-    /// falls as `defeat` says. When it appears with the view (see
-    /// [`View`](crate::View)), it waits `appear_wait` frames, counting
-    /// the one it appears on, before it moves. Walkers with the same
-    /// `group` above 0 appear and are removed with the view together.
+    /// frame, as the player's `speed_response`, each of its parts rounded
+    /// on its own and added up; 0 changes speed at once. With
+    /// `move_first`, it moves by the speed it had before each frame's
+    /// change, walking and falling. With `columns`, it stands on the floor
+    /// of the 1-px column holding its `x`. Its facing follows a turn
+    /// `turn_delay` frames later. Bounced on, its speed becomes
+    /// `bounced_speed` away from the way the player faces, if it has one.
+    /// Defeated, it falls as `defeat` says. When it appears with the view
+    /// (see [`View`](crate::View)), it waits `appear_wait` frames,
+    /// counting the one it appears on, before it moves. Walkers with the
+    /// same `group` above 0 appear and are removed with the view together.
+    /// With a `contact`, it hurts the player or is bounced on as that
+    /// says, instead of by the preset's boxes.
     Walker {
         speed: Fixed,
-        response: Fixed,
+        response: Response,
+        move_first: bool,
+        columns: bool,
+        bounced_speed: Option<Fixed>,
+        contact: Option<WalkerContact>,
         facing: Facing,
         turn_delay: u8,
         appear_wait: u8,
@@ -304,7 +315,8 @@ impl Span {
 /// How a defeated walker leaves: it jumps up at `jump`, then falls
 /// under `gravity` up to `max_fall`, through the floor and out of the
 /// level. Hit by a thrown object, it's knocked back at `knock` px per
-/// frame first, which eases toward `knock_glide` as it falls.
+/// frame first, which eases toward `knock_glide` as it falls. With
+/// `move_first`, it moves before its fall speed changes on each frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Fall {
     pub jump: Fixed,
@@ -312,6 +324,77 @@ pub struct Fall {
     pub max_fall: Fixed,
     pub knock: Fixed,
     pub knock_glide: Fixed,
+    pub move_first: bool,
+}
+
+/// How a walker's speed eases toward its target: each frame, by each
+/// part of the gap, rounded toward zero to a 1/256 px per frame on its
+/// own, added up. When that adds up to nothing, the speed becomes the
+/// target. All parts 0 change speed at once.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Response {
+    pub parts: [Fixed; MAX_RESPONSE_PARTS],
+}
+
+/// The most parts a walker's [`Response`] can have.
+pub const MAX_RESPONSE_PARTS: usize = 2;
+
+impl Response {
+    /// Whether it changes speed at once.
+    pub fn at_once(self) -> bool {
+        self.parts.iter().all(|&p| p <= Fixed::ZERO)
+    }
+}
+
+/// When a walker touches the player, and whether the player is hurt or
+/// bounces off it (spec/behavior/walker-contact.md, "In `title-2`"). It
+/// touches when the player's offsets from it are within the ranges for
+/// the player's [`Stance`](crate::Stance), with the player where it is
+/// after its move on a frame and the walker where it was before its own.
+/// `across` is the player's `x` less the walker's, `above` the walker's
+/// `y` less the player's, all rounded down. The ranges are for facing
+/// right; facing left, `across` turns around to from `turn` less its end
+/// to `turn` less its start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct WalkerContact {
+    pub stand: Offsets,
+    pub crouch: Offsets,
+    pub walk: Offsets,
+    pub run: Offsets,
+    pub air: Offsets,
+    pub turn: i32,
+    /// The air stance goes on after landing up to this many frames after
+    /// the landing frame, or the second when Action and a direction are
+    /// held on it.
+    pub land_hold: (u8, u8),
+    /// A player in the air that touches it bounces off if it rises at
+    /// this or slower, after the frame's gravity, and `above` is
+    /// `bounce_above` or more. Otherwise it's hurt.
+    pub bounce_rise: Fixed,
+    pub bounce_above: i32,
+}
+
+impl WalkerContact {
+    /// The offsets a walker touches a player in `stance` facing `facing`
+    /// from.
+    pub fn reach(&self, stance: Stance, facing: Facing) -> Offsets {
+        let base = match stance {
+            Stance::Standing => self.stand,
+            Stance::Crouching => self.crouch,
+            Stance::Walking => self.walk,
+            Stance::Running => self.run,
+            Stance::Air => self.air,
+        };
+        let (from, to) = base.across;
+        let across = match facing {
+            Facing::Right => (from, to),
+            Facing::Left => (self.turn - to, self.turn - from),
+        };
+        Offsets {
+            across,
+            above: base.above,
+        }
+    }
 }
 
 /// A thrown object's box for hitting walkers, from its position with
@@ -578,6 +661,10 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "defeat_max_fall",
             "defeat_knock",
             "defeat_knock_glide",
+            "move_first",
+            "columns",
+            "bounced_speed",
+            "contact",
         ],
         "patrol" => &["path", "period"],
         "launcher" => &["velocity"],
@@ -647,10 +734,23 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 Value::String(s) if s == "right" => Facing::Right,
                 _ => return Err(format!("{path}.facing: expected \"left\" or \"right\"")),
             };
-            let response = number("response")?;
-            if response.is_negative() || response > Fixed::ONE {
-                return Err(format!("{path}.response: must be from 0 to 1"));
-            }
+            let response = parse_response(get("response")?, &format!("{path}.response"))?;
+            let flag = |key: &str| match table.get(key) {
+                None | Some(Value::Boolean(false)) => Ok(false),
+                Some(Value::Boolean(true)) => Ok(true),
+                Some(_) => Err(format!("{path}.{key}: expected true or false")),
+            };
+            let move_first = flag("move_first")?;
+            let bounced_speed = match table.get("bounced_speed") {
+                None => None,
+                Some(_) => {
+                    let v = number("bounced_speed")?;
+                    if v.is_negative() {
+                        return Err(format!("{path}.bounced_speed: must not be negative"));
+                    }
+                    Some(v)
+                }
+            };
             let frames = |key: &str| match get(key)? {
                 Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
                 _ => Err(format!(
@@ -680,6 +780,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 max_fall: number("defeat_max_fall")?,
                 knock: number("defeat_knock")?,
                 knock_glide: number("defeat_knock_glide")?,
+                move_first,
             };
             if defeat.gravity <= Fixed::ZERO || defeat.max_fall <= Fixed::ZERO {
                 return Err(format!(
@@ -689,6 +790,13 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             Behavior::Walker {
                 speed,
                 response,
+                move_first,
+                columns: flag("columns")?,
+                bounced_speed,
+                contact: match table.get("contact") {
+                    None => None,
+                    Some(v) => Some(parse_walker_contact(v, &format!("{path}.contact"))?),
+                },
                 facing,
                 turn_delay,
                 appear_wait,
@@ -868,6 +976,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 max_fall: number("defeat_max_fall")?,
                 knock: Fixed::ZERO,
                 knock_glide: Fixed::ZERO,
+                move_first: false,
             };
             if defeat.gravity <= Fixed::ZERO || defeat.max_fall <= Fixed::ZERO {
                 return Err(format!(
@@ -981,6 +1090,118 @@ fn parse_arrive(table: &Table, path: &str, count_delay: u8) -> Result<Arrive, St
         rules,
         rule_count: items.len() as u8,
         otherwise,
+    })
+}
+
+/// Reads a walker's `response`: a number, or a list of up to
+/// [`MAX_RESPONSE_PARTS`], each from 0 to 1 and adding up to no more than
+/// 1. Errors start with `path`.
+fn parse_response(value: &Value, path: &str) -> Result<Response, String> {
+    let one = [value.clone()];
+    let items = match value {
+        Value::Array(items) if (1..=MAX_RESPONSE_PARTS).contains(&items.len()) => items.as_slice(),
+        Value::Array(_) => {
+            return Err(format!(
+                "{path}: expected a number or a list of 1 to {MAX_RESPONSE_PARTS}"
+            ));
+        }
+        _ => &one,
+    };
+    let mut response = Response::default();
+    let mut total = Fixed::ZERO;
+    for (i, item) in items.iter().enumerate() {
+        let at = if matches!(value, Value::Array(_)) {
+            format!("{path}[{i}]")
+        } else {
+            path.to_string()
+        };
+        let part = clamber_pack::read_number(item, "", &at).map_err(|e| e.message)?;
+        if part.is_negative() || part > Fixed::ONE {
+            return Err(format!("{at}: must be from 0 to 1"));
+        }
+        response.parts[i] = part;
+        total += part;
+    }
+    if total > Fixed::ONE {
+        return Err(format!("{path}: the parts must add up to no more than 1"));
+    }
+    Ok(response)
+}
+
+/// Reads a walker's [`WalkerContact`] table. Errors start with `path`.
+fn parse_walker_contact(value: &Value, path: &str) -> Result<WalkerContact, String> {
+    let Value::Table(table) = value else {
+        return Err(format!("{path}: expected a table"));
+    };
+    const KEYS: &[&str] = &[
+        "stand",
+        "crouch",
+        "walk",
+        "run",
+        "air",
+        "turn",
+        "land_hold",
+        "bounce_rise",
+        "bounce_above",
+    ];
+    if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
+        return Err(format!("{path}.{key}: no such value"));
+    }
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let whole = |v: &Value, at: &str| match v {
+        Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+        _ => Err(format!("{at}: expected a whole number")),
+    };
+    let list = |key: &str, len: usize| -> Result<&Vec<Value>, String> {
+        match get(key)? {
+            Value::Array(items) if items.len() == len => Ok(items),
+            _ => Err(format!("{path}.{key}: expected a list of {len}")),
+        }
+    };
+    let offsets = |key: &str| -> Result<Offsets, String> {
+        let at = format!("{path}.{key}");
+        let n = list(key, 4)?
+            .iter()
+            .enumerate()
+            .map(|(i, v)| whole(v, &format!("{at}[{i}]")))
+            .collect::<Result<Vec<_>, _>>()?;
+        if n[0] > n[1] || n[2] > n[3] {
+            return Err(format!("{at}: a range ends before it starts"));
+        }
+        Ok(Offsets {
+            across: (n[0], n[1]),
+            above: (n[2], n[3]),
+        })
+    };
+    let speed = |key: &str| -> Result<Fixed, String> {
+        let at = format!("{path}.{key}");
+        let v = clamber_pack::read_number(get(key)?, "", &at).map_err(|e| e.message)?;
+        if v.is_negative() {
+            return Err(format!("{at}: must not be negative"));
+        }
+        Ok(v)
+    };
+    let hold = list("land_hold", 2)?;
+    let frames = |i: usize| match &hold[i] {
+        Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
+        _ => Err(format!(
+            "{path}.land_hold[{i}]: expected a whole number of frames, 0 to 255"
+        )),
+    };
+    Ok(WalkerContact {
+        stand: offsets("stand")?,
+        crouch: offsets("crouch")?,
+        walk: offsets("walk")?,
+        run: offsets("run")?,
+        air: offsets("air")?,
+        turn: whole(get("turn")?, &format!("{path}.turn"))?,
+        land_hold: (frames(0)?, frames(1)?),
+        bounce_rise: speed("bounce_rise")?,
+        bounce_above: whole(get("bounce_above")?, &format!("{path}.bounce_above"))?,
     })
 }
 

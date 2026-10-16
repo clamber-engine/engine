@@ -15,7 +15,13 @@
 #   (`"left"` or `"right"`), at full speed. Above 0, `response` (up to 1)
 #   is the part of the gap to its speed it closes each frame, rounded as
 #   the player's `speed_response` is, so it eases into a turn. 0 changes
-#   speed at once. A walker that would walk into a wall is put against
+#   speed at once. `response` can also be a list of two parts adding up
+#   to no more than 1, each rounded on its own and then added; when that
+#   comes to nothing, the speed becomes the target. With
+#   `move_first = true` (left out: false), it moves by the speed it had
+#   before each frame's change, walking and falling once defeated. With
+#   `columns = true` (left out: false), it stands on the floor of the
+#   1-px column holding its x, as a player does with `face_slope`. A walker that would walk into a wall is put against
 #   it with no speed, and one that would walk off a ledge stops where it
 #   is; either way it heads back from the next frame. With
 #   `range = [left, right]`, offsets from where it's placed, it also
@@ -26,7 +32,9 @@
 #   and falls through the floor under `defeat_gravity`, up to
 #   `defeat_max_fall`, keeping the speed it had; it's gone once below the
 #   level. After a bounce it holds still first for the bounce's frozen
-#   frames, as the player does. Hit by a thrown object, it's knocked
+#   frames, as the player does. With `bounced_speed` (left out: it keeps
+#   its speed), bounced on, it moves at that speed away from the way the
+#   player faces, and faces that way. Hit by a thrown object, it's knocked
 #   back the way the object came at `defeat_knock`, its speed easing
 #   toward `defeat_knock_glide` in that direction, as it moves by
 #   `response`: on the next frame along the floor, then jumping up at
@@ -36,7 +44,25 @@
 #   it appears on, before it moves (0: it moves on that frame). Walkers
 #   given the same `group` above 0 appear together, as soon as any of
 #   their starts is near the view, and are removed together, once all of
-#   them would be (`group = 0`: on its own).
+#   them would be (`group = 0`: on its own). With a `contact` table, it
+#   touches the player when the player's offsets from it are within the
+#   ranges for the player's stance: `[across from, to, above from, to]`,
+#   whole px, ends included, where `across` is the player's x less the
+#   walker's and `above` the walker's y less the player's, all rounded
+#   down, with the player where it is after its move on a frame and the
+#   walker where it was before its own. The ranges are for facing right;
+#   facing left, `across` turns around to from `turn` less its end to
+#   `turn` less its start. The stances: `air` (in the air, from the frame
+#   a jump starts on, and after landing up to `land_hold = [frames,
+#   running]` frames after the landing frame, `running` when Action and a
+#   direction were held on it), `crouch` (crouching, and while no turn can
+#   start after a crouch), `run` and `walk` (on the ground, faster than
+#   the preset's `stance_run_speed` and `stance_stand_speed`), and
+#   `stand`. A player on the ground that it touches is hurt; one in the
+#   air bounces off it if it rises at `bounce_rise` or slower and `above`
+#   is `bounce_above` or more, and is hurt otherwise. The preset's bounce
+#   and hurt boxes don't apply to it, and it doesn't touch a rolling
+#   player.
 # - `patrol`: an enemy that flies from where it's placed to `path = [x, y]`
 #   away and back, taking `period` frames for the round trip.
 # - `launcher`: fires the player off at `velocity = [x, y]` on touch.

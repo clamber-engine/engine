@@ -17,10 +17,28 @@
 //!   carrying.
 //! - Bouncing is airborne. Carrying, swapping and being hurt take the
 //!   pose they would have otherwise.
+//!
+//! A walker with a [`WalkerContact`] reads the player's [`Stance`]
+//! instead (spec/behavior/walker-contact.md, "Poses (`title-2`)"), with
+//! these engine choices where the spec gives a range of frames or says
+//! nothing:
+//!
+//! - Slowing down, the player stands once its speed is
+//!   `stance_stand_speed` or less, and running with Action let go and a
+//!   direction held, it walks once its speed is `stance_run_speed` or
+//!   less. The spec saw these switches 18 to 34 and 8 to 21 frames after
+//!   the release; the presets' values fall inside those.
+//! - Any time in the air is the air stance, falls without a jump and
+//!   bounces included, and the landing frames after them are too.
+//! - Turning, the ground action and carrying take the stance they would
+//!   have otherwise. Rolling has none: walkers don't touch a rolling
+//!   player yet.
 
 use clamber_fixed::Fixed;
 
-use crate::archetype::Contact;
+use clamber_pack::{Param, Physics};
+
+use crate::archetype::{Contact, WalkerContact};
 use crate::player::{Player, State};
 use crate::world::Event;
 
@@ -32,6 +50,16 @@ pub enum Pose {
     Rolling,
     Crouching,
     Fidget,
+}
+
+/// The stance a walker with a [`WalkerContact`] reads, for its ranges.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Stance {
+    Standing,
+    Crouching,
+    Walking,
+    Running,
+    Air,
 }
 
 /// How the player went into the air, which says how long it still has
@@ -72,6 +100,10 @@ pub struct PoseClock {
     pub standing: Option<u32>,
     /// Rolling on the last step.
     pub rolling: bool,
+    /// Action and a direction were held on the landing frame.
+    pub landed_running: bool,
+    /// Running, for the [`Stance`].
+    pub running: bool,
 }
 
 impl Default for PoseClock {
@@ -83,6 +115,8 @@ impl Default for PoseClock {
             rolled: None,
             standing: None,
             rolling: false,
+            landed_running: false,
+            running: false,
         }
     }
 }
@@ -93,8 +127,8 @@ fn rolling(player: &Player) -> bool {
 }
 
 /// Brings `player`'s clock up to date after its move on a step that
-/// had `events`.
-pub(crate) fn note(player: &mut Player, events: &[Event]) {
+/// had `events`, with `physics`.
+pub(crate) fn note(player: &mut Player, events: &[Event], physics: &Physics) {
     let mut clock = player.pose;
     let grounded = player.grounded();
     if events.contains(&Event::JumpStart) {
@@ -112,6 +146,9 @@ pub(crate) fn note(player: &mut Player, events: &[Event]) {
             clock.since_land = None;
         }
     } else {
+        if clock.since_land.is_none() {
+            clock.landed_running = player.ran;
+        }
         clock.since_land = Some(clock.since_land.map_or(0, |n| n.saturating_add(1)));
     }
     if clock.air == Air::Still && !player.jump_hold && clock.since_land.is_none() {
@@ -139,7 +176,44 @@ pub(crate) fn note(player: &mut Player, events: &[Event]) {
     } else {
         None
     };
+
+    let speed = player.vel.x.abs();
+    let run_speed = physics[Param::StanceRunSpeed];
+    // With a direction held, something moves the speed on.
+    let walking = player.target != Fixed::ZERO && speed <= run_speed;
+    clock.running = grounded
+        && speed > physics[Param::StanceStandSpeed]
+        && (speed > run_speed || (clock.running && !walking));
     player.pose = clock;
+}
+
+/// The stance `player` has at the end of the last step, for a walker
+/// with `contact`, or `None` while it rolls.
+pub fn stance(player: &Player, contact: &WalkerContact, physics: &Physics) -> Option<Stance> {
+    let clock = player.pose;
+    if rolling(player) || player.roll_stop > 0 {
+        return None;
+    }
+    // A jump is in the air from the frame it starts on, still on the
+    // ground.
+    if !player.grounded() || player.takeoff || player.takeoff_wait.is_some() {
+        return Some(Stance::Air);
+    }
+    let (hold, ran_on) = contact.land_hold;
+    let hold = if clock.landed_running { ran_on } else { hold };
+    if clock.since_land.is_some_and(|n| n <= hold) {
+        return Some(Stance::Air);
+    }
+    if player.crouch.held > 0 || player.crouch.turn_lock > 0 {
+        return Some(Stance::Crouching);
+    }
+    Some(if clock.running {
+        Stance::Running
+    } else if player.vel.x.abs() > physics[Param::StanceStandSpeed] {
+        Stance::Walking
+    } else {
+        Stance::Standing
+    })
 }
 
 /// The pose `player` has at the end of the last step, by `contact`'s

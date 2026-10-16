@@ -416,6 +416,17 @@ params! {
     /// A player rising this fast or faster doesn't bounce off an enemy
     /// its bounce box touches. 0: only when not rising.
     BounceMaxRise => "bounce_max_rise",
+    /// Above 0, the walker bounced on doesn't move on the bounce's frame,
+    /// and every walker holds still on the `bounce_freeze` frames after
+    /// it.
+    BounceHoldsWalkers => "bounce_holds_walkers",
+    /// For walkers with a `contact` table: on the ground, a player moving
+    /// faster than this is walking or running, and slower, standing.
+    StanceStandSpeed => "stance_stand_speed",
+    /// For walkers with a `contact` table: on the ground, a player moving
+    /// faster than this is running from then on, until it stands, or
+    /// moves at this or slower with a direction held.
+    StanceRunSpeed => "stance_run_speed",
     /// Above 0, a grounded body moves over the ground column by column:
     /// its `x` is a point with no width, and the floor of each 1-px column
     /// is the top of the ground under the column's middle. Where the floor

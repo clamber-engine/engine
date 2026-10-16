@@ -57,12 +57,13 @@ use clamber_fixed::Fixed;
 use clamber_level::{Dir, Level, Vec2};
 use clamber_pack::{Param, Physics};
 
-use crate::archetype::{Archetype, Behavior, Fall};
+use crate::archetype::{Archetype, Behavior, Fall, Response};
 use crate::carry;
+use crate::columns;
 use crate::flow::{FlowEvent, overlap};
 use crate::join;
-use crate::player::{Act, Facing, HEIGHT, STEP, State, TINY, ease, frames, is_wall};
-use crate::pose;
+use crate::player::{Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, frames, is_wall};
+use crate::pose::{self, Stance};
 use crate::throwers::{self, Picture};
 use crate::view;
 use crate::world::{Event, Phase, Thing, World};
@@ -77,8 +78,8 @@ pub const LAUNCH_REST: u8 = 20;
 /// `previous_feet` is the player's `pos.y` before this step; `frozen`
 /// says the player was held still on it.
 pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
-    pose::note(&mut world.player, &world.events);
     let physics = world.player_physics();
+    pose::note(&mut world.player, &world.events, &physics);
     let boxes = physics[Param::BounceWidth] > Fixed::ZERO;
     let hurt_boxes = physics[Param::HurtWidth] > Fixed::ZERO;
     let attack_boxes = physics[Param::RollAttackWidth] > Fixed::ZERO;
@@ -89,11 +90,35 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
             || world.losing()
             || world.ending.is_some()
     };
-    let bounced = if boxes && !knocked(world) {
+    let mut bounced = if boxes && !knocked(world) {
         bounce_on_boxes(world, &physics)
     } else {
         Vec::new()
     };
+    // Walkers with a contact table decide for themselves, on the frames
+    // the player moves.
+    let holds_walkers = physics[Param::BounceHoldsWalkers] > Fixed::ZERO;
+    if !frozen && !knocked(world) {
+        match walker_contact(world, &physics) {
+            Some((index, true)) => {
+                world.player.bounce(
+                    physics[Param::BounceSpeed],
+                    frames(physics[Param::BounceFreeze]),
+                    &mut world.events,
+                );
+                world.flow.events.push(FlowEvent::Defeat(index));
+                if holds_walkers {
+                    // It doesn't move on this frame.
+                    let facing = world.player.facing;
+                    bounce_off(&mut world.things[index], facing, 1);
+                } else {
+                    bounced.push(index);
+                }
+            }
+            Some((_, false)) => world.events.push(Event::Hurt),
+            None => {}
+        }
+    }
     let attacked = if attack_boxes && !frozen && !knocked(world) {
         roll_attacks(world, &physics)
     } else {
@@ -107,6 +132,9 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     // Walkers and throwers, knocked out or not, hold still on the ground
     // action's pause frames.
     let paused = frozen && world.player.ground_action.is_some();
+    // With `bounce_holds_walkers`, so do walkers on a bounce's frozen
+    // frames.
+    let held_by_bounce = holds_walkers && frozen && world.player.state == State::Bounce;
     // Enemies hold still while a knocked-out player does, after the hit
     // frame, except the one that hurt it.
     let hold = frames(physics[Param::KnockoutHold]);
@@ -125,6 +153,9 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
             continue;
         }
         if paused && thing.archetype.is_some_and(|a| a.behavior.fall().is_some()) {
+            continue;
+        }
+        if held_by_bounce && thing.archetype.is_some_and(|a| a.behavior.is_walker()) {
             continue;
         }
         if advance(&world.level, thing, &physics, picture) {
@@ -149,8 +180,9 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     }
     // Enemies bounced on still moved this frame, as they were.
     let freeze = frames(physics[Param::BounceFreeze]);
+    let facing = world.player.facing;
     for index in bounced {
-        defeat(&mut world.things[index], freeze);
+        bounce_off(&mut world.things[index], facing, freeze);
     }
     let roll_freeze = frames(physics[Param::RollDefeatFreeze]);
     for &index in &attacked {
@@ -259,7 +291,6 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
     match archetype.behavior {
         Behavior::Walker {
             speed,
-            response,
             turn_delay,
             range,
             ..
@@ -276,7 +307,7 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
                     turn_around(thing, turn_delay);
                 }
             }
-            walk(level, thing, speed, response, turn_delay, archetype.size);
+            walk(level, thing, speed, &archetype, turn_delay);
         }
         Behavior::Patrol { path, period } => {
             let origin = level.entities[thing.index].at;
@@ -328,6 +359,30 @@ fn defeat(thing: &mut Thing, hold: u8) {
     };
 }
 
+/// Defeats an enemy bounced on by a player facing `facing`, as
+/// [`defeat`] does. A walker with a `bounced_speed` moves at it away from
+/// the way the player faces, and faces that way.
+fn bounce_off(thing: &mut Thing, facing: Facing, hold: u8) {
+    if let Some(Behavior::Walker {
+        bounced_speed: Some(speed),
+        ..
+    }) = thing.archetype.map(|a| a.behavior)
+    {
+        let away = match facing {
+            Facing::Left => Facing::Right,
+            Facing::Right => Facing::Left,
+        };
+        thing.vx = match away {
+            Facing::Left => -speed,
+            Facing::Right => speed,
+        };
+        thing.heading = away;
+        thing.facing = away;
+        thing.turn = 0;
+    }
+    defeat(thing, hold);
+}
+
 /// Moves a defeated walker or thrower: still while `hold` lasts, then down under
 /// the fall's gravity, through anything, at the speed it had across. It's
 /// gone once its top is below the level.
@@ -343,9 +398,10 @@ fn fall(
         thing.phase = Phase::Falling { vy, hold: hold - 1 };
         return;
     }
-    let vy = (vy + defeat.gravity).min(defeat.max_fall);
-    thing.pos = Vec2::new(thing.pos.x + thing.vx, thing.pos.y + vy);
-    thing.phase = Phase::Falling { vy, hold: 0 };
+    let next = (vy + defeat.gravity).min(defeat.max_fall);
+    let by = if defeat.move_first { vy } else { next };
+    thing.pos = Vec2::new(thing.pos.x + thing.vx, thing.pos.y + by);
+    thing.phase = Phase::Falling { vy: next, hold: 0 };
     if thing.pos.y - archetype.size.y > level.size.y {
         thing.active = false;
     }
@@ -362,7 +418,7 @@ fn knocked(
     level: &Level,
     thing: &mut Thing,
     archetype: &Archetype,
-    response: Fixed,
+    response: Response,
     range: Option<(Fixed, Fixed)>,
     defeat: Fall,
     vy: Option<Fixed>,
@@ -387,11 +443,7 @@ fn knocked(
         Facing::Left => -defeat.knock_glide,
         Facing::Right => defeat.knock_glide,
     };
-    thing.vx = if response > Fixed::ZERO {
-        ease(thing.vx, target, response)
-    } else {
-        target
-    };
+    thing.vx = ease(thing.vx, target, response);
     let x = thing.pos.x + thing.vx;
     match vy {
         None => {
@@ -574,28 +626,29 @@ fn in_reach(
 }
 
 /// Moves a walker along the ground, its speed easing toward `speed` the
-/// way it's heading by `response`. If a wall is in the way, it's put
-/// against it; if a ledge is, it stays put. Either way it stops and turns
-/// around, its facing following `turn_delay` frames after the next.
-fn walk(
-    level: &Level,
-    thing: &mut Thing,
-    speed: Fixed,
-    response: Fixed,
-    turn_delay: u8,
-    size: Vec2,
-) {
+/// way it's heading by its `response`, before or after it moves by its
+/// `move_first`. If a wall is in the way, it's put against it; if a
+/// ledge is, it stays put. Either way it stops and turns around, its
+/// facing following `turn_delay` frames after the next.
+fn walk(level: &Level, thing: &mut Thing, speed: Fixed, archetype: &Archetype, turn_delay: u8) {
+    let Behavior::Walker {
+        response,
+        move_first,
+        columns,
+        ..
+    } = archetype.behavior
+    else {
+        return;
+    };
+    let size = archetype.size;
     let target = match thing.heading {
         Facing::Left => -speed,
         Facing::Right => speed,
     };
-    let vx = if response > Fixed::ZERO {
-        ease(thing.vx, target, response)
-    } else {
-        target
-    };
+    let eased = ease(thing.vx, target, response);
+    let vx = if move_first { thing.vx } else { eased };
     if vx == Fixed::ZERO {
-        thing.vx = vx;
+        thing.vx = eased;
         return;
     }
     let half_width = Fixed::from_bits(size.x.to_bits() / 2);
@@ -623,11 +676,16 @@ fn walk(
         let from = Vec2::new(x, pos.y - STEP);
         level.collision.cast(from, Dir::Down, STEP + STEP)
     };
-    let ground = ground_at(x + sign * half_width).and_then(|_| ground_at(x));
+    let foot = if columns {
+        columns::middle(columns::column(x))
+    } else {
+        x
+    };
+    let ground = ground_at(x + sign * half_width).and_then(|_| ground_at(foot));
     match (wall, ground) {
         (None, Some(hit)) => {
             thing.pos = Vec2::new(x, hit.point.y);
-            thing.vx = vx;
+            thing.vx = eased;
         }
         _ => {
             if let Some(hit) = wall {
@@ -637,6 +695,27 @@ fn walk(
             thing.vx = Fixed::ZERO;
             turn_around(thing, turn_delay.saturating_add(1));
         }
+    }
+}
+
+/// `v` eased toward `target` by `response` (see [`Response`]).
+fn ease(v: Fixed, target: Fixed, response: Response) -> Fixed {
+    if response.at_once() {
+        return target;
+    }
+    let gap = target - v;
+    let grain = SPEED_GRAIN.to_bits();
+    let step: i64 = response
+        .parts
+        .iter()
+        .map(|&part| gap.checked_mul(part).unwrap_or(gap).to_bits().abs() / grain * grain)
+        .sum();
+    if step == 0 {
+        target
+    } else if gap.is_negative() {
+        v - Fixed::from_bits(step)
+    } else {
+        v + Fixed::from_bits(step)
     }
 }
 
@@ -655,6 +734,57 @@ fn going(thing: &Thing) -> Facing {
 fn whole_pixels(pos: Vec2) -> Vec2 {
     let down = |v: Fixed| Fixed::from_int(v.floor() as i32);
     Vec2::new(down(pos.x), -down(-pos.y))
+}
+
+/// The first walker with a contact table that touches the player, and
+/// whether the player bounces off it rather than being hurt (see
+/// [`WalkerContact`](crate::WalkerContact)): from the player's position
+/// after this step's move and the walkers' before theirs. A player on the
+/// ground is hurt. In the air, it bounces if it rises at `bounce_rise` or
+/// slower and is no more than `bounce_above` below the walker; otherwise
+/// it's hurt.
+///
+/// Which of two walkers touching on the same frame counts isn't in the
+/// spec; it's the first placed.
+fn walker_contact(world: &World, physics: &Physics) -> Option<(usize, bool)> {
+    let player = &world.player;
+    for thing in world
+        .things
+        .iter()
+        .filter(|t| t.active && t.phase == Phase::Ready)
+    {
+        let Some(Behavior::Walker {
+            contact: Some(contact),
+            ..
+        }) = thing.archetype.map(|a| a.behavior)
+        else {
+            continue;
+        };
+        let stance = pose::stance(player, &contact, physics)?;
+        let across = player.pos.x.floor() - thing.pos.x.floor();
+        let above = thing.pos.y.floor() - player.pos.y.floor();
+        if !contact.reach(stance, player.facing).contains(across, above) {
+            continue;
+        }
+        let bounce = stance == Stance::Air
+            && !player.grounded()
+            && player.vel.y >= -contact.bounce_rise
+            && above >= i64::from(contact.bounce_above);
+        return Some((thing.index, bounce));
+    }
+    None
+}
+
+/// Whether `thing` is a walker with a contact table, which decides its
+/// own touches (see [`walker_contact`]).
+fn has_contact(thing: &Thing) -> bool {
+    matches!(
+        thing.archetype.map(|a| a.behavior),
+        Some(Behavior::Walker {
+            contact: Some(_),
+            ..
+        })
+    )
 }
 
 /// Bounces the player off every enemy its bounce box touches, from the
@@ -696,7 +826,7 @@ fn bounce_on_boxes(world: &mut World, physics: &Physics) -> Vec<usize> {
         let Some(archetype) = thing.archetype else {
             continue;
         };
-        if thing.phase != Phase::Ready || !archetype.behavior.is_enemy() {
+        if thing.phase != Phase::Ready || !archetype.behavior.is_enemy() || has_contact(thing) {
             continue;
         }
         if overlap(
@@ -840,7 +970,7 @@ fn hurt_ahead(world: &World, physics: &Physics) -> Option<usize> {
     world
         .things
         .iter()
-        .filter(|t| t.active && t.phase == Phase::Ready)
+        .filter(|t| t.active && t.phase == Phase::Ready && !has_contact(t))
         .find(|t| {
             t.archetype.is_some_and(|a| {
                 a.behavior.is_enemy() && overlap(reach, a.bounds(whole_pixels(t.pos), going(t)))
@@ -890,7 +1020,7 @@ fn interact(
         let Some(archetype) = thing.archetype else {
             continue;
         };
-        if thing.phase != Phase::Ready {
+        if thing.phase != Phase::Ready || has_contact(thing) {
             continue;
         }
         let area = archetype.bounds(thing.pos, going(thing));

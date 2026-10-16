@@ -50,8 +50,8 @@ mod world;
 
 pub use archetype::{
     AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
-    Fall, Hit, Holder, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_LETTERS, MAX_THROWS, MAX_TURN_PARTS,
-    Offsets, Reach, Span, Throw,
+    Fall, Hit, Holder, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_LETTERS, MAX_RESPONSE_PARTS,
+    MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Span, Throw, WalkerContact,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
@@ -68,7 +68,7 @@ pub use player::{
     Act, Boost, Crouch, Facing, Gait, GroundAction, HALF_WIDTH, HEIGHT, Hands, Holds, Knockout,
     Player, ROLL, Roll, RollSize, SWAP_FRAMES, State, Stride,
 };
-pub use pose::{Air, Pose, PoseClock, pose};
+pub use pose::{Air, Pose, PoseClock, Stance, pose, stance};
 pub use record::record;
 pub use script::{InputFrame, Script};
 pub use swap::{Move, Other, Recent, Swap};

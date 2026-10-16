@@ -399,6 +399,9 @@ mod tests {
                     | Param::BounceOffset
                     | Param::BounceBelow
                     | Param::BounceMaxRise
+                    | Param::BounceHoldsWalkers
+                    | Param::StanceStandSpeed
+                    | Param::StanceRunSpeed
                     | Param::FaceSlope
                     | Param::SlopeLandingReach
                     | Param::SlopePiece

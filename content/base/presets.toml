@@ -113,6 +113,9 @@ bounce_width = 0
 bounce_offset = 0
 bounce_below = 0
 bounce_max_rise = 0
+bounce_holds_walkers = 0
+stance_stand_speed = 0
+stance_run_speed = 0
 face_slope = 0
 face_speed = 0
 face_exit = 0
@@ -612,7 +615,13 @@ ground_action_time = 0
 # that starts on it limits the speed downhill to 0.75 to 2.25 (above,
 # 2), faces downhill, and leaves the ground 8 px down, with no step,
 # when the floor ahead is more than 8 px lower. Elsewhere the ground is
-# followed only 3 px down.
+# followed only 3 px down. Bounces off walkers (bounce.md, "In
+# `title-2`") leave at 8.21875 after the frame's move, then the player
+# and every walker hold still for 2 frames; the walker bounced on
+# doesn't move on the bounce's frame either. Walkers with a `contact`
+# table (walker-contact.md, "In `title-2`") read the player's stance:
+# standing at 0.125 px per frame or slower and running above 2.5 are
+# the engine's choices, inside the frames the spec saw the switches on.
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."
@@ -686,6 +695,11 @@ face_min_speed = 0.75
 face_turns = 1
 face_leave_drop = 8
 follow_drop = 3
+bounce_speed = 8.21875
+bounce_freeze = 2
+bounce_holds_walkers = 1
+stance_stand_speed = 0.125
+stance_run_speed = 2.5
 
 [presets.classic-3]
 label = "Classic 3"
