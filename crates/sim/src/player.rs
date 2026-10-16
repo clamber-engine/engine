@@ -168,6 +168,8 @@ pub struct Player {
     /// That run was a single frame from standing still, and no direction
     /// has been held since.
     pub lone_run: bool,
+    /// Action's holds, for the size of a timed roll (`roll_fast_hold`).
+    pub holds: Holds,
     /// A jump pressed during a timed roll ended it, and starts on the
     /// next frame, in the air too.
     pub roll_jump: bool,
@@ -251,6 +253,7 @@ impl Player {
             roll_press: None,
             since_run: None,
             lone_run: false,
+            holds: Holds::default(),
             roll_jump: false,
             off_face: None,
             jump_age: None,
@@ -617,6 +620,9 @@ impl Player {
         }
         let takeoff_frame = physics[Param::GroundedTakeoff] > Fixed::ZERO;
         let mut air_takeoff = None;
+        // A jump that waited to take off in a timed roll, or the stop
+        // after one, ends it once this frame has moved.
+        let mut takeoff_ends_roll = false;
         let starts = can_jump && self.jump_buffer.take();
         if starts && wait > 0 {
             // Nothing shows yet: the player goes on as before.
@@ -630,7 +636,11 @@ impl Player {
             if self.state == State::Roll {
                 events.push(Event::RollEnd);
             }
-            self.end_roll();
+            if due {
+                takeoff_ends_roll = true;
+            } else {
+                self.end_roll();
+            }
             let mut speed = -physics[Param::JumpSpeed];
             if !held(Action::Jump) {
                 // A buffered tap that's already over makes a short hop.
@@ -706,9 +716,12 @@ impl Player {
             self.state = State::Roll;
             events.push(Event::RollStart);
         }
+        // Nor does one while a jump waits to take off.
         let can_roll = timed
             && !busy.no_roll
             && !events.contains(&Event::JumpStart)
+            && self.takeoff_wait.is_none()
+            && !due
             && feel.roster[self.character].abilities.contains_key(ROLL);
         let boost = if can_roll {
             self.use_boost(held(Action::Action), physics)
@@ -785,9 +798,13 @@ impl Player {
             self.facing
         } else if self.roll_stop > slide {
             // Standing still in the stop after a roll, the player turns
-            // at once.
+            // at once, or not until it's over.
             self.turn = None;
-            facing_toward(dir, self.facing)
+            if physics[Param::RollAfterStop] > Fixed::ZERO {
+                self.facing
+            } else {
+                facing_toward(dir, self.facing)
+            }
         } else if keep_fall_facing
             || keep_takeoff_facing
             || (self.walked_off && physics[Param::WalkOffKeepsFacing] > Fixed::ZERO)
@@ -961,6 +978,9 @@ impl Player {
         if self.roll_stop > 0 && self.roll_stop == slide {
             // The slide's last frame moves, but ends standing.
             self.vel.x = Fixed::ZERO;
+        }
+        if takeoff_ends_roll {
+            self.end_roll();
         }
 
         if !airborne {
@@ -1282,17 +1302,21 @@ impl Player {
     fn remember_roll_press(&mut self, input: &Frame, physics: &Physics) {
         let held = |a| input.held.contains(a);
         self.since_run = self.since_run.map(|n| n.saturating_add(1));
+        self.holds.update(held(Action::Action));
+        let down_blocks = physics[Param::GroundActionTime] > Fixed::ZERO
+            || physics[Param::RollNotOnDown] > Fixed::ZERO;
         let press = if !input.pressed.contains(Action::Action) {
             self.roll_press
                 .map(|(age, window, hold)| (age.saturating_add(1), window, hold))
         } else if !self.grounded() {
             Some((0, frames(physics[Param::RollAirBuffer]), true))
-        } else if held(Action::Down) && physics[Param::GroundActionTime] > Fixed::ZERO {
-            // Down and action on the ground start the ground action
-            // instead.
+        } else if held(Action::Down) && down_blocks {
+            // Down and action on the ground start the ground action, or
+            // a crouch, instead.
             None
         } else if self.roll.is_some() || self.roll_stop > 0 {
-            Some((0, frames(physics[Param::RollBuffer]), false))
+            let hold = physics[Param::RollBufferHold] > Fixed::ZERO;
+            Some((0, frames(physics[Param::RollBuffer]), hold))
         } else {
             Some((0, 0, false))
         };
@@ -1307,22 +1331,37 @@ impl Player {
             return false;
         };
         let stop_time = frames(physics[Param::RollStopTime]);
+        let after_stop = physics[Param::RollAfterStop] > Fixed::ZERO;
         let can_start = self.grounded()
             && self.swap == 0
             && self.roll.is_none()
-            && (self.roll_stop == 0 || self.roll_stop == stop_time);
+            && (self.roll_stop == 0 || (self.roll_stop == stop_time && !after_stop));
         if !can_start {
             return false;
         }
-        let dir_held = input.held.contains(Action::Left) || input.held.contains(Action::Right);
-        let window = frames(
-            physics[if dir_held {
-                Param::RollFastWindow
-            } else {
-                Param::RollFastWindowNeutral
-            }],
-        );
-        let fast = self.since_run.is_some_and(|n| n <= window) && (dir_held || !self.lone_run);
+        let left = input.held.contains(Action::Left);
+        let right = input.held.contains(Action::Right);
+        let fast_hold = frames(physics[Param::RollFastHold]);
+        let (dir_held, fast) = if fast_hold > 0 {
+            // Action's last hold before the press counts, if it was long
+            // and recent enough.
+            let (hold, gap) = self.holds.before_press;
+            let window = frames(physics[Param::RollFastWindow]);
+            let dir_held = left != right;
+            let recent = u32::from(gap) + u32::from(age) <= u32::from(window);
+            (dir_held, dir_held && hold >= fast_hold && recent)
+        } else {
+            let dir_held = left || right;
+            let window = frames(
+                physics[if dir_held {
+                    Param::RollFastWindow
+                } else {
+                    Param::RollFastWindowNeutral
+                }],
+            );
+            let fast = self.since_run.is_some_and(|n| n <= window) && (dir_held || !self.lone_run);
+            (dir_held, fast)
+        };
         let size = if fast {
             RollSize::Fast
         } else if dir_held {
@@ -1395,7 +1434,9 @@ impl Player {
     /// lengthening it as it runs out, and goes on with the stop after one.
     fn advance_timed_roll(&mut self, action: bool, physics: &Physics, events: &mut Vec<Event>) {
         let stop_time = frames(physics[Param::RollStopTime]);
-        if self.roll_stop > 0 {
+        // A jump waiting to take off holds the roll or stop where it is.
+        let waiting = self.takeoff_wait.is_some();
+        if self.roll_stop > 0 && !waiting {
             self.roll_stop = if self.roll_stop >= stop_time || !self.grounded() {
                 0
             } else {
@@ -1408,7 +1449,11 @@ impl Player {
         roll.held &= action;
         roll.still = false;
         let carry_time = frames(physics[Param::RollCarryTime]);
-        let end = if self.roll_jump {
+        let carries = roll.defeated || (roll.held && roll.size != RollSize::Fast);
+        let end = if waiting {
+            roll.left = roll.left.saturating_sub(1);
+            false
+        } else if self.roll_jump {
             true
         } else if events.contains(&Event::Land) {
             // A roll off a ledge ends as if it started just after landing.
@@ -1418,17 +1463,18 @@ impl Player {
             // It doesn't end in the air.
             roll.left = roll.left.saturating_sub(1);
             false
-        } else if !roll.carry
-            && (roll.defeated || (roll.held && roll.size != RollSize::Fast))
-            && carry_time > 0
-        {
+        } else if !roll.carry && carries && carry_time > 0 {
             roll.carry = true;
             roll.left = carry_time - 1;
             false
         } else {
-            if !roll.carry && stop_time > 0 {
+            if !roll.carry && !carries && stop_time > 0 {
                 self.roll_stop = 1;
                 self.stopped = Some(roll);
+                if physics[Param::RollStopSlide] == Fixed::ZERO {
+                    // With no slide, the roll's last frame ends standing.
+                    self.vel.x = Fixed::ZERO;
+                }
             }
             true
         };
@@ -1946,6 +1992,39 @@ pub enum RollSize {
     Fast,
 }
 
+/// Action's holds, for the size of a timed roll.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Holds {
+    /// Frames action has been held in a row, up to this one.
+    pub held: u8,
+    /// How long its last hold before this one lasted.
+    pub last: u8,
+    /// Frames without action since that hold ended.
+    pub gap: u8,
+    /// The last hold before the latest press, and the frames without
+    /// action between them.
+    pub before_press: (u8, u8),
+}
+
+impl Holds {
+    /// Goes on to a frame with action `held` or not.
+    fn update(&mut self, held: bool) {
+        if !held {
+            if self.held > 0 {
+                self.last = self.held;
+                self.held = 0;
+                self.gap = 0;
+            }
+            self.gap = self.gap.saturating_add(1);
+        } else {
+            if self.held == 0 {
+                self.before_press = (self.last, self.gap);
+            }
+            self.held = self.held.saturating_add(1);
+        }
+    }
+}
+
 /// A boost waiting to be used after a defeat.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Boost {
@@ -1974,7 +2053,8 @@ impl Roll {
     fn steer(&mut self, dir: i32, boosted: bool, physics: &Physics) {
         let along = direction(self.dir);
         let normal = physics[Param::RollSpeed];
-        if dir == along && !boosted && self.speed < normal {
+        let keeps = physics[Param::RollKeepsSize] > Fixed::ZERO;
+        if dir == along && !boosted && !keeps && self.speed < normal {
             self.speed = normal;
         } else if dir == -along {
             self.dir = facing_toward(dir, self.dir);

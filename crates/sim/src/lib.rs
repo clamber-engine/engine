@@ -65,8 +65,8 @@ pub use follow::{Follow, Mode, Point, point as follow_point};
 pub use join::Join;
 pub use loss::{Loss, Lost};
 pub use player::{
-    Act, Boost, Crouch, Facing, Gait, GroundAction, HALF_WIDTH, HEIGHT, Hands, Knockout, Player,
-    ROLL, Roll, RollSize, SWAP_FRAMES, State, Stride,
+    Act, Boost, Crouch, Facing, Gait, GroundAction, HALF_WIDTH, HEIGHT, Hands, Holds, Knockout,
+    Player, ROLL, Roll, RollSize, SWAP_FRAMES, State, Stride,
 };
 pub use pose::{Air, Pose, PoseClock, pose};
 pub use record::record;

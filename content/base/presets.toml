@@ -79,10 +79,15 @@ roll_slow_speed = 0
 roll_fast_speed = 0
 roll_fast_window = 0
 roll_fast_window_neutral = 0
+roll_fast_hold = 0
+roll_keeps_size = 0
+roll_not_on_down = 0
 roll_carry_time = 0
 roll_stop_time = 0
+roll_after_stop = 0
 roll_stop_slide = 0
 roll_buffer = 0
+roll_buffer_hold = 0
 roll_air_buffer = 0
 roll_attack_width = 0
 roll_attack_offset = 0
@@ -570,7 +575,15 @@ ground_action_time = 0
 # to take off, and follows the input at once in the air. On the ground
 # a turn starts at once and lasts 8 frames, facing changing on its fifth,
 # or 7 frames if the player moves toward the new facing at 797/256 or
-# faster on its second.
+# faster on its second. An Action press on the ground without Down starts
+# a 31-frame roll (roll-input.md and roll-speed.md, "In `title-2`") that
+# eases toward 1.125 with no direction held, 4.5 after a hold of Action of
+# 32 frames or more that ended within 19 frames, or 3.375; the other way
+# turns it at once. With Action held all through, it carries on into
+# running; otherwise the player stands for 14 frames, and a press held
+# into the end of that stop, or into a landing, starts the next roll if
+# made within 11 frames of it. Rolls off ledges still play like Classic
+# 1's.
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."
@@ -612,6 +625,21 @@ speed_response = 0.125
 run_from_previous_frame = 1
 turn_time = 8
 short_turn_speed = 3.11328125
+roll_time = 31
+roll_speed = 3.375
+roll_slow_speed = 1.125
+roll_fast_speed = 4.5
+roll_fast_window = 19
+roll_fast_hold = 32
+roll_keeps_size = 1
+roll_not_on_down = 1
+roll_carry_time = 0
+roll_stop_time = 14
+roll_after_stop = 1
+roll_stop_slide = 0
+roll_buffer = 11
+roll_buffer_hold = 1
+roll_air_buffer = 11
 
 [presets.classic-3]
 label = "Classic 3"

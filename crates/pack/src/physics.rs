@@ -227,7 +227,9 @@ params! {
     /// falls under `held_jump_gravity`, moving down or not, if jump has
     /// been held since it started or it started while crouching. While
     /// it waits on the ground, its take-off frame included, facing
-    /// doesn't change.
+    /// doesn't change and no timed roll starts. A timed roll, or the stop
+    /// after one, that a jump starts in goes on while the jump waits, its
+    /// take-off frame included, and ends then without a stop.
     TakeoffWait => "takeoff_wait",
     /// Speed lost per frame while rolling with no direction pressed.
     RollFriction => "roll_friction",
@@ -252,12 +254,27 @@ params! {
     /// held) shortly before it started. A fast roll always ends in a stop.
     RollFastSpeed => "roll_fast_speed",
     /// A timed roll is fast if the player ran within this many frames
-    /// before it, with a direction held as it starts. Whole frames.
+    /// before it, with a direction held as it starts. With
+    /// `roll_fast_hold`, the most frames without action there can be
+    /// between that hold and the roll's first frame. Whole frames.
     RollFastWindow => "roll_fast_window",
     /// The same with no direction held as it starts. Whole frames.
     RollFastWindowNeutral => "roll_fast_window_neutral",
+    /// Above 0, a timed roll's size comes from action's last hold
+    /// instead: with Left or Right alone held as it starts, the roll is
+    /// fast if action's last hold before the press that starts it lasted
+    /// at least this many frames and ended within `roll_fast_window`,
+    /// and normal otherwise; with no direction, it's slow. Whole frames.
+    RollFastHold => "roll_fast_hold",
+    /// Above 0, a direction held the way a timed roll goes doesn't make
+    /// a slower roll normal.
+    RollKeepsSize => "roll_keeps_size",
+    /// Above 0, an action press on the ground with down held doesn't
+    /// start a timed roll.
+    RollNotOnDown => "roll_not_on_down",
     /// A timed roll with action held all the way through it goes on for
     /// this many frames more and carries on into running, with no stop.
+    /// 0: it carries on from the frame after its `roll_end` frame.
     /// Whole frames.
     RollCarryTime => "roll_carry_time",
     /// Above 0, a timed roll that doesn't carry on ends in a stop that
@@ -265,8 +282,12 @@ params! {
     /// but can jump, and can start the next roll on its last frame. A
     /// roll that starts then doesn't move on that frame. Whole frames.
     RollStopTime => "roll_stop_time",
+    /// Above 0, the next roll can't start on the stop's last frame, only
+    /// after the stop, and facing doesn't change during the stop.
+    RollAfterStop => "roll_after_stop",
     /// For this many frames at the start of the stop the player still
     /// slides, slowing by `speed_response` toward 0, and then stands.
+    /// 0: the roll's `roll_end` frame still moves, but ends standing.
     /// Whole frames.
     RollStopSlide => "roll_stop_slide",
     /// An action press during a timed roll or its stop starts the next
@@ -274,6 +295,9 @@ params! {
     /// press. A roll from a press remembered to the stop's last frame
     /// lasts one frame longer. Whole frames.
     RollBuffer => "roll_buffer",
+    /// Above 0, such a press is only remembered while action stays held,
+    /// as in the air.
+    RollBufferHold => "roll_buffer_hold",
     /// An action press in the air starts a roll just after landing, up
     /// to this many frames after the press, if action stays held until
     /// then. Whole frames.

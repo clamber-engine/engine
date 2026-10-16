@@ -368,10 +368,15 @@ mod tests {
                     | Param::RollFastSpeed
                     | Param::RollFastWindow
                     | Param::RollFastWindowNeutral
+                    | Param::RollFastHold
+                    | Param::RollKeepsSize
+                    | Param::RollNotOnDown
                     | Param::RollCarryTime
                     | Param::RollStopTime
+                    | Param::RollAfterStop
                     | Param::RollStopSlide
                     | Param::RollBuffer
+                    | Param::RollBufferHold
                     | Param::RollAirBuffer
                     | Param::RollAttackWidth
                     | Param::RollAttackOffset
