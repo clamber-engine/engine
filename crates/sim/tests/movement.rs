@@ -1218,15 +1218,16 @@ const LEDGE_64: &str = r#"
     rect = [1600, 464, 2496, 136]
 "#;
 
-/// Classic 2 walking right from x = 1560 off the ledge at x = 1600 of
+/// Classic 2 walking right from x = 1500 off the ledge at x = 1600 of
 /// `level`, holding `held(n)` on frame L + n, where L is the frame it
 /// leaves the ground on with Right alone held; `held` should hold Right
-/// before L. Rows from frame L to L + `after`.
+/// before L, which it reaches walking at +2.25. Rows from frame L to
+/// L + `after`.
 fn classic_2_off(level: &str, after: usize, held: impl Fn(i64) -> Vec<Action>) -> Vec<Row> {
     let new = || {
         let level = Arc::new(Level::from_toml_str(level, "ledge").unwrap());
         let mut w = Play::on(level, generic_feel("classic-2").unwrap());
-        w.player.pos.x = Fixed::from_int(1560);
+        w.player.pos.x = Fixed::from_int(1500);
         w
     };
     let probe = play(&mut new(), 60, |_| vec![Action::Right]);
@@ -1238,6 +1239,7 @@ fn classic_2_off(level: &str, after: usize, held: impl Fn(i64) -> Vec<Action>) -
         [l],
         "the leave frame"
     );
+    assert_eq!(rows[l - 1].vx, 2.25, "walking at +2.25 before L");
     rows.into_iter().skip(l).collect()
 }
 
@@ -1326,6 +1328,8 @@ fn classic_2_jumps_near_the_edge_fall_until_take_off() {
             }
         });
         assert_eq!(below_ledge(&rows), heights, "pressed on L + {press}");
+        // Right held keeps it at +2.25 throughout.
+        assert!(rows.iter().all(|r| r.vx == 2.25), "pressed on L + {press}");
         let t = (press + 2) as usize;
         assert_eq!(frames_with(&rows, Event::JumpStart), [t]);
         assert_eq!((rows[t].vy, rows[t + 1].vy), (-8.21875, -7.8671875));
@@ -1373,7 +1377,9 @@ fn classic_2_crouching_in_a_fall() {
     }
     assert_eq!(rows[12].vy, 5.25390625);
     assert_eq!(rows[13].vy, 1.4375);
-    assert!(rows[13].target > 0.0);
+    // `vx` falls under the speed rule: 1.96875 on L, 0.41015625 on U.
+    assert_eq!((rows[0].vx, rows[12].vx), (1.96875, 0.41015625));
+    assert_eq!(rows[13].target, 2.25);
     assert!(rows.iter().all(|r| !r.grounded));
 
     // Up alone keeps it going in the air too.
@@ -1486,6 +1492,325 @@ fn classic_2_jumping_while_crouched_in_the_air() {
         }
     });
     assert_eq!(frames_with(&rows, Event::JumpStart), NONE);
+}
+
+fn classic_2_clear() -> Play {
+    let mut w = classic_2();
+    w.player.pos.x = Fixed::from_int(500);
+    w
+}
+
+/// `vx` in 1/256 px per frame on each row.
+fn vx_grains(rows: &[Row]) -> Vec<i64> {
+    rows.iter().map(|r| (r.vx * 256.0) as i64).collect()
+}
+
+/// The first row from which `vx` stays at `target` to the end.
+fn reached(rows: &[Row], target: f64) -> usize {
+    rows.iter()
+        .rposition(|r| r.vx != target)
+        .map_or(0, |i| i + 1)
+}
+
+#[test]
+fn classic_2_ground_speed_worked_values() {
+    // spec/behavior/ground-speed.md, "Worked values (`title-2`)": from
+    // rest, Right held from frame 0.
+    let mut w = classic_2_clear();
+    let start = w.player.pos.x.to_f64();
+    let rows = play(&mut w, 45, |_| vec![Action::Right]);
+    for (frame, vx, x) in [
+        (0, 72, 0.28125),
+        (1, 135, 0.80859375),
+        (2, 190, 1.55078125),
+        (3, 238, 2.48046875),
+        (10, 441, 12.5859375),
+        (20, 538, 32.28515625),
+        (30, 563, 53.94921875),
+        (36, 569, 67.2265625),
+        (37, 576, 69.4765625),
+    ] {
+        let row = &rows[frame];
+        assert_eq!(
+            (row.vx * 256.0, row.x - start),
+            (vx as f64, x),
+            "frame {frame}"
+        );
+    }
+    assert_eq!(reached(&rows, 2.25), 37);
+}
+
+/// Classic 2 after holding `keys` for 60 frames from rest at x = 500,
+/// with `vx` as given.
+fn classic_2_after(keys: &[Action], vx: f64) -> Play {
+    let mut w = classic_2_clear();
+    hold(&mut w, keys, 60);
+    assert_eq!(w.player.vel.x.to_f64(), vx);
+    w
+}
+
+/// A row of the `title-2` speed summary: how the player starts, what is
+/// held from frame 0, the first three `vx`, the target, the frame it's
+/// reached on and the distance until then.
+type SummaryRow<'a> = (fn() -> Play, &'a [Action], [f64; 3], f64, usize, f64);
+
+#[test]
+fn classic_2_ground_speed_summary() {
+    // spec/behavior/ground-speed.md, "Worked values (`title-2`)", the
+    // summary: the first three `vx`, the frame the target is reached on
+    // and the distance until then, that frame included.
+    use Action::{Action as Act, Left, Right};
+    let rest = classic_2_clear;
+    let walking = || classic_2_after(&[Right], 2.25);
+    let running = || classic_2_after(&[Right, Act], 3.375);
+    let action_only = || classic_2_after(&[Act], 0.0);
+    let cases: [SummaryRow; 6] = [
+        (
+            rest,
+            &[Right],
+            [0.28125, 0.52734375, 0.7421875],
+            2.25,
+            37,
+            69.4765625,
+        ),
+        (
+            action_only,
+            &[Right, Act],
+            [0.28125, 0.66796875, 1.00390625],
+            3.375,
+            40,
+            113.37890625,
+        ),
+        (
+            walking,
+            &[],
+            [1.96875, 1.72265625, 1.5078125],
+            0.0,
+            37,
+            16.0234375,
+        ),
+        (
+            running,
+            &[],
+            [2.953125, 2.5859375, 2.265625],
+            0.0,
+            40,
+            23.984375,
+        ),
+        (
+            running,
+            &[Act],
+            [2.953125, 2.5859375, 2.265625],
+            0.0,
+            40,
+            23.984375,
+        ),
+        (
+            running,
+            &[Right],
+            [3.375, 3.234375, 3.11328125],
+            2.25,
+            33,
+            85.7421875,
+        ),
+    ];
+    for (n, (before, keys, first, target, on, distance)) in cases.into_iter().enumerate() {
+        let mut w = before();
+        let start = w.player.pos.x.to_f64();
+        let rows = play(&mut w, 60, |_| keys.to_vec());
+        let vx: Vec<f64> = rows[..3].iter().map(|r| r.vx).collect();
+        assert_eq!(vx, first, "case {n}");
+        assert_eq!(reached(&rows, target), on, "case {n}");
+        assert_eq!(rows[on].x - start, distance, "case {n}");
+    }
+
+    // Reversing from +2.25 with Left held.
+    let mut w = walking();
+    let start = w.player.pos.x.to_f64();
+    let rows = play(&mut w, 50, |_| vec![Left]);
+    let vx: Vec<f64> = rows[..6].iter().map(|r| r.vx).collect();
+    assert_eq!(
+        vx,
+        [1.6875, 1.1953125, 0.765625, 0.390625, 0.0625, -0.2265625]
+    );
+    assert_eq!(rows[4].x - start, 4.1015625);
+    assert_eq!(reached(&rows, -2.25), 42);
+    // From +3.375 with Left and Action held.
+    let mut w = running();
+    let rows = play(&mut w, 50, |_| vec![Left, Act]);
+    let vx: Vec<f64> = rows[..6].iter().map(|r| r.vx).collect();
+    assert_eq!(
+        vx,
+        [
+            2.53125,
+            1.79296875,
+            1.1484375,
+            0.5859375,
+            0.09375,
+            -0.33984375
+        ]
+    );
+    assert_eq!(reached(&rows, -3.375), 45);
+}
+
+/// A Classic 2 jump with Jump held from the press G (row 0) to landing:
+/// `on_g[k]` held with it on G + k, so T is row 2, and `air` from T + 1.
+/// All rows up to and including the landing.
+fn classic_2_air_jump(mut w: Play, on_g: [&[Action]; 3], air: &[Action]) -> Vec<Row> {
+    let mut rows = Vec::new();
+    while rows.len() < 200 {
+        let keys = on_g.get(rows.len()).copied().unwrap_or(air);
+        rows.extend(play(&mut w, 1, |_| [keys, &[Action::Jump]].concat()));
+        if rows.last().unwrap().events.contains(&Event::Land) {
+            assert_eq!(frames_with(&rows, Event::JumpStart), [2]);
+            return rows;
+        }
+    }
+    panic!("never landed");
+}
+
+#[test]
+fn classic_2_air_control_worked_values() {
+    // spec/behavior/air-control.md, "Worked values (`title-2`)": Right
+    // held from rest for 45 frames, Jump and Right on G to T, then Jump
+    // and Left.
+    use Action::{Jump, Left, Right};
+    let mut w = classic_2_clear();
+    hold(&mut w, &[Right], 45);
+    let mut rows = play(&mut w, 3, |_| vec![Right, Jump]);
+    rows.extend(play(&mut w, 6, |_| vec![Left, Jump]));
+    assert_eq!(frames_with(&rows, Event::JumpStart), [2]);
+    assert!(
+        rows[..3]
+            .iter()
+            .all(|r| r.vx == 2.25 && r.facing == Facing::Right)
+    );
+    assert_eq!(vx_grains(&rows[3..]), [432, 306, 196, 100, 16, -58]);
+    for k in 3..rows.len() {
+        assert!(!rows[k].grounded, "T + {}", k - 2);
+        assert_eq!(rows[k].facing, Facing::Left, "T + {}", k - 2);
+        assert_eq!(rows[k].x - rows[k - 1].x, rows[k].vx, "T + {}", k - 2);
+    }
+    assert_eq!(frames_with(&rows, Event::Turn), [3]);
+}
+
+/// A row of the `title-2` jump distance table: how the player starts,
+/// what is held on G, G + 1 and T and from T + 1, the distance and `vx`
+/// on landing.
+type Distance2Row<'a> = (fn() -> Play, [&'a [Action]; 3], &'a [Action], f64, f64);
+
+#[test]
+fn classic_2_jump_distances() {
+    // spec/behavior/air-control.md, "Jump distances (`title-2`)": `x` on
+    // the landing frame minus `x` on T, and `vx` on landing, on T + 44.
+    use Action::{Action as Act, Left, Right};
+    let rest = classic_2_clear as fn() -> Play;
+    let walking = (|| classic_2_after(&[Right], 2.25)) as fn() -> Play;
+    // Running at 801/256 with Right and Action held on G - 1.
+    let running = (|| {
+        let mut w = classic_2_after(&[Right, Act], 3.375);
+        w.player.vel.x = Fixed::from_ratio_pow2(792, 8);
+        hold(&mut w, &[Right, Act], 1);
+        assert_eq!(w.player.vel.x, Fixed::from_ratio_pow2(801, 8));
+        w
+    }) as fn() -> Play;
+    let (r, ra): (&[Action], &[Action]) = (&[Right], &[Right, Act]);
+    let none: &[Action] = &[];
+    let table: [Distance2Row; 12] = [
+        (rest, [none; 3], none, 0.0, 0.0),
+        (rest, [none, r, r], r, 86.66796875, 2.25),
+        (rest, [none, none, r], r, 84.9453125, 2.25),
+        (rest, [none; 3], ra, 123.50390625, 3.375),
+        (rest, [none, none, ra], ra, 126.59765625, 3.375),
+        (walking, [r; 3], r, 99.0, 2.25),
+        (walking, [r; 3], none, 16.0234375, 0.0),
+        (walking, [r; 3], &[Left], -67.1171875, -2.25),
+        (walking, [r; 3], ra, 139.2578125, 3.375),
+        (running, [ra; 3], ra, 147.29296875, 3.375),
+        (running, [ra; 3], r, 107.02734375, 2.25),
+        (running, [ra; 3], none, 22.82421875, 0.0),
+    ];
+    for (n, (before, on_g, air, distance, vx)) in table.into_iter().enumerate() {
+        let rows = classic_2_air_jump(before(), on_g, air);
+        assert_eq!(rows.len(), 3 + 44, "row {n}");
+        let landing = rows.last().unwrap();
+        assert_eq!(
+            (landing.x - rows[2].x, landing.vx),
+            (distance, vx),
+            "row {n}"
+        );
+    }
+
+    // The mirror image: walking left with Left held.
+    let l: &[Action] = &[Left];
+    let mut w = classic_2();
+    w.player.pos.x = Fixed::from_int(1000);
+    hold(&mut w, l, 60);
+    let rows = classic_2_air_jump(w, [l; 3], l);
+    let landing = rows.last().unwrap();
+    assert_eq!((landing.x - rows[2].x, landing.vx), (-99.0, -2.25));
+
+    // Short jumps from walking with Right held: Jump on G only lands on
+    // T + 37 after 83.25 px; Jump held from G to T + 2 on T + 38 after
+    // 85.5 px.
+    for (jump, land, distance) in [(1, 37, 83.25), (5, 38, 85.5)] {
+        let mut w = walking();
+        let rows = play(&mut w, 45, |f| {
+            if f < jump {
+                vec![Right, Action::Jump]
+            } else {
+                vec![Right]
+            }
+        });
+        assert_eq!(frames_with(&rows, Event::JumpStart), [2], "{jump} frames");
+        assert_eq!(frames_with(&rows, Event::Land), [2 + land], "{jump} frames");
+        assert_eq!(rows[2 + land].x - rows[2].x, distance, "{jump} frames");
+    }
+}
+
+#[test]
+fn classic_2_facing_in_a_jump() {
+    // spec/behavior/air-control.md, "Before take-off (`title-2`)" and
+    // "Facing (`title-2`)".
+    use Action::{Left, Right};
+    use Facing::{Left as FL, Right as FR};
+    let (r, l): (&[Action], &[Action]) = (&[Right], &[Left]);
+    let walking = || classic_2_after(r, 2.25);
+    let facing = |rows: &[Row]| -> Vec<Facing> { rows.iter().map(|r| r.facing).collect() };
+
+    // No turn on G, G + 1 or T. Left still held on T + 1 turns there.
+    let rows = classic_2_air_jump(walking(), [l; 3], l);
+    assert_eq!(facing(&rows[..4]), [FR, FR, FR, FL]);
+    assert_eq!(frames_with(&rows, Event::Turn), [3]);
+    // Released by T + 1, facing stays.
+    let rows = classic_2_air_jump(walking(), [l; 3], &[]);
+    assert!(rows.iter().all(|r| r.facing == FR));
+    // Speed still follows the ground rules on G to T.
+    assert_eq!(vx_grains(&rows[..3]), [432, 306, 196]);
+
+    // In the air facing follows the input on the same frame; both, or
+    // neither, change nothing.
+    let air: [&[Action]; 7] = [&[], l, l, &[], &[Left, Right], r, l];
+    let mut w = walking();
+    let mut rows = play(&mut w, 3, |_| vec![Right, Action::Jump]);
+    rows.extend(play(&mut w, air.len(), |f| {
+        [air[f], &[Action::Jump]].concat()
+    }));
+    assert!(rows[3..].iter().all(|r| !r.grounded));
+    assert_eq!(facing(&rows[3..]), [FR, FL, FL, FL, FL, FR, FL]);
+    // The speed is unaffected: still moving right while facing left.
+    assert!(rows[4].vx > 0.0);
+
+    // The landing frame follows its own input too.
+    let mut w = walking();
+    let mut rows = play(&mut w, 3, |_| vec![Right, Action::Jump]);
+    while !rows.last().unwrap().grounded || rows.len() < 4 {
+        let next = if rows.len() < 3 + 43 { r } else { l };
+        rows.extend(play(&mut w, 1, |_| [next, &[Action::Jump]].concat()));
+    }
+    let landing = rows.last().unwrap();
+    assert!(landing.events.contains(&Event::Land));
+    assert_eq!((rows[rows.len() - 2].facing, landing.facing), (FR, FL));
 }
 
 /// A Classic 1 jump from standing, pressed on step 0 and held for `held`

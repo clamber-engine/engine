@@ -356,6 +356,7 @@ mod tests {
                     | Param::LeaveDrop
                     | Param::LeaveFallSpeed
                     | Param::WalkOffKeepsFacing
+                    | Param::RunFromPreviousFrame
                     | Param::LeaveStepSpeed
                     | Param::LeaveFacingWait
                     | Param::HeldGravityUntilTop

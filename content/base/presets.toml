@@ -37,6 +37,7 @@ top_speed = 5
 walk_speed = 2.5
 air_acceleration = 0.125
 speed_response = 0
+run_from_previous_frame = 0
 crouch_start = 0
 crouch_min = 0
 crouch_recovery = 0
@@ -561,8 +562,12 @@ ground_action_time = 0
 # 8.21875 under the lighter gravity while held, until the top. Walking
 # off a ledge drops 3.4375 px, then falls from 1.4375 px per frame, or
 # from 1/256 while crouching, which goes on in the air; facing stays for
-# the first two frames. Horizontal motion in the air plays like Default
-# for now.
+# the first two frames. Horizontal speed (ground-speed.md and
+# air-control.md, "In `title-2`") eases an eighth of the way to 2.25, or
+# 3.375 if Action was held with a direction on the frame before, on the
+# ground and in the air alike; facing doesn't change while a jump waits
+# to take off, and follows the input at once in the air. Turns on the
+# ground still play like Default.
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."
@@ -598,6 +603,10 @@ leave_drop = 3.4375
 leave_fall_speed = 0.00390625
 leave_step_speed = 1.4375
 leave_facing_wait = 2
+walk_speed = 2.25
+top_speed = 3.375
+speed_response = 0.125
+run_from_previous_frame = 1
 
 [presets.classic-3]
 label = "Classic 3"

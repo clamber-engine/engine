@@ -177,6 +177,9 @@ pub struct Player {
     pub jump_age: Option<u8>,
     /// Falling after walking off the ground, until landing.
     pub walked_off: bool,
+    /// Action was held with Left or Right alone on the last frame
+    /// (`run_from_previous_frame`).
+    pub ran: bool,
     /// The next frame of the fall steps its downward speed up to
     /// `leave_step_speed`.
     pub fall_step: bool,
@@ -249,6 +252,7 @@ impl Player {
             off_face: None,
             jump_age: None,
             walked_off: false,
+            ran: false,
             fall_step: false,
             fall_facing: 0,
             since_land: None,
@@ -474,6 +478,7 @@ impl Player {
             (false, true) => 1,
             _ => 0,
         };
+        let ran_before = std::mem::replace(&mut self.ran, held(Action::Action) && held_dir != 0);
         let timed = physics[Param::RollTime] > Fixed::ZERO;
         let start_vx = self.vel.x;
         let start_facing = self.facing;
@@ -750,6 +755,8 @@ impl Player {
         let waits = due || self.takeoff_wait.is_some();
         let keep_fall_facing =
             facing_wait > 0 && !self.grounded() && (self.fall_facing > 0 || crouching || waits);
+        // Nor does it change while a jump waits on the ground.
+        let keep_takeoff_facing = waits && self.grounded();
         self.fall_facing = self.fall_facing.saturating_sub(1);
         let facing = if acting.is_some() {
             self.turn = None;
@@ -778,6 +785,7 @@ impl Player {
             self.turn = None;
             facing_toward(dir, self.facing)
         } else if keep_fall_facing
+            || keep_takeoff_facing
             || (self.walked_off && physics[Param::WalkOffKeepsFacing] > Fixed::ZERO)
         {
             self.turn = None;
@@ -822,7 +830,12 @@ impl Player {
             dir
         };
 
-        let cap = if held(Action::Action) {
+        let run = if physics[Param::RunFromPreviousFrame] > Fixed::ZERO {
+            ran_before
+        } else {
+            held(Action::Action)
+        };
+        let cap = if run {
             physics[Param::TopSpeed]
         } else {
             physics[Param::WalkSpeed]

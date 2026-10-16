@@ -91,18 +91,18 @@ fn placeholder_presets_warn() {
         selection.warnings[1].to_string(),
         "the `classic-2` preset is a placeholder and its values may change"
     );
-    // Only some of it is filled in so far, such as its jump timing and
-    // gravity; the rest is Default's.
+    // Only some of it is filled in so far, such as its jump timing,
+    // gravity and speeds; the rest, such as turning, is Default's.
     let default = Presets::builtin().world("default").unwrap();
     assert_eq!(
-        selection.feel.world[Param::AirAcceleration],
-        default[Param::AirAcceleration]
+        selection.feel.world[Param::TurnTime],
+        default[Param::TurnTime]
     );
     assert_ne!(
         selection.feel.world[Param::Gravity],
         default[Param::Gravity]
     );
-    assert_eq!(
+    assert_ne!(
         selection.feel.world[Param::TopSpeed],
         default[Param::TopSpeed]
     );

@@ -104,6 +104,10 @@ params! {
     /// to `walk_speed`, `top_speed` with action held, or 0 with no
     /// direction. 0 turns easing off.
     SpeedResponse => "speed_response",
+    /// Above 0, `top_speed` applies only if, on the previous frame,
+    /// action was held together with Left or Right alone; otherwise
+    /// `walk_speed` does. 0: action held on this frame decides.
+    RunFromPreviousFrame => "run_from_previous_frame",
     /// Holding down on the ground crouches from this frame of holding it
     /// on (1 is at once). A crouching player doesn't move along the
     /// ground: it slows as if no direction were held. 0: down doesn't
@@ -216,7 +220,9 @@ params! {
     /// jump starts. 0 takes off on the start frame. Whole frames.
     /// While a jump waits in the air, its take-off frame included, it
     /// falls under `held_jump_gravity`, moving down or not, if jump has
-    /// been held since it started or it started while crouching.
+    /// been held since it started or it started while crouching. While
+    /// it waits on the ground, its take-off frame included, facing
+    /// doesn't change.
     TakeoffWait => "takeoff_wait",
     /// Speed lost per frame while rolling with no direction pressed.
     RollFriction => "roll_friction",
