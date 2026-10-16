@@ -120,6 +120,13 @@ start_rise_ahead = 0
 air_step = 0
 air_whole_pixels = 0
 still_falls = 0
+face_pull = 0
+face_speed_limit = 0
+face_limited_speed = 0
+face_min_speed = 0
+face_turns = 0
+face_leave_drop = 0
+follow_drop = 0
 hurt_width = 0
 hurt_offset = 0
 hurt_jump_time = 0
@@ -599,7 +606,13 @@ ground_action_time = 0
 # It can end in the air: a stop falls straight down for 14 frames, then
 # steps to 1.4375; a carry-on steps on the next frame. A jump can start
 # on any roll frame in the air, under the lighter gravity until take-off,
-# during a stop in the air, and on the frame after either ends.
+# during a stop in the air, and on the frame after either ends. On a steep
+# face (steep-faces.md, "In `title-2`") the frame after one that started
+# on it eases toward a target 1 px per frame further downhill; a frame
+# that starts on it limits the speed downhill to 0.75 to 2.25 (above,
+# 2), faces downhill, and leaves the ground 8 px down, with no step,
+# when the floor ahead is more than 8 px lower. Elsewhere the ground is
+# followed only 3 px down.
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."
@@ -666,6 +679,13 @@ slope_piece = 16
 air_step = 4
 air_whole_pixels = 1
 still_falls = 1
+face_pull = 1
+face_speed_limit = 2.25
+face_limited_speed = 2
+face_min_speed = 0.75
+face_turns = 1
+face_leave_drop = 8
+follow_drop = 3
 
 [presets.classic-3]
 label = "Classic 3"

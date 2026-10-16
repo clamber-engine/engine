@@ -614,6 +614,7 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
         Some((way, n)) => out.extend([1, way as u8, n]),
         None => out.push(0),
     }
+    out.push(p.after_face.map_or(0, |way| way as u8 + 1));
     out.push(p.jump_age.map_or(0, |n| n.saturating_add(1)));
     out.extend([
         p.walked_off.into(),

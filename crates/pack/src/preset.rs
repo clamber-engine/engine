@@ -408,6 +408,13 @@ mod tests {
                     | Param::AirStep
                     | Param::AirWholePixels
                     | Param::StillFalls
+                    | Param::FacePull
+                    | Param::FaceSpeedLimit
+                    | Param::FaceLimitedSpeed
+                    | Param::FaceMinSpeed
+                    | Param::FaceTurns
+                    | Param::FaceLeaveDrop
+                    | Param::FollowDrop
                     | Param::HurtWidth
                     | Param::HurtOffset
                     | Param::HurtJumpTime

@@ -183,6 +183,9 @@ pub struct Player {
     /// for how many more frames a direction held back up it counts as
     /// none.
     pub off_face: Option<(Facing, u8)>,
+    /// The last frame started on a steep face that falls this way
+    /// (`face_pull`).
+    pub after_face: Option<Facing>,
     /// Frames since the jump under way started, until it lands.
     pub jump_age: Option<u8>,
     /// Falling after walking off the ground, until landing.
@@ -264,6 +267,7 @@ impl Player {
             holds: Holds::default(),
             roll_jump: false,
             off_face: None,
+            after_face: None,
             jump_age: None,
             walked_off: false,
             ran: false,
@@ -555,9 +559,13 @@ impl Player {
         } else {
             None
         };
-        // A direction held up the face, or back up one just come off,
-        // counts as none.
-        let downhill = face.or(self.off_face.map(|(way, _)| direction(way)));
+        // With `face_speed`, a direction held up the face, or back up one
+        // just come off, counts as none.
+        let downhill = face
+            .filter(|_| physics[Param::FaceSpeed] > Fixed::ZERO)
+            .or(self.off_face.map(|(way, _)| direction(way)));
+        // The face the last frame started on pulls the speed down it.
+        let pull = std::mem::take(&mut self.after_face);
         let dir = if downhill == Some(-held_dir) {
             0
         } else {
@@ -818,6 +826,15 @@ impl Player {
         {
             self.turn = None;
             self.facing
+        } else if let Some(way) = face.filter(|_| physics[Param::FaceTurns] > Fixed::ZERO) {
+            // On a face the player faces downhill at once, but not on the
+            // frame after landing on it.
+            self.turn = None;
+            if self.since_land == Some(0) {
+                self.facing
+            } else {
+                facing_of(way)
+            }
         } else if physics[Param::CrouchTurnLock] > Fixed::ZERO
             && self.grounded()
             && (crouching || self.crouch.turn_lock > 0)
@@ -905,6 +922,9 @@ impl Player {
                 Some(_) => target += physics[Param::FaceSpeed],
                 None => {}
             }
+            if let Some(way) = pull {
+                target += Fixed::from_int(direction(way)) * physics[Param::FacePull];
+            }
             self.target = target;
             ease(self.vel.x, target, response)
         } else {
@@ -988,7 +1008,7 @@ impl Player {
         let moved = if slope > Fixed::ZERO && airborne {
             self.move_in_air_by_columns(level, physics, events)
         } else if slope > Fixed::ZERO {
-            self.move_by_columns(level, slope)
+            self.move_by_columns(level, slope, face.map(|way| (way, physics)))
         } else {
             self.move_horizontally(level, HALF_WIDTH, |_| true)
         };
@@ -1000,16 +1020,26 @@ impl Player {
             self.end_roll();
         }
 
+        // Off a face, the fall has its own drop and no step.
+        let face_leave = face.is_some() && physics[Param::FaceLeaveDrop] > Fixed::ZERO;
         if !airborne {
-            let drop = physics[Param::LeaveDrop];
-            // By columns, the floor is the one under the middle of the
-            // player's column.
-            let x = if slope > Fixed::ZERO {
-                columns::middle(columns::column(self.pos.x))
+            let drop = if face_leave {
+                physics[Param::FaceLeaveDrop]
             } else {
-                self.pos.x
+                physics[Param::LeaveDrop]
             };
-            if self.follow_ground(level, x, events) && drop > Fixed::ZERO {
+            // By columns, the floor is the one under the middle of the
+            // player's column, and off a face it's followed down less far.
+            let (x, below) = if slope > Fixed::ZERO {
+                let below = match physics[Param::FollowDrop] {
+                    d if d > Fixed::ZERO && face.is_none() => d,
+                    _ => STEP,
+                };
+                (columns::middle(columns::column(self.pos.x)), below)
+            } else {
+                (self.pos.x, STEP)
+            };
+            if self.follow_ground(level, x, below, events) && drop > Fixed::ZERO {
                 // There's no ground within a step below, so the drop
                 // can't land. A jump waiting to take off drops under its
                 // own gravity instead of `fall_gravity`.
@@ -1067,7 +1097,7 @@ impl Player {
             && ((leaving && !crouched_fall && self.roll.is_none())
                 || (airborne && self.walked_off && crouch_ends));
         if starts_fall {
-            self.fall_step = physics[Param::LeaveStepSpeed] > Fixed::ZERO;
+            self.fall_step = physics[Param::LeaveStepSpeed] > Fixed::ZERO && !face_leave;
             self.fall_facing = facing_wait.saturating_sub(1);
         }
 
@@ -1092,6 +1122,9 @@ impl Player {
                 }],
             );
         }
+        self.after_face = face
+            .filter(|_| physics[Param::FacePull] > Fixed::ZERO)
+            .map(facing_of);
         self.off_face = if !self.grounded() {
             None
         } else if let Some(way) = face {
@@ -1179,13 +1212,13 @@ impl Player {
         if self.grounded() {
             self.state = State::Run;
             let x = if by_columns {
-                self.move_by_columns(level, slope);
+                self.move_by_columns(level, slope, None);
                 columns::middle(columns::column(self.pos.x))
             } else {
                 self.move_horizontally(level, HALF_WIDTH, |_| true);
                 self.pos.x
             };
-            self.follow_ground(level, x, events);
+            self.follow_ground(level, x, STEP, events);
             return;
         }
         self.vel.y = (self.vel.y + lost.gravity).min(physics[Param::MaxFallSpeed]);
@@ -1668,8 +1701,16 @@ impl Player {
 
     /// Moves a grounded body sideways column by column, as far as the
     /// ground allows, and returns how far. A column it can't go into
-    /// stops it at the left edge of the column it was in.
-    fn move_by_columns(&mut self, level: &Level, slope: Fixed) -> Fixed {
+    /// stops it at the left edge of the column it was in. Starting on a
+    /// steep face falling the way given, a body that isn't stopped has its
+    /// speed limited by the physics given first (`face_speed_limit`,
+    /// `face_min_speed`).
+    fn move_by_columns(
+        &mut self,
+        level: &Level,
+        slope: Fixed,
+        face: Option<(i32, &Physics)>,
+    ) -> Fixed {
         if self.vel.x == Fixed::ZERO {
             return Fixed::ZERO;
         }
@@ -1687,6 +1728,9 @@ impl Player {
                 self.touched.push(collider);
                 return moved;
             }
+        }
+        if let Some((way, physics)) = face {
+            self.vel.x = limit_on_face(self.vel.x, way, physics);
         }
         // Walls that aren't ground, such as segments, still stop the
         // feet.
@@ -1809,12 +1853,19 @@ impl Player {
     }
 
     /// Keeps a grounded body on the ground under `x` as it moves over
-    /// slopes and bumps, or lets it leave the ground when there's none
-    /// within reach. A body taking off keeps its upward speed. Returns
-    /// whether the body walked off the ground.
-    fn follow_ground(&mut self, level: &Level, x: Fixed, events: &mut Vec<Event>) -> bool {
+    /// slopes and bumps, up to a step up or `below` down, or lets it
+    /// leave the ground when there's none within reach. A body taking off
+    /// keeps its upward speed. Returns whether the body walked off the
+    /// ground.
+    fn follow_ground(
+        &mut self,
+        level: &Level,
+        x: Fixed,
+        below: Fixed,
+        events: &mut Vec<Event>,
+    ) -> bool {
         let from = Vec2::new(x, self.pos.y - STEP);
-        match level.collision.cast(from, Dir::Down, STEP + STEP) {
+        match level.collision.cast(from, Dir::Down, STEP + below) {
             Some(hit) => {
                 self.pos.y = hit.point.y;
                 if !self.takeoff {
@@ -1996,6 +2047,22 @@ impl Reach {
                 && (columns::face(level, column, ground, self.slope).is_some()
                     || (self.piece > 0
                         && columns::sloped(level, column, ground, self.slope, self.piece))))
+    }
+}
+
+/// A speed `vx` on a steep face falling `way` (-1 or 1), held between
+/// `face_min_speed` and `face_speed_limit` down the face.
+fn limit_on_face(vx: Fixed, way: i32, physics: &Physics) -> Fixed {
+    let way = Fixed::from_int(way);
+    let down = vx * way;
+    let limit = physics[Param::FaceSpeedLimit];
+    let min = physics[Param::FaceMinSpeed];
+    if limit > Fixed::ZERO && down > limit {
+        physics[Param::FaceLimitedSpeed] * way
+    } else if min > Fixed::ZERO && down < min {
+        min * way
+    } else {
+        vx
     }
 }
 

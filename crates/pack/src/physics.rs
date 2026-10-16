@@ -454,6 +454,33 @@ params! {
     /// ends the frame within landing reach of. 0: it counts as rising
     /// for the lift and doesn't land short of the ground.
     StillFalls => "still_falls",
+    /// On a frame after one that started on a steep face, the target
+    /// speed has this much added the way the face falls, whatever is
+    /// held, on the ground or, just off the face, in the air.
+    FacePull => "face_pull",
+    /// Above 0, on a frame that starts on a steep face and isn't stopped
+    /// by a rise, a speed of more than this the way the face falls
+    /// becomes `face_limited_speed`.
+    FaceSpeedLimit => "face_speed_limit",
+    /// The speed `face_speed_limit` sets, the way the face falls.
+    FaceLimitedSpeed => "face_limited_speed",
+    /// Above 0, on a frame that starts on a steep face and isn't stopped
+    /// by a rise, a speed of less than this the way the face falls, none
+    /// or up the face included, becomes this.
+    FaceMinSpeed => "face_min_speed",
+    /// Above 0, on a frame that starts on a steep face the body faces the
+    /// way the face falls, turning at once with no turn, except on the
+    /// frame after landing.
+    FaceTurns => "face_turns",
+    /// Above 0, a body leaving the ground on a frame that starts on a
+    /// steep face moves down this far instead of `leave_drop`, and its
+    /// fall has no step to `leave_step_speed`.
+    FaceLeaveDrop => "face_leave_drop",
+    /// Above 0, with `face_slope`, on a frame that doesn't start on a
+    /// steep face the body follows the ground down into its new column
+    /// only if it's this much lower or less; lower, it leaves the ground.
+    /// On a face it follows the ground down a step. 0: a step.
+    FollowDrop => "follow_drop",
     /// Above 0, whether an enemy hurts the player is decided a frame
     /// ahead with a box on whole-pixel positions instead of by touching
     /// it: when the box touches an enemy at the end of a frame, the

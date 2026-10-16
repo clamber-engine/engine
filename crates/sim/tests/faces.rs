@@ -1,7 +1,8 @@
 //! Steep faces on the `classic-1` preset, from the examples in
 //! `spec/behavior/steep-faces.md` and `walk-off.md` ("Jumping near the
 //! edge"). Heights in the spec are relative to the starting floor; here
-//! that floor is at y = 300.
+//! that floor is at y = 300. The `classic_2_*` tests are on the `classic-2`
+//! preset, from the same file's "In `title-2`".
 
 use std::sync::Arc;
 
@@ -24,6 +25,11 @@ fn grains(v: Fixed) -> i64 {
 /// (negative is above), or none, for columns 0 to 599, with the player
 /// standing at `x`.
 fn ground(height: impl Fn(i32) -> Option<i32>, x: f64) -> World {
+    ground_in("classic-1", height, x)
+}
+
+/// [`ground`] on the `preset` preset.
+fn ground_in(preset: &str, height: impl Fn(i32) -> Option<i32>, x: f64) -> World {
     let mut solids = Vec::new();
     let mut points: Vec<[i32; 2]> = Vec::new();
     for c in 0..=600 {
@@ -49,10 +55,7 @@ fn ground(height: impl Fn(i32) -> Option<i32>, x: f64) -> World {
         "format = 1\nname = \"faces\"\nsize = [600, 600]\nstart = [{x}, {start}]\n{collision}"
     );
     let level = Level::from_toml_str(&src, "faces").unwrap();
-    World::new(
-        Arc::new(level),
-        Arc::new(generic_feel("classic-1").unwrap()),
-    )
+    World::new(Arc::new(level), Arc::new(generic_feel(preset).unwrap()))
 }
 
 /// Flat, then a face rising to the right from column 200 (`steep-faces.md`,
@@ -376,4 +379,210 @@ fn faces_work_however_the_ground_is_drawn() {
         Vec2::new(fx(199.0), Fixed::from_int(FLOOR))
     );
     assert_eq!(world.player.vel.x, Fixed::ZERO);
+}
+
+/// The `title-2` examples' floor: flat, a face rising to the right over
+/// columns 200 to 215, and flat again 64 px up from column 216.
+fn face_64(c: i32) -> Option<i32> {
+    Some(match c {
+        ..200 => 0,
+        200..216 => -1 - 4 * (c - 200),
+        _ => -64,
+    })
+}
+
+/// Steps `frames` times holding `held`, and the rows after them.
+fn rows_holding(
+    world: &mut World,
+    held: &[Action],
+    frames: usize,
+) -> Vec<(Fixed, i64, Fixed, bool)> {
+    (0..frames)
+        .map(|_| {
+            hold(world, held);
+            row(world)
+        })
+        .collect()
+}
+
+#[test]
+fn classic_2_walking_into_the_face_repeats_a_cycle_at_its_foot() {
+    let mut world = ground_in("classic-2", face_64, 193.5);
+    world.player.vel.x = fx(2.25);
+    let rows = rows_holding(&mut world, &[Action::Right], 13);
+    let expected = [
+        (195.75, 576),
+        (198.0, 576),
+        (198.0, 0),
+        (198.28125, 72),
+        (198.80859375, 135),
+        (199.55078125, 190),
+        (199.0, 0),
+        (199.28125, 72),
+        (199.80859375, 135),
+        (199.0, 0),
+        (199.28125, 72),
+        (199.80859375, 135),
+        (199.0, 0),
+    ];
+    for (n, ((x, vx, y, grounded), (ex, evx))) in rows.into_iter().zip(expected).enumerate() {
+        assert_eq!(
+            (x, vx, y, grounded),
+            (fx(ex), evx, Fixed::ZERO, true),
+            "frame {}",
+            n + 1
+        );
+    }
+}
+
+#[test]
+fn classic_2_running_into_the_face_repeats_a_shorter_cycle() {
+    let mut world = ground_in("classic-2", face_64, 192.25);
+    world.player.vel.x = fx(3.375);
+    world.player.ran = true;
+    let rows = rows_holding(&mut world, &[Action::Right, Action::Action], 8);
+    let xs: Vec<_> = rows.iter().map(|r| (r.0, r.1)).collect();
+    let expected = [
+        (195.625, 864),
+        (199.0, 864),
+        (199.0, 0),
+        (199.421875, 108),
+        (199.0, 0),
+        (199.421875, 108),
+        (199.0, 0),
+        (199.421875, 108),
+    ];
+    assert_eq!(xs, expected.map(|(x, vx)| (fx(x), vx)));
+}
+
+#[test]
+fn classic_2_coasting_down_the_face() {
+    let mut world = ground_in("classic-2", face_64, 217.5);
+    world.player.vel.x = fx(-1.25);
+    world.player.facing = Facing::Left;
+    let rows = rows_holding(&mut world, &[], 21);
+    for (frame, x, y, vx) in [
+        (1, 216.40625, -64, -280),
+        (2, 215.44921875, -61, -245),
+        (3, 214.609375, -57, -215),
+        (4, 213.75, -53, -220),
+        (5, 212.875, -49, -224),
+        (6, 211.984375, -45, -228),
+        (7, 211.08203125, -45, -231),
+        (18, 200.6796875, -1, -248),
+        (19, 199.70703125, 0, -249),
+        (20, 198.70703125, 0, -256),
+        (21, 197.83203125, 0, -224),
+    ] {
+        assert_eq!(
+            rows[frame - 1],
+            (fx(x), vx, Fixed::from_int(y), true),
+            "frame {frame}"
+        );
+    }
+    assert!(rows.iter().all(|r| r.3));
+}
+
+#[test]
+fn classic_2_walking_down_then_holding_uphill() {
+    let mut world = ground_in("classic-2", face_64, 219.75);
+    world.player.vel.x = fx(-2.25);
+    world.player.facing = Facing::Left;
+    let mut held: Vec<&[Action]> = vec![&[Action::Left]; 4];
+    held.extend([&[Action::Right][..]; 18]);
+    let mut facings = Vec::new();
+    let mut rows = Vec::new();
+    for h in held {
+        hold(&mut world, h);
+        rows.push(row(&world));
+        facings.push(world.player.facing);
+    }
+    for (frame, x, y, vx) in [
+        (1, 217.5, -64, -576),
+        (2, 215.25, -61, -576),
+        (3, 213.0, -53, -576),
+        (4, 211.0, -45, -512),
+        (5, 209.40625, -37, -408),
+        (6, 208.16796875, -33, -317),
+        (7, 207.23828125, -29, -238),
+        (8, 206.48828125, -25, -192),
+        (17, 199.73828125, 0, -192),
+        (18, 199.23828125, 0, -128),
+        (19, 199.08203125, 0, -40),
+        (20, 199.2265625, 0, 37),
+        (21, 199.6328125, 0, 104),
+        (22, 199.0, 0, 0),
+    ] {
+        assert_eq!(
+            rows[frame - 1],
+            (fx(x), vx, Fixed::from_int(y), true),
+            "frame {frame}"
+        );
+    }
+    for frame in 9..=17 {
+        assert_eq!(rows[frame - 1].1, -192, "frame {frame}");
+    }
+    // Holding uphill on the face doesn't turn the player.
+    assert!(facings[..17].iter().all(|&f| f == Facing::Left));
+}
+
+#[test]
+fn classic_2_crossing_three_face_columns_leaves_the_face() {
+    let mut world = ground_in("classic-2", face_64, 219.75);
+    world.player.vel.x = fx(-2.25);
+    world.player.facing = Facing::Left;
+    let rows = rows_holding(&mut world, &[Action::Left], 5);
+    assert_eq!(rows[3], (fx(211.0), -512, Fixed::from_int(-45), true));
+    // L: 8 px down, not 3.4375, with the pull's speed under the limit.
+    assert_eq!(rows[4], (fx(208.84375), -552, Fixed::from_int(-37), false));
+    assert!(world.events.contains(&Event::LeaveGround));
+    assert_eq!(world.player.vel.y, fx(0.00390625));
+    // L + 1: no step to 1.4375, and the pull once more.
+    hold(&mut world, &[Action::Left]);
+    assert_eq!(world.player.vel.y, fx(113.0 / 256.0));
+    assert_eq!(grains(world.player.vel.x), -552 + (-832 + 552) / 8);
+    assert_eq!(world.player.pos.y, fx(-37.0 + 113.0 / 256.0 + FLOOR as f64));
+}
+
+#[test]
+fn classic_2_onto_a_lower_face_column_from_the_top_walks_off() {
+    // The move ends in column 214, 7 px below the top floor.
+    let mut world = ground_in("classic-2", face_64, 216.5);
+    world.player.vel.x = fx(-2.25);
+    world.player.facing = Facing::Left;
+    hold(&mut world, &[Action::Left]);
+    assert_eq!(row(&world), (fx(214.25), -576, fx(-64.0 + 3.4375), false));
+    assert!(world.events.contains(&Event::LeaveGround));
+}
+
+#[test]
+fn classic_2_on_the_face_the_player_turns_downhill_at_once() {
+    let mut world = ground_in("classic-2", face_64, 210.5);
+    world.player.facing = Facing::Right;
+    hold(&mut world, &[]);
+    assert_eq!(world.player.facing, Facing::Left);
+    assert_eq!(world.player.turn, None);
+    assert!(world.events.contains(&Event::Turn));
+}
+
+#[test]
+fn classic_2_facing_waits_a_frame_after_landing_on_the_face() {
+    let mut world = ground_in("classic-2", face_64, 210.5);
+    world.player.facing = Facing::Right;
+    world.player.pos.y -= Fixed::from_int(20);
+    world.player.ground = None;
+    let mut landed = None;
+    for n in 0..20 {
+        hold(&mut world, &[]);
+        if world.events.contains(&Event::Land) {
+            landed = Some(n);
+            break;
+        }
+    }
+    assert!(landed.is_some());
+    assert_eq!(world.player.facing, Facing::Right);
+    hold(&mut world, &[]);
+    assert_eq!(world.player.facing, Facing::Right);
+    hold(&mut world, &[]);
+    assert_eq!(world.player.facing, Facing::Left);
 }
