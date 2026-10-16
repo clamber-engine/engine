@@ -384,8 +384,25 @@ impl Player {
     /// Holds a rolling player still for `freeze` frames after its roll,
     /// or the stop after it, defeated an enemy. A roll that did carries
     /// on into running, and the next frame with action held can boost it.
-    pub fn defeat_rolling(&mut self, freeze: u8) {
+    /// With `roll_boost_at_defeat`, action held on this frame boosts the
+    /// roll instead, and without it the roll goes on as it was.
+    pub fn defeat_rolling(&mut self, freeze: u8, physics: &Physics) {
         self.frozen = freeze;
+        if physics[Param::RollBoostAtDefeat] > Fixed::ZERO {
+            let boost = physics[Param::RollBoost];
+            if let Some(roll) = &mut self.roll
+                && self.holds.held > 0
+                && boost > Fixed::ZERO
+            {
+                // The new roll frames start once the freeze is over.
+                roll.left = frames(physics[Param::RollTime]);
+                roll.speed += boost;
+                roll.boosts = roll.boosts.saturating_add(1);
+                roll.defeated = true;
+                roll.carry = false;
+            }
+            return;
+        }
         if let Some(roll) = &mut self.roll {
             roll.defeated = true;
         }

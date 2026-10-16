@@ -31,8 +31,12 @@
 //! - Any time in the air is the air stance, falls without a jump and
 //!   bounces included, and the landing frames after them are too.
 //! - Turning, the ground action and carrying take the stance they would
-//!   have otherwise. Rolling has none: walkers don't touch a rolling
-//!   player yet.
+//!   have otherwise.
+//!
+//! A timed roll's frames are [`Stance::Rolling`] and the frames of the
+//! stop after one [`Stance::Stopped`] (spec/behavior/rolling-into-walkers.md,
+//! "In `title-2`"). The frame a roll ends on with a jump, or carrying on
+//! into running, already has the stance the player has after it.
 
 use clamber_fixed::Fixed;
 
@@ -60,6 +64,10 @@ pub enum Stance {
     Walking,
     Running,
     Air,
+    /// On a frame of a timed roll.
+    Rolling,
+    /// In the stop after a timed roll.
+    Stopped,
 }
 
 /// How the player went into the air, which says how long it still has
@@ -188,11 +196,20 @@ pub(crate) fn note(player: &mut Player, events: &[Event], physics: &Physics) {
 }
 
 /// The stance `player` has at the end of the last step, for a walker
-/// with `contact`, or `None` while it rolls.
+/// with `contact`, or `None` while it rolls, or is in the stop after a
+/// roll, and `contact` has no `roll` range.
 pub fn stance(player: &Player, contact: &WalkerContact, physics: &Physics) -> Option<Stance> {
     let clock = player.pose;
     if rolling(player) || player.roll_stop > 0 {
-        return None;
+        contact.roll?;
+        return if player.roll.is_some() {
+            Some(Stance::Rolling)
+        } else if player.roll_stop > 0 {
+            Some(Stance::Stopped)
+        } else {
+            // An untimed roll.
+            None
+        };
     }
     // A jump is in the air from the frame it starts on, still on the
     // ground.

@@ -355,6 +355,11 @@ impl Response {
 /// `y` less the player's, all rounded down. The ranges are for facing
 /// right; facing left, `across` turns around to from `turn` less its end
 /// to `turn` less its start.
+///
+/// With a `roll` range, a rolling player defeats it within that range on
+/// any roll frame, and a player in the stop after a roll is hurt within
+/// it (spec/behavior/rolling-into-walkers.md, "In `title-2`"). Without
+/// one, it doesn't touch a player that rolls or is in such a stop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct WalkerContact {
     pub stand: Offsets,
@@ -362,6 +367,7 @@ pub struct WalkerContact {
     pub walk: Offsets,
     pub run: Offsets,
     pub air: Offsets,
+    pub roll: Option<Offsets>,
     pub turn: i32,
     /// The air stance goes on after landing up to this many frames after
     /// the landing frame, or the second when Action and a direction are
@@ -376,24 +382,25 @@ pub struct WalkerContact {
 
 impl WalkerContact {
     /// The offsets a walker touches a player in `stance` facing `facing`
-    /// from.
-    pub fn reach(&self, stance: Stance, facing: Facing) -> Offsets {
+    /// from, if it has a range for that stance.
+    pub fn reach(&self, stance: Stance, facing: Facing) -> Option<Offsets> {
         let base = match stance {
             Stance::Standing => self.stand,
             Stance::Crouching => self.crouch,
             Stance::Walking => self.walk,
             Stance::Running => self.run,
             Stance::Air => self.air,
+            Stance::Rolling | Stance::Stopped => self.roll?,
         };
         let (from, to) = base.across;
         let across = match facing {
             Facing::Right => (from, to),
             Facing::Left => (self.turn - to, self.turn - from),
         };
-        Offsets {
+        Some(Offsets {
             across,
             above: base.above,
-        }
+        })
     }
 }
 
@@ -1139,6 +1146,7 @@ fn parse_walker_contact(value: &Value, path: &str) -> Result<WalkerContact, Stri
         "walk",
         "run",
         "air",
+        "roll",
         "turn",
         "land_hold",
         "bounce_rise",
@@ -1198,6 +1206,10 @@ fn parse_walker_contact(value: &Value, path: &str) -> Result<WalkerContact, Stri
         walk: offsets("walk")?,
         run: offsets("run")?,
         air: offsets("air")?,
+        roll: match table.get("roll") {
+            None => None,
+            Some(_) => Some(offsets("roll")?),
+        },
         turn: whole(get("turn")?, &format!("{path}.turn"))?,
         land_hold: (frames(0)?, frames(1)?),
         bounce_rise: speed("bounce_rise")?,

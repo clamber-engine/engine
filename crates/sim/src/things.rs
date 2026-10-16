@@ -19,6 +19,11 @@
 //!   attack box touches on an attack frame, and nothing else does (see
 //!   [`roll_attacks`]). The player and the enemy then hold still for
 //!   `roll_defeat_freeze` frames.
+//! - A walker with a contact table decides its touches itself (see
+//!   [`walker_contact`]): it hurts the player, is bounced on, or, with a
+//!   `roll` range, is rolled into. With `roll_defeat_holds_walkers`, it
+//!   then doesn't move on that frame, and every walker holds still on
+//!   the frozen frames after it.
 //! - With a `ground_attack_width` above 0, the ground action knocks out
 //!   walkers and throwers its attack box touches on its attack frames
 //!   (see [`ground_attacks`]). For `ground_attack_pause` frames after,
@@ -100,9 +105,12 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
     // the player moves.
     let holds_walkers = physics[Param::BounceHoldsWalkers] > Fixed::ZERO;
     let mut hurt_by = None;
+    let roll_freeze = frames(physics[Param::RollDefeatFreeze]);
+    let roll_holds = physics[Param::RollDefeatHoldsWalkers] > Fixed::ZERO;
+    let mut rolled_into = Vec::new();
     if !frozen && !knocked(world) {
         match walker_contact(world, &physics) {
-            Some((index, true)) => {
+            Some((index, Touch::Bounce)) => {
                 world.player.bounce(
                     physics[Param::BounceSpeed],
                     frames(physics[Param::BounceFreeze]),
@@ -117,9 +125,20 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
                     bounced.push(index);
                 }
             }
-            Some((index, false)) => {
+            Some((index, Touch::Hurt)) => {
                 world.events.push(Event::Hurt);
                 hurt_by = Some(index);
+            }
+            Some((index, Touch::Defeat)) => {
+                world.flow.events.push(FlowEvent::Defeat(index));
+                world.player.defeat_rolling(roll_freeze, &physics);
+                if roll_holds {
+                    // It doesn't move on this frame.
+                    let facing = world.player.facing;
+                    bounce_off(&mut world.things[index], facing, 1);
+                } else {
+                    rolled_into.push(index);
+                }
             }
             None => {}
         }
@@ -140,6 +159,8 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
     // With `bounce_holds_walkers`, so do walkers on a bounce's frozen
     // frames.
     let held_by_bounce = holds_walkers && frozen && world.player.state == State::Bounce;
+    // With `roll_defeat_holds_walkers`, on a roll's frozen frames too.
+    let held_by_roll = roll_holds && frozen && world.player.state == State::Roll;
     // Enemies hold still while a knocked-out player does, after the hit
     // frame, except the one that hurt it.
     let hold = u16::from(frames(physics[Param::KnockoutHold]));
@@ -166,7 +187,9 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
         if paused && thing.archetype.is_some_and(|a| a.behavior.fall().is_some()) {
             continue;
         }
-        if held_by_bounce && thing.archetype.is_some_and(|a| a.behavior.is_walker()) {
+        if (held_by_bounce || held_by_roll)
+            && thing.archetype.is_some_and(|a| a.behavior.is_walker())
+        {
             continue;
         }
         let moves = if catch_up && enemy { wait + 1 } else { 1 };
@@ -198,12 +221,14 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
     for index in bounced {
         bounce_off(&mut world.things[index], facing, freeze);
     }
-    let roll_freeze = frames(physics[Param::RollDefeatFreeze]);
     for &index in &attacked {
         defeat(&mut world.things[index], roll_freeze);
     }
+    for index in rolled_into {
+        bounce_off(&mut world.things[index], facing, roll_freeze);
+    }
     if !attacked.is_empty() {
-        world.player.defeat_rolling(roll_freeze);
+        world.player.defeat_rolling(roll_freeze, &physics);
     }
     // They hold still on the pause frames instead of holding here.
     for &index in &struck {
@@ -751,17 +776,26 @@ fn whole_pixels(pos: Vec2) -> Vec2 {
     Vec2::new(down(pos.x), -down(-pos.y))
 }
 
+/// What a walker with a contact table does to the player it touches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Touch {
+    Hurt,
+    Bounce,
+    /// Rolled into: the walker is defeated.
+    Defeat,
+}
+
 /// The first walker with a contact table that touches the player, and
-/// whether the player bounces off it rather than being hurt (see
-/// [`WalkerContact`](crate::WalkerContact)): from the player's position
-/// after this step's move and the walkers' before theirs. A player on the
-/// ground is hurt. In the air, it bounces if it rises at `bounce_rise` or
-/// slower and is no more than `bounce_above` below the walker; otherwise
-/// it's hurt.
+/// what it does (see [`WalkerContact`](crate::WalkerContact)): from the
+/// player's position after this step's move and the walkers' before
+/// theirs. A rolling player defeats it. Otherwise a player on the ground
+/// is hurt. In the air, it bounces if it rises at `bounce_rise` or slower
+/// and is no more than `bounce_above` below the walker; otherwise it's
+/// hurt.
 ///
 /// Which of two walkers touching on the same frame counts isn't in the
 /// spec; it's the first placed.
-fn walker_contact(world: &World, physics: &Physics) -> Option<(usize, bool)> {
+fn walker_contact(world: &World, physics: &Physics) -> Option<(usize, Touch)> {
     let player = &world.player;
     for thing in world
         .things
@@ -778,14 +812,24 @@ fn walker_contact(world: &World, physics: &Physics) -> Option<(usize, bool)> {
         let stance = pose::stance(player, &contact, physics)?;
         let across = player.pos.x.floor() - thing.pos.x.floor();
         let above = thing.pos.y.floor() - player.pos.y.floor();
-        if !contact.reach(stance, player.facing).contains(across, above) {
+        if !contact
+            .reach(stance, player.facing)
+            .is_some_and(|r| r.contains(across, above))
+        {
             continue;
         }
-        let bounce = stance == Stance::Air
+        let touch = if stance == Stance::Rolling {
+            Touch::Defeat
+        } else if stance == Stance::Air
             && !player.grounded()
             && player.vel.y >= -contact.bounce_rise
-            && above >= i64::from(contact.bounce_above);
-        return Some((thing.index, bounce));
+            && above >= i64::from(contact.bounce_above)
+        {
+            Touch::Bounce
+        } else {
+            Touch::Hurt
+        };
+        return Some((thing.index, touch));
     }
     None
 }

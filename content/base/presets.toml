@@ -101,6 +101,8 @@ roll_attack_stop = 0
 roll_stop_guard = 0
 roll_defeat_freeze = 0
 roll_boost = 0
+roll_boost_at_defeat = 0
+roll_defeat_holds_walkers = 0
 ground_action_time = 0
 ground_action_speed = 0
 ground_attack_width = 0
@@ -636,7 +638,14 @@ ground_action_time = 0
 # from H + 48, on the ground, it hops at 2.5 and slows by an eighth each
 # frame, and it's gone after H + 189 or P + 140, whichever is later.
 # The spec only saw walkers heading left knock the player left; going
-# with the walker's heading is the engine's choice.
+# with the walker's heading is the engine's choice. Rolling into walkers
+# (rolling-into-walkers.md, "In `title-2`"): a walker whose contact
+# table has a `roll` range is defeated on any roll frame, and hurts in
+# the stop after one, by that range. The walker doesn't move on the
+# defeat's frame, and the player and every walker hold still for 2
+# frames after it. With Action held on the defeat's frame, the roll eases
+# toward 1 px per frame more for 31 new frames, then carries on into
+# running; otherwise it goes on where it was.
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."
@@ -697,6 +706,10 @@ roll_air_lengthen = 28
 roll_hover = 12
 roll_jump_held_gravity = 1
 roll_air_stop_wait = 1
+roll_defeat_freeze = 2
+roll_boost = 1
+roll_boost_at_defeat = 1
+roll_defeat_holds_walkers = 1
 face_slope = 3
 slope_landing_reach = 3
 slope_piece = 16

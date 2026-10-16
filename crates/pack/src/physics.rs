@@ -363,6 +363,16 @@ params! {
     /// started plus this much for each such boost in the chain of rolls.
     /// One boost per enemy defeated.
     RollBoost => "roll_boost",
+    /// Above 0, whether a roll is boosted is decided on the frame it
+    /// defeats an enemy, by action being held then. Boosted, the roll
+    /// eases toward its speed plus `roll_boost` once the freeze is over,
+    /// and goes on for `roll_time` more frames from then, carrying on into
+    /// running. Otherwise it goes on as if nothing had been defeated.
+    RollBoostAtDefeat => "roll_boost_at_defeat",
+    /// Above 0, the walker a roll defeats doesn't move on that frame, and
+    /// every walker holds still on the `roll_defeat_freeze` frames after
+    /// it.
+    RollDefeatHoldsWalkers => "roll_defeat_holds_walkers",
     /// Above 0, the ground action's length: an action press on the
     /// ground with down held starts it, instead of a roll, and it lasts
     /// this many frames counting the press frame. The speed starts from 0

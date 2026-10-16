@@ -60,9 +60,11 @@
 #   the preset's `stance_run_speed` and `stance_stand_speed`), and
 #   `stand`. A player on the ground that it touches is hurt; one in the
 #   air bounces off it if it rises at `bounce_rise` or slower and `above`
-#   is `bounce_above` or more, and is hurt otherwise. The preset's bounce
-#   and hurt boxes don't apply to it, and it doesn't touch a rolling
-#   player.
+#   is `bounce_above` or more, and is hurt otherwise. With a `roll`
+#   range, a player on a frame of a timed roll within it defeats it, and
+#   one in the stop after a timed roll within it is hurt; without one, it
+#   doesn't touch the player then. The preset's bounce and hurt boxes
+#   don't apply to it.
 # - `patrol`: an enemy that flies from where it's placed to `path = [x, y]`
 #   away and back, taking `period` frames for the round trip.
 # - `launcher`: fires the player off at `velocity = [x, y]` on touch.
