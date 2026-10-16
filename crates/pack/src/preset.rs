@@ -422,6 +422,18 @@ mod tests {
                     | Param::PutDownLift
                     | Param::PutDownRegrab
                     | Param::CountLife
+                    | Param::ViewWidth
+                    | Param::ViewBack
+                    | Param::ViewBackLeft
+                    | Param::ViewLeadFacing
+                    | Param::ViewLeadSpeed
+                    | Param::ViewShare
+                    | Param::ViewSpeedShare
+                    | Param::ViewHold
+                    | Param::AppearLeft
+                    | Param::AppearRight
+                    | Param::RemoveLeft
+                    | Param::RemoveRight
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

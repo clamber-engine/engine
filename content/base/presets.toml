@@ -138,6 +138,18 @@ put_down_ahead = 0
 put_down_lift = 0
 put_down_regrab = 0
 count_life = 0
+view_width = 0
+view_back = 0
+view_back_left = 0
+view_lead_facing = 0
+view_lead_speed = 0
+view_share = 0
+view_speed_share = 0
+view_hold = 0
+appear_left = 0
+appear_right = 0
+remove_left = 0
+remove_right = 0
 
 [presets.snappy]
 label = "Snappy"
@@ -183,8 +195,10 @@ air_acceleration = 0.09375
 # (ground-speed.md, "Standing, walking and running"), and swapping
 # places with the other character (swap.md), losing a character and
 # protection (losing-a-character.md, protection.md), carrying
-# objects (carrying.md), and the collectible count (collectibles.md;
-# the collectibles are archetypes.toml's `spark` and `cluster`). Classic 1
+# objects (carrying.md), the collectible count (collectibles.md;
+# the collectibles are archetypes.toml's `spark` and `cluster`), and the
+# view across and walkers appearing with it (view.md, walker-view.md;
+# not yet its vertical motion, #97, or walker groups, #99). Classic 1
 # is the bundled game's starting preset. Jump doesn't cut upward speed
 # when let go (`jump_release_speed` equals `jump_speed`); it ends the
 # lighter `held_jump_gravity` instead.
@@ -323,6 +337,22 @@ put_down_lift = 3
 put_down_regrab = 2
 # The collectible count (collectibles.md).
 count_life = 100
+# The view (view.md) and walkers appearing and being removed with it
+# (walker-view.md). The picture is 256 wide; the window for a walker's
+# start runs from 31 left of it to 32 right of it, and a walker is
+# removed 128 left of it or 129 right of it.
+view_width = 256
+view_back = 71
+view_back_left = 127
+view_lead_facing = 6
+view_lead_speed = 24
+view_share = 32
+view_speed_share = 8
+view_hold = 2
+appear_left = 31
+appear_right = 32
+remove_left = 128
+remove_right = 129
 
 # The second character (roster slot 1): spec/behavior/second-character.md.
 # It moves by the same rules with its own speeds, jump and crouch

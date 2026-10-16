@@ -155,6 +155,10 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics) {
         }
         Phase::Ready => {}
     }
+    if thing.wait > 0 {
+        thing.wait -= 1;
+        return;
+    }
     thing.clock = thing.clock.wrapping_add(1);
     match archetype.behavior {
         Behavior::Walker {

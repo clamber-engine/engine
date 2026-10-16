@@ -511,7 +511,7 @@ fn classic_walker_turns_softly_at_the_end_of_its_range() {
         params = {{ speed = 1, facing = "left", size = [20, 12], offset = 0.5, range = [-128.5, 127.5], {CLASSIC_WALKER} }}
         "#
     );
-    let mut w = world_on("classic-1", [110, 300], &walker);
+    let mut w = world_on("classic-1", [120, 300], &walker);
     let rows = walker_rows(&mut w, 127 + 39);
     let frame = |f: usize| rows[126 + f];
     let (l, r) = (Facing::Left, Facing::Right);

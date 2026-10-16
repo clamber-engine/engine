@@ -1,7 +1,9 @@
 //! The camera: follows the player within the level's camera rules.
 //!
 //! The camera is presentation: it reads the world after each step and is
-//! never read by the simulation, so it works in floats.
+//! never read by the simulation, so it works in floats. When the world
+//! has a view of its own ([`World::view_middle`]), the camera centres on
+//! it across instead of following the player itself.
 
 use clamber_level::{CameraRule, Fixed, Level, Rect, Vec2};
 use clamber_sim::{Facing, HEIGHT, World};
@@ -57,7 +59,7 @@ impl Camera {
     pub fn with_view(world: &World, view: (u32, u32)) -> Camera {
         let rule = rule_at(world);
         let look = (look_target(world, &rule).0, 0.0);
-        let free = offset(focus(world), look);
+        let free = across(world, offset(focus(world), look));
         let centre = apply(&rule, &world.level, free, view);
         Camera {
             centre,
@@ -85,7 +87,7 @@ impl Camera {
             approach(self.look.0, target.0, LOOK_SPEED),
             approach(self.look.1, target.1, LOOK_SPEED),
         );
-        let wanted = offset(focus(world), self.look);
+        let wanted = across(world, offset(focus(world), self.look));
         if world.player.grounded() {
             self.follow_y = approach(self.follow_y, wanted.1, SETTLE_SPEED);
         }
@@ -122,6 +124,11 @@ impl Camera {
         let y = lerp(self.previous.1, self.centre.1, alpha);
         (x - view.0 as f64 / 2.0, y - view.1 as f64 / 2.0)
     }
+}
+
+/// `free` with the world's own view's middle across, if it has a view.
+fn across(world: &World, free: (f64, f64)) -> (f64, f64) {
+    world.view_middle().map_or(free, |x| (x.to_f64(), free.1))
 }
 
 fn rule_at(world: &World) -> CameraRule {
@@ -325,6 +332,20 @@ mod tests {
         run(&mut w, &mut camera, None, 60);
         assert!(w.player.grounded());
         assert_eq!(camera.centre.1, start);
+    }
+
+    #[test]
+    fn centres_on_the_worlds_own_view_across() {
+        let level = Level::from_toml_str(WIDE, "test").unwrap();
+        let feel = generic_feel("classic-1").unwrap();
+        let mut w = World::new(Arc::new(level), Arc::new(feel));
+        let mut camera = Camera::with_view(&w, (256, 224));
+        // A player standing facing right is 71 px from the left edge.
+        assert_eq!(camera.top_left(1.0).0, 2000.0 - 71.0);
+        run(&mut w, &mut camera, Some(Action::Right), 60);
+        let middle = w.view_middle().unwrap().to_f64();
+        assert_eq!(camera.centre.0, middle);
+        assert!(middle - 128.0 > 2000.0 - 71.0);
     }
 
     #[test]

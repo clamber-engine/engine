@@ -465,6 +465,48 @@ params! {
     /// from 0 and the player gets one more life. 0: it just goes up.
     /// Whole collectibles.
     CountLife => "count_life",
+    /// Above 0, the world has a view this wide that follows the player
+    /// (see `clamber_sim::View`), and walkers are in the level only near
+    /// it: one appears at its start, at rest, when its start comes within
+    /// the view's appear margins, and is removed once its start is
+    /// outside them and the walker is past a remove margin. 0: there's no
+    /// view in the world, and walkers are in the level all the time.
+    /// Whole px.
+    ViewWidth => "view_width",
+    /// How far right of the view's left edge it aims to have a player
+    /// facing right and standing still, px.
+    ViewBack => "view_back",
+    /// The same for a player facing left, px.
+    ViewBackLeft => "view_back_left",
+    /// The view aims this many px further the way the player faces for
+    /// each px/frame of speed. Each binary digit of the factor takes its
+    /// share of the speed rounded down to a whole px on its own.
+    ViewLeadFacing => "view_lead_facing",
+    /// The view aims this many px further the way the player moves for
+    /// each px/frame of speed. Each binary digit of the factor takes its
+    /// share of the speed, signed, rounded up to a whole px on its own.
+    ViewLeadSpeed => "view_lead_speed",
+    /// The view's speed eases toward the gap to where it aims divided by
+    /// this. Whole frames.
+    ViewShare => "view_share",
+    /// Each frame the view's speed closes the gap to that speed divided
+    /// by this. Whole frames.
+    ViewSpeedShare => "view_speed_share",
+    /// Frames the view holds still, counting the frame, when the player
+    /// defeats an enemy by bouncing or rolling. Whole frames.
+    ViewHold => "view_hold",
+    /// A walker's start is near the view from this far left of the view's
+    /// left edge. Whole px.
+    AppearLeft => "appear_left",
+    /// ... to this far right of the view's right edge. Whole px.
+    AppearRight => "appear_right",
+    /// A walker whose start isn't near the view is removed once its `x`,
+    /// rounded down, is this far left of the view's left edge or
+    /// further. Whole px.
+    RemoveLeft => "remove_left",
+    /// ... or this far right of the view's right edge or further. Whole
+    /// px.
+    RemoveRight => "remove_right",
 }
 
 impl Param {

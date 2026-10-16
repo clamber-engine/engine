@@ -16,6 +16,7 @@ use crate::player::{Act, Facing, Player, ROLL, Roll, frames};
 use crate::script::{InputFrame, Script};
 use crate::swap::{self, Move, Other, Recent, Swap};
 use crate::things;
+use crate::view::{self, View};
 
 /// Something that happened during a step. Names follow
 /// `spec/traces/VOCABULARY.md`, so traces can record them directly.
@@ -79,6 +80,8 @@ pub struct Thing {
     pub vx: Fixed,
     /// Steps it has moved, which a patrol follows its path by.
     pub clock: u32,
+    /// Steps a walker that just appeared waits before it moves.
+    pub wait: u8,
     pub phase: Phase,
 }
 
@@ -124,6 +127,8 @@ pub struct World {
     /// A character lost on a hit, until it has left the level.
     pub lost: Option<Lost>,
     pub things: Vec<Thing>,
+    /// The view, when the preset has one (`view_width` above 0).
+    pub view: Option<View>,
     /// What happened during the last step, in order.
     pub events: Vec<Event>,
     /// Goal, lives, checkpoints and pickups.
@@ -162,7 +167,9 @@ impl World {
                 facing: player.facing,
             });
         let archetypes = Archetypes::builtin();
-        let things = level
+        let physics = feel.roster[0].physics;
+        let view = view::enabled(&physics).then(|| View::settled(&player, &physics));
+        let mut things: Vec<Thing> = level
             .entities
             .iter()
             .enumerate()
@@ -188,10 +195,24 @@ impl World {
                     turn: 0,
                     vx,
                     clock: 0,
+                    wait: 0,
                     phase: Phase::Ready,
                 })
             })
             .collect::<Result<_, _>>()?;
+        // With a view, walkers whose start is near it are in the level as
+        // placed, and the others appear later.
+        if let Some(v) = view {
+            for thing in &mut things {
+                let walker = matches!(
+                    thing.archetype.map(|a| a.behavior),
+                    Some(Behavior::Walker { .. })
+                );
+                if walker && !view::near(thing.pos.x.floor(), v.x(), &physics) {
+                    thing.active = false;
+                }
+            }
+        }
         Ok(World {
             level,
             feel,
@@ -203,6 +224,7 @@ impl World {
             loss: None,
             lost: None,
             things,
+            view,
             events: Vec::new(),
             flow: Flow::new(),
             pause: 0,
@@ -223,6 +245,14 @@ impl World {
             physics.apply(&self.level.surface(ground).physics);
         }
         physics
+    }
+
+    /// The level `x` of the middle of the view, with its left edge
+    /// rounded down to a whole px as it's drawn, if there is a view.
+    pub fn view_middle(&self) -> Option<Fixed> {
+        let view = self.view?;
+        let half = self.feel.world[Param::ViewWidth].floor() / 2;
+        Some(Fixed::from_int((view.x() + half) as i32))
     }
 
     /// The state the simulation advances, encoded as bytes. Two worlds
@@ -321,6 +351,7 @@ impl World {
             out.push(t.turn);
             fixed(&mut out, t.vx);
             out.extend(t.clock.to_le_bytes());
+            out.push(t.wait);
             out.extend(match t.phase {
                 Phase::Ready => [0, 0],
                 Phase::Defeated(left) => [1, left],
@@ -338,6 +369,16 @@ impl World {
                     fixed(&mut out, v);
                 }
             }
+        }
+
+        match self.view {
+            Some(v) => {
+                out.push(1);
+                fixed(&mut out, v.left);
+                fixed(&mut out, v.speed);
+                out.push(v.hold);
+            }
+            None => out.push(0),
         }
 
         count(&mut out, self.events.len());
@@ -510,11 +551,20 @@ pub fn step(world: &mut World, input: &InputFrame) {
         return;
     }
     if flow::dying(world) {
+        if world.flow.events.contains(&FlowEvent::Respawn) {
+            view::restart(world);
+        }
         collect::update(world, false);
         world.frame += 1;
         return;
     }
     loss::tick(world);
+    // Walkers appear and are removed by where the view was at the start
+    // of the step.
+    let view_left = world.view.map(|v| v.x());
+    if let Some(left) = view_left {
+        view::walkers(world, left, true);
+    }
     let physics = world.player_physics();
     let previous_feet = world.player.pos.y;
     let frozen = world.player.frozen > 0;
@@ -550,6 +600,10 @@ pub fn step(world: &mut World, input: &InputFrame) {
         things::update(world, previous_feet, frozen);
         flow::update(world, hurt_by);
     }
+    if let Some(left) = view_left {
+        view::walkers(world, left, false);
+    }
+    view::update(world);
     carry::after(world, &input.players[0]);
     collect::update(world, true);
     let landed = world.events.contains(&Event::Land);

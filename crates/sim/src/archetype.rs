@@ -29,12 +29,15 @@ pub enum Behavior {
     /// `response` is the part of the gap to that speed it closes each
     /// frame, as the player's `speed_response`; 0 changes speed at once.
     /// Its facing follows a turn `turn_delay` frames later. Defeated, it
-    /// falls as `defeat` says.
+    /// falls as `defeat` says. When it appears with the view (see
+    /// [`View`](crate::View)), it waits `appear_wait` frames, counting
+    /// the one it appears on, before it moves.
     Walker {
         speed: Fixed,
         response: Fixed,
         facing: Facing,
         turn_delay: u8,
+        appear_wait: u8,
         range: Option<(Fixed, Fixed)>,
         defeat: Fall,
     },
@@ -284,6 +287,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "response",
             "facing",
             "turn_delay",
+            "appear_wait",
             "range",
             "defeat_jump",
             "defeat_gravity",
@@ -320,14 +324,14 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             if response.is_negative() || response > Fixed::ONE {
                 return Err(format!("{path}.response: must be from 0 to 1"));
             }
-            let turn_delay = match get("turn_delay")? {
-                Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => *n as u8,
-                _ => {
-                    return Err(format!(
-                        "{path}.turn_delay: expected a whole number of frames, 0 to 255"
-                    ));
-                }
+            let frames = |key: &str| match get(key)? {
+                Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
+                _ => Err(format!(
+                    "{path}.{key}: expected a whole number of frames, 0 to 255"
+                )),
             };
+            let turn_delay = frames("turn_delay")?;
+            let appear_wait = frames("appear_wait")?;
             let range = match get("range")? {
                 Value::Array(items) if items.is_empty() => None,
                 Value::Array(items) if items.len() == 2 => {
@@ -354,6 +358,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 response,
                 facing,
                 turn_delay,
+                appear_wait,
                 range,
                 defeat,
             }

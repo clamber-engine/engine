@@ -326,7 +326,10 @@ fn protection_lasts_to_h_plus_149_and_a_contact_hurts_on_h_plus_150() {
     let rows = play.hit(&[], 110);
     assert_eq!(rows[98].character, 1);
     let at = play.world.player.pos;
+    // The walker is parked away from the view, out of the level; bring
+    // it in.
     play.world.things[0].pos = at;
+    play.world.things[0].active = true;
     for (n, row) in play.hold(&[], 40).iter().enumerate() {
         assert!(!row.events.contains(&Event::Hurt), "H + {}", 110 + n);
     }

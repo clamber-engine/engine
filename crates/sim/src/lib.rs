@@ -13,6 +13,9 @@
 //!
 //! Collectibles add to the collectible count ([`Release`]).
 //!
+//! With a preset that has one, a [`View`] follows the player, and
+//! walkers are in the level only near it.
+//!
 //! [`Script`] and [`run`] drive a world headlessly from recorded input,
 //! for tests and the `clamber-sim` command, and [`record`] writes what
 //! happens as a trace (`spec/traces/FORMAT.md`).
@@ -28,6 +31,7 @@ mod record;
 mod script;
 mod swap;
 mod things;
+mod view;
 mod world;
 
 pub use archetype::{Archetype, ArchetypeError, Archetypes, Behavior, MAX_AIR_STEPS, Reach, Span};
@@ -46,6 +50,7 @@ pub use record::record;
 pub use script::{InputFrame, Script};
 pub use swap::{Move, Other, Recent, Swap};
 pub use things::{DEFEATED_FRAMES, LAUNCH_REST};
+pub use view::View;
 pub use world::{Event, Phase, Thing, World, generic_feel, run, step};
 
 /// Logic frames per second.

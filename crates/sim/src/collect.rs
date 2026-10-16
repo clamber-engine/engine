@@ -13,7 +13,7 @@
 //! `count_life` above 0, the count starts again from 0 when it reaches
 //! that, and the player gets one more life.
 //!
-//! Not in yet (#62): the view window, outside which nothing is taken,
+//! Not in yet (#98): the view window, outside which nothing is taken,
 //! and the count delays that depend on where the view is. Until then
 //! the view is taken to have every collectible well inside it.
 
