@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
-use clamber_pack::{CharacterFeel, Fixed, Presets};
+use clamber_pack::{CharacterFeel, Fixed, Param, Presets};
 use clamber_sim::{
     Event, Facing, FlowEvent, InputFrame, Other, START_LIVES, State, World, generic_feel, step,
 };
@@ -46,6 +46,9 @@ fn feel() -> Arc<clamber_pack::Feel> {
         physics: Presets::builtin().slot("classic-1", 1).unwrap(),
         abilities: BTreeMap::new(),
     });
+    // The other character stands where it's put in these examples;
+    // following is tested in `following.rs`.
+    feel.world.set(Param::FollowTrail, Fixed::ZERO);
     Arc::new(feel)
 }
 
@@ -75,11 +78,7 @@ impl Play {
         let mut world = World::new(level, feel());
         world.player.pos = at;
         world.player.facing = facing;
-        world.other = Some(Other {
-            character: 1,
-            pos: other,
-            facing: Facing::Right,
-        });
+        world.other = Some(Other::new(1, other, Facing::Right, at));
         let mut play = Play {
             world,
             held: Actions::NONE,

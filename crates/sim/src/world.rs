@@ -11,6 +11,7 @@ use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior};
 use crate::carry::{self, Flight};
 use crate::collect;
 use crate::flow::{self, Flow, FlowEvent, Outcome};
+use crate::follow::{self, Lead, Mode};
 use crate::loss::{self, Loss, Lost};
 use crate::player::{Act, Facing, Player, ROLL, Roll, frames};
 use crate::script::{InputFrame, Script};
@@ -158,14 +159,9 @@ impl World {
     pub fn try_new(level: Arc<Level>, feel: Arc<Feel>) -> Result<World, ArchetypeError> {
         assert!(!feel.roster.is_empty(), "a world needs a character");
         let player = Player::new(&level, level.start);
-        // Where the other character joins isn't in the spec yet; it
-        // starts with the player.
+        // Both characters start where play starts (following.md).
         let other = (feel.roster.len() > 1 && feel.world[Param::SwapMoves] > Fixed::ZERO)
-            .then_some(Other {
-                character: 1,
-                pos: player.pos,
-                facing: player.facing,
-            });
+            .then(|| Other::new(1, player.pos, player.facing, player.pos));
         let archetypes = Archetypes::builtin();
         let physics = feel.roster[0].physics;
         let view = view::enabled(&physics).then(|| View::settled(&player, &level, &physics));
@@ -280,12 +276,29 @@ impl World {
 
         player_bytes(&mut out, &self.player);
 
-        match self.other {
+        match &self.other {
             Some(o) => {
                 out.push(1);
                 count(&mut out, o.character);
                 vec2(&mut out, o.pos);
                 out.push(o.facing as u8);
+                let f = &o.follow;
+                count(&mut out, f.trail.len());
+                for &(x, y) in &f.trail {
+                    out.extend(x.to_le_bytes());
+                    out.extend(y.to_le_bytes());
+                }
+                out.push(f.catching_up.into());
+                match f.mode {
+                    Mode::Trail => out.push(0),
+                    Mode::Rest { target, gained } => {
+                        out.push(1);
+                        out.extend(target.to_le_bytes());
+                        out.push(gained.into());
+                    }
+                    Mode::Wait => out.push(2),
+                }
+                out.push(f.turn.map_or(0, |n| n.saturating_add(1)));
             }
             None => out.push(0),
         }
@@ -449,6 +462,7 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     count(out, p.character);
     vec2(out, p.pos);
     vec2(out, p.vel);
+    fixed(out, p.target);
     match p.ground {
         Some(collider) => {
             out.push(1);
@@ -564,6 +578,11 @@ pub fn step(world: &mut World, input: &InputFrame) {
     if flow::dying(world) {
         if world.flow.events.contains(&FlowEvent::Respawn) {
             view::restart(world);
+        } else if follow::due(world).is_some() {
+            // The other character goes on following a player that fell
+            // out of the level.
+            follow::update(world, Lead::of(&world.player));
+            follow::note(world);
         }
         collect::update(world, false);
         world.frame += 1;
@@ -579,6 +598,10 @@ pub fn step(world: &mut World, input: &InputFrame) {
     let physics = world.player_physics();
     let previous_feet = world.player.pos.y;
     let frozen = world.player.frozen > 0;
+    // Nothing follows on the frames the player is held still.
+    if !frozen && follow::due(world) == Some(true) {
+        follow::update(world, Lead::of(&world.player));
+    }
     if world.player.knockout.is_some() {
         world
             .player
@@ -610,6 +633,12 @@ pub fn step(world: &mut World, input: &InputFrame) {
         }
         things::update(world, previous_feet, frozen);
         flow::update(world, hurt_by);
+    }
+    if !frozen && follow::due(world) == Some(false) {
+        follow::update(world, Lead::of(&world.player));
+    }
+    if !frozen && follow::due(world).is_some() {
+        follow::note(world);
     }
     if let Some(left) = view_left {
         view::walkers(world, left, false);

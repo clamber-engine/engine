@@ -120,6 +120,15 @@ protect_time = 0
 flash_start = 0
 flash_end = 0
 flash_period = 0
+follow_trail = 0
+follow_lag = 0
+follow_gap = 0
+follow_rest_speed = 0
+follow_rest_reach = 0
+follow_rest_share = 0
+follow_rejoin = 0
+follow_turn = 0
+follow_turn_flip = 0
 pick_up_time = 0
 pick_up_still = 0
 carry_jump_delay = 0
@@ -207,7 +216,8 @@ air_acceleration = 0.09375
 # (air-walls.md), when a turn starts while moving: the stride cycle
 # (ground-speed.md, "Standing, walking and running"), and swapping
 # places with the other character (swap.md), losing a character and
-# protection (losing-a-character.md, protection.md), carrying
+# protection (losing-a-character.md, protection.md), the other
+# character following (following.md), carrying
 # objects (carrying.md), the collectible count (collectibles.md;
 # the collectibles are archetypes.toml's `spark` and `cluster`), and the
 # view and walkers appearing with it (view.md, view-vertical.md,
@@ -330,6 +340,17 @@ protect_time = 150
 flash_start = 38
 flash_end = 134
 flash_period = 4
+# The other character following the one under control (following.md).
+# The first character follows by where the second was a frame before.
+follow_trail = 31
+follow_lag = 1
+follow_gap = 28
+follow_rest_speed = 0.125
+follow_rest_reach = 28
+follow_rest_share = 16
+follow_rejoin = 16
+follow_turn = 7
+follow_turn_flip = 4
 # Carrying, throwing and putting down objects (carrying.md). The speed
 # rule there is `speed_response`. Reach is the object's (archetypes.toml).
 pick_up_time = 15
@@ -402,6 +423,8 @@ swap_jump_wait = 0
 swap_lag = 1
 swap_crouch_wait = 21
 swap_rise_wait = 12
+# The second character follows by where the first is now.
+follow_lag = 0
 # The second character being hit isn't specified yet, so it's a hit with
 # one character, as before.
 lose_jump = 0

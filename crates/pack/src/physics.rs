@@ -408,6 +408,38 @@ params! {
     /// stretch of this many frames, and not drawn for the second, except
     /// on the frame after its hop starts. Whole frames.
     FlashPeriod => "flash_period",
+    /// Above 0, the other character follows the one under control along
+    /// a trail of the whole-pixel places it was at, holding at most this
+    /// many points. 0: it stays where it is. Whole points.
+    FollowTrail => "follow_trail",
+    /// 1: the other character moves before the one under control on each
+    /// frame, by where that one was at the end of the frame before. 0:
+    /// after it, by where it is now. The following character's value
+    /// counts.
+    FollowLag => "follow_lag",
+    /// Following, the other character steps on along the trail while the
+    /// newest point is this far ahead across or further, from the second
+    /// such frame in a row. It rests this far from the character under
+    /// control. Whole px.
+    FollowGap => "follow_gap",
+    /// The other character starts to rest only when the character under
+    /// control moves slower than this.
+    FollowRestSpeed => "follow_rest_speed",
+    /// ... and when the ground at its resting place is less than this far
+    /// above or below its feet. Whole px.
+    FollowRestReach => "follow_rest_reach",
+    /// Resting, each frame it moves the whole px still to go divided by
+    /// this.
+    FollowRestShare => "follow_rest_share",
+    /// Points on the way back from where the other character stops
+    /// resting to the trail's newest point. Whole points.
+    FollowRejoin => "follow_rejoin",
+    /// Frames the other character's turn toward the one under control
+    /// lasts, counting its first. Whole frames.
+    FollowTurn => "follow_turn",
+    /// The frame of the turn, counting its first as 1, on which it faces
+    /// the other way. Whole frames.
+    FollowTurnFlip => "follow_turn_flip",
     /// Above 0, the player can pick up objects that can be carried, and
     /// a pick-up lasts this many frames, counting its first; holding an
     /// object needs action held. 0: nothing can be picked up. Whole

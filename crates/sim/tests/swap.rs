@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
-use clamber_pack::{CharacterFeel, Fixed, Presets};
+use clamber_pack::{CharacterFeel, Fixed, Param, Presets};
 use clamber_sim::{Event, Facing, InputFrame, Other, State, World, generic_feel, record, step};
 use clamber_trace::Scenario;
 
@@ -44,6 +44,9 @@ fn feel() -> Arc<clamber_pack::Feel> {
         physics: Presets::builtin().slot("classic-1", 1).unwrap(),
         abilities: BTreeMap::new(),
     });
+    // The other character stands where it's put in these examples;
+    // following is tested in `following.rs`.
+    feel.world.set(Param::FollowTrail, Fixed::ZERO);
     Arc::new(feel)
 }
 
@@ -74,14 +77,11 @@ impl Play {
         world.player.character = player;
         world.player.pos = at;
         world.player.facing = facing;
-        world.other = Some(Other {
-            character: 1 - player,
-            pos: other,
-            facing: match facing {
-                Facing::Left => Facing::Right,
-                Facing::Right => Facing::Left,
-            },
-        });
+        let theirs = match facing {
+            Facing::Left => Facing::Right,
+            Facing::Right => Facing::Left,
+        };
+        world.other = Some(Other::new(1 - player, other, theirs, at));
         let mut play = Play {
             world,
             held: Actions::NONE,
@@ -112,7 +112,7 @@ impl Play {
             ground: p.grounded(),
             facing: p.facing,
             events: self.world.events.clone(),
-            other: self.world.other.unwrap(),
+            other: self.world.other.clone().unwrap(),
         }
     }
 
@@ -180,14 +180,9 @@ fn trading_places_on_flat_floor() {
     assert!(e.ground);
     assert_eq!(e.facing, Facing::Right);
     assert!(e.events.is_empty(), "no turn: {:?}", e.events);
-    assert_eq!(
-        e.other,
-        Other {
-            character: 0,
-            pos: v(128.25, 399.953125),
-            facing: Facing::Left,
-        }
-    );
+    assert_eq!(e.other.character, 0);
+    assert_eq!(e.other.pos, v(128.25, 399.953125));
+    assert_eq!(e.other.facing, Facing::Left);
     assert!(play.world.swap.is_none());
 }
 

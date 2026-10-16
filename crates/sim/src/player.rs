@@ -100,6 +100,9 @@ pub struct Player {
     pub pos: Vec2,
     /// px per frame, +y down.
     pub vel: Vec2,
+    /// The speed across that `vel.x` was moved toward on the last step:
+    /// 0 when nothing moved it on.
+    pub target: Fixed,
     /// The collider being stood on, if any.
     pub ground: Option<usize>,
     pub facing: Facing,
@@ -193,6 +196,7 @@ impl Player {
             character: 0,
             pos,
             vel: Vec2::default(),
+            target: Fixed::ZERO,
             ground: None,
             facing: Facing::Right,
             state: State::Idle,
@@ -655,14 +659,18 @@ impl Player {
             physics[Param::WalkSpeed]
         };
         let response = physics[Param::SpeedResponse];
+        self.target = Fixed::ZERO;
         self.vel.x = if let Some(roll) = self.roll {
             if roll.still {
                 Fixed::ZERO
             } else {
+                self.target = roll.target();
                 ease(self.vel.x, roll.target(), response)
             }
         } else if rolling {
-            roll_speed(self.vel.x, dir, physics)
+            let vx = roll_speed(self.vel.x, dir, physics);
+            self.target = vx;
+            vx
         } else if self.roll_stop > 0 {
             if self.roll_stop <= slide {
                 ease(self.vel.x, Fixed::ZERO, response)
@@ -680,8 +688,10 @@ impl Player {
                 Some(_) => target += physics[Param::FaceSpeed],
                 None => {}
             }
+            self.target = target;
             ease(self.vel.x, target, response)
         } else {
+            self.target = Fixed::from_int(dir) * cap;
             horizontal_speed(self.vel.x, dir, self.grounded(), cap, physics)
         };
         if !striding {

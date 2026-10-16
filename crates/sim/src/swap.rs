@@ -1,8 +1,8 @@
 //! Swapping places with the other character (`swap_moves` above 0).
 //!
 //! With more than one character in the roster, the next one is in the
-//! level with the player: the other character. How it follows the player
-//! isn't in the spec yet, so it stays where it is. A swap press trades
+//! level with the player: the other character, which follows the player
+//! ([`follow`](crate::follow)). A swap press trades
 //! places with it: both hold still, then each moves to where the other
 //! stood, and the other character becomes the player. Input is ignored
 //! until it does.
@@ -12,17 +12,33 @@ use clamber_input::{Action, Frame};
 use clamber_level::Vec2;
 use clamber_pack::{Param, Physics};
 
+use crate::follow::{self, Follow};
 use crate::player::{Facing, Player, State, ceil, frames};
 use crate::world::World;
 
 /// The character in the level that isn't under control.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Other {
     /// Roster slot.
     pub character: usize,
     /// The middle of the feet.
     pub pos: Vec2,
     pub facing: Facing,
+    /// How it follows the player.
+    pub follow: Follow,
+}
+
+impl Other {
+    /// Roster slot `character` at `pos`, facing `facing`, about to follow
+    /// a player at `lead`.
+    pub fn new(character: usize, pos: Vec2, facing: Facing, lead: Vec2) -> Other {
+        Other {
+            character,
+            pos,
+            facing,
+            follow: Follow::at(follow::point(lead)),
+        }
+    }
 }
 
 /// A swap under way.
@@ -138,7 +154,7 @@ impl Recent {
 /// the player it isn't: the new player moves as usual, but no swap press
 /// counts on it.
 pub(crate) fn update(world: &mut World, physics: &Physics, input: &Frame) -> bool {
-    let Some(other) = world.other else {
+    let Some(other) = world.other.clone() else {
         return false;
     };
     let mut swap = match world.swap.take() {
@@ -243,21 +259,27 @@ fn start(world: &mut World, physics: &Physics, input: &Frame, other: &Other) -> 
 
 /// Makes the other character the player, standing still at its place
 /// with its height on the whole pixel it went to. The player becomes the
-/// other character where it is.
+/// other character where it is. How it follows from there isn't in the
+/// spec; it makes its way back to the player as after resting.
 fn hand_over(world: &mut World, swap: &Swap) {
-    let Some(other) = world.other else {
+    let Some(other) = world.other.take() else {
         return;
     };
-    let old = &world.player;
+    let mut player = Player::new(&world.level, Vec2::new(other.pos.x, swap.other.target));
+    player.character = other.character;
+    player.facing = other.facing;
+    let old = std::mem::replace(&mut world.player, player);
+    let points = world.feel.world[Param::FollowRejoin].floor();
     world.other = Some(Other {
         character: old.character,
         pos: old.pos,
         facing: old.facing,
+        follow: Follow::rejoin(
+            follow::point(old.pos),
+            follow::point(world.player.pos),
+            points,
+        ),
     });
-    let mut player = Player::new(&world.level, Vec2::new(other.pos.x, swap.other.target));
-    player.character = other.character;
-    player.facing = other.facing;
-    world.player = player;
 }
 
 #[cfg(test)]

@@ -144,7 +144,7 @@ pub(crate) fn update(world: &mut World) -> bool {
     if loss.hop.is_some_and(|t| loss.frame > t) {
         return false;
     }
-    let other = world.other;
+    let other = world.other.as_ref();
     let physics = match other {
         Some(o) => world.feel.roster[o.character].physics,
         None => world.player_physics(),

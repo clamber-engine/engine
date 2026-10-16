@@ -58,7 +58,7 @@ impl Game {
         Game {
             camera: Camera::new(&world),
             previous: world.player.pos,
-            previous_other: world.other.map(|o| o.pos),
+            previous_other: world.other.as_ref().map(|o| o.pos),
             previous_leaving: world.leaving().map(|p| p.pos),
             debug: world.level.layers.is_empty(),
             poses: Poses::new(&cast, &world),
@@ -122,7 +122,7 @@ impl Game {
     /// screen for a frame instead, and returns false.
     pub fn step(&mut self, input: &InputFrame) -> bool {
         self.previous = self.world.player.pos;
-        self.previous_other = self.world.other.map(|o| o.pos);
+        self.previous_other = self.world.other.as_ref().map(|o| o.pos);
         self.previous_leaving = self.world.leaving().map(|p| p.pos);
         let character = self.world.player.character;
         if self.pause > 0 {
@@ -136,7 +136,7 @@ impl Game {
             // The characters have traded places: each is where the
             // other was drawn.
             self.previous = self.world.player.pos;
-            self.previous_other = self.world.other.map(|o| o.pos);
+            self.previous_other = self.world.other.as_ref().map(|o| o.pos);
         }
         if self.world.flow.events.contains(&FlowEvent::Respawn) {
             // A jump to somewhere else, not a move to draw between.
@@ -364,7 +364,7 @@ mod tests {
     use std::sync::Arc;
 
     use clamber_level::Level;
-    use clamber_sim::{Outcome, generic_feel};
+    use clamber_sim::{Fixed, Outcome, generic_feel};
 
     use super::*;
 
@@ -584,7 +584,7 @@ mod tests {
         let mut feel = generic_feel("classic-1").unwrap();
         feel.roster.push(feel.roster[0].clone());
         let mut game = Game::new(World::new(Arc::new(level), Arc::new(feel)));
-        // The player walks off; the other character stays at the start.
+        // The player walks off, and the other character follows it.
         let walk = InputFrame::single(clamber_input::Frame::after(
             clamber_input::Actions::NONE,
             clamber_input::Action::Right.into(),
@@ -598,7 +598,10 @@ mod tests {
         game.draw(&mut canvas, 1.0);
         let (left, top) = game.camera.top_left(1.0);
         let at = |x: f64, y: f64| canvas.get((x - left) as i32, (y - top) as i32);
-        assert_eq!(at(500.0, 290.0), Some(state_color(State::Idle)));
+        let other = game.world.other.as_ref().unwrap().pos;
+        assert!(other.x > Fixed::from_int(500), "{other:?}");
+        let (x, y) = (other.x.to_f64(), other.y.to_f64());
+        assert_eq!(at(x, y - 10.0), Some(state_color(State::Idle)));
 
         let swap = InputFrame::single(clamber_input::Frame::after(
             clamber_input::Actions::NONE,
@@ -611,7 +614,10 @@ mod tests {
         }
         assert_eq!(game.world.player.character, 1);
         assert_eq!(game.previous, game.world.player.pos);
-        assert_eq!(game.previous_other, game.world.other.map(|o| o.pos));
+        assert_eq!(
+            game.previous_other,
+            game.world.other.as_ref().map(|o| o.pos)
+        );
     }
 
     #[test]

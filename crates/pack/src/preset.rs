@@ -404,6 +404,15 @@ mod tests {
                     | Param::FlashStart
                     | Param::FlashEnd
                     | Param::FlashPeriod
+                    | Param::FollowTrail
+                    | Param::FollowLag
+                    | Param::FollowGap
+                    | Param::FollowRestSpeed
+                    | Param::FollowRestReach
+                    | Param::FollowRestShare
+                    | Param::FollowRejoin
+                    | Param::FollowTurn
+                    | Param::FollowTurnFlip
                     | Param::PickUpTime
                     | Param::PickUpStill
                     | Param::CarryJumpDelay

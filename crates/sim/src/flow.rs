@@ -27,6 +27,7 @@ use clamber_pack::Param;
 use crate::collect::{self, Release};
 use crate::loss;
 use crate::player::{Knockout, Player, State};
+use crate::swap::Other;
 use crate::world::{Event, World};
 
 pub const GOAL: &str = "goal";
@@ -154,6 +155,12 @@ pub(crate) fn dying(world: &mut World) -> bool {
         let character = world.player.character;
         world.player = Player::new(&world.level, at);
         world.player.character = character;
+        // Both characters come back where play starts, the same one
+        // leading (following.md).
+        let player = &world.player;
+        if let Some(other) = &mut world.other {
+            *other = Other::new(other.character, player.pos, player.facing, player.pos);
+        }
         world.flow.outcome = Outcome::Playing;
         world.flow.events.push(FlowEvent::Respawn);
     }

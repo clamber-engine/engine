@@ -25,6 +25,7 @@ mod carry;
 mod collect;
 mod columns;
 mod flow;
+mod follow;
 mod loss;
 mod player;
 mod record;
@@ -41,6 +42,7 @@ pub use collect::Release;
 pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };
+pub use follow::{Follow, Mode, Point, point as follow_point};
 pub use loss::{Loss, Lost};
 pub use player::{
     Act, Boost, Crouch, Facing, Gait, HALF_WIDTH, HEIGHT, Hands, Knockout, Player, ROLL, Roll,
