@@ -328,6 +328,9 @@ mod tests {
                     | Param::CrouchStart
                     | Param::CrouchMin
                     | Param::CrouchRecovery
+                    | Param::CrouchUpHolds
+                    | Param::CrouchTurnLock
+                    | Param::CrouchTakeoffCancel
                     | Param::TurnTime
                     | Param::StrideSteps
                     | Param::WalkStride

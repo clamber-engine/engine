@@ -37,6 +37,9 @@ speed_response = 0
 crouch_start = 0
 crouch_min = 0
 crouch_recovery = 0
+crouch_up_holds = 0
+crouch_turn_lock = 0
+crouch_takeoff_cancel = 0
 turn_time = 0
 stride_steps = 0
 walk_stride = 0
@@ -540,12 +543,16 @@ lose_jump = 0
 ground_action_time = 0
 
 # Classic 2: the `title-2` values. Filled in so far: jump input timing
-# (jump-input.md and walk-off.md, "In `title-2`"), apart from jumps
-# while crouched. A jump starts on a press held on that frame, up to 15
-# frames after it, and takes off two frames later, still on the ground;
-# a jump can start on the frame after a jump's landing, or on the second
-# frame after a walk-off fall's landing, and on the leave frame and the
-# one after it. Everything else plays like Default for now.
+# (jump-input.md and walk-off.md, "In `title-2`") and crouching on the
+# ground (ground-speed.md, "Crouching (`title-2`)"). A jump starts on a
+# press held on that frame, up to 15 frames after it, and takes off two
+# frames later, still on the ground; a jump can start on the frame after
+# a jump's landing, or on the second frame after a walk-off fall's
+# landing, and on the leave frame and the one after it. A crouch starts
+# on Down without Up, goes on while exactly one of them is held, stops
+# the player on the frame it ends too, and keeps turns from starting
+# for 11 frames from then; a jump started in it doesn't take off if it
+# ends first. Everything else plays like Default for now.
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."
@@ -562,6 +569,12 @@ grounded_takeoff = 1
 landing_lockout = 0
 fall_landing_lockout = 1
 coyote_time = 1
+crouch_start = 1
+crouch_min = 0
+crouch_recovery = 1
+crouch_up_holds = 1
+crouch_turn_lock = 11
+crouch_takeoff_cancel = 1
 
 [presets.classic-3]
 label = "Classic 3"

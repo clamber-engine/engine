@@ -132,6 +132,8 @@ pub struct Player {
     /// A jump has started and takes off this many frames from now
     /// (`takeoff_wait`).
     pub takeoff_wait: Option<u8>,
+    /// The jump waiting to take off started while a crouch went on.
+    pub takeoff_crouched: bool,
     /// Frames of swapping left.
     pub swap: u8,
     /// Frames left that the player is held still after a bounce.
@@ -223,6 +225,7 @@ impl Player {
             jump_hold: false,
             takeoff: false,
             takeoff_wait: None,
+            takeoff_crouched: false,
             swap: 0,
             frozen: 0,
             crouch: Crouch::default(),
@@ -489,6 +492,20 @@ impl Player {
         let locked = self.lockout > 0;
         self.lockout = self.lockout.saturating_sub(1);
 
+        // Down as the crouch sees it. With Up keeping crouches going, a
+        // crouch starts on Down without Up and goes on while exactly one
+        // of them is held.
+        let up_holds = physics[Param::CrouchUpHolds] > Fixed::ZERO;
+        let down = !busy.no_crouch
+            && if !up_holds {
+                held(Action::Down)
+            } else if self.crouch.held > 0 {
+                held(Action::Down) != held(Action::Up)
+            } else {
+                held(Action::Down) && !held(Action::Up)
+            };
+        let crouch_ends = self.crouch.held > 0 && !down;
+
         // The way the steep face the player starts the frame on falls, if
         // any. Rolls on faces aren't in the spec yet.
         let slope = physics[Param::FaceSlope];
@@ -536,11 +553,21 @@ impl Player {
             .age()
             .is_some_and(|age| age >= delay.saturating_add(busy.jump_delay));
         // The jump started `takeoff_wait` frames ago takes off on this one.
-        let due = self.takeoff_wait == Some(1);
+        let wait = frames(physics[Param::TakeoffWait]);
+        let pending = self.takeoff_wait.is_some();
+        let mut due = self.takeoff_wait == Some(1);
         self.takeoff_wait = self
             .takeoff_wait
             .and_then(|n| n.checked_sub(1))
             .filter(|&n| n > 0);
+        if pending && self.takeoff_crouched && crouch_ends {
+            // A jump started while crouching doesn't take off once the
+            // crouch ends. With jump held it starts again on this frame,
+            // where the crouch has ended.
+            due = false;
+            self.takeoff_wait = held(Action::Jump).then_some(wait);
+            self.takeoff_crouched = false;
+        }
         let waiting = due || self.takeoff_wait.is_some();
         let can_jump = self.swap == 0
             && !locked
@@ -557,10 +584,11 @@ impl Player {
         let takeoff_frame = physics[Param::GroundedTakeoff] > Fixed::ZERO;
         let mut air_takeoff = None;
         let starts = can_jump && self.jump_buffer.take();
-        let wait = frames(physics[Param::TakeoffWait]);
         if starts && wait > 0 {
             // Nothing shows yet: the player goes on as before.
             self.takeoff_wait = Some(wait);
+            self.takeoff_crouched =
+                physics[Param::CrouchTakeoffCancel] > Fixed::ZERO && down && self.grounded();
             self.coyote = None;
         }
         if (starts && wait == 0) || due {
@@ -669,11 +697,9 @@ impl Player {
             false
         } else {
             self.crouch.update(
-                held(Action::Down) && !busy.no_crouch,
+                down && !busy.no_crouch,
                 self.grounded() && !rolling,
-                frames(physics[Param::CrouchStart]),
-                frames(physics[Param::CrouchMin]),
-                frames(physics[Param::CrouchRecovery]),
+                physics,
             )
         };
 
@@ -720,6 +746,14 @@ impl Player {
         } else if self.walked_off && physics[Param::WalkOffKeepsFacing] > Fixed::ZERO {
             self.turn = None;
             self.facing
+        } else if physics[Param::CrouchTurnLock] > Fixed::ZERO
+            && self.grounded()
+            && (crouching || self.crouch.turn_lock > 0)
+        {
+            // No turn starts while crouching or just after, and a crouch
+            // ends the turn under way where it is.
+            self.turn = None;
+            self.facing
         } else if turn_time > 0 && self.grounded() && !events.contains(&Event::JumpStart) {
             self.turn_on_ground(dir, turn_time, !striding)
         } else {
@@ -743,7 +777,10 @@ impl Player {
             && !rolling
             && !events.contains(&Event::JumpStart)
             && columns::rise_ahead(level, columns::column(self.pos.x), dir, ahead, self.pos.y);
-        let dir = if crouching || walled || busy.still {
+        // With Up keeping crouches going, Down held with Up still stops
+        // the player, without a crouch.
+        let down_stops = up_holds && held(Action::Down) && self.grounded();
+        let dir = if crouching || walled || busy.still || down_stops {
             0
         } else {
             dir
@@ -1916,23 +1953,30 @@ pub struct Crouch {
     pub held: u8,
     /// Frames left of getting up after letting go.
     pub rising: u8,
+    /// Frames left in which no turn starts after a crouch ends.
+    pub turn_lock: u8,
 }
 
 impl Crouch {
     /// Advances one frame, with `down` held or not and the player
     /// `on_ground` (not rolling) or not, and returns whether the player is
     /// crouching on this frame. On the ground, down counts as held until
-    /// it has been for `min` frames.
-    fn update(&mut self, down: bool, on_ground: bool, start: u8, min: u8, recovery: u8) -> bool {
+    /// it has been for `min` frames. A crouch that ends locks turns for
+    /// `turn_lock` frames from this one.
+    fn update(&mut self, down: bool, on_ground: bool, physics: &Physics) -> bool {
+        let start = frames(physics[Param::CrouchStart]);
         if start == 0 {
             *self = Crouch::default();
             return false;
         }
+        let min = frames(physics[Param::CrouchMin]);
+        self.turn_lock = self.turn_lock.saturating_sub(1);
         if on_ground && (down || (self.held > 0 && self.held < min)) {
             self.held = self.held.saturating_add(1);
         } else {
             if self.held >= start {
-                self.rising = recovery;
+                self.rising = frames(physics[Param::CrouchRecovery]);
+                self.turn_lock = frames(physics[Param::CrouchTurnLock]);
             }
             self.held = 0;
         }

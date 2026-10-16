@@ -977,6 +977,162 @@ fn classic_2_jumps_on_landing_after_a_fall() {
     }
 }
 
+#[test]
+fn classic_2_crouch_goes_on_with_down_or_up_alone() {
+    // spec/behavior/ground-speed.md, "Crouching (`title-2`)": a crouch
+    // starts on Down without Up, goes on while exactly one of Down and Up
+    // is held, and ends on the first frame U with neither or both. The
+    // target is 0 from the first frame to U, and normal from U + 1.
+    use Action::{Down, Right, Up};
+    let walking = |w: &mut Play| {
+        hold(w, &[Right], 30);
+        assert!(w.player.target > Fixed::ZERO);
+    };
+    let targets = |w: &mut Play, inputs: &[&[Action]]| -> Vec<Fixed> {
+        inputs
+            .iter()
+            .map(|&keys| {
+                hold(w, keys, 1);
+                w.player.target
+            })
+            .collect()
+    };
+    let walk = generic_feel("classic-2").unwrap().world[Param::WalkSpeed];
+    let zero = Fixed::ZERO;
+
+    // Down, then Up alone, then neither: U is the frame with neither.
+    let mut w = classic_2();
+    walking(&mut w);
+    let t = targets(
+        &mut w,
+        &[
+            &[Right, Down],
+            &[Right, Down],
+            &[Right, Up],
+            &[Right, Up],
+            &[Right],
+            &[Right],
+        ],
+    );
+    assert_eq!(t, [zero, zero, zero, zero, zero, walk]);
+
+    // Both held ends it as well.
+    let mut w = classic_2();
+    walking(&mut w);
+    let t = targets(&mut w, &[&[Right, Down], &[Right, Down, Up], &[Right]]);
+    assert_eq!(t, [zero, zero, walk]);
+    assert_eq!(w.player.crouch.held, 0);
+
+    // Up alone doesn't start one.
+    let mut w = classic_2();
+    walking(&mut w);
+    let t = targets(&mut w, &[&[Right, Up], &[Right, Up]]);
+    assert_eq!(t, [walk, walk]);
+
+    // Down and Up together stop the player without a crouch, so there's
+    // no frame U after them.
+    let mut w = classic_2();
+    walking(&mut w);
+    let t = targets(&mut w, &[&[Right, Down, Up], &[Right, Down, Up]]);
+    assert_eq!(t, [zero, zero]);
+    assert_eq!(w.player.crouch.held, 0);
+    let t = targets(&mut w, &[&[Right], &[Right, Up, Down], &[Right, Down]]);
+    assert_eq!(t, [walk, zero, zero]);
+    assert!(w.player.crouch.held > 0, "Down without Up starts one");
+
+    // Default, Snappy and Floaty don't crouch.
+    for preset in ["default", "snappy", "floaty"] {
+        let mut w = Play::new(generic_feel(preset).unwrap());
+        walking(&mut w);
+        let t = targets(&mut w, &[&[Right, Down], &[Right, Up], &[Right]]);
+        assert!(t.iter().all(|&t| t > Fixed::ZERO), "{preset}");
+    }
+}
+
+#[test]
+fn classic_2_no_turn_while_crouching_or_just_after() {
+    // spec/behavior/ground-speed.md, "Crouching (`title-2`)": from U to
+    // U + 10 no turn can start, even with the other way held; one can
+    // on U + 11. Nor can one while crouching.
+    use Action::{Down, Left};
+    let mut w = classic_2();
+    assert_eq!(w.player.facing, Facing::Right);
+    hold(&mut w, &[Down], 3);
+    hold(&mut w, &[Down, Left], 3);
+    assert_eq!(w.player.facing, Facing::Right);
+    // U is the frame Down is let go of.
+    for frame in 0..=10 {
+        hold(&mut w, &[Left], 1);
+        assert_eq!(w.player.facing, Facing::Right, "U + {frame}");
+    }
+    hold(&mut w, &[Left], 1);
+    assert_eq!(w.player.facing, Facing::Left, "U + 11");
+
+    // Down without Up during U to U + 10 starts a new crouch, with its
+    // own U after it.
+    let mut w = classic_2();
+    hold(&mut w, &[Down], 3);
+    hold(&mut w, &[], 5);
+    hold(&mut w, &[Down], 1);
+    assert!(w.player.crouch.held > 0);
+    hold(&mut w, &[Left], 11);
+    assert_eq!(w.player.facing, Facing::Right);
+    hold(&mut w, &[Left], 1);
+    assert_eq!(w.player.facing, Facing::Left);
+}
+
+/// The `jump_start` frames of Classic 2 after crouching for 10 frames
+/// and then holding `inputs`, one a frame, from G = 10.
+fn classic_2_crouch_jumps(inputs: &[&[Action]]) -> (Play, Vec<usize>) {
+    let mut w = classic_2();
+    let mut steps = hold(&mut w, &[Action::Down], 10);
+    for &keys in inputs {
+        steps.extend(hold(&mut w, keys, 1));
+    }
+    steps.extend(hold(&mut w, &[], 20));
+    let jumps = (0..steps.len())
+        .filter(|&i| steps[i].events.contains(&Event::JumpStart))
+        .collect();
+    (w, jumps)
+}
+
+#[test]
+fn classic_2_jumps_from_a_crouch() {
+    // spec/behavior/jump-input.md, "Crouching (`title-2`)": every row of
+    // the table. G is the frame jump is pressed.
+    use Action::{Down, Jump, Up};
+    const G: usize = 10;
+    let jumps = |inputs: &[&[Action]]| classic_2_crouch_jumps(inputs).1;
+
+    // Down + jump, then Down, Down: take-off on G + 2.
+    assert_eq!(jumps(&[&[Down, Jump], &[Down], &[Down]]), [G + 2]);
+    // Down + jump, then Up, Up: take-off on G + 2.
+    assert_eq!(jumps(&[&[Down, Jump], &[Up], &[Up]]), [G + 2]);
+    // Down + jump, then nothing: no jump; getting up starts on G + 1.
+    let mut w = classic_2();
+    hold(&mut w, &[Down], G);
+    hold(&mut w, &[Down, Jump], 1);
+    assert!(w.player.crouch.held > 0);
+    hold(&mut w, &[], 1);
+    assert_eq!(w.player.crouch.held, 0);
+    assert_eq!(jumps(&[&[Down, Jump]]), NONE);
+    // Down + jump, then Down + jump, then nothing: no jump; getting up
+    // starts on G + 2.
+    let mut w = classic_2();
+    hold(&mut w, &[Down], G);
+    hold(&mut w, &[Down, Jump], 2);
+    assert!(w.player.crouch.held > 0);
+    hold(&mut w, &[], 1);
+    assert_eq!(w.player.crouch.held, 0);
+    assert_eq!(jumps(&[&[Down, Jump], &[Down, Jump]]), NONE);
+    // Down + jump, then jump held: the jump starts over on G + 1 and
+    // takes off on G + 3.
+    assert_eq!(jumps(&[&[Down, Jump], &[Jump], &[Jump], &[Jump]]), [G + 3]);
+    // Jump alone (Down released on G): take-off on G + 2.
+    assert_eq!(jumps(&[&[Jump]]), [G + 2]);
+    assert_eq!(jumps(&[&[Jump], &[Down]]), [G + 2]);
+}
+
 /// A Classic 1 jump from standing, pressed on step 0 and held for `held`
 /// steps: `y` relative to the start and `vy` after each step, up to and
 /// including the landing.

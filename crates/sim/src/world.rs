@@ -566,8 +566,9 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     out.extend([p.lockout, p.jump_needs_hold.into()]);
     out.extend([p.jump_held_since_press, p.jump_hold, p.takeoff].map(u8::from));
     out.push(p.takeoff_wait.map_or(0, |n| n.saturating_add(1)));
+    out.push(p.takeoff_crouched.into());
     out.push(p.swap);
-    out.extend([p.crouch.held, p.crouch.rising]);
+    out.extend([p.crouch.held, p.crouch.rising, p.crouch.turn_lock]);
     out.push(p.turn.map_or(0, |n| n.saturating_add(1)));
     let roll = |out: &mut Vec<u8>, roll: Option<Roll>| match roll {
         Some(roll) => {

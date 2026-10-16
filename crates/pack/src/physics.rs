@@ -99,6 +99,18 @@ params! {
     /// After letting go of down, a crouch lasts this many frames more.
     /// Whole frames.
     CrouchRecovery => "crouch_recovery",
+    /// Above 0, Up held alone keeps a crouch going once it has started,
+    /// and Down and Up held together end one or don't start one, though
+    /// the player still stops as if crouching while Down is held.
+    CrouchUpHolds => "crouch_up_holds",
+    /// Above 0, no turn starts while crouching, a crouch ends a turn under
+    /// way (facing stays as it is), and no turn starts for this many
+    /// frames from the frame a crouch ends, counting it. Whole frames.
+    CrouchTurnLock => "crouch_turn_lock",
+    /// Above 0, a jump that starts while a crouch goes on doesn't take off
+    /// if the crouch ends before it would. If jump is held on the frame
+    /// the crouch ends, a jump starts again there.
+    CrouchTakeoffCancel => "crouch_takeoff_cancel",
     /// Turning around on the ground takes this many frames, and facing
     /// changes halfway through. A turn, once started, finishes. 0: facing
     /// follows the direction held at once. Whole frames.
