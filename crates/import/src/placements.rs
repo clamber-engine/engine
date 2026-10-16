@@ -3,12 +3,14 @@
 //! height above the level's bottom edge, read into entries and groups and
 //! turned into Clamber level entities.
 //!
-//! What kind of object each reference places isn't in the spec yet, so
-//! an entity's kind names its reference (`placed-1234`), for a pack to
-//! give each one a definition.
+//! An entity's kind is its reference's [`Kind`] where that is known
+//! ("Kinds"), and otherwise names its reference (`placed-1234`), for a
+//! pack to give each one a definition.
 
 use clamber_level::{Entity, Vec2};
 use toml::{Table, Value};
+
+use crate::Kind;
 
 /// Bytes in an entry.
 pub const ENTRY_SIZE: usize = 8;
@@ -124,14 +126,18 @@ impl Placements {
     }
 
     /// The objects as level entities, for a level whose bottom edge is at
-    /// `bottom`. Each is at its entry's position, of kind `placed-` and
-    /// its reference in hex. A group's members get `group`, the group
+    /// `bottom`. Each is at its entry's position, of the kind `kind` gives
+    /// its reference, or else of kind `placed-` and its reference in hex.
+    /// A group's members get `group`, the group
     /// entry's index in the list, and `appears_at`, the group entry's x:
     /// they all appear when that is in the window. Entries that place
     /// nothing, and classes the spec doesn't cover, have no entity.
-    pub fn entities(&self, bottom: i64) -> Vec<Entity> {
+    pub fn entities(&self, bottom: i64, kind: impl Fn(u16) -> Option<Kind>) -> Vec<Entity> {
         let entity = |entry: Entry, params: Table| Entity {
-            kind: format!("placed-{:04x}", entry.reference),
+            kind: match kind(entry.reference) {
+                Some(kind) => kind.name().to_string(),
+                None => format!("placed-{:04x}", entry.reference),
+            },
             id: None,
             // A u16 x and a bottom edge inside a level fit an i32.
             at: Vec2::ints(i32::from(entry.x), entry.level_y(bottom) as i32),
@@ -308,7 +314,8 @@ mod tests {
 
     #[test]
     fn entities_are_at_their_entries() {
-        let entities = read(&fragment()).unwrap().entities(BOTTOM);
+        let kind = |r| (r == 0x1300).then_some(Kind::SmallWalker);
+        let entities = read(&fragment()).unwrap().entities(BOTTOM, kind);
         let summary: Vec<(String, Vec2, Option<i64>, Option<i64>)> = entities
             .iter()
             .map(|e| {
@@ -325,8 +332,8 @@ mod tests {
                 one("placed-1234", 16, 412),
                 one("placed-2000", 40, 312),
                 one("placed-1234", 40, 212),
-                member("placed-1300", 500, 392),
-                member("placed-1300", 560, 372),
+                member("small-walker", 500, 392),
+                member("small-walker", 560, 372),
                 member("placed-1310", 420, 416),
                 one("placed-1240", 700, 0),
                 one("placed-1250", 650, 512),

@@ -26,6 +26,7 @@ mod graphics;
 mod ground;
 mod image;
 mod installed;
+mod kinds;
 mod level;
 mod location;
 mod manifest;
@@ -45,6 +46,7 @@ pub use graphics::{
 pub use ground::{Below, COLUMN_BANDS, Ground, Layout, Surface};
 pub use image::{COPIER_HEADER, Catalog, Image, Known, MAX_IMAGE_SIZE, Outcome, Sha256Hash};
 pub use installed::{Installed, check_shareable, installed};
+pub use kinds::{FINGERPRINT_SIZE, Kind, KindRow, candidate, kind_of, kind_rows};
 pub use level::{LevelDecoder, LevelParts};
 pub use location::{BANK_SIZE, Location};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
