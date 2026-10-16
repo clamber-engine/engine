@@ -775,6 +775,208 @@ fn classic_has_no_grace_after_walking_off() {
     }
 }
 
+/// No `jump_start` frames.
+const NONE: [usize; 0] = [];
+
+fn classic_2() -> Play {
+    Play::new(generic_feel("classic-2").unwrap())
+}
+
+/// The `jump_start` frames (take-offs, T) of Classic 2, falling to land
+/// on frame `LAND` after a jump and holding jump on the frames `held`
+/// gives.
+fn classic_2_jumps_after_landing(held: impl Fn(usize) -> bool) -> Vec<usize> {
+    let mut w = falling_in(classic_2, LAND + 1);
+    // The fall comes from a jump, as in jump-input.md.
+    w.player.walked_off = false;
+    let mut steps = Vec::new();
+    for frame in 0..LAND + 20 {
+        let keys: &[Action] = if held(frame) { &[Action::Jump] } else { &[] };
+        steps.extend(hold(&mut w, keys, 1));
+    }
+    assert_eq!(first(&steps, Event::Land), Some(LAND));
+    (0..steps.len())
+        .filter(|&i| steps[i].events.contains(&Event::JumpStart))
+        .collect()
+}
+
+#[test]
+fn classic_2_jump_takes_off_two_frames_after_the_press() {
+    // spec/behavior/jump-input.md, "When a jump starts (`title-2`)": a
+    // press on the ground starts a jump on P, even a one-frame tap, and
+    // jump-arc.md, "Take-off frame (`title-2`)": T = P + 2, with nothing
+    // visible before it and the player still on the ground on T.
+    let mut w = classic_2();
+    let y = w.player.pos.y;
+    let mut steps = Vec::new();
+    for frame in 0..4 {
+        let keys: &[Action] = if frame == 0 { &[Action::Jump] } else { &[] };
+        steps.extend(hold(&mut w, keys, 1));
+        if frame < 3 {
+            assert!(w.player.grounded(), "frame {frame}");
+            assert_eq!(w.player.pos.y, y, "frame {frame}");
+        }
+        if frame < 2 {
+            assert_eq!(w.player.vel.y, Fixed::ZERO, "frame {frame}");
+            assert_eq!(steps[frame].state, State::Idle, "frame {frame}");
+        }
+    }
+    assert_eq!(first(&steps, Event::JumpStart), Some(2));
+    assert!(w.player.vel.y.is_negative());
+    assert!(!w.player.grounded());
+    assert_eq!(all_events(&steps).len(), 1);
+
+    // and on every frame of a roll
+    let mut w = classic_2();
+    w.player.vel.x = Fixed::from_int(3);
+    w.player.state = State::Roll;
+    let mut steps = hold(&mut w, &[Action::Jump], 1);
+    steps.extend(hold(&mut w, &[], 2));
+    assert_eq!(steps[1].state, State::Roll);
+    assert_eq!(steps[2].events, [Event::RollEnd, Event::JumpStart]);
+}
+
+#[test]
+fn classic_2_presses_around_landing() {
+    // spec/behavior/jump-input.md, "Landing (`title-2`)": every row of
+    // the table, with the landing frame L = LAND. The earliest start is
+    // L + 1, so the earliest take-off L + 3.
+    let held_from = |p: usize, last: usize| move |f: usize| (p..=last).contains(&f);
+
+    // pressed L - 14 to L, held through L + 1
+    for press in LAND - 14..=LAND {
+        let jumps = classic_2_jumps_after_landing(held_from(press, LAND + 1));
+        assert_eq!(jumps, [LAND + 3], "pressed on {press}");
+    }
+    // pressed L - 15 or earlier, held through L + 1 and on
+    for press in [LAND - 15, LAND - 17] {
+        for last in [LAND + 1, LAND + 10] {
+            let jumps = classic_2_jumps_after_landing(held_from(press, last));
+            assert_eq!(jumps, NONE, "pressed on {press}, held until {last}");
+        }
+    }
+    // pressed in the air (or on L), released on or before L
+    for press in [LAND - 5, LAND] {
+        for last in [LAND - 1, LAND].into_iter().filter(|&l| l >= press) {
+            let jumps = classic_2_jumps_after_landing(held_from(press, last));
+            assert_eq!(jumps, NONE, "pressed on {press}, held until {last}");
+        }
+    }
+    // pressed on L + 1 or later: a jump starts on the press frame, even a
+    // one-frame tap
+    for press in LAND + 1..LAND + 6 {
+        let jumps = classic_2_jumps_after_landing(|f| f == press);
+        assert_eq!(jumps, [press + 2], "pressed on {press}");
+    }
+
+    // held continuously since the jump that took off
+    let mut w = classic_2();
+    let steps = hold(&mut w, &[Action::Jump], 150);
+    assert!(first(&steps, Event::Land).is_some());
+    let jumps = all_events(&steps)
+        .into_iter()
+        .filter(|&e| e == Event::JumpStart)
+        .count();
+    assert_eq!(jumps, 1);
+}
+
+/// Classic 2 walking right off the ledge at x = 1600, holding jump on the
+/// frames `jump` gives: the frames of the first `leave_ground` and
+/// `land`, and of every `jump_start`.
+fn classic_2_walk_off(jump: impl Fn(usize) -> bool) -> (usize, Option<usize>, Vec<usize>) {
+    let mut w = classic_2();
+    w.player.pos.x = Fixed::from_int(1560);
+    let mut steps = Vec::new();
+    for frame in 0..90 {
+        let keys: &[Action] = if jump(frame) {
+            &[Action::Right, Action::Jump]
+        } else {
+            &[Action::Right]
+        };
+        steps.extend(hold(&mut w, keys, 1));
+    }
+    let jumps = (0..steps.len())
+        .filter(|&i| steps[i].events.contains(&Event::JumpStart))
+        .collect();
+    let leave = first(&steps, Event::LeaveGround).unwrap_or(usize::MAX);
+    (leave, first(&steps, Event::Land), jumps)
+}
+
+/// The leave frame L and landing frame A of Classic 2's walk off the
+/// ledge without jumping.
+fn classic_2_fall() -> (usize, usize) {
+    let (leave, land, jumps) = classic_2_walk_off(|_| false);
+    assert_eq!(jumps, NONE);
+    (leave, land.unwrap())
+}
+
+#[test]
+fn classic_2_jumps_near_the_edge() {
+    // spec/behavior/walk-off.md, "Jumping near the edge (`title-2`)":
+    // every row of the table, with one-frame taps.
+    let (l, _) = classic_2_fall();
+    assert!(l > 5);
+    let tap = |p: usize| classic_2_walk_off(move |f| f == p);
+
+    // L - 2 or earlier: an ordinary jump from the ground; on L - 2, T
+    // falls on L and the player takes off from the ground.
+    for press in [l - 5, l - 2] {
+        let (leave, _, jumps) = tap(press);
+        assert_eq!(jumps[0], press + 2, "pressed on {press}");
+        assert!(leave > press + 2, "pressed on {press}");
+    }
+    // L - 1: the jump starts there, the player still leaves the ground on
+    // L, and takes off on L + 1 in the air.
+    let (leave, _, jumps) = tap(l - 1);
+    assert_eq!((leave, jumps[0]), (l, l + 1));
+    // L or L + 1: the jump starts on P and takes off on P + 2, in the air.
+    for press in [l, l + 1] {
+        let (leave, _, jumps) = tap(press);
+        assert_eq!((leave, jumps[0]), (l, press + 2), "pressed on {press}");
+    }
+    // L + 2 or later: no jump in the air.
+    for press in [l + 2, l + 3, l + 8] {
+        let (leave, _, jumps) = tap(press);
+        assert_eq!(leave, l);
+        assert_eq!(jumps, NONE, "pressed on {press}");
+    }
+}
+
+#[test]
+fn classic_2_jumps_on_landing_after_a_fall() {
+    // spec/behavior/walk-off.md, "Jumping on landing after a fall
+    // (`title-2`)": every row of the table, with the landing frame A. The
+    // earliest start is A + 2, so the earliest take-off A + 4.
+    let (l, a) = classic_2_fall();
+    assert!(a - 14 > l + 1, "the fall is long enough");
+    let held_from = |p: usize, last: usize| {
+        let (_, land, jumps) = classic_2_walk_off(move |f| (p..=last).contains(&f));
+        assert_eq!(land, Some(a));
+        jumps
+    };
+
+    // pressed on A - 13 or later (after L + 1), held through A + 2
+    for press in [a - 13, a - 5, a - 1] {
+        assert_eq!(held_from(press, a + 2), [a + 4], "pressed on {press}");
+    }
+    // pressed on A - 14 or earlier, held through A + 2
+    for press in [a - 14, a - 16] {
+        assert_eq!(held_from(press, a + 2), NONE, "pressed on {press}");
+    }
+    // pressed in the air, released before A + 2
+    for last in [a - 1, a, a + 1] {
+        assert_eq!(held_from(a - 5, last), NONE, "held until {last}");
+    }
+    // pressed on A, A + 1 or A + 2 (held through A + 2)
+    for press in [a, a + 1, a + 2] {
+        assert_eq!(held_from(press, a + 2), [a + 4], "pressed on {press}");
+    }
+    // pressed on A + 3 or later: a jump starts on the press frame
+    for press in [a + 3, a + 4, a + 8] {
+        assert_eq!(held_from(press, press), [press + 2], "pressed on {press}");
+    }
+}
+
 /// A Classic 1 jump from standing, pressed on step 0 and held for `held`
 /// steps: `y` relative to the start and `vy` after each step, up to and
 /// including the landing.

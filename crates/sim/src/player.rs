@@ -129,6 +129,9 @@ pub struct Player {
     pub jump_hold: bool,
     /// The jump started this frame on the ground and leaves it next frame.
     pub takeoff: bool,
+    /// A jump has started and takes off this many frames from now
+    /// (`takeoff_wait`).
+    pub takeoff_wait: Option<u8>,
     /// Frames of swapping left.
     pub swap: u8,
     /// Frames left that the player is held still after a bounce.
@@ -219,6 +222,7 @@ impl Player {
             jump_held_since_press: false,
             jump_hold: false,
             takeoff: false,
+            takeoff_wait: None,
             swap: 0,
             frozen: 0,
             crouch: Crouch::default(),
@@ -280,6 +284,7 @@ impl Player {
         self.walked_off = false;
         self.jump_hold = false;
         self.takeoff = false;
+        self.takeoff_wait = None;
         self.state = State::Fall;
     }
 
@@ -295,6 +300,7 @@ impl Player {
         self.walked_off = false;
         self.jump_hold = true;
         self.takeoff = false;
+        self.takeoff_wait = None;
         self.end_roll();
         self.ground_action = None;
         if !events.contains(&Event::Bounce) {
@@ -309,6 +315,7 @@ impl Player {
         self.vel = Vec2::default();
         self.frozen = 0;
         self.takeoff = false;
+        self.takeoff_wait = None;
         self.end_roll();
         self.ground_action = None;
         self.turn = None;
@@ -518,6 +525,7 @@ impl Player {
             self.character = (self.character + 1) % feel.roster.len();
             self.swap = SWAP_FRAMES;
             self.jump_buffer.take();
+            self.takeoff_wait = None;
         }
 
         // A jump pressed during a timed roll can start wherever the roll
@@ -527,10 +535,19 @@ impl Player {
             .jump_buffer
             .age()
             .is_some_and(|age| age >= delay.saturating_add(busy.jump_delay));
+        // The jump started `takeoff_wait` frames ago takes off on this one.
+        let due = self.takeoff_wait == Some(1);
+        self.takeoff_wait = self
+            .takeoff_wait
+            .and_then(|n| n.checked_sub(1))
+            .filter(|&n| n > 0);
+        let waiting = due || self.takeoff_wait.is_some();
         let can_jump = self.swap == 0
             && !locked
+            && !waiting
             && face.is_none()
             && (self.grounded() || self.coyote.is_some() || roll_jump)
+            && (physics[Param::JumpStartHold] == Fixed::ZERO || held(Action::Jump))
             && ready;
         if face.is_some() && ready {
             // No jump starts on a face: the press is treated as one made
@@ -539,7 +556,14 @@ impl Player {
         }
         let takeoff_frame = physics[Param::GroundedTakeoff] > Fixed::ZERO;
         let mut air_takeoff = None;
-        if can_jump && self.jump_buffer.take() {
+        let starts = can_jump && self.jump_buffer.take();
+        let wait = frames(physics[Param::TakeoffWait]);
+        if starts && wait > 0 {
+            // Nothing shows yet: the player goes on as before.
+            self.takeoff_wait = Some(wait);
+            self.coyote = None;
+        }
+        if (starts && wait == 0) || due {
             if self.state == State::Roll {
                 events.push(Event::RollEnd);
             }
@@ -553,9 +577,10 @@ impl Player {
             if takeoff_frame && self.grounded() {
                 self.vel.y = speed;
                 self.takeoff = true;
-            } else if takeoff_frame && roll_jump {
-                // Out of a roll in the air, the jump spends its first
-                // frame moving as before, and rises from the end of it.
+            } else if takeoff_frame && (roll_jump || due) {
+                // Out of a roll in the air, or after waiting to take off
+                // when the ground has gone, the jump spends its first frame
+                // moving as before, and rises from the end of it.
                 air_takeoff = Some(speed);
             } else {
                 self.vel.y = speed;
@@ -873,7 +898,13 @@ impl Player {
         .filter(|&n| n <= frames(physics[Param::CoyoteTime]));
 
         if events.contains(&Event::Land) {
-            self.lockout = frames(physics[Param::LandingLockout]);
+            self.lockout = frames(
+                physics[if self.walked_off {
+                    Param::FallLandingLockout
+                } else {
+                    Param::LandingLockout
+                }],
+            );
         }
         self.off_face = if !self.grounded() {
             None

@@ -81,6 +81,7 @@ pub(crate) fn start(world: &mut World) {
     p.state = State::Hurt;
     p.jump_hold = false;
     p.takeoff = false;
+    p.takeoff_wait = None;
     p.turn = None;
     world.lost = Some(Lost {
         body: p.clone(),

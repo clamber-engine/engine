@@ -309,7 +309,11 @@ mod tests {
             );
             assert_eq!(
                 preset.title.as_deref(),
-                (preset.id == "classic-1").then_some("title-1"),
+                match preset.id.as_str() {
+                    "classic-1" => Some("title-1"),
+                    "classic-2" => Some("title-2"),
+                    _ => None,
+                },
                 "{}",
                 preset.id
             );
@@ -339,6 +343,9 @@ mod tests {
                     | Param::RunWalkSpeed
                     | Param::JumpDelay
                     | Param::LandingLockout
+                    | Param::FallLandingLockout
+                    | Param::JumpStartHold
+                    | Param::TakeoffWait
                     | Param::JumpBufferHold
                     | Param::HeldJumpGravity
                     | Param::LandingReach

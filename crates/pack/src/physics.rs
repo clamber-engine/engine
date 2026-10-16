@@ -165,10 +165,21 @@ params! {
     /// next one. 0 lets a jump start on the frame after landing. Whole
     /// frames.
     LandingLockout => "landing_lockout",
+    /// As `landing_lockout`, after landing from a fall that didn't start
+    /// with a jump, such as walking off a ledge. Whole frames.
+    FallLandingLockout => "fall_landing_lockout",
     /// Above 0, a jump pressed in the air is buffered only while jump
     /// stays held: letting go before the jump is possible forgets it.
     /// 0 keeps a buffered press for all of `jump_buffer`.
     JumpBufferHold => "jump_buffer_hold",
+    /// Above 0, a jump only starts on a frame jump is held, however it
+    /// was buffered: a press let go of before then is forgotten.
+    JumpStartHold => "jump_start_hold",
+    /// A jump takes off this many frames after it starts. Until then
+    /// nothing about it shows (no `jump_start` event, no upward speed),
+    /// the player moves as before and may leave the ground, and no other
+    /// jump starts. 0 takes off on the start frame. Whole frames.
+    TakeoffWait => "takeoff_wait",
     /// Speed lost per frame while rolling with no direction pressed.
     RollFriction => "roll_friction",
     /// Speed lost per frame while rolling and pressing against the motion.

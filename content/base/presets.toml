@@ -57,7 +57,10 @@ coyote_time = 5
 grounded_takeoff = 0
 jump_delay = 0
 landing_lockout = 0
+fall_landing_lockout = 0
 jump_buffer_hold = 0
+jump_start_hold = 0
+takeoff_wait = 0
 roll_friction = 0.03125
 roll_deceleration = 0.125
 roll_min_speed = 0.75
@@ -306,6 +309,7 @@ turn_run_speed = 2
 run_walk_speed = 2.5
 jump_delay = 1
 landing_lockout = 2
+fall_landing_lockout = 2
 jump_buffer = 12
 jump_buffer_hold = 1
 coyote_time = 0
@@ -535,10 +539,29 @@ follow_lag = 0
 lose_jump = 0
 ground_action_time = 0
 
+# Classic 2: the `title-2` values. Filled in so far: jump input timing
+# (jump-input.md and walk-off.md, "In `title-2`"), apart from jumps
+# while crouched. A jump starts on a press held on that frame, up to 15
+# frames after it, and takes off two frames later, still on the ground;
+# a jump can start on the frame after a jump's landing, or on the second
+# frame after a walk-off fall's landing, and on the leave frame and the
+# one after it. Everything else plays like Default for now.
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."
 placeholder = true
+title = "title-2"
+
+[presets.classic-2.world]
+jump_delay = 0
+jump_buffer = 15
+jump_buffer_hold = 0
+jump_start_hold = 1
+takeoff_wait = 2
+grounded_takeoff = 1
+landing_lockout = 0
+fall_landing_lockout = 1
+coyote_time = 1
 
 [presets.classic-3]
 label = "Classic 3"

@@ -249,6 +249,7 @@ fn start(world: &mut World, physics: &Physics, input: &Frame, other: &Other) -> 
     );
     player.vel = Vec2::default();
     player.takeoff = false;
+    player.takeoff_wait = None;
     player.turn = None;
     Swap {
         frame: 0,

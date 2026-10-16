@@ -565,6 +565,7 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     out.push(p.coyote.map_or(0, |n| n.saturating_add(1)));
     out.extend([p.lockout, p.jump_needs_hold.into()]);
     out.extend([p.jump_held_since_press, p.jump_hold, p.takeoff].map(u8::from));
+    out.push(p.takeoff_wait.map_or(0, |n| n.saturating_add(1)));
     out.push(p.swap);
     out.extend([p.crouch.held, p.crouch.rising]);
     out.push(p.turn.map_or(0, |n| n.saturating_add(1)));
