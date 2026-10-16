@@ -5,7 +5,7 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_pack::Fixed;
-use clamber_sim::{FlowEvent, InputFrame, Outcome, START_LIVES, World, generic_feel, step};
+use clamber_sim::{Facing, FlowEvent, InputFrame, Outcome, START_LIVES, World, generic_feel, step};
 
 /// Ground at y = 300 with a gap from x = 1000 to 1200. The level's
 /// bottom `Yb` is 400, as in the made-up example.
@@ -120,4 +120,42 @@ fn the_level_goes_on_96_frames_after_z_with_everything_still() {
     // The level is over; play comes back at the start.
     assert_eq!(play.step(&[]), [FlowEvent::Respawn]);
     assert_eq!(play.world.player.pos, Vec2::ints(400, 300));
+}
+
+#[test]
+fn z_moves_with_its_own_input() {
+    // The made-up example: Right held on Z only, after a frame with
+    // nothing held, makes `vx` on Z +0.25 and moves `x` by it.
+    let mut play = Play::falling(444.5);
+    let before = play.world.player.pos;
+    assert_eq!(play.world.player.vel.x, Fixed::ZERO);
+    assert_eq!(play.step(&[Action::Right]), [FlowEvent::Die]);
+    let p = &play.world.player;
+    assert_eq!(p.vel.x, f(0.25));
+    assert_eq!(p.pos.x, before.x + f(0.25));
+    assert_eq!(p.facing, Facing::Right);
+    let at = p.pos;
+    // From Z + 1 on, holding Right changes nothing.
+    for k in 1..=96 {
+        play.step(&[Action::Right]);
+        assert_eq!(play.world.player.pos, at, "Z + {k}");
+    }
+}
+
+#[test]
+fn presses_on_z_do_nothing() {
+    let mut alone = Play::falling(444.5);
+    alone.step(&[]);
+    for keys in [
+        [Action::Jump],
+        [Action::Action],
+        [Action::Up],
+        [Action::Down],
+        [Action::Swap],
+    ] {
+        let mut play = Play::falling(444.5);
+        assert_eq!(play.step(&keys), [FlowEvent::Die], "{keys:?}");
+        let (p, q) = (&play.world.player, &alone.world.player);
+        assert_eq!((p.pos, p.vel, p.state), (q.pos, q.vel, q.state), "{keys:?}");
+    }
 }
