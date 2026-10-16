@@ -45,8 +45,9 @@
 //! [`hands_hits`]). Breaking, it frees the character (see
 //! [`join`](crate::join)).
 //!
-//! Throwers throw balls, which don't act on the player yet (see
-//! [`throwers`](crate::throwers)).
+//! Throwers throw balls, which hurt the player as walkers' hurt boxes do,
+//! on the next step, by the player's pose (see
+//! [`throwers`](crate::throwers)). The same things stop them.
 //!
 //! A defeated walker jumps up and falls out of the level (see [`fall`]);
 //! other defeated enemies show as defeated for [`DEFEATED_FRAMES`], then
@@ -61,6 +62,7 @@ use crate::carry;
 use crate::flow::{FlowEvent, overlap};
 use crate::join;
 use crate::player::{Act, Facing, HEIGHT, STEP, State, TINY, ease, frames, is_wall};
+use crate::pose;
 use crate::throwers::{self, Picture};
 use crate::view;
 use crate::world::{Event, Phase, Thing, World};
@@ -75,6 +77,7 @@ pub const LAUNCH_REST: u8 = 20;
 /// `previous_feet` is the player's `pos.y` before this step; `frozen`
 /// says the player was held still on it.
 pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
+    pose::note(&mut world.player, &world.events);
     let physics = world.player_physics();
     let boxes = physics[Param::BounceWidth] > Fixed::ZERO;
     let hurt_boxes = physics[Param::HurtWidth] > Fixed::ZERO;
@@ -181,8 +184,13 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     // Nothing hurts the player on the frame after a ground action's
     // pause either.
     let pausing = world.player.ground_action.is_some() && (frozen || world.player.frozen > 0);
-    if hurt_boxes && !knocked(world) && !pausing {
-        world.player.hurt_ahead = hurt_ahead(world, &physics);
+    if !knocked(world) && !pausing {
+        let walker = if hurt_boxes {
+            hurt_ahead(world, &physics)
+        } else {
+            None
+        };
+        world.player.hurt_ahead = walker.or_else(|| throwers::hurt_ahead(world));
     }
 }
 

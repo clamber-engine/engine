@@ -115,8 +115,14 @@ pub enum Phase {
     /// An object just set down, which comes to rest on the next step.
     Placed,
     /// A ball moving at `vy` down, ignoring floors until it's below the
-    /// one it bounced on, if `ignoring` has it.
-    Flying { vy: Fixed, ignoring: Option<Fixed> },
+    /// one it bounced on, if `ignoring` has it. `kept` says it bounced or
+    /// stopped ignoring floors on the last step. Its `clock` counts its
+    /// steps, but not those.
+    Flying {
+        vy: Fixed,
+        ignoring: Option<Fixed>,
+        kept: bool,
+    },
 }
 
 /// Everything the simulation advances.
@@ -408,7 +414,9 @@ impl World {
                 Phase::Thrown(_) => [5, 0],
                 Phase::Placed => [6, 0],
                 Phase::Knocked { vy } => [7, vy.is_some().into()],
-                Phase::Flying { ignoring, .. } => [8, ignoring.is_some().into()],
+                Phase::Flying { ignoring, kept, .. } => {
+                    [8, u8::from(ignoring.is_some()) | u8::from(kept) << 1]
+                }
             });
             if let Phase::Falling { vy, .. }
             | Phase::Knocked { vy: Some(vy) }
@@ -596,6 +604,19 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
         }
         None => out.push(0),
     }
+    let pose = p.pose;
+    out.push(pose.air.index() as u8);
+    out.push(pose.since_land.map_or(0, |n| n.saturating_add(1)));
+    match pose.rolled {
+        Some((n, on)) => out.extend([1, n, on.into()]),
+        None => out.push(0),
+    }
+    out.extend(
+        pose.standing
+            .map_or(0, |n| n.saturating_add(1))
+            .to_le_bytes(),
+    );
+    out.push(pose.rolling.into());
     match p.knockout {
         Some(k) => {
             out.push(1);

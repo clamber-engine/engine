@@ -14,10 +14,15 @@
 //! once, and also moves on the step it appears; without a view it starts
 //! moving on the first step.
 //!
-//! Neither touches the player, thrown objects or other enemies: the spec
-//! doesn't cover what they do then yet (clamber-engine/spec#19). A ball
-//! passes through walls, and rising into a floor from below, through
-//! that, which the spec doesn't cover either.
+//! A ball with a [`Contact`](crate::Contact) hurts the player as [`hurt_ahead`] says
+//! (spec/behavior/ball-contact.md); it isn't affected itself, and goes on
+//! moving while the player is knocked out, which the spec doesn't cover.
+//! It can hurt on the step it appears, which the spec doesn't cover
+//! either. The thrower doesn't touch the player, and neither touches
+//! thrown objects or other enemies: the spec doesn't cover what they do
+//! then yet (clamber-engine/spec#19). A ball passes through walls, and
+//! rising into a floor from below, through that, which the spec doesn't
+//! cover either.
 
 use clamber_fixed::Fixed;
 use clamber_level::{Level, Vec2};
@@ -26,6 +31,7 @@ use clamber_pack::{Param, Physics};
 use crate::archetype::{Archetypes, Ball, Behavior};
 use crate::columns;
 use crate::player::{Facing, ceil};
+use crate::pose;
 use crate::view::View;
 use crate::world::{Phase, Thing, World};
 
@@ -135,6 +141,7 @@ fn spawn(world: &mut World, pos: Vec2, velocity: Vec2) {
         phase: Phase::Flying {
             vy: velocity.y,
             ignoring: None,
+            kept: false,
         },
     };
     if index < world.things.len() {
@@ -158,6 +165,10 @@ fn spawn(world: &mut World, pos: Vec2, velocity: Vec2) {
 /// removed once outside its window, except on a step on which it bounced
 /// or stopped ignoring floors. Without one, it's removed once its top is
 /// below the level.
+///
+/// Its clock counts its steps, from 0 at its start, but not the steps on
+/// which it bounces or stops ignoring floors (ball-contact.md, "The
+/// ball's turn").
 pub(crate) fn fly(
     level: &Level,
     thing: &mut Thing,
@@ -165,11 +176,11 @@ pub(crate) fn fly(
     size: Vec2,
     picture: Option<Picture>,
 ) {
-    let (vy, ignoring) = match thing.phase {
-        Phase::Flying { vy, ignoring } => (vy, ignoring),
+    let (vy, ignoring, steps) = match thing.phase {
+        Phase::Flying { vy, ignoring, .. } => (vy, ignoring, thing.clock),
         _ => {
             thing.vx = ball.velocity.x;
-            (ball.velocity.y, None)
+            (ball.velocity.y, None, 0)
         }
     };
     let mut vy = (vy + ball.gravity).min(ball.max_fall);
@@ -203,7 +214,8 @@ pub(crate) fn fly(
         }
     }
     thing.pos = Vec2::new(x, y);
-    thing.phase = Phase::Flying { vy, ignoring };
+    thing.phase = Phase::Flying { vy, ignoring, kept };
+    thing.clock = if kept { steps } else { steps + 1 };
     let gone = match picture {
         Some(picture) => !kept && !picture.holds(thing.pos, ball.window),
         None => y - size.y > level.size.y,
@@ -211,6 +223,34 @@ pub(crate) fn fly(
     if gone {
         thing.active = false;
     }
+}
+
+/// The ball that hurts the player on the next step, if any: one with a
+/// [`Contact`](crate::Contact) that didn't bounce or stop ignoring floors on this step,
+/// and whose offsets from the player, at the end of it, are within the
+/// ranges for the player's pose and facing, moved by the part of its
+/// turn it was in before its move on it.
+pub(crate) fn hurt_ahead(world: &World) -> Option<usize> {
+    let player = &world.player;
+    let x = player.pos.x.floor();
+    let y = ceil(player.pos.y);
+    world
+        .things
+        .iter()
+        .filter(|t| t.active && matches!(t.phase, Phase::Flying { kept: false, .. }))
+        .find(|t| {
+            let Some(Behavior::Ball(Ball {
+                contact: Some(contact),
+                ..
+            })) = t.archetype.map(|a| a.behavior)
+            else {
+                return false;
+            };
+            let pose = pose::pose(player, &contact);
+            let reach = contact.reach(pose, player.facing, t.clock.saturating_sub(1));
+            reach.contains(x - t.pos.x.floor(), y - ceil(t.pos.y))
+        })
+        .map(|t| t.index)
 }
 
 #[cfg(test)]
@@ -253,6 +293,7 @@ mod tests {
             phase: Phase::Flying {
                 vy: f(vy),
                 ignoring: ignoring.map(f),
+                kept: false,
             },
         }
     }
@@ -263,7 +304,7 @@ mod tests {
         let (ball, size) = ball();
         let mut thing = at(y, vy, ignoring);
         fly(&level(), &mut thing, &ball, size, None);
-        let Phase::Flying { vy, ignoring } = thing.phase else {
+        let Phase::Flying { vy, ignoring, .. } = thing.phase else {
             unreachable!()
         };
         (thing.pos.y, vy, ignoring.is_some())

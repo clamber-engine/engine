@@ -329,6 +329,7 @@ fn breaks_on_a_ball() {
         ball.phase = Phase::Flying {
             vy: f(-0.4375),
             ignoring: None,
+            kept: false,
         };
         play.step(&[]);
         assert_eq!(play.world.things[1].pos.y, f(339.5625));

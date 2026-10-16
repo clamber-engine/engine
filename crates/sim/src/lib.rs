@@ -37,6 +37,7 @@ mod follow;
 mod join;
 mod loss;
 mod player;
+mod pose;
 mod record;
 mod script;
 mod swap;
@@ -46,8 +47,9 @@ mod view;
 mod world;
 
 pub use archetype::{
-    Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Fall, Hit, Holder,
-    MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_LETTERS, MAX_THROWS, Reach, Span, Throw,
+    AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
+    Fall, Hit, Holder, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_LETTERS, MAX_THROWS, MAX_TURN_PARTS,
+    Offsets, Reach, Span, Throw,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
@@ -63,6 +65,7 @@ pub use player::{
     Act, Boost, Crouch, Facing, Gait, GroundAction, HALF_WIDTH, HEIGHT, Hands, Knockout, Player,
     ROLL, Roll, RollSize, SWAP_FRAMES, State, Stride,
 };
+pub use pose::{Air, Pose, PoseClock, pose};
 pub use record::record;
 pub use script::{InputFrame, Script};
 pub use swap::{Move, Other, Recent, Swap};

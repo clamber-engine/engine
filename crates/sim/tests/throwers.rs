@@ -5,7 +5,7 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_pack::Fixed;
-use clamber_sim::{BALL, InputFrame, Phase, Thing, World, generic_feel, step};
+use clamber_sim::{BALL, InputFrame, Phase, START_LIVES, Thing, World, generic_feel, step};
 
 fn f(v: f64) -> Fixed {
     Fixed::from_f64(v).unwrap()
@@ -135,7 +135,8 @@ fn a_ball_bounces_drops_through_ledges_and_bounces_again() {
 /// left on `A` + 144 of every 173 frames, at the start's speeds.
 #[test]
 fn throws_on_the_timetable() {
-    let mut play = Play::new(world(1000, &thrower(1000, 300)));
+    // The player stands where no ball reaches it.
+    let mut play = Play::new(world(1070, &thrower(1000, 300)));
     let first = play.world.level.entities.len();
     let mut throws = Vec::new();
     for frame in 0..400u32 {
@@ -168,6 +169,7 @@ fn throws_on_the_timetable() {
     .map(|(frame, vx)| (frame, vx, f(1000.0) + vx))
     .collect();
     assert_eq!(throws, expected);
+    assert_eq!(play.world.flow.lives, START_LIVES);
 }
 
 /// thrower.md, "The thrower": a thrower comes into the level as a walker

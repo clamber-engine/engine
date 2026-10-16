@@ -23,6 +23,7 @@ use clamber_pack::{Feel, Param, Physics};
 
 use crate::columns;
 use crate::loss::Lost;
+use crate::pose::PoseClock;
 use crate::world::Event;
 
 /// Half the body's width, px. The body is a box standing on its
@@ -174,6 +175,9 @@ pub struct Player {
     /// The enemy whose touch hurts the player on the next step, found
     /// at the end of this one (`hurt_width` above 0).
     pub hurt_ahead: Option<usize>,
+    /// What its pose for a ball's reach is read from (see
+    /// [`crate::pose`]).
+    pub pose: PoseClock,
     /// The knock-out under way, if the player was hurt and is being
     /// knocked out (`knockout_jump` above 0).
     pub knockout: Option<Knockout>,
@@ -231,6 +235,7 @@ impl Player {
             jump_age: None,
             since_land: None,
             hurt_ahead: None,
+            pose: PoseClock::default(),
             knockout: None,
             hop: None,
             hands: None,

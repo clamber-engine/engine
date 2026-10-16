@@ -14,6 +14,7 @@ use serde::Deserialize;
 use toml::{Table, Value};
 
 use crate::player::Facing;
+use crate::pose::Pose;
 
 const BUILTIN: &str = include_str!("../../../content/base/archetypes.toml");
 const BUILTIN_ORIGIN: &str = "content/base/archetypes.toml";
@@ -128,6 +129,100 @@ pub struct Ball {
     pub touch: Fixed,
     pub drop: Fixed,
     pub window: (i32, i32, i32, i32),
+    /// When it hurts the player, if it does.
+    pub contact: Option<Contact>,
+}
+
+/// When a ball hurts the player (spec/behavior/ball-contact.md): when
+/// the player's offsets from it at the end of a step are within the
+/// ranges for the player's [`Pose`](crate::Pose) then, moved by the
+/// part of its turn it was in before its move, it hurts the player on
+/// the next step. Not on a step on which it bounced or stopped ignoring
+/// floors, though.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Contact {
+    pub upright: Offsets,
+    pub airborne: Offsets,
+    pub rolling: Offsets,
+    pub crouching: Offsets,
+    pub fidget: Offsets,
+    /// The parts of the ball's turn, in order: how many steps each
+    /// lasts, and how far it moves both ends of `across` and of `above`.
+    /// Only the first `turn_parts` are used.
+    pub turn: [(u32, i32, i32); MAX_TURN_PARTS],
+    pub turn_parts: u8,
+    /// A jump has the upright pose on the frames up to this many after
+    /// the one it starts on, and the airborne one after.
+    pub upright_jump: u8,
+    /// After landing, the airborne pose goes on up to this many frames
+    /// after the landing frame, by how the player went into the air (see
+    /// [`Air`](crate::Air)).
+    pub land_hold: [u8; AIR_KINDS],
+    /// After a roll, the rolling pose goes on for this many frames when
+    /// it runs on into a run, and for the second when it doesn't.
+    pub roll_after: (u8, u8),
+    /// Standing still, the fidget pose starts this many frames into the
+    /// standing pose, lasts the second, and comes again every third (0:
+    /// only once).
+    pub fidget_time: (u32, u32, u32),
+}
+
+/// The most parts a ball's turn can have.
+pub const MAX_TURN_PARTS: usize = 8;
+
+/// How many ways into the air [`Contact::land_hold`] tells apart.
+pub const AIR_KINDS: usize = 5;
+
+/// Offsets of the player from a ball that it reaches, facing right, in
+/// whole px, ends included: `across`, the player's `x` less the ball's,
+/// both rounded down, and `above`, how far the ball is above the player,
+/// the player's `y` less the ball's, both rounded up.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Offsets {
+    pub across: (i32, i32),
+    pub above: (i32, i32),
+}
+
+impl Contact {
+    /// The offsets a ball reaches a player in `pose` facing `facing`
+    /// from, after `steps` steps of its turn.
+    pub fn reach(&self, pose: Pose, facing: Facing, steps: u32) -> Offsets {
+        let base = match pose {
+            Pose::Upright => self.upright,
+            Pose::Airborne => self.airborne,
+            Pose::Rolling => self.rolling,
+            Pose::Crouching => self.crouching,
+            Pose::Fidget => self.fidget,
+        };
+        let (from, to) = base.across;
+        let across = match facing {
+            Facing::Right => (from, to),
+            // Turned around the player's middle, 2 px left of its x.
+            Facing::Left => (-to - 2, -from - 2),
+        };
+        let parts = &self.turn[..usize::from(self.turn_parts)];
+        let cycle: u32 = parts.iter().map(|p| p.0).sum();
+        let (mut at, mut shift) = (if cycle > 0 { steps % cycle } else { 0 }, (0, 0));
+        for &(length, x, y) in parts {
+            if at < length {
+                shift = (x, y);
+                break;
+            }
+            at -= length;
+        }
+        Offsets {
+            across: (across.0 + shift.0, across.1 + shift.0),
+            above: (base.above.0 + shift.1, base.above.1 + shift.1),
+        }
+    }
+}
+
+impl Offsets {
+    pub fn contains(self, across: i64, above: i64) -> bool {
+        let within =
+            |(from, to): (i32, i32), v: i64| (i64::from(from)..=i64::from(to)).contains(&v);
+        within(self.across, across) && within(self.above, above)
+    }
 }
 
 /// With a view, when each released part of a collectible reaches the
@@ -515,6 +610,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "touch",
             "drop",
             "window",
+            "contact",
         ],
         "collect" => &[
             "worth",
@@ -797,6 +893,10 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 touch: number("touch")?,
                 drop: number("drop")?,
                 window,
+                contact: match table.get("contact") {
+                    None => None,
+                    Some(v) => Some(parse_contact(v, &format!("{path}.contact"))?),
+                },
             };
             if ball.gravity <= Fixed::ZERO || ball.max_fall <= Fixed::ZERO {
                 return Err(format!("{path}: `gravity` and `max_fall` must be positive"));
@@ -881,6 +981,126 @@ fn parse_arrive(table: &Table, path: &str, count_delay: u8) -> Result<Arrive, St
         rules,
         rule_count: items.len() as u8,
         otherwise,
+    })
+}
+
+/// Reads a ball's [`Contact`] table. Errors start with `path`.
+fn parse_contact(value: &Value, path: &str) -> Result<Contact, String> {
+    let Value::Table(table) = value else {
+        return Err(format!("{path}: expected a table"));
+    };
+    const KEYS: &[&str] = &[
+        "upright",
+        "airborne",
+        "rolling",
+        "crouching",
+        "fidget",
+        "turn",
+        "upright_jump",
+        "land_hold",
+        "roll_after",
+        "fidget_time",
+    ];
+    if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
+        return Err(format!("{path}.{key}: no such value"));
+    }
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let whole = |v: &Value, at: &str| match v {
+        Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+        _ => Err(format!("{at}: expected a whole number")),
+    };
+    let count = |v: &Value, at: &str, most: i64| match v {
+        Value::Integer(n) if (0..=most).contains(n) => Ok(*n),
+        _ => Err(format!("{at}: expected a whole number, 0 to {most}")),
+    };
+    let list = |key: &str, len: usize| -> Result<&Vec<Value>, String> {
+        match get(key)? {
+            Value::Array(items) if items.len() == len => Ok(items),
+            _ => Err(format!("{path}.{key}: expected a list of {len}")),
+        }
+    };
+    let offsets = |key: &str| -> Result<Offsets, String> {
+        let at = format!("{path}.{key}");
+        let n = list(key, 4)?
+            .iter()
+            .enumerate()
+            .map(|(i, v)| whole(v, &format!("{at}[{i}]")))
+            .collect::<Result<Vec<_>, _>>()?;
+        if n[0] > n[1] || n[2] > n[3] {
+            return Err(format!("{at}: a range ends before it starts"));
+        }
+        Ok(Offsets {
+            across: (n[0], n[1]),
+            above: (n[2], n[3]),
+        })
+    };
+    let frames = |v: &Value, at: &str| count(v, at, i64::from(u8::MAX)).map(|n| n as u8);
+
+    let parts = match get("turn")? {
+        Value::Array(items) if items.len() <= MAX_TURN_PARTS => items,
+        _ => {
+            return Err(format!(
+                "{path}.turn: expected a list of up to {MAX_TURN_PARTS} [steps, across, above]"
+            ));
+        }
+    };
+    let mut turn = [(0, 0, 0); MAX_TURN_PARTS];
+    for (i, part) in parts.iter().enumerate() {
+        let at = format!("{path}.turn[{i}]");
+        let Value::Array(part) = part else {
+            return Err(format!("{at}: expected [steps, across, above]"));
+        };
+        let [steps, x, y] = part.as_slice() else {
+            return Err(format!("{at}: expected [steps, across, above]"));
+        };
+        turn[i] = (
+            count(steps, &format!("{at}[0]"), i64::from(u32::MAX))? as u32,
+            whole(x, &format!("{at}[1]"))?,
+            whole(y, &format!("{at}[2]"))?,
+        );
+    }
+
+    let Value::Table(hold) = get("land_hold")? else {
+        return Err(format!("{path}.land_hold: expected a table"));
+    };
+    const AIRS: [&str; AIR_KINDS] = ["still", "hop", "moving", "roll", "fall"];
+    if let Some(key) = hold.keys().find(|k| !AIRS.contains(&k.as_str())) {
+        return Err(format!("{path}.land_hold.{key}: no such value"));
+    }
+    let mut land_hold = [0; AIR_KINDS];
+    for (i, air) in AIRS.iter().enumerate() {
+        let at = format!("{path}.land_hold.{air}");
+        let v = hold.get(*air).ok_or_else(|| format!("{at}: missing"))?;
+        land_hold[i] = frames(v, &at)?;
+    }
+
+    let roll_after = list("roll_after", 2)?;
+    let fidget_time = list("fidget_time", 3)?
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            count(v, &format!("{path}.fidget_time[{i}]"), i64::from(u32::MAX)).map(|n| n as u32)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Contact {
+        upright: offsets("upright")?,
+        airborne: offsets("airborne")?,
+        rolling: offsets("rolling")?,
+        crouching: offsets("crouching")?,
+        fidget: offsets("fidget")?,
+        turn,
+        turn_parts: parts.len() as u8,
+        upright_jump: frames(get("upright_jump")?, &format!("{path}.upright_jump"))?,
+        land_hold,
+        roll_after: (
+            frames(&roll_after[0], &format!("{path}.roll_after[0]"))?,
+            frames(&roll_after[1], &format!("{path}.roll_after[1]"))?,
+        ),
+        fidget_time: (fidget_time[0], fidget_time[1], fidget_time[2]),
     })
 }
 
@@ -1176,6 +1396,12 @@ mod tests {
         check("thrower", "defeat_max_fall = 0", "must be positive");
         check("ball", "window = [1, 2, 3]", "entities[3].params.window");
         check("ball", "gravity = 0", "must be positive");
+        check(
+            "ball",
+            "contact = { nope = 1 }",
+            "contact.nope: no such value",
+        );
+        check("ball", "contact = 1", "contact: expected a table");
         check("spark", "worth = 0", "entities[3].params.worth");
         check("letter", "letter = 0", "entities[3].params.worth");
         check("letter", "letter = 9", "entities[3].params.letter");

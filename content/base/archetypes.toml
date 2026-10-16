@@ -76,7 +76,7 @@
 #   and starts its timetable again each time it appears. Knocked out (by
 #   the ground action), it stops throwing and leaves as a defeated walker
 #   does, by `defeat_jump`, `defeat_gravity` and `defeat_max_fall`.
-#   Neither it nor its balls touch the player or anything else yet.
+#   It doesn't touch the player or anything else yet; its balls can.
 # - `ball`: falls under `gravity`, up to `max_fall`; nothing changes its
 #   speed across. Its floor is the highest in the 1-px column of its x
 #   that's no more than `floor_reach` above where it was at the start of
@@ -91,6 +91,33 @@
 #   a view, it's removed once its top is below the level. Placed in a
 #   level, it starts at `velocity = [x, y]`, and with a view appears as
 #   a walker on its own would, moving on the frame it appears, once.
+#   With a `contact` table, it hurts the player, on the next frame, when
+#   the player's offsets from it at the end of a frame are within the
+#   ranges for the player's pose then: `[across from, to, above from,
+#   to]`, whole px, ends included, where `across` is the player's x less
+#   the ball's, both rounded down, and `above` the player's y less the
+#   ball's, both rounded up. The ranges are for facing right; facing
+#   left, `across` turns around to from -(to) - 2 to -(from) - 2. The
+#   poses: `upright` (standing, walking, running, turning, the ground
+#   action, and a jump up to `upright_jump` frames after the one it
+#   starts on), `airborne` (the rest of a jump, other times in the air,
+#   and after landing up to `land_hold` frames after the landing frame,
+#   by how the player went into the air: a jump standing still held
+#   until it lands, `still`, or let go of before, `hop`; a jump while
+#   moving, `moving`; out of a roll, `roll`; without jumping, `fall`),
+#   `rolling` (during a roll, and `roll_after = [on, stopped]` frames
+#   after it, when it ran on into a run or not), `crouching` (down held
+#   on the ground, outside the ground action) and `fidget` (standing
+#   still: `fidget_time = [start, length, every]` frames into standing,
+#   for `length` frames, then again every `every`). As the ball flies it
+#   turns: `turn = [[steps, across, above], ...]`, up to eight parts in
+#   order, each lasting `steps` of its steps and moving both ends of each
+#   range by `across` and `above`, by the part it was in before its move
+#   on the frame. Its steps count from 0 at its start, and one more on
+#   each frame it moves without bouncing or stopping passing through
+#   floors. A ball hurts on no frame on which it bounced or stopped
+#   passing through floors. Nothing changes the ball. Without
+#   `contact`, it doesn't touch the player.
 # - `collect`: a collectible the player takes by reaching it. It's then
 #   gone, and adds `worth` to the collectible count, one at a time: the
 #   first as it's taken, then one every `release_every` frames, each
@@ -221,6 +248,25 @@ floor_reach = 8
 touch = 5
 drop = 47
 window = [31, 32, 31, 32]
+
+# title-1's (spec/behavior/ball-contact.md). The spec measured the low
+# end of `above` in the air only; for crouching and the fidget, which
+# are on the ground, it's upright's. The airborne pose's start before a
+# walk-off and its end after other landings aren't covered; the engine
+# starts it on leaving the ground, and holds it after a running jump as
+# after a walking one, and after a bounce as after a walk-off fall of
+# 15 frames.
+[archetypes.ball.contact]
+upright = [-15, 19, -3, 37]
+airborne = [-15, 16, 18, 54]
+rolling = [-13, 19, 1, 35]
+crouching = [-18, 10, -3, 28]
+fidget = [-5, 22, -3, 41]
+turn = [[9, 0, 0], [6, 0, 2], [6, 2, 2], [3, 2, 0]]
+upright_jump = 5
+land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }
+roll_after = [3, 9]
+fidget_time = [239, 180, 457]
 
 # Collectibles with title-1's measured values. `spark`: a single
 # collectible (spec/behavior/collectibles.md), drawn 16 x 16 around its
