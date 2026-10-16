@@ -13,6 +13,9 @@
 //!
 //! Collectibles add to the collectible count ([`Release`]).
 //!
+//! Walking past a level's [`END`] marker finishes it, after a walk-out
+//! and a fade if the preset has them ([`Ending`]).
+//!
 //! With a preset that has one, a [`View`] follows the player, and
 //! walkers and throwers are in the level only near it.
 //!
@@ -24,6 +27,7 @@ mod archetype;
 mod carry;
 mod collect;
 mod columns;
+mod ending;
 mod flow;
 mod follow;
 mod loss;
@@ -43,6 +47,7 @@ pub use archetype::{
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
 pub use collect::Release;
+pub use ending::{END, Ending};
 pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };

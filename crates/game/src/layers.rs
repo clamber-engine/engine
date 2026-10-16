@@ -103,7 +103,19 @@ impl LayerArt {
     /// left is at `origin` in world units. Layers whose image isn't here
     /// are skipped.
     pub fn draw(&self, surface: &mut dyn Surface, level: &Level, depth: Depth, origin: (f64, f64)) {
-        for layer in level.layers.iter().filter(|l| l.depth == depth) {
+        self.draw_some(surface, level, origin, |l| l.depth == depth);
+    }
+
+    /// Draws the layers `keep` says to, in order, for a view whose top
+    /// left is at `origin`.
+    pub fn draw_some(
+        &self,
+        surface: &mut dyn Surface,
+        level: &Level,
+        origin: (f64, f64),
+        keep: impl Fn(&Layer) -> bool,
+    ) {
+        for layer in level.layers.iter().filter(|l| keep(l)) {
             let Some(texture) = self.get(image_path(layer), layer.pixel_art) else {
                 continue;
             };

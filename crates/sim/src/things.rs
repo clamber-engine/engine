@@ -68,7 +68,11 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
     let hurt_boxes = physics[Param::HurtWidth] > Fixed::ZERO;
     let attack_boxes = physics[Param::RollAttackWidth] > Fixed::ZERO;
     let knocked = |world: &World| {
-        world.player.knockout.is_some() || world.events.contains(&Event::Hurt) || world.losing()
+        // Nothing touches the characters during the walk-out either.
+        world.player.knockout.is_some()
+            || world.events.contains(&Event::Hurt)
+            || world.losing()
+            || world.ending.is_some()
     };
     let bounced = if boxes && !knocked(world) {
         bounce_on_boxes(world, &physics)

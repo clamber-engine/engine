@@ -612,6 +612,27 @@ params! {
     /// ... or this far right of the view's right edge or further. Whole
     /// px.
     RemoveRight => "remove_right",
+    /// The lead passes a level's `end` marker only with its feet line
+    /// this far above or below the marker or closer (see
+    /// `clamber_sim::Ending`). Whole px.
+    EndReach => "end_reach",
+    /// Above 0, after passing the end marker the lead walks out of the
+    /// level at this speed, on its own. 0: passing it completes the
+    /// level at once. px/frame.
+    EndWalkSpeed => "end_walk_speed",
+    /// How far the lead rises each frame of the walk-out, until the fade
+    /// starts. px/frame.
+    EndRise => "end_rise",
+    /// The fade starts on the frame after the lead ends one this far
+    /// right of the view's left edge or further, `x` rounded down. Whole
+    /// px.
+    EndFadeAt => "end_fade_at",
+    /// Frames from the first of the fade to the level's last, on which
+    /// the picture is black. Whole frames.
+    EndFadeTime => "end_fade_time",
+    /// Frames the picture stays at each brightness during the fade. Whole
+    /// frames.
+    EndFadeStep => "end_fade_step",
 }
 
 impl Param {

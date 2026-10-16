@@ -181,6 +181,12 @@ appear_left = 0
 appear_right = 0
 remove_left = 0
 remove_right = 0
+end_reach = 0
+end_walk_speed = 0
+end_rise = 0
+end_fade_at = 0
+end_fade_time = 0
+end_fade_step = 0
 
 [presets.snappy]
 label = "Snappy"
@@ -230,7 +236,8 @@ air_acceleration = 0.09375
 # objects (carrying.md), the collectible count (collectibles.md;
 # the collectibles are archetypes.toml's `spark` and `cluster`), the
 # view and walkers appearing with it (view.md, view-vertical.md,
-# walker-view.md), and the ground action (ground-action.md). Classic 1
+# walker-view.md), the ground action (ground-action.md), and finishing a
+# level at its end marker (level-end.md). Classic 1
 # is the bundled game's starting preset. Jump doesn't cut upward speed
 # when let go (`jump_release_speed` equals `jump_speed`); it ends the
 # lighter `held_jump_gravity` instead.
@@ -427,6 +434,15 @@ appear_left = 31
 appear_right = 32
 remove_left = 128
 remove_right = 129
+# Passing the end marker, the walk-out and the fade (level-end.md). The
+# brightness goes from 15 to 0 a step every 2 frames, so the picture is
+# black 28 frames after the fade starts.
+end_reach = 4
+end_walk_speed = 2
+end_rise = 0.125
+end_fade_at = 240
+end_fade_time = 28
+end_fade_step = 2
 
 # The second character (roster slot 1): spec/behavior/second-character.md.
 # It moves by the same rules with its own speeds, jump and crouch

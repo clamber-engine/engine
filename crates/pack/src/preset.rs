@@ -465,6 +465,12 @@ mod tests {
                     | Param::AppearRight
                     | Param::RemoveLeft
                     | Param::RemoveRight
+                    | Param::EndReach
+                    | Param::EndWalkSpeed
+                    | Param::EndRise
+                    | Param::EndFadeAt
+                    | Param::EndFadeTime
+                    | Param::EndFadeStep
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

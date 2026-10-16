@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use clamber_level::{Area, Depth, Shape, Vec2};
+use clamber_level::{Area, Depth, Layer, Shape, Vec2};
 use clamber_pack::Feel;
-use clamber_sim::{Facing, FlowEvent, HALF_WIDTH, HEIGHT, InputFrame, State, World, step};
+use clamber_sim::{END, Facing, FlowEvent, HALF_WIDTH, HEIGHT, InputFrame, State, World, step};
 
 use crate::camera::{Camera, VIEW, point};
 use crate::canvas::{Canvas, Color, rgb};
@@ -23,6 +23,7 @@ const REGION: Color = rgb(0xd8, 0xb0, 0x4a);
 const WATER: Color = rgb(0x3a, 0x7a, 0xd8);
 const ENTITY: Color = rgb(0xd0, 0x6a, 0xd8);
 const EYE: Color = rgb(0x10, 0x10, 0x18);
+const BLACK: Color = rgb(0, 0, 0);
 
 /// Size of the box marking an entity that has no sprite, px.
 const ENTITY_BOX: i32 = 12;
@@ -164,7 +165,20 @@ impl Game {
 
         let level = &self.world.level;
         canvas.light(&lighting(level, origin, canvas.view()));
-        self.art.draw(canvas, level, Depth::Back, origin);
+        let behind = self.world.behind_scenery();
+        if behind {
+            // The characters go behind the scenery, the back layers that
+            // move with the world, but in front of backdrops.
+            let back = |l: &Layer| l.depth == Depth::Back;
+            let scenery = |l: &Layer| l.parallax == Vec2::ints(1, 1);
+            self.art
+                .draw_some(canvas, level, origin, |l| back(l) && !scenery(l));
+            self.draw_characters(canvas, alpha, origin);
+            self.art
+                .draw_some(canvas, level, origin, |l| back(l) && scenery(l));
+        } else {
+            self.art.draw(canvas, level, Depth::Back, origin);
+        }
         if self.debug {
             for region in &level.regions {
                 let points = match &region.area {
@@ -206,7 +220,8 @@ impl Game {
         }
 
         for (thing, pose) in self.world.things.iter().zip(&self.poses.things) {
-            if !thing.active {
+            // The end marker isn't drawn.
+            if !thing.active || (thing.kind == END && !self.debug) {
                 continue;
             }
             let (x, y) = to_screen(point(thing.pos));
@@ -222,11 +237,22 @@ impl Game {
             }
         }
 
+        if !behind {
+            self.draw_characters(canvas, alpha, origin);
+        }
+        self.art.draw(canvas, level, Depth::Front, origin);
+        draw_hud(canvas, &self.world);
+        let (now, full) = self.world.brightness();
+        if now < full {
+            let dark = 255 * (full - now) / full;
+            canvas.shade(BLACK, dark as u8);
+        }
+    }
+
+    fn draw_characters(&self, canvas: &mut dyn Surface, alpha: f64, origin: (f64, f64)) {
         self.draw_leaving(canvas, alpha, origin);
         self.draw_other(canvas, alpha, origin);
         self.draw_player(canvas, alpha, origin);
-        self.art.draw(canvas, level, Depth::Front, origin);
-        draw_hud(canvas, &self.world);
     }
 
     /// The player's sprite, or without one, its body box coloured by
@@ -454,6 +480,54 @@ mod tests {
         assert_eq!(at(400.0, 250.0), Some(rgb(1, 2, 3)));
         assert_eq!(at(500.0, 290.0), Some(state_color(State::Idle)));
         assert_eq!(at(545.0, 255.0), Some(rgb(4, 5, 6)));
+    }
+
+    #[test]
+    fn draws_the_characters_behind_the_scenery_in_the_walk_out_then_fades() {
+        let layers = r#"
+            [[layers]]
+            name = "far"
+            image = "far.png"
+            parallax = [0, 0]
+            repeat = [true, true]
+
+            [[layers]]
+            name = "rock"
+            image = "rock.png"
+            offset = [490, 280]
+        "#;
+        let src = format!("{LEVEL}{layers}");
+        let level = Level::from_toml_str(&src, "test").unwrap();
+        let fill = |w, h, c: [u8; 4]| {
+            let mut image = clamber_sprite::RgbaImage::new(w, h);
+            image.data.fill(c);
+            image
+        };
+        let mut art = LayerArt::default();
+        art.insert("far.png", fill(4, 4, [1, 2, 3, 255]), false);
+        art.insert("rock.png", fill(20, 20, [7, 8, 9, 255]), false);
+        let world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
+        let mut game = Game::new(world).with_art(art);
+        game.restart();
+        let pixel = |game: &Game, x: f64, y: f64| {
+            let mut canvas = Game::canvas();
+            game.draw(&mut canvas, 1.0);
+            let (left, top) = game.camera.top_left(1.0);
+            canvas.get((x - left) as i32, (y - top) as i32)
+        };
+        assert_eq!(pixel(&game, 500.0, 285.0), Some(state_color(State::Idle)));
+
+        game.world.ending = Some(clamber_sim::Ending::default());
+        assert_eq!(pixel(&game, 500.0, 285.0), Some(rgb(7, 8, 9)));
+        assert_eq!(pixel(&game, 500.0, 275.0), Some(state_color(State::Idle)));
+        assert_eq!(pixel(&game, 400.0, 250.0), Some(rgb(1, 2, 3)));
+
+        // Default's fade is a single frame, straight to black.
+        game.world.ending = Some(clamber_sim::Ending {
+            fade: Some(0),
+            ..Default::default()
+        });
+        assert_eq!(pixel(&game, 400.0, 250.0), Some(BLACK));
     }
 
     #[test]

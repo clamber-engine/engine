@@ -10,6 +10,7 @@ use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior};
 use crate::carry::{self, Flight};
 use crate::collect;
+use crate::ending::{self, Ending};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
 use crate::follow::{self, Lead, Mode};
 use crate::loss::{self, Loss, Lost};
@@ -144,6 +145,9 @@ pub struct World {
     pub events: Vec<Event>,
     /// Goal, lives, checkpoints and pickups.
     pub flow: Flow,
+    /// The walk-out after passing the level's end marker, once it has
+    /// started.
+    pub ending: Option<Ending>,
     /// Frames the whole game should stand still after the last step
     /// before the next, as during a knock-out. Whatever runs the world in
     /// real time holds the screen for them; they aren't steps, and a
@@ -228,6 +232,7 @@ impl World {
             view,
             events: Vec::new(),
             flow: Flow::new(),
+            ending: None,
             pause: 0,
         })
     }
@@ -438,6 +443,15 @@ impl World {
             Outcome::GameOver => out.push(3),
         }
         out.push(f.lives);
+        match self.ending {
+            Some(e) => {
+                out.push(1);
+                out.extend(e.frame.to_le_bytes());
+                out.push(e.fade.map_or(0, |n| n.saturating_add(1)));
+                out.push(e.due.into());
+            }
+            None => out.push(0),
+        }
         out.push(self.pause);
         out.extend(f.gems.to_le_bytes());
         out.extend(f.relics.to_le_bytes());
@@ -616,6 +630,11 @@ pub fn step(world: &mut World, input: &InputFrame) {
         world.frame += 1;
         return;
     }
+    if world.ending.is_some() {
+        ending::step(world);
+        world.frame += 1;
+        return;
+    }
     loss::tick(world);
     // Walkers appear and are removed by where the view was at the start
     // of the step.
@@ -661,6 +680,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         }
         things::update(world, previous_feet, frozen);
         flow::update(world, hurt_by);
+        ending::pass(world, &input.players[0]);
     }
     if !frozen && follow::due(world) == Some(false) {
         follow::update(world, Lead::of(&world.player));
