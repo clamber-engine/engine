@@ -79,11 +79,17 @@ pub(crate) fn floor_in_air(level: &Level, column: i64, feet: Fixed) -> Option<Fl
 /// Whether `column` is in a sloped piece of ground: of the runs of
 /// `piece` columns from x = 0, one where the floor, as seen by a body
 /// with its feet at `feet`, climbs or falls between two neighbouring
-/// columns by no more than `slope`.
+/// columns by no more than `slope`, neither of them part of a steep
+/// face. The small steps joining a face to the floor at its ends don't
+/// make a piece sloped.
 pub(crate) fn sloped(level: &Level, column: i64, feet: Fixed, slope: Fixed, piece: i64) -> bool {
     let first = column.div_euclid(piece) * piece;
     let floors: Vec<_> = (first..first + piece)
-        .map(|c| floor(level, c, feet).map(|f| f.y))
+        .map(|c| {
+            floor(level, c, feet)
+                .map(|f| f.y)
+                .filter(|_| face(level, c, feet, slope).is_none())
+        })
         .collect();
     floors.windows(2).any(|w| match w {
         [Some(a), Some(b)] => a != b && (*a - *b).abs() <= slope,
@@ -317,6 +323,20 @@ mod tests {
         let wall = staircase(&[0, 0, -64, -64]);
         assert!(hits_side(&wall, 1, 2, 1, Fixed::ZERO, slope()));
         assert!(!hits_side(&wall, 0, 1, 1, Fixed::ZERO, slope()));
+    }
+
+    #[test]
+    fn the_steps_at_the_ends_of_a_face_dont_make_a_piece_sloped() {
+        // Pieces of 4 columns: flat, then a face from column 5 joined by
+        // 1 px at its foot and 3 px at its top, then flat.
+        let level = staircase(&[0, 0, 0, 0, 0, -1, -5, -9, -12, -12, -12, -12]);
+        let sloped = |c| sloped(&level, c, Fixed::ZERO, slope(), 4);
+        for c in 0..12 {
+            assert!(!sloped(c), "{c}");
+        }
+        let gentle = staircase(&[0, 0, 0, 0, 0, -1, -1, -2]);
+        assert!(super::sloped(&gentle, 4, Fixed::ZERO, slope(), 4));
+        assert!(!super::sloped(&gentle, 0, Fixed::ZERO, slope(), 4));
     }
 
     #[test]

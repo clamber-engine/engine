@@ -1,6 +1,7 @@
 //! Walls in the air on the `classic-1` preset, from the examples in
-//! `spec/behavior/air-walls.md`. Heights in the spec are relative to the
-//! lowest floor; here that floor is at y = 300.
+//! `spec/behavior/air-walls.md`, and "In `title-2`" on `classic-2`.
+//! Heights in the spec are relative to the lowest floor; here that floor
+//! is at y = 300.
 
 use std::sync::Arc;
 
@@ -22,6 +23,11 @@ fn grains(v: Fixed) -> i64 {
 /// A level whose floor in column `c` is `height(c)` px below y = 300
 /// (negative is above), for columns 0 to 599, drawn as a staircase.
 fn ground(height: impl Fn(i32) -> i32) -> World {
+    ground_on("classic-1", height)
+}
+
+/// As [`ground`], on `preset`.
+fn ground_on(preset: &str, height: impl Fn(i32) -> i32) -> World {
     let mut points = vec![[0, 580]];
     for c in 0..600 {
         let y = FLOOR + height(c);
@@ -34,10 +40,7 @@ fn ground(height: impl Fn(i32) -> i32) -> World {
          [[collision]]\nshape = \"polygon\"\npoints = {points:?}\n"
     );
     let level = Level::from_toml_str(&src, "air").unwrap();
-    World::new(
-        Arc::new(level),
-        Arc::new(generic_feel("classic-1").unwrap()),
-    )
+    World::new(Arc::new(level), Arc::new(generic_feel(preset).unwrap()))
 }
 
 /// Puts the player in the air at `x`, `y` (above the lowest floor) with
@@ -171,4 +174,128 @@ fn stepped_onto_while_falling_lands() {
             assert_eq!((x, vx, grounded), (fx(100.0), 0, false));
         }
     }
+}
+
+/// The synthetic floor of "Examples (`title-2`)": 0 up to column 199, a
+/// face rising to the right over columns 200 to 215, and −64 from 216 on,
+/// 3 px above the face's top column.
+fn face_2(c: i32) -> i32 {
+    match c {
+        ..200 => 0,
+        200..216 => -1 - 4 * (c - 200),
+        _ => -64,
+    }
+}
+
+/// A `classic-2` level with the floor of [`face_2`].
+fn classic_2() -> World {
+    ground_on("classic-2", face_2)
+}
+
+/// 1/256 px.
+fn grain() -> f64 {
+    1.0 / 256.0
+}
+
+#[test]
+fn classic_2_jumping_into_the_face() {
+    let mut world = classic_2();
+    airborne(&mut world, 194.5, -3.25, 512, -1450);
+    world.player.jump_hold = true;
+    let held = [Action::Right, Action::Jump];
+    hold(&mut world, &held);
+    hold(&mut world, &held);
+    check(
+        &mut world,
+        &held,
+        &[
+            // Column 200 (−1) is below the feet.
+            (200.671875, -18.1328125, 533, -1180, false),
+            (202.7734375, -22.390625, 538, -1090, false),
+            (204.890625, -26.296875, 542, -1000, false),
+            // Blocked: column 207 (−29) is 2.703125 px above the feet.
+            (204.0, -29.8515625, 0, -910, false),
+            (204.28125, -33.0546875, 72, -820, false),
+            (204.80859375, -35.90625, 135, -730, false),
+            // Column 205 (−21) is below the feet.
+            (205.55078125, -38.40625, 190, -640, false),
+        ],
+    );
+}
+
+#[test]
+fn classic_2_blocked_and_landed_on_a_face_column() {
+    // Column 202 (−9) is 1.5 px above the feet: blocked. The feet move to
+    // −5.890625, within 3 px of face column 201's floor (−5).
+    let mut world = classic_2();
+    airborne(&mut world, 201.75, -7.5, 200, 300);
+    hold(&mut world, &[Action::Right]);
+    assert_eq!(row(&world), (fx(201.0), fx(-5.0), 0, 0, true));
+    assert!(world.events.contains(&Event::Land));
+}
+
+#[test]
+fn classic_2_onto_the_floor_beyond_the_face_in_one_running_frame() {
+    // The frame's `vx` is 744/256, taking `x` from 213.5 into column 216
+    // past face columns 214 and 215.
+    let run = |y: f64, vy: i64| {
+        let mut world = classic_2();
+        airborne(&mut world, 213.5, y, 768, vy);
+        hold(&mut world, &[Action::Right]);
+        row(&world)
+    };
+    // U 3 and 4, falling: stepped onto, and lands.
+    assert_eq!(run(-60.5, 300), (fx(216.40625), fx(-64.0), 744, 0, true));
+    assert_eq!(run(-59.125, 300), (fx(216.40625), fx(-64.0), 744, 0, true));
+    // U 5: blocked, and 3.890625 px above face column 213's floor (−53),
+    // still airborne.
+    assert_eq!(run(-58.5, 300), (fx(213.0), fx(-56.890625), 0, 412, false));
+    // U 3, rising: lifted by 3 whole pixels, then moved by `vy`.
+    assert_eq!(
+        run(-60.25, -600),
+        (fx(216.40625), fx(-65.15625), 744, -488, false)
+    );
+}
+
+#[test]
+fn classic_2_wall_limits_are_whole_pixels() {
+    // Rising into column `to` from `x` with the feet at `y`: whether the
+    // player is blocked.
+    let blocked = |x: f64, y: f64| {
+        let mut world = classic_2();
+        airborne(&mut world, x, y, 128, -600);
+        hold(&mut world, &[Action::Right]);
+        world.player.vel.x == Fixed::ZERO
+    };
+    // Face column 200 (−1): 1 px above the feet blocks, 255/256 doesn't.
+    assert!(blocked(199.5, 0.0));
+    assert!(!blocked(199.5, -grain()));
+    // Column 216 (−64), not a face column: 4 255/256 px above the feet is
+    // stepped onto, 5 blocks.
+    assert!(!blocked(215.5, -59.0 - grain()));
+    assert!(blocked(215.5, -59.0));
+}
+
+#[test]
+fn classic_2_landing_margin_follows_the_column_at_a_face() {
+    // One frame falling from `x` and `y`, ending `vy` px lower, with
+    // nothing held and no horizontal speed: whether it lands, and `y`.
+    let fall = |x: f64, y: f64, vy: f64| {
+        let mut world = classic_2();
+        // Gravity is 112/256.
+        airborne(&mut world, x, y, 0, (vy * 256.0) as i64 - 112);
+        hold(&mut world, &[]);
+        (world.player.grounded(), row(&world).1)
+    };
+    // Face column 213 (−53): ending 3 px above lands, 1/256 short doesn't.
+    assert_eq!(fall(213.5, -58.0, 2.0), (true, fx(-53.0)));
+    assert_eq!(
+        fall(213.5, -58.0 - grain(), 2.0),
+        (false, fx(-56.0 - grain()))
+    );
+    // With no vertical speed too.
+    assert_eq!(fall(213.5, -56.0, 0.0), (true, fx(-53.0)));
+    // The flat columns sharing a piece with the face's top have no margin.
+    assert_eq!(fall(218.5, -67.0, 2.0), (false, fx(-65.0)));
+    assert_eq!(fall(218.5, -66.0, 2.0), (true, fx(-64.0)));
 }

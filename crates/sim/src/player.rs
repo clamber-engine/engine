@@ -986,7 +986,7 @@ impl Player {
         let hold = self.jump_hold;
         let feet = self.pos.y;
         let moved = if slope > Fixed::ZERO && airborne {
-            self.move_in_air_by_columns(level, slope, events)
+            self.move_in_air_by_columns(level, physics, events)
         } else if slope > Fixed::ZERO {
             self.move_by_columns(level, slope)
         } else {
@@ -1709,9 +1709,10 @@ impl Player {
     fn move_in_air_by_columns(
         &mut self,
         level: &Level,
-        slope: Fixed,
+        physics: &Physics,
         events: &mut Vec<Event>,
     ) -> Fixed {
+        let slope = physics[Param::FaceSlope];
         let from = columns::column(self.pos.x);
         let to = columns::column(self.pos.x + self.vel.x);
         let feet = self.pos.y;
@@ -1724,13 +1725,25 @@ impl Player {
             }
             return self.move_horizontally(level, Fixed::ZERO, only_segments(level));
         }
+        // How far the floor there is above the feet.
+        let rise = |floor: &columns::Floor| {
+            if physics[Param::AirWholePixels] > Fixed::ZERO {
+                Fixed::from_int(feet.floor() as i32) - floor.y
+            } else {
+                feet - floor.y
+            }
+        };
         let floor = (to != from)
             .then(|| columns::floor_in_air(level, to, feet))
             .flatten()
-            .filter(|f| f.y < feet);
-        if let Some(floor) = floor {
-            let rise = feet - floor.y;
-            if rise > STEP || columns::face(level, to, feet, slope).is_some() {
+            .map(|f| (rise(&f), f))
+            .filter(|(rise, _)| *rise > Fixed::ZERO);
+        if let Some((rise, floor)) = floor {
+            let step = match physics[Param::AirStep] {
+                Fixed::ZERO => STEP,
+                step => step,
+            };
+            if rise > step || columns::face(level, to, feet, slope).is_some() {
                 let edge = columns::left_edge(from);
                 let moved = (self.pos.x - edge).abs();
                 self.pos.x = edge;
@@ -1738,9 +1751,7 @@ impl Player {
                 self.touched.push(floor.collider);
                 return moved;
             }
-            // A frame with no vertical speed isn't in the spec; it's
-            // lifted as if rising.
-            if self.vel.y > Fixed::ZERO {
+            if falls(self.vel.y, physics) {
                 self.land(floor.y, floor.collider, events);
             } else {
                 // At most a step, so it fits.
@@ -1863,7 +1874,7 @@ impl Player {
         let above = moved.max(STEP);
         let from = Vec2::new(self.pos.x, feet - above);
         // Only a body moving down lands short of the ground.
-        let reach = if self.vel.y > Fixed::ZERO {
+        let reach = if self.vel.y > Fixed::ZERO || (reach.still && self.vel.y == Fixed::ZERO) {
             reach
         } else {
             Reach::NONE
@@ -1943,6 +1954,8 @@ struct Reach {
     piece: i64,
     /// `face_slope`.
     slope: Fixed,
+    /// `still_falls`: a body with no vertical speed lands within reach.
+    still: bool,
 }
 
 impl Reach {
@@ -1952,6 +1965,7 @@ impl Reach {
         sloped: Fixed::ZERO,
         piece: 0,
         slope: Fixed::ZERO,
+        still: false,
     };
 
     fn new(physics: &Physics) -> Reach {
@@ -1960,6 +1974,7 @@ impl Reach {
             sloped: physics[Param::SlopeLandingReach],
             piece: physics[Param::SlopePiece].floor(),
             slope: physics[Param::FaceSlope],
+            still: physics[Param::StillFalls] > Fixed::ZERO,
         }
     }
 
@@ -1969,16 +1984,24 @@ impl Reach {
     }
 
     /// Whether a body at `x` that would end a frame with its feet at `to`
-    /// lands on ground at `ground`.
+    /// lands on ground at `ground`. `slope_landing_reach` applies over a
+    /// sloped piece and over a steep face's columns.
     fn lands(self, level: &Level, x: Fixed, ground: Fixed, to: Fixed) -> bool {
         let above = ground - to;
+        let column = columns::column(x);
         above <= Fixed::ZERO
             || above < self.flat
             || (above <= self.sloped
-                && self.piece > 0
                 && self.slope > Fixed::ZERO
-                && columns::sloped(level, columns::column(x), ground, self.slope, self.piece))
+                && (columns::face(level, column, ground, self.slope).is_some()
+                    || (self.piece > 0
+                        && columns::sloped(level, column, ground, self.slope, self.piece))))
     }
+}
+
+/// Whether an airborne body with vertical speed `vy` counts as falling.
+fn falls(vy: Fixed, physics: &Physics) -> bool {
+    vy > Fixed::ZERO || (vy == Fixed::ZERO && physics[Param::StillFalls] > Fixed::ZERO)
 }
 
 /// What the player's hands are doing with an object that can be

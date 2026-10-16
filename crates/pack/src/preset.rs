@@ -405,6 +405,9 @@ mod tests {
                     | Param::FaceSpeed
                     | Param::FaceExit
                     | Param::StartRiseAhead
+                    | Param::AirStep
+                    | Param::AirWholePixels
+                    | Param::StillFalls
                     | Param::HurtWidth
                     | Param::HurtOffset
                     | Param::HurtJumpTime

@@ -439,6 +439,21 @@ params! {
     /// ground that, this many columns ahead, is more than 8 px higher than
     /// its own column. Whole columns.
     StartRiseAhead => "start_rise_ahead",
+    /// Above 0, with `face_slope`, an airborne body moving into a column
+    /// whose floor is above its feet by this much or less is lifted onto
+    /// it, or lands on it if falling; higher floor stops it as a wall.
+    /// 0: 8 px.
+    AirStep => "air_step",
+    /// Above 0, with `face_slope`, how far a column's floor is above an
+    /// airborne body's feet is counted in whole pixels, the feet rounded
+    /// down: floor less than a pixel above them isn't above, and the lift
+    /// onto a column is that whole number. 0: exactly.
+    AirWholePixels => "air_whole_pixels",
+    /// Above 0, an airborne body with no vertical speed counts as
+    /// falling: it lands on a column it's lifted onto, and on ground it
+    /// ends the frame within landing reach of. 0: it counts as rising
+    /// for the lift and doesn't land short of the ground.
+    StillFalls => "still_falls",
     /// Above 0, whether an enemy hurts the player is decided a frame
     /// ahead with a box on whole-pixel positions instead of by touching
     /// it: when the box touches an enemy at the end of a frame, the

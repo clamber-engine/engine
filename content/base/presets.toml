@@ -117,6 +117,9 @@ face_slope = 0
 face_speed = 0
 face_exit = 0
 start_rise_ahead = 0
+air_step = 0
+air_whole_pixels = 0
+still_falls = 0
 hurt_width = 0
 hurt_offset = 0
 hurt_jump_time = 0
@@ -660,6 +663,9 @@ roll_air_stop_wait = 1
 face_slope = 3
 slope_landing_reach = 3
 slope_piece = 16
+air_step = 4
+air_whole_pixels = 1
+still_falls = 1
 
 [presets.classic-3]
 label = "Classic 3"
