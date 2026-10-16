@@ -142,6 +142,8 @@ pub struct Player {
     pub crouch: Crouch,
     /// Frames since the turn under way began, if one is.
     pub turn: Option<u8>,
+    /// The turn under way lasts a frame less (`short_turn_speed`).
+    pub short_turn: bool,
     /// Standing, walking or running, outside a turn (`stride_steps`
     /// above 0).
     pub gait: Gait,
@@ -239,6 +241,7 @@ impl Player {
             frozen: 0,
             crouch: Crouch::default(),
             turn: None,
+            short_turn: false,
             gait: Gait::Standing,
             roll: None,
             roll_stop: 0,
@@ -750,7 +753,8 @@ impl Player {
             && !rolling
             && self.roll_stop == 0
             && !events.contains(&Event::JumpStart);
-        let turn_ends = self.turn.is_some_and(|n| n + 1 >= turn_time);
+        let turn_length = turn_time.saturating_sub(self.short_turn.into());
+        let turn_ends = self.turn.is_some_and(|n| n + 1 >= turn_length);
         // A jump waits to take off, or takes off on this frame.
         let waits = due || self.takeoff_wait.is_some();
         let keep_fall_facing =
@@ -882,6 +886,17 @@ impl Player {
         } else {
             self.target = Fixed::from_int(dir) * cap;
             horizontal_speed(self.vel.x, dir, self.grounded(), cap, physics)
+        };
+        // Whether the turn is short is decided on its second frame, by
+        // the speed toward the new facing.
+        self.short_turn = match self.turn {
+            Some(1) => {
+                let short = physics[Param::ShortTurnSpeed];
+                short > Fixed::ZERO
+                    && self.vel.x * -Fixed::from_int(direction(self.facing)) >= short
+            }
+            Some(_) => self.short_turn,
+            None => false,
         };
         if !striding {
             // Where the stride cycle starts after a landing, a roll or its
@@ -1429,7 +1444,8 @@ impl Player {
     /// frame.
     fn turn_on_ground(&mut self, dir: i32, turn_time: u8, start: bool) -> Facing {
         let mut facing = self.facing;
-        self.turn = self.turn.map(|n| n + 1).filter(|&n| n < turn_time);
+        let length = turn_time.saturating_sub(self.short_turn.into());
+        self.turn = self.turn.map(|n| n + 1).filter(|&n| n < length);
         if start && self.turn.is_none() && dir == -direction(facing) {
             self.turn = Some(0);
         }

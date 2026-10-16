@@ -1067,10 +1067,10 @@ fn classic_2_no_turn_while_crouching_or_just_after() {
     // U is the frame Down is let go of.
     for frame in 0..=10 {
         hold(&mut w, &[Left], 1);
-        assert_eq!(w.player.facing, Facing::Right, "U + {frame}");
+        assert_eq!(w.player.turn, None, "U + {frame}");
     }
     hold(&mut w, &[Left], 1);
-    assert_eq!(w.player.facing, Facing::Left, "U + 11");
+    assert_eq!(w.player.turn, Some(0), "U + 11");
 
     // Down without Up during U to U + 10 starts a new crouch, with its
     // own U after it.
@@ -1080,9 +1080,140 @@ fn classic_2_no_turn_while_crouching_or_just_after() {
     hold(&mut w, &[Down], 1);
     assert!(w.player.crouch.held > 0);
     hold(&mut w, &[Left], 11);
-    assert_eq!(w.player.facing, Facing::Right);
+    assert_eq!(w.player.turn, None);
     hold(&mut w, &[Left], 1);
-    assert_eq!(w.player.facing, Facing::Left);
+    assert_eq!(w.player.turn, Some(0));
+}
+
+/// How a Classic 2 test starts: a name, the start, and what to hold to
+/// keep going as before.
+type Start<'a> = (&'a str, fn() -> Play, &'a [Action]);
+
+#[test]
+fn classic_2_turns_on_the_ground() {
+    // spec/behavior/ground-speed.md, "Turns (`title-2`)": the other way
+    // held on a grounded frame starts an 8-frame turn on that frame,
+    // standing, walking or running, and facing changes on T + 4. Once
+    // started, the turn completes.
+    use Action::{Action as Act, Left, Right};
+    let starts: [Start; 3] = [
+        ("standing", classic_2_clear, &[]),
+        ("walking", || classic_2_after(&[Right], 2.25), &[Right]),
+        (
+            "running",
+            || classic_2_after(&[Right, Act], 3.375),
+            &[Right, Act],
+        ),
+    ];
+    for (from, start, after) in starts {
+        // Left for one frame, then nothing or the old way.
+        for then in [&[][..], after] {
+            let mut w = start();
+            let rows = play(
+                &mut w,
+                12,
+                |f| {
+                    if f == 0 { vec![Left] } else { then.to_vec() }
+                },
+            );
+            assert_eq!(frames_with(&rows, Event::Turn), [4], "{from} {then:?}");
+            assert_eq!(rows[3].facing, Facing::Right, "{from}");
+            assert_eq!(rows[4].facing, Facing::Left, "{from}");
+        }
+    }
+
+    // A turn doesn't change the speed rule: reversing from +2.25 gives
+    // the values of "Worked values (`title-2`)".
+    let mut w = classic_2_after(&[Right], 2.25);
+    let rows = play(&mut w, 5, |_| vec![Left]);
+    assert_eq!(vx_grains(&rows), [432, 306, 196, 100, 16]);
+}
+
+#[test]
+fn classic_2_chained_turns() {
+    // spec/behavior/ground-speed.md, "Turns (`title-2`)": if the way
+    // opposite to the new facing is held on T + 8, a new turn starts
+    // there. Walking right, Left for 5 frames and then Right turns left
+    // on 4 and right again on 12.
+    use Action::{Left, Right};
+    let mut w = classic_2_after(&[Right], 2.25);
+    let rows = play(&mut w, 20, |f| if f < 5 { vec![Left] } else { vec![Right] });
+    assert_eq!(frames_with(&rows, Event::Turn), [4, 12]);
+    // Holding the other way all along turns every 8 frames.
+    let mut w = classic_2_clear();
+    let rows = play(&mut w, 24, |f| {
+        if f / 8 % 2 == 0 {
+            vec![Left]
+        } else {
+            vec![Right]
+        }
+    });
+    assert_eq!(frames_with(&rows, Event::Turn), [4, 12, 20]);
+}
+
+/// Classic 2 running at `vx` the way `ahead` points, turning back for
+/// one frame with `back`, then running on with `ahead` until frame 15
+/// and holding `back` from then. Returns the `turn` frames and `vx` in
+/// 1/256 on frame 9 (T + 1 of the second turn).
+fn classic_2_turns_twice(ahead: Action, back: Action, back_frames: usize) -> (Vec<usize>, i64) {
+    use Action::Action as Act;
+    let vx = if ahead == Action::Right {
+        3.375
+    } else {
+        -3.375
+    };
+    let mut w = classic_2_after(&[ahead, Act], vx);
+    let rows = play(&mut w, 24, |f| {
+        if f < back_frames || f >= 15 {
+            vec![back, Act]
+        } else {
+            vec![ahead, Act]
+        }
+    });
+    (frames_with(&rows, Event::Turn), vx_grains(&rows)[9])
+}
+
+#[test]
+fn classic_2_short_turns() {
+    // spec/behavior/ground-speed.md, "Turns (`title-2`)", "Short turn": a
+    // turn that starts on T + 8 of another while running toward the new
+    // facing at 797/256 or faster on T + 1 lasts 7 frames. Facing still
+    // changes on T + 4, and a new turn can start on T + 7. Here the
+    // second turn starts on 8 and the other way is held from 15.
+    use Action::{Left, Right};
+    let (turns, vx) = classic_2_turns_twice(Right, Left, 1);
+    assert_eq!(vx, 797);
+    assert_eq!(turns, [4, 12, 19]);
+    let (turns, vx) = classic_2_turns_twice(Left, Right, 1);
+    assert_eq!(vx, -797);
+    assert_eq!(turns, [4, 12, 19]);
+    // Slower on T + 1, the turn lasts 8 frames and the next one starts
+    // on 16.
+    let (turns, vx) = classic_2_turns_twice(Right, Left, 2);
+    assert!(vx <= 780, "{vx}");
+    assert_eq!(turns, [4, 12, 20]);
+}
+
+#[test]
+fn classic_2_crouch_during_a_turn() {
+    // spec/behavior/ground-speed.md, "Turns (`title-2`)": a crouch that
+    // starts during a turn ends it at once. Started on T + 1 to T + 4,
+    // facing doesn't change; from T + 5 on it has changed and stays so.
+    use Action::{Down, Left};
+    for k in 1..=7 {
+        let mut w = classic_2_clear();
+        let rows = play(&mut w, 30, |f| match f {
+            0 => vec![Left],
+            f if (k..k + 3).contains(&f) => vec![Down],
+            _ => vec![],
+        });
+        assert!(!rows[k].events.contains(&Event::Turn), "T + {k}");
+        let facing = if k <= 4 { Facing::Right } else { Facing::Left };
+        assert_eq!(rows[29].facing, facing, "crouch on T + {k}");
+        assert_eq!(w.player.turn, None);
+        let turns = frames_with(&rows, Event::Turn);
+        assert_eq!(turns, if k <= 4 { vec![] } else { vec![4] }, "T + {k}");
+    }
 }
 
 /// The `jump_start` frames of Classic 2 after crouching for 10 frames

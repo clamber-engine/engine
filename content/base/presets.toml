@@ -46,6 +46,7 @@ crouch_turn_lock = 0
 crouch_takeoff_cancel = 0
 crouch_in_air = 0
 turn_time = 0
+short_turn_speed = 0
 stride_steps = 0
 walk_stride = 0
 walk_stride_less = 0
@@ -566,8 +567,10 @@ ground_action_time = 0
 # air-control.md, "In `title-2`") eases an eighth of the way to 2.25, or
 # 3.375 if Action was held with a direction on the frame before, on the
 # ground and in the air alike; facing doesn't change while a jump waits
-# to take off, and follows the input at once in the air. Turns on the
-# ground still play like Default.
+# to take off, and follows the input at once in the air. On the ground
+# a turn starts at once and lasts 8 frames, facing changing on its fifth,
+# or 7 frames if the player moves toward the new facing at 797/256 or
+# faster on its second.
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."
@@ -607,6 +610,8 @@ walk_speed = 2.25
 top_speed = 3.375
 speed_response = 0.125
 run_from_previous_frame = 1
+turn_time = 8
+short_turn_speed = 3.11328125
 
 [presets.classic-3]
 label = "Classic 3"

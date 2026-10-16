@@ -333,6 +333,7 @@ mod tests {
                     | Param::CrouchTakeoffCancel
                     | Param::CrouchInAir
                     | Param::TurnTime
+                    | Param::ShortTurnSpeed
                     | Param::StrideSteps
                     | Param::WalkStride
                     | Param::WalkStrideLess

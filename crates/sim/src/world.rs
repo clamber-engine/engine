@@ -570,6 +570,7 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     out.push(p.swap);
     out.extend([p.crouch.held, p.crouch.rising, p.crouch.turn_lock]);
     out.push(p.turn.map_or(0, |n| n.saturating_add(1)));
+    out.push(p.short_turn.into());
     let roll = |out: &mut Vec<u8>, roll: Option<Roll>| match roll {
         Some(roll) => {
             out.extend([

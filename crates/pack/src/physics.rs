@@ -142,6 +142,11 @@ params! {
     /// changes halfway through. A turn, once started, finishes. 0: facing
     /// follows the direction held at once. Whole frames.
     TurnTime => "turn_time",
+    /// Above 0, a ground turn lasts a frame less, facing still changing
+    /// halfway through the full `turn_time`, if on its second frame the
+    /// player moves toward the new facing at this speed or faster. 0:
+    /// every turn lasts `turn_time`.
+    ShortTurnSpeed => "short_turn_speed",
     /// Above 0, a grounded player outside a turn is standing, walking or
     /// running, and walking and running go through a stride cycle of this
     /// many steps. While walking or running a turn starts only when a step
