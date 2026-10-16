@@ -58,7 +58,21 @@
 #   air after `jump`, `air_below = [[vy, below], ...]` lifts the lowest
 #   `below`: the first pair whose `vy` is at least the player's vertical
 #   speed gives it, past them all it's `air`'s. Only the character under
-#   control takes collectibles.
+#   control takes collectibles. With a preset that has a view
+#   (`view_width` above 0), `window = [from, to]` limits where it's taken:
+#   its x less the view's left edge, both rounded down, must be in it,
+#   with the view where it is after moving on that frame (`[]` or left
+#   out: anywhere). With a view, `arrive` also decides when each part of
+#   what it's worth reaches the count, by where the collectible is in the
+#   view on the frame it's released: a list of up to four rules
+#   `{ x_from, x_to, y_from, y_to, delay }`, where `x` and `y` are its
+#   position less the view's left and top edges, rounded down, ends
+#   included, and any end left out is open. `y` always holds without
+#   vertical view motion. The first rule that holds gives `delay`, in
+#   frames after the release, or "never"; with none, `arrive_else` does
+#   (left out: `count_delay`). `arrive_view` says which view: "end", where
+#   it is after moving on that frame (the default), or "start", where it
+#   was before.
 #
 # The player defeats an enemy by landing on it, and bounces off, or by
 # rolling into it. Touching one any other way costs a life.
@@ -106,9 +120,8 @@ reach = 24
 # collectible (spec/behavior/collectibles.md), drawn 16 x 16 around its
 # position. `cluster`: a bunch worth ten (spec/behavior/bunches.md). The
 # spec doesn't cover a bunch taken by the second character, so it uses
-# the first's reach. Not in yet: the view window, and the count delays
-# that depend on where the view is (#98); until then the view is taken
-# to have the collectible well inside it. Where the spec doesn't cover
+# the first's reach. The spec gives a bunch no window, and doesn't cover
+# whether a bunch appears with the view. Where the spec doesn't cover
 # what the player is doing (bouncing, falling without a jump, carried
 # down a face, landing while moving, and so on), the reach is the one
 # for the nearest pose above.
@@ -119,6 +132,12 @@ offset = 0
 worth = 1
 release_every = 0
 count_delay = 33
+window = [-39, 263]
+arrive = [
+    { x_from = 8, x_to = 255, delay = 33 },
+    { x_from = 256, x_to = 263, delay = 1 },
+]
+arrive_else = "never"
 
 [[archetypes.spark.reach]]
 stand = [-16, 22, -7, 41]
@@ -149,6 +168,9 @@ offset = 0
 worth = 10
 release_every = 6
 count_delay = 17
+arrive_view = "start"
+arrive = [{ x_from = 9, y_from = 11, delay = 17 }]
+arrive_else = 0
 
 [[archetypes.cluster.reach]]
 stand = [-15, 21, -8, 40]

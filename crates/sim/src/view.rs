@@ -179,7 +179,7 @@ impl View {
 
 /// Whether the view follows the player vertically: its preset's
 /// `view_height` is above 0.
-fn vertical(physics: &Physics) -> bool {
+pub(crate) fn vertical(physics: &Physics) -> bool {
     physics[Param::ViewHeight] > Fixed::ZERO
 }
 

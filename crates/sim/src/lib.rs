@@ -35,7 +35,10 @@ mod things;
 mod view;
 mod world;
 
-pub use archetype::{Archetype, ArchetypeError, Archetypes, Behavior, MAX_AIR_STEPS, Reach, Span};
+pub use archetype::{
+    Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Behavior, MAX_AIR_STEPS,
+    MAX_ARRIVE_RULES, Reach, Span,
+};
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
 pub use collect::Release;

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
 use clamber_pack::{CharacterFeel, Fixed, Presets};
-use clamber_sim::{Event, FlowEvent, InputFrame, START_LIVES, World, generic_feel, step};
+use clamber_sim::{Event, FlowEvent, InputFrame, START_LIVES, View, World, generic_feel, step};
 
 use Action::{Down, Jump, Left};
 
@@ -116,6 +116,31 @@ impl Play {
     fn hold(&mut self, keys: &[Action], frames: usize) -> Vec<Row> {
         (0..frames).map(|_| self.step(keys)).collect()
     }
+
+    /// One step standing still, with the view held still for it with
+    /// its left edge at `left` and, if given, its top at `top`.
+    fn step_viewed(&mut self, left: i32, top: Option<i32>) -> Row {
+        let view = self.world.view.unwrap();
+        self.world.view = Some(View {
+            left: Fixed::from_int(left),
+            top: top.map_or(view.top, Fixed::from_int),
+            hold: 2,
+            ..view
+        });
+        self.step(&[])
+    }
+}
+
+/// The steps on which the count went up from 0, once for each time it
+/// went up on that step.
+fn count_ups(rows: &[Row]) -> Vec<usize> {
+    let mut before = 0;
+    let mut ups = Vec::new();
+    for (n, row) in rows.iter().enumerate() {
+        ups.extend(std::iter::repeat_n(n, (row.gems - before) as usize));
+        before = row.gems;
+    }
+    ups
 }
 
 /// Whether a thing at `(x, y)` is taken on the first step, standing
@@ -406,4 +431,79 @@ fn rolling_reaches_less_low() {
     assert!(taken_rolling(-3));
     assert!(!taken_rolling(-4));
     assert!(taken_standing("spark", X, F + 4, false));
+}
+
+/// A standing player on a spark, with the view's left edge `at` px left
+/// of it for 40 steps: whether it's taken on the first, and the steps on
+/// which the count goes up.
+fn single_in_view(at: i32) -> (bool, Vec<usize>) {
+    let mut play = Play::new(world("spark", &[(X, F)], false));
+    let rows: Vec<Row> = (0..40).map(|_| play.step_viewed(X - at, None)).collect();
+    let taken = rows[0].taken == [0];
+    assert!(rows[1..].iter().all(|r| r.taken.is_empty()));
+    (taken, count_ups(&rows))
+}
+
+#[test]
+fn a_single_is_only_taken_inside_the_view_window() {
+    for (at, want) in [(-40, false), (-39, true), (263, true), (264, false)] {
+        assert_eq!(single_in_view(at).0, want, "xc - V = {at}");
+    }
+}
+
+#[test]
+fn a_single_counts_by_where_it_is_in_the_view() {
+    // collectibles.md, "When the count goes up".
+    for (at, ups) in [
+        (-39, vec![]),
+        (7, vec![]),
+        (8, vec![33]),
+        (128, vec![33]),
+        (255, vec![33]),
+        (256, vec![1]),
+        (263, vec![1]),
+    ] {
+        assert_eq!(single_in_view(at), (true, ups), "xc - V = {at}");
+    }
+}
+
+#[test]
+fn a_single_outside_the_window_is_taken_once_it_comes_inside() {
+    let mut play = Play::new(world("spark", &[(X, F)], false));
+    assert!(play.step_viewed(X - 264, None).taken.is_empty());
+    assert!(play.step_viewed(X - 264, None).taken.is_empty());
+    assert_eq!(play.step_viewed(X - 263, None).taken, [0]);
+}
+
+/// A standing player on a bunch, with the view at the start of step `n`
+/// given by `view(n)` as `(xb - V, yb - W)`: the steps on which the
+/// count goes up.
+fn bunch_in_view(view: impl Fn(usize) -> (i32, i32)) -> Vec<usize> {
+    let mut play = Play::new(world("cluster", &[(X, F)], false));
+    let rows: Vec<Row> = (0..80)
+        .map(|n| {
+            let (x, y) = view(n);
+            play.step_viewed(X - x, Some(F - y))
+        })
+        .collect();
+    assert_eq!(rows[0].taken, [0]);
+    count_ups(&rows)
+}
+
+#[test]
+fn a_bunch_item_flies_only_well_inside_the_view() {
+    // bunches.md, "Releasing the items".
+    let flies: Vec<usize> = (0..10).map(|k| 17 + 6 * k).collect();
+    let at_once: Vec<usize> = (0..10).map(|k| 6 * k).collect();
+    assert_eq!(bunch_in_view(|_| (9, 11)), flies);
+    assert_eq!(bunch_in_view(|_| (999, 260)), flies);
+    assert_eq!(bunch_in_view(|_| (8, 100)), at_once);
+    assert_eq!(bunch_in_view(|_| (100, 10)), at_once);
+}
+
+#[test]
+fn a_bunch_leaving_the_view_flies_its_first_items_and_counts_the_rest_at_once() {
+    // bunches.md's example: `xb - V` drops below 9 just before P + 30.
+    let ups = bunch_in_view(|n| (if n < 30 { 100 } else { 8 }, 100));
+    assert_eq!(ups, [17, 23, 29, 30, 35, 36, 41, 42, 48, 54]);
 }

@@ -53,14 +53,49 @@ pub enum Behavior {
     /// [`collect`](crate::collect)). It adds `worth` to the collectible
     /// count, one at a time: the first on taking it, then one every
     /// `release_every` frames, each `count_delay` frames after that.
+    /// With a view, it can only be taken inside its `window`, and
+    /// `arrive` decides when each one reaches the count.
     Collect {
         worth: u8,
         release_every: u8,
         count_delay: u8,
         /// For the first character, and for any other.
         reach: [Reach; 2],
+        /// How far its `x` may be past the view's left edge, both whole
+        /// px, ends included, for it to be taken. `None`: anywhere.
+        window: Option<(i32, i32)>,
+        arrive: Arrive,
     },
 }
+
+/// With a view, when each released part of a collectible reaches the
+/// count, by where the collectible is in the view on its release step:
+/// the first of `rules` it's inside gives the delay, and with none,
+/// `otherwise` does. `None` never reaches the count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Arrive {
+    /// Whether the view is the one from the start of the release step,
+    /// before it moves; otherwise it's the one from its end.
+    pub at_start: bool,
+    pub rules: [ArriveRule; MAX_ARRIVE_RULES],
+    /// Only the first `rule_count` are used.
+    pub rule_count: u8,
+    pub otherwise: Option<u8>,
+}
+
+/// One of [`Arrive`]'s rules: a collectible whose position, less the
+/// view's left and top edges, all whole px, is in `x` and `y` (ends
+/// included) reaches the count `delay` frames after its release, or
+/// never. Without vertical view motion, `y` always holds.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct ArriveRule {
+    pub x: (i32, i32),
+    pub y: (i32, i32),
+    pub delay: Option<u8>,
+}
+
+/// The most rules an [`Arrive`] can have.
+pub const MAX_ARRIVE_RULES: usize = 4;
 
 /// Where a player can take a collectible from, by what it's doing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -239,12 +274,6 @@ impl Archetypes {
             if key == "behavior" {
                 return Err(err(format!("{path}.params.behavior: can't be changed")));
             }
-            if !table.contains_key(key) {
-                return Err(err(format!(
-                    "{path}.params.{key}: `{}` has no such value",
-                    entity.kind
-                )));
-            }
             table.insert(key.clone(), value.clone());
         }
         parse(&table, &format!("{path}.params"))
@@ -296,7 +325,16 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         "patrol" => &["path", "period"],
         "launcher" => &["velocity"],
         "carry" => &["reach"],
-        "collect" => &["worth", "release_every", "count_delay", "reach"],
+        "collect" => &[
+            "worth",
+            "release_every",
+            "count_delay",
+            "reach",
+            "window",
+            "arrive",
+            "arrive_view",
+            "arrive_else",
+        ],
         _ => return Err(format!("{path}.behavior: unknown behavior `{behavior}`")),
     };
     if let Some(key) = table.keys().find(|k| {
@@ -402,11 +440,30 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 }
                 _ => return Err(format!("{path}.reach: expected one or two tables")),
             };
+            let count_delay = small("count_delay", 0)?;
+            let window = match table.get("window") {
+                None => None,
+                Some(Value::Array(items)) if items.is_empty() => None,
+                Some(Value::Array(items)) if items.len() == 2 => {
+                    let end = |i: usize| match &items[i] {
+                        Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+                        _ => Err(format!("{path}.window[{i}]: expected a whole number of px")),
+                    };
+                    let (from, to) = (end(0)?, end(1)?);
+                    if from > to {
+                        return Err(format!("{path}.window: it ends before it starts"));
+                    }
+                    Some((from, to))
+                }
+                Some(_) => return Err(format!("{path}.window: expected [] or [from, to]")),
+            };
             Behavior::Collect {
                 worth: small("worth", 1)?,
                 release_every: small("release_every", 0)?,
-                count_delay: small("count_delay", 0)?,
+                count_delay,
                 reach,
+                window,
+                arrive: parse_arrive(table, path, count_delay)?,
             }
         }
         _ => Behavior::Launcher {
@@ -417,6 +474,76 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         behavior,
         size,
         offset: number("offset")?,
+    })
+}
+
+/// Reads a collectible's `arrive`, `arrive_view` and `arrive_else`.
+/// Left out, there are no rules, the view is the one from the end of the
+/// step, and `otherwise` is `count_delay`.
+fn parse_arrive(table: &Table, path: &str, count_delay: u8) -> Result<Arrive, String> {
+    let delay = |value: &Value, at: &str| match value {
+        Value::String(s) if s == "never" => Ok(None),
+        Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(Some(*n as u8)),
+        _ => Err(format!(
+            "{at}: expected a whole number of frames, 0 to 255, or \"never\""
+        )),
+    };
+    let at_start = match table.get("arrive_view") {
+        None => false,
+        Some(Value::String(s)) if s == "end" => false,
+        Some(Value::String(s)) if s == "start" => true,
+        Some(_) => {
+            return Err(format!("{path}.arrive_view: expected \"start\" or \"end\""));
+        }
+    };
+    let otherwise = match table.get("arrive_else") {
+        None => Some(count_delay),
+        Some(v) => delay(v, &format!("{path}.arrive_else"))?,
+    };
+    let none = Vec::new();
+    let items = match table.get("arrive") {
+        None => &none,
+        Some(Value::Array(items)) if items.len() <= MAX_ARRIVE_RULES => items,
+        Some(_) => {
+            return Err(format!(
+                "{path}.arrive: expected a list of up to {MAX_ARRIVE_RULES} tables"
+            ));
+        }
+    };
+    let mut rules = [ArriveRule::default(); MAX_ARRIVE_RULES];
+    for (i, item) in items.iter().enumerate() {
+        let at = format!("{path}.arrive[{i}]");
+        let Value::Table(rule) = item else {
+            return Err(format!("{at}: expected a table"));
+        };
+        const KEYS: &[&str] = &["x_from", "x_to", "y_from", "y_to", "delay"];
+        if let Some(key) = rule.keys().find(|k| !KEYS.contains(&k.as_str())) {
+            return Err(format!("{at}.{key}: no such value"));
+        }
+        let end = |key: &str, open: i32| match rule.get(key) {
+            None => Ok(open),
+            Some(Value::Integer(n)) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+            Some(_) => Err(format!("{at}.{key}: expected a whole number of px")),
+        };
+        let x = (end("x_from", i32::MIN)?, end("x_to", i32::MAX)?);
+        let y = (end("y_from", i32::MIN)?, end("y_to", i32::MAX)?);
+        if x.0 > x.1 || y.0 > y.1 {
+            return Err(format!("{at}: a range ends before it starts"));
+        }
+        let Some(d) = rule.get("delay") else {
+            return Err(format!("{at}: missing `delay`"));
+        };
+        rules[i] = ArriveRule {
+            x,
+            y,
+            delay: delay(d, &format!("{at}.delay"))?,
+        };
+    }
+    Ok(Arrive {
+        at_start,
+        rules,
+        rule_count: items.len() as u8,
+        otherwise,
     })
 }
 
@@ -589,6 +716,41 @@ mod tests {
     }
 
     #[test]
+    fn collectibles_can_have_a_window_and_arrival_rules() {
+        let a = Archetypes::builtin();
+        let collect = |params| match a.resolve(&entity("spark", params), "test", "e") {
+            Ok(Some(Archetype {
+                behavior: Behavior::Collect { window, arrive, .. },
+                ..
+            })) => (window, arrive),
+            other => panic!("{other:?}"),
+        };
+        let (window, arrive) = collect("");
+        assert_eq!(window, Some((-39, 263)));
+        assert!(!arrive.at_start);
+        assert_eq!(arrive.otherwise, None);
+        assert_eq!(arrive.rule_count, 2);
+        assert_eq!(
+            arrive.rules[0],
+            ArriveRule {
+                x: (8, 255),
+                y: (i32::MIN, i32::MAX),
+                delay: Some(33),
+            }
+        );
+
+        let (window, arrive) = collect(
+            "window = []\narrive = [{ y_from = 4, delay = 2 }]\narrive_else = 0\narrive_view = \"start\"",
+        );
+        assert_eq!(window, None);
+        assert!(arrive.at_start);
+        assert_eq!(arrive.otherwise, Some(0));
+        assert_eq!(arrive.rule_count, 1);
+        assert_eq!(arrive.rules[0].x, (i32::MIN, i32::MAX));
+        assert_eq!(arrive.rules[0].y, (4, i32::MAX));
+    }
+
+    #[test]
     fn offset_moves_the_box_the_way_it_goes() {
         let a = Archetypes::builtin();
         let e = entity("crawler", "size = [20, 12]\noffset = 0.5\nresponse = 0.125");
@@ -623,6 +785,23 @@ mod tests {
         check("crawler", "path = [1, 2]", "entities[3].params.path");
         check("crawler", "facing = \"up\"", "entities[3].params.facing");
         check("crawler", "speed = -1", "must not be negative");
+        check("spark", "window = [5, 4]", "entities[3].params.window");
+        check(
+            "spark",
+            "arrive = [{ x_from = 1 }]",
+            "entities[3].params.arrive[0]: missing `delay`",
+        );
+        check(
+            "spark",
+            "arrive = [{ x = 1, delay = 0 }]",
+            "entities[3].params.arrive[0].x",
+        );
+        check(
+            "spark",
+            "arrive_else = \"soon\"",
+            "entities[3].params.arrive_else",
+        );
+        check("spark", "arrive_view = 1", "entities[3].params.arrive_view");
         check("crawler", "response = 1.5", "entities[3].params.response");
         check(
             "crawler",

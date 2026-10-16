@@ -13,16 +13,20 @@
 //! `count_life` above 0, the count starts again from 0 when it reaches
 //! that, and the player gets one more life.
 //!
-//! Not in yet (#98): the view window, outside which nothing is taken,
-//! and the count delays that depend on where the view is. Until then
-//! the view is taken to have every collectible well inside it.
+//! With a view, a collectible with a `window` is only taken while its
+//! `x` less the view's left edge, both whole px, is inside it, by where
+//! the view is after it has moved on the step. When each released part
+//! reaches the count, or whether it ever does, is then up to the
+//! collectible's `arrive` rules, by where it is in the view on its
+//! release step (see [`Arrive`]).
 
 use clamber_fixed::Fixed;
 use clamber_pack::Param;
 
-use crate::archetype::{Behavior, Reach, Span};
+use crate::archetype::{Arrive, Behavior, Reach, Span};
 use crate::flow::{Flow, FlowEvent, Outcome};
 use crate::player::{Facing, Player, State, frames};
+use crate::view::{self, View};
 use crate::world::{Event, Phase, World};
 
 /// A taken collectible still releasing what it's worth.
@@ -33,28 +37,54 @@ pub struct Release {
     /// Steps until the next release.
     pub wait: u8,
     pub every: u8,
-    pub delay: u8,
+    /// Index into the world's things.
+    pub thing: usize,
 }
 
 /// Takes what the player reaches, if it can take anything on this step,
-/// then releases and counts what's due.
-pub(crate) fn update(world: &mut World, can_take: bool) {
+/// then releases and counts what's due. `start` is the view as it was at
+/// the start of the step.
+pub(crate) fn update(world: &mut World, can_take: bool, start: Option<View>) {
     note_landing(&mut world.player, &world.events);
     if can_take && world.flow.outcome == Outcome::Playing && world.player.knockout.is_none() {
         take(world);
     }
     let life = whole(world.feel.world[Param::CountLife]);
     let frame = world.frame;
-    let flow = &mut world.flow;
-    for r in &mut flow.releases {
+    let vertical = view::vertical(&world.player_physics());
+    let mut released = Vec::new();
+    for r in &mut world.flow.releases {
         r.wait = r.wait.saturating_sub(1);
         while r.wait == 0 && r.left > 0 {
             r.left -= 1;
             r.wait = r.every;
-            flow.due.push(frame + u32::from(r.delay));
+            released.push(r.thing);
         }
     }
-    flow.releases.retain(|r| r.left > 0);
+    world.flow.releases.retain(|r| r.left > 0);
+    for i in released {
+        let thing = &world.things[i];
+        let Some(Behavior::Collect {
+            count_delay,
+            arrive,
+            ..
+        }) = thing.archetype.map(|a| a.behavior)
+        else {
+            continue;
+        };
+        let view = if arrive.at_start { start } else { world.view };
+        let delay = match view {
+            Some(v) => {
+                let y = vertical.then(|| thing.pos.y.floor() - v.y());
+                arrival(&arrive, thing.pos.x.floor() - v.x(), y)
+            }
+            None => Some(count_delay),
+        };
+        if let Some(delay) = delay {
+            world.flow.due.push(frame + u32::from(delay));
+        }
+    }
+    let flow = &mut world.flow;
     let arrived = flow.due.iter().filter(|&&f| f == frame).count();
     flow.due.retain(|&f| f != frame);
     for _ in 0..arrived {
@@ -85,23 +115,46 @@ fn note_landing(player: &mut Player, events: &[Event]) {
     };
 }
 
+/// The delay `arrive` gives a collectible `x` px right of the view's
+/// left edge and, with vertical view motion, `y` px below its top.
+fn arrival(arrive: &Arrive, x: i64, y: Option<i64>) -> Option<u8> {
+    let inside = |(from, to): (i32, i32), v: i64| (i64::from(from)..=i64::from(to)).contains(&v);
+    arrive.rules[..usize::from(arrive.rule_count)]
+        .iter()
+        .find(|r| inside(r.x, x) && y.is_none_or(|y| inside(r.y, y)))
+        .map_or(arrive.otherwise, |r| r.delay)
+}
+
 fn take(world: &mut World) {
+    let view_left = world.view.map(|v| v.x());
     let player = &world.player;
     let crouch_start = frames(world.player_physics()[Param::CrouchStart]);
     let x = player.pos.x.floor();
     let feet = -(-player.pos.y).floor();
-    for thing in world.things.iter_mut().filter(|t| t.active) {
+    for (i, thing) in world
+        .things
+        .iter_mut()
+        .enumerate()
+        .filter(|(_, t)| t.active)
+    {
         let Some(Behavior::Collect {
             worth,
             release_every,
-            count_delay,
             reach,
+            window,
+            ..
         }) = thing.archetype.map(|a| a.behavior)
         else {
             continue;
         };
         if thing.phase != Phase::Ready {
             continue;
+        }
+        if let (Some(left), Some((from, to))) = (view_left, window) {
+            let x = thing.pos.x.floor() - left;
+            if !(i64::from(from)..=i64::from(to)).contains(&x) {
+                continue;
+            }
         }
         let reach = reach[player.character.min(1)];
         let past = match player.facing {
@@ -121,7 +174,7 @@ fn take(world: &mut World) {
             left: worth,
             wait: 0,
             every: release_every,
-            delay: count_delay,
+            thing: i,
         });
     }
 }

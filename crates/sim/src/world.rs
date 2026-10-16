@@ -429,7 +429,8 @@ impl World {
         }
         count(&mut out, f.releases.len());
         for r in &f.releases {
-            out.extend([r.left, r.wait, r.every, r.delay]);
+            out.extend([r.left, r.wait, r.every]);
+            count(&mut out, r.thing);
         }
         count(&mut out, f.events.len());
         for e in &f.events {
@@ -575,6 +576,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
     if world.flow.outcome.is_over() {
         return;
     }
+    let start_view = world.view;
     if flow::dying(world) {
         if world.flow.events.contains(&FlowEvent::Respawn) {
             view::restart(world);
@@ -584,14 +586,14 @@ pub fn step(world: &mut World, input: &InputFrame) {
             follow::update(world, Lead::of(&world.player));
             follow::note(world);
         }
-        collect::update(world, false);
+        collect::update(world, false, start_view);
         world.frame += 1;
         return;
     }
     loss::tick(world);
     // Walkers appear and are removed by where the view was at the start
     // of the step.
-    let view_left = world.view.map(|v| v.x());
+    let view_left = start_view.map(|v| v.x());
     if let Some(left) = view_left {
         view::walkers(world, left, true);
     }
@@ -645,7 +647,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
     }
     view::update(world);
     carry::after(world, &input.players[0]);
-    collect::update(world, true);
+    collect::update(world, true, start_view);
     let landed = world.events.contains(&Event::Land);
     world.recent.note(&input.players[0], landed);
     if let Some(knockout) = world.player.knockout
