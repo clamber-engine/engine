@@ -26,7 +26,11 @@
 #   and falls through the floor under `defeat_gravity`, up to
 #   `defeat_max_fall`, keeping the speed it had; it's gone once below the
 #   level. After a bounce it holds still first for the bounce's frozen
-#   frames, as the player does. With a preset that has a view
+#   frames, as the player does. Hit by a thrown object, it's knocked
+#   back the way the object came at `defeat_knock`, its speed easing
+#   toward `defeat_knock_glide` in that direction, as it moves by
+#   `response`: on the next frame along the floor, then jumping up at
+#   `defeat_jump` and falling as above. With a preset that has a view
 #   (`view_width` above 0), a walker is in the level only near the view;
 #   when it appears there, it waits `appear_wait` frames, counting the one
 #   it appears on, before it moves (0: it moves on that frame). Walkers
@@ -40,9 +44,12 @@
 #   with physics that has `pick_up_time` above 0. It stands on its
 #   position. The player reaches it with its x within `reach` of the
 #   player's and its bottom within 8 px of the player's feet. Thrown,
-#   it flies until it first touches something: a wall, and it drops
-#   straight down; the floor, and it rests there. It doesn't touch
-#   characters yet.
+#   it bounces and rolls on the floor and breaks against faces and
+#   walls (the preset's `throw_*` values), and hits walkers: those whose
+#   box overlaps `hit = [behind, ahead, above, below]`, px from its
+#   position with x rounded down, behind and ahead of it the way it
+#   moves, or `hit_early` for its first `hit_early_time` frames out of
+#   the hands. It doesn't touch characters yet.
 # - `collect`: a collectible the player takes by reaching it. It's then
 #   gone, and adds `worth` to the collectible count, one at a time: the
 #   first as it's taken, then one every `release_every` frames, each
@@ -97,6 +104,8 @@ range = []
 defeat_jump = 5
 defeat_gravity = 0.375
 defeat_max_fall = 8
+defeat_knock = 4
+defeat_knock_glide = 2
 
 [archetypes.flutter]
 behavior = "patrol"
@@ -119,6 +128,13 @@ behavior = "carry"
 size = [32, 24]
 offset = 0
 reach = 24
+# title-1's (spec/behavior/thrown-objects.md, "Hitting walkers"), with
+# its small walker's box (`size = [20, 12]`, `offset = 0.5`). Hits from
+# more than 12 px below a walker aren't covered; `above` allows up to
+# just under 13.
+hit = [18, 13, 13, 18]
+hit_early = [19, 38, 13, 51]
+hit_early_time = 16
 
 # Collectibles with title-1's measured values. `spark`: a single
 # collectible (spec/behavior/collectibles.md), drawn 16 x 16 around its

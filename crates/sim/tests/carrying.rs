@@ -330,30 +330,6 @@ fn a_thrown_object() {
     assert_eq!(flight(39).vy, f(8.0));
 }
 
-#[test]
-fn a_thrown_object_rests_where_it_lands() {
-    let mut play = Play::carrying();
-    play.hold(&[], 80);
-    let thing = &play.world.things[0];
-    assert_eq!(thing.phase, Phase::Ready);
-    assert_eq!(thing.pos.y, f(FLOOR));
-    assert!(thing.pos.x > f(300.0));
-}
-
-/// A wall stops it, and it drops straight down from there.
-#[test]
-fn a_thrown_object_drops_down_a_wall() {
-    let wall = "[[collision]]\nshape = \"rect\"\nrect = [300, 200, 20, 200]";
-    let mut play = Play::from_src(&walled(2000, 220, wall));
-    play.step(&[A]);
-    play.hold(&[A], 20);
-    play.hold(&[], 80);
-    let thing = &play.world.things[0];
-    assert_eq!(thing.phase, Phase::Ready);
-    // Its box, 32 wide, is against the wall.
-    assert_eq!(thing.pos, v(284.0, FLOOR));
-}
-
 /// carrying.md, "A throw while running": carrying at full speed to the
 /// right, action let go on Q with Right held throughout.
 #[test]

@@ -17,10 +17,11 @@
 //! - If the player is hurt, knocked out, swaps or is out of play while
 //!   holding it, it drops straight down.
 //!
-//! What a thrown object does when it first touches something depends on
-//! the object, which isn't in the spec yet. Until it is, one that
-//! touches a wall drops straight down, and one that lands rests where it
-//! lands. It doesn't touch characters.
+//! Thrown, it bounces on the floor and then rolls along it, breaks
+//! against faces and walls, and hits walkers, as
+//! `spec/behavior/thrown-objects.md` describes ([`fly`]). Touching
+//! characters and other enemies isn't in the spec yet; it doesn't.
+//! Dropped, it falls straight down and rests where it lands.
 
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame};
@@ -28,8 +29,11 @@ use clamber_level::{Dir, Level, Vec2};
 use clamber_pack::{Param, Physics};
 
 use crate::archetype::{Archetype, Behavior};
+use crate::columns::{self, column};
 use crate::flow::Outcome;
-use crate::player::{Act, Facing, HEIGHT, STEP, State, TINY, ceil, ease, frames, is_wall};
+use crate::player::{
+    Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, ceil, ease, frames, is_wall,
+};
 use crate::world::{Event, Phase, Thing, World};
 
 /// A thrown or dropped object's flight.
@@ -44,6 +48,25 @@ pub struct Flight {
     pub response: Fixed,
     pub gravity: Fixed,
     pub max_fall: Fixed,
+    /// Thrown, rather than dropped: it bounces, rolls, breaks and hits
+    /// walkers as the `throw_*` values below say. Dropped, it rests
+    /// where it lands.
+    pub thrown: bool,
+    /// `throw_land_margin`, `throw_bounce_min` and `throw_bounce`.
+    pub margin: Fixed,
+    pub bounce_min: Fixed,
+    pub bounce: Fixed,
+    /// Rolling along the floor rather than in the air.
+    pub rolling: bool,
+    /// Frames since it left the hands, counting this one, up to 255.
+    pub age: u8,
+}
+
+impl Flight {
+    /// Whether it's moving right; still counts as right.
+    pub fn right(&self) -> bool {
+        !self.vx.is_negative()
+    }
 }
 
 /// Before the player moves: an action press with the player standing
@@ -117,6 +140,12 @@ pub(crate) fn after(world: &mut World, input: &Frame) {
                 response: physics[Param::SpeedResponse],
                 gravity: physics[Param::ThrowGravity],
                 max_fall: physics[Param::ThrowMaxFall],
+                thrown: true,
+                margin: physics[Param::ThrowLandMargin],
+                bounce_min: physics[Param::ThrowBounceMin],
+                bounce: physics[Param::ThrowBounce],
+                rolling: false,
+                age: 0,
             });
         }
         Act::PutDown if hands.frame == set_down => {
@@ -173,7 +202,7 @@ fn in_reach(world: &World, way: Option<Facing>) -> Option<usize> {
         .filter_map(|t| {
             let reach = match t.archetype {
                 Some(Archetype {
-                    behavior: Behavior::Carry { reach },
+                    behavior: Behavior::Carry { reach, .. },
                     ..
                 }) => reach,
                 _ => return None,
@@ -200,20 +229,100 @@ fn drop(thing: &mut Thing, physics: &Physics) {
         response: physics[Param::SpeedResponse],
         gravity: physics[Param::ThrowGravity],
         max_fall: physics[Param::ThrowMaxFall],
+        thrown: false,
+        margin: Fixed::ZERO,
+        bounce_min: Fixed::ZERO,
+        bounce: Fixed::ZERO,
+        rolling: false,
+        age: 0,
     });
 }
 
-/// One frame of a thrown object's flight: `vx` eases toward its target,
-/// `vy` grows by gravity up to its most, then it moves by both. A wall in
-/// the way stops it against the wall, and it drops straight down from
-/// there; ground below catches it, and it rests there. It's gone once
-/// it's below the level.
-pub(crate) fn fly(level: &Level, thing: &mut Thing, size: Vec2, mut flight: Flight) {
+/// One frame of a thrown or dropped object's flight. It's gone once it's
+/// below the level.
+pub(crate) fn fly(level: &Level, thing: &mut Thing, size: Vec2, mut flight: Flight, slope: Fixed) {
+    flight.age = flight.age.saturating_add(1);
     flight.vx = if flight.response > Fixed::ZERO {
         ease(flight.vx, flight.target, flight.response)
     } else {
         flight.target
     };
+    if flight.thrown {
+        bounce_and_roll(level, thing, flight, slope);
+    } else {
+        drop_and_rest(level, thing, size, flight);
+    }
+    if thing.pos.y - size.y > level.size.y {
+        thing.active = false;
+    }
+}
+
+/// A thrown object's frame once its `vx` has eased: it breaks if this
+/// move would take it into a column it runs into as into a wall (see
+/// [`columns::hits_side`]); otherwise it moves across, and then down
+/// under gravity in the air or along the floor rolling. In the air, it
+/// touches the floor once it's moving down and ends less than `margin`
+/// above it, and is put on it: falling at `bounce_min` or faster before
+/// this frame, it bounces up at `bounce` of that speed; slower, it rolls
+/// from then on. Rolling off the floor, it falls again.
+fn bounce_and_roll(level: &Level, thing: &mut Thing, mut flight: Flight, slope: Fixed) {
+    let pos = thing.pos;
+    let x = pos.x + flight.vx;
+    let to = column(x);
+    let dir = if flight.right() { 1 } else { -1 };
+    let from = column(pos.x);
+    if to != from && columns::hits_side(level, from, to, dir, pos.y, slope) {
+        // Its pieces aren't in the spec.
+        thing.active = false;
+        return;
+    }
+    if flight.rolling {
+        match columns::floor(level, to, pos.y) {
+            Some(f) => {
+                thing.pos = Vec2::new(x, f.y);
+                thing.phase = Phase::Thrown(flight);
+                return;
+            }
+            // Rolling off a ledge isn't in the spec: it falls from rest.
+            None => {
+                flight.rolling = false;
+                flight.vy = Fixed::ZERO;
+            }
+        }
+    }
+    let before = flight.vy;
+    flight.vy = (flight.vy + flight.gravity).min(flight.max_fall);
+    let y = pos.y + flight.vy;
+    let touch = (flight.vy > Fixed::ZERO)
+        .then(|| columns::floor_in_air(level, to, pos.y))
+        .flatten()
+        .filter(|f| y > f.y - flight.margin);
+    thing.pos = match touch {
+        Some(f) => {
+            if before >= flight.bounce_min {
+                flight.vy = -down_to_grain(before * flight.bounce);
+            } else {
+                flight.rolling = true;
+                flight.vy = Fixed::ZERO;
+            }
+            Vec2::new(x, f.y)
+        }
+        None => Vec2::new(x, y),
+    };
+    thing.phase = Phase::Thrown(flight);
+}
+
+/// `v`, at least 0, rounded down to a whole [`SPEED_GRAIN`].
+fn down_to_grain(v: Fixed) -> Fixed {
+    let grain = SPEED_GRAIN.to_bits();
+    Fixed::from_bits(v.to_bits() / grain * grain)
+}
+
+/// A dropped object's frame once its `vx` has eased: `vy` grows by
+/// gravity up to its most, then it moves by both. A wall in the way stops
+/// it against the wall, and it drops straight down from there; ground
+/// below catches it, and it rests there.
+fn drop_and_rest(level: &Level, thing: &mut Thing, size: Vec2, mut flight: Flight) {
     flight.vy = (flight.vy + flight.gravity).min(flight.max_fall);
     let pos = thing.pos;
     let mut x = pos.x + flight.vx;
@@ -246,9 +355,6 @@ pub(crate) fn fly(level: &Level, thing: &mut Thing, size: Vec2, mut flight: Flig
         None => {
             thing.pos = Vec2::new(x, pos.y + flight.vy);
             thing.phase = Phase::Thrown(flight);
-            if thing.pos.y - size.y > level.size.y {
-                thing.active = false;
-            }
         }
     }
 }

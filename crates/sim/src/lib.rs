@@ -36,7 +36,7 @@ mod view;
 mod world;
 
 pub use archetype::{
-    Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Behavior, MAX_AIR_STEPS,
+    Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Behavior, Fall, Hit, MAX_AIR_STEPS,
     MAX_ARRIVE_RULES, Reach, Span,
 };
 pub use carry::Flight;

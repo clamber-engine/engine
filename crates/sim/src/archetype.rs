@@ -50,7 +50,14 @@ pub enum Behavior {
     Launcher { velocity: Vec2 },
     /// An object the player can pick up, carry, throw and put down
     /// (see [`carry`](crate::carry)), from `reach` px away or closer.
-    Carry { reach: Fixed },
+    /// Thrown, it hits walkers its `hit` box touches, or its `hit_early`
+    /// box for its first `hit_early_time` frames out of the hands.
+    Carry {
+        reach: Fixed,
+        hit: Hit,
+        hit_early: Hit,
+        hit_early_time: u8,
+    },
     /// A collectible the player takes from within its [`Reach`] (see
     /// [`collect`](crate::collect)). It adds `worth` to the collectible
     /// count, one at a time: the first on taking it, then one every
@@ -145,12 +152,40 @@ impl Span {
 
 /// How a defeated walker leaves: it jumps up at `jump`, then falls
 /// under `gravity` up to `max_fall`, through the floor and out of the
-/// level.
+/// level. Hit by a thrown object, it's knocked back at `knock` px per
+/// frame first, which eases toward `knock_glide` as it falls.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Fall {
     pub jump: Fixed,
     pub gravity: Fixed,
     pub max_fall: Fixed,
+    pub knock: Fixed,
+    pub knock_glide: Fixed,
+}
+
+/// A thrown object's box for hitting walkers, from its position with
+/// `x` rounded down: `behind` and `ahead` of it the way it moves,
+/// `above` and `below` it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Hit {
+    pub behind: Fixed,
+    pub ahead: Fixed,
+    pub above: Fixed,
+    pub below: Fixed,
+}
+
+impl Hit {
+    /// The box as `(left, top, right, bottom)` for an object at `pos`
+    /// moving right if `right`, left otherwise.
+    pub fn bounds(&self, pos: Vec2, right: bool) -> (Fixed, Fixed, Fixed, Fixed) {
+        let x = Fixed::from_int(pos.x.floor() as i32);
+        let (left, right) = if right {
+            (x - self.behind, x + self.ahead)
+        } else {
+            (x - self.ahead, x + self.behind)
+        };
+        (left, pos.y - self.above, right, pos.y + self.below)
+    }
 }
 
 impl Behavior {
@@ -324,10 +359,12 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "defeat_jump",
             "defeat_gravity",
             "defeat_max_fall",
+            "defeat_knock",
+            "defeat_knock_glide",
         ],
         "patrol" => &["path", "period"],
         "launcher" => &["velocity"],
-        "carry" => &["reach"],
+        "carry" => &["reach", "hit", "hit_early", "hit_early_time"],
         "collect" => &[
             "worth",
             "release_every",
@@ -392,6 +429,8 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 jump: number("defeat_jump")?,
                 gravity: number("defeat_gravity")?,
                 max_fall: number("defeat_max_fall")?,
+                knock: number("defeat_knock")?,
+                knock_glide: number("defeat_knock_glide")?,
             };
             if defeat.gravity <= Fixed::ZERO || defeat.max_fall <= Fixed::ZERO {
                 return Err(format!(
@@ -428,7 +467,38 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             if reach.is_negative() {
                 return Err(format!("{path}.reach: must not be negative"));
             }
-            Behavior::Carry { reach }
+            let hit = |key: &str| -> Result<Hit, String> {
+                let at = format!("{path}.{key}");
+                match get(key)? {
+                    Value::Array(items) if items.len() == 4 => {
+                        let n = |i: usize| {
+                            clamber_pack::read_number(&items[i], "", &format!("{at}[{i}]"))
+                                .map_err(|e| e.message)
+                        };
+                        Ok(Hit {
+                            behind: n(0)?,
+                            ahead: n(1)?,
+                            above: n(2)?,
+                            below: n(3)?,
+                        })
+                    }
+                    _ => Err(format!("{at}: expected [behind, ahead, above, below]")),
+                }
+            };
+            let hit_early_time = match get("hit_early_time")? {
+                Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => *n as u8,
+                _ => {
+                    return Err(format!(
+                        "{path}.hit_early_time: expected a whole number of frames, 0 to 255"
+                    ));
+                }
+            };
+            Behavior::Carry {
+                reach,
+                hit: hit("hit")?,
+                hit_early: hit("hit_early")?,
+                hit_early_time,
+            }
         }
         "collect" => {
             let small = |key: &str, min: i64| match get(key)? {

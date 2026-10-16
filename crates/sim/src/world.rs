@@ -97,11 +97,16 @@ pub enum Phase {
     /// A defeated walker falling out of the level at `vy`, after holding
     /// still for `hold` more frames.
     Falling { vy: Fixed, hold: u8 },
+    /// A walker knocked back by a thrown object: moving along the floor
+    /// on the step after the hit (`vy` is `None`), then falling out of
+    /// the level at `vy`.
+    Knocked { vy: Option<Fixed> },
     /// A launcher that fired this many frames ago.
     Fired(u8),
     /// An object in the player's hands, which move it.
     Held,
-    /// An object thrown or dropped, flying until it lands.
+    /// An object thrown, until it breaks or is removed, or dropped, until
+    /// it lands.
     Thrown(Flight),
     /// An object just set down, which comes to rest on the next step.
     Placed,
@@ -377,14 +382,19 @@ impl World {
                 Phase::Held => [4, 0],
                 Phase::Thrown(_) => [5, 0],
                 Phase::Placed => [6, 0],
+                Phase::Knocked { vy } => [7, vy.is_some().into()],
             });
-            if let Phase::Falling { vy, .. } = t.phase {
+            if let Phase::Falling { vy, .. } | Phase::Knocked { vy: Some(vy) } = t.phase {
                 fixed(&mut out, vy);
             }
             if let Phase::Thrown(f) = t.phase {
                 for v in [f.vx, f.vy, f.target, f.response, f.gravity, f.max_fall] {
                     fixed(&mut out, v);
                 }
+                for v in [f.margin, f.bounce_min, f.bounce] {
+                    fixed(&mut out, v);
+                }
+                out.extend([f.thrown.into(), f.rolling.into(), f.age]);
             }
         }
 

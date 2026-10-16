@@ -31,6 +31,9 @@
 //! Objects that can be carried don't act on the player; the player picks
 //! them up (see [`carry`](crate::carry)).
 //!
+//! A thrown object defeats the walkers it hits (see [`throw_hits`]),
+//! which are knocked back the way it came (see [`knocked`]).
+//!
 //! A defeated walker jumps up and falls out of the level (see [`fall`]);
 //! other defeated enemies show as defeated for [`DEFEATED_FRAMES`], then
 //! are gone. They stay gone after the player loses a life.
@@ -43,6 +46,7 @@ use crate::archetype::{Archetype, Behavior, Fall};
 use crate::carry;
 use crate::flow::{FlowEvent, overlap};
 use crate::player::{Facing, HEIGHT, STEP, State, TINY, ease, frames, is_wall};
+use crate::view;
 use crate::world::{Event, Phase, Thing, World};
 
 /// How long a defeated enemy shows before it's gone.
@@ -86,6 +90,18 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) {
             continue;
         }
         advance(&world.level, thing, &physics);
+    }
+    throw_hits(world);
+    if let Some(view) = world.view {
+        // Thrown objects are removed far from the view as walkers are.
+        let left = view.x();
+        for thing in world.things.iter_mut().filter(|t| t.active) {
+            if matches!(thing.phase, Phase::Thrown(f) if f.thrown)
+                && view::far(thing.pos.x.floor(), left, &physics)
+            {
+                thing.active = false;
+            }
+        }
     }
     // Enemies bounced on still moved this frame, as they were.
     let freeze = frames(physics[Param::BounceFreeze]);
@@ -145,8 +161,21 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics) {
             };
         }
         Phase::Held => return,
+        Phase::Knocked { vy } => {
+            if let Behavior::Walker {
+                response,
+                range,
+                defeat,
+                ..
+            } = archetype.behavior
+            {
+                knocked(level, thing, &archetype, response, range, defeat, vy);
+            }
+            return;
+        }
         Phase::Thrown(flight) => {
-            carry::fly(level, thing, archetype.size, flight);
+            let slope = physics[Param::FaceSlope];
+            carry::fly(level, thing, archetype.size, flight, slope);
             return;
         }
         Phase::Placed => {
@@ -247,6 +276,138 @@ fn fall(
     if thing.pos.y - archetype.size.y > level.size.y {
         thing.active = false;
     }
+}
+
+/// Moves a walker knocked back by a thrown object, heading the way it's
+/// knocked: its speed eases toward `knock_glide` that way by `response`.
+/// On the step after the hit (`vy` is `None`) it can still turn at the
+/// end of its range, and it moves along the floor; then it jumps up at
+/// `defeat.jump` and falls as a defeated walker does, without holding
+/// still and easing as it goes. It's gone once its top is below the
+/// level.
+fn knocked(
+    level: &Level,
+    thing: &mut Thing,
+    archetype: &Archetype,
+    response: Fixed,
+    range: Option<(Fixed, Fixed)>,
+    defeat: Fall,
+    vy: Option<Fixed>,
+) {
+    if vy.is_none()
+        && let Some((left, right)) = range
+    {
+        let start = level.entities[thing.index].at.x;
+        let x = Fixed::from_int(thing.pos.x.floor() as i32);
+        let past = match thing.heading {
+            Facing::Left => x < start + left,
+            Facing::Right => x > start + right,
+        };
+        if past {
+            thing.heading = match thing.heading {
+                Facing::Left => Facing::Right,
+                Facing::Right => Facing::Left,
+            };
+        }
+    }
+    let target = match thing.heading {
+        Facing::Left => -defeat.knock_glide,
+        Facing::Right => defeat.knock_glide,
+    };
+    thing.vx = if response > Fixed::ZERO {
+        ease(thing.vx, target, response)
+    } else {
+        target
+    };
+    let x = thing.pos.x + thing.vx;
+    match vy {
+        None => {
+            let from = Vec2::new(x, thing.pos.y - STEP);
+            let y = level
+                .collision
+                .cast(from, Dir::Down, STEP + STEP)
+                .map_or(thing.pos.y, |hit| hit.point.y);
+            thing.pos = Vec2::new(x, y);
+            thing.phase = Phase::Knocked {
+                vy: Some(-defeat.jump),
+            };
+        }
+        Some(vy) => {
+            let vy = (vy + defeat.gravity).min(defeat.max_fall);
+            thing.pos = Vec2::new(x, thing.pos.y + vy);
+            thing.phase = Phase::Knocked { vy: Some(vy) };
+        }
+    }
+    if thing.pos.y - archetype.size.y > level.size.y {
+        thing.active = false;
+    }
+}
+
+/// Defeats the walkers thrown objects hit, with everything where it is
+/// after moving this step: a walker that's walking is hit when its box
+/// overlaps an object's hit box (see [`Behavior::Carry`]). An object
+/// hits at most one walker a step; which of two in reach at once isn't
+/// in the spec, so it's the first placed. The object goes on as it was.
+/// A hit walker is knocked back the way the object came, at `knock`.
+fn throw_hits(world: &mut World) {
+    for i in 0..world.things.len() {
+        let object = &world.things[i];
+        let (Phase::Thrown(flight), Some(archetype)) = (object.phase, object.archetype) else {
+            continue;
+        };
+        let Behavior::Carry {
+            hit,
+            hit_early,
+            hit_early_time,
+            ..
+        } = archetype.behavior
+        else {
+            continue;
+        };
+        if !object.active || !flight.thrown {
+            continue;
+        }
+        let right = flight.right();
+        let reach = if flight.age <= hit_early_time {
+            hit_early
+        } else {
+            hit
+        }
+        .bounds(object.pos, right);
+        let walker = world.things.iter_mut().find(|t| {
+            t.active
+                && t.phase == Phase::Ready
+                && t.archetype.is_some_and(|a| {
+                    matches!(a.behavior, Behavior::Walker { .. })
+                        && in_reach(reach, &a, t.pos, t.facing)
+                })
+        });
+        let Some(walker) = walker else {
+            continue;
+        };
+        let Some(Behavior::Walker { defeat, .. }) = walker.archetype.map(|a| a.behavior) else {
+            continue;
+        };
+        (walker.heading, walker.vx) = if right {
+            (Facing::Left, -defeat.knock)
+        } else {
+            (Facing::Right, defeat.knock)
+        };
+        walker.phase = Phase::Knocked { vy: None };
+        world.flow.events.push(FlowEvent::Defeat(walker.index));
+    }
+}
+
+/// Whether a walker of `archetype` at `pos` facing `facing` is in a
+/// thrown object's `reach`, with its `x` rounded down.
+fn in_reach(
+    reach: (Fixed, Fixed, Fixed, Fixed),
+    archetype: &Archetype,
+    pos: Vec2,
+    facing: Facing,
+) -> bool {
+    let at = Vec2::new(Fixed::from_int(pos.x.floor() as i32), pos.y);
+    overlap(reach, archetype.bounds(at, facing))
 }
 
 /// Moves a walker along the ground, its speed easing toward `speed` the
@@ -551,6 +712,76 @@ fn interact(
                 }
                 defeat(thing, if rolling { 0 } else { freeze });
                 world.flow.events.push(FlowEvent::Defeat(thing.index));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::archetype::Archetypes;
+    use clamber_level::Entity;
+
+    fn resolve(kind: &str, params: &str) -> Archetype {
+        let entity = Entity {
+            kind: kind.to_string(),
+            id: None,
+            at: Vec2::ints(0, 0),
+            params: toml::from_str(params).unwrap(),
+        };
+        Archetypes::builtin()
+            .resolve(&entity, "test", "e")
+            .unwrap()
+            .unwrap()
+    }
+
+    /// thrown-objects.md, "When a walker is hit": the ranges of I and the
+    /// height limits of U, for the measured rows.
+    #[test]
+    fn thrown_objects_hit_title_1_walkers_in_the_measured_ranges() {
+        let object = resolve("crate", "");
+        let Behavior::Carry {
+            hit,
+            hit_early,
+            hit_early_time,
+            ..
+        } = object.behavior
+        else {
+            panic!("{object:?}");
+        };
+        assert_eq!(hit_early_time, 16);
+        let small = resolve("crawler", "size = [20, 12]\noffset = 0.5");
+        let large = resolve("crawler", "size = [26, 38]\noffset = 0.5");
+        use Facing::{Left, Right};
+        // Walker, its facing, the object moving right, then I's range and
+        // U's limit early and late.
+        let rows = [
+            (small, Left, true, (-48, 28), (-23, 27), 63, 30),
+            (small, Left, false, (-29, 47), (-28, 22), 63, 30),
+            (small, Right, false, (-28, 48), (-27, 23), 63, 30),
+            (large, Left, true, (-51, 31), (-26, 30), 89, 56),
+            (large, Right, true, (-50, 32), (-25, 31), 89, 56),
+        ];
+        let walker = Vec2::new(Fixed::from_ratio_pow2(1281, 2), Fixed::from_int(400));
+        for (archetype, facing, right, early, late, early_u, late_u) in rows {
+            for (hit, (from, to), most_u) in [(hit_early, early, early_u), (hit, late, late_u)] {
+                // I from the object's x rounded down, with a fraction.
+                let at = |i: i32, u: Fixed| {
+                    let x = Fixed::from_int(320 + i) + Fixed::from_ratio_pow2(3, 2);
+                    let reach = hit.bounds(Vec2::new(x, walker.y - u), right);
+                    in_reach(reach, &archetype, walker, facing)
+                };
+                let row = format!("{facing:?} {right} {from}..={to}");
+                let level = Fixed::ZERO;
+                assert!(!at(from - 1, level), "{row}");
+                assert!(at(from, level), "{row}");
+                assert!(at(to, level), "{row}");
+                assert!(!at(to + 1, level), "{row}");
+                let just_under = Fixed::from_int(most_u) - Fixed::from_ratio_pow2(1, 4);
+                assert!(at(from, just_under), "{row}");
+                assert!(!at(from, Fixed::from_int(most_u)), "{row}");
+                assert!(at(to, Fixed::from_int(-12)), "{row}");
             }
         }
     }

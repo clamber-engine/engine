@@ -428,6 +428,9 @@ mod tests {
                     | Param::ThrowGlide
                     | Param::ThrowGravity
                     | Param::ThrowMaxFall
+                    | Param::ThrowLandMargin
+                    | Param::ThrowBounceMin
+                    | Param::ThrowBounce
                     | Param::PutDownTime
                     | Param::PutDownAhead
                     | Param::PutDownLift

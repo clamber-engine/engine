@@ -342,7 +342,7 @@ pub(crate) fn near(start: i64, left: i64, physics: &Physics) -> bool {
 
 /// Whether a walker at `x` (whole px) is far enough from a view whose
 /// left edge is at `left` (whole px) to be removed.
-fn far(x: i64, left: i64, physics: &Physics) -> bool {
+pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
     let width = physics[Param::ViewWidth].floor();
     x <= left - physics[Param::RemoveLeft].floor()
         || x >= left + width + physics[Param::RemoveRight].floor()

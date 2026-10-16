@@ -147,6 +147,32 @@ pub(crate) fn blocks(
     }
 }
 
+/// Whether a body at `feet` moving `dir` (-1 or 1) from column `from`
+/// runs into `column` as into a wall: its floor is higher than the feet
+/// and holds from below, and the column is part of a steep face climbing
+/// the way the body moves, or the floor climbs into it from `from` by
+/// more than a step, or there's no floor at `from` to climb from.
+pub(crate) fn hits_side(
+    level: &Level,
+    from: i64,
+    column: i64,
+    dir: i32,
+    feet: Fixed,
+    slope: Fixed,
+) -> bool {
+    let Some(f) = floor(level, column, feet) else {
+        return false;
+    };
+    let one_way = spans(level, column)
+        .iter()
+        .any(|s| s.collider == f.collider && s.one_way);
+    if f.y >= feet || one_way {
+        return false;
+    }
+    let into = rise(level, from, column, feet);
+    face(level, column, feet, slope) == Some(-dir) || into.is_none_or(|h| h > STEP)
+}
+
 /// Whether the floor `ahead` columns from `column` in direction `dir` is
 /// more than a step higher than the floor of `column`.
 pub(crate) fn rise_ahead(level: &Level, column: i64, dir: i32, ahead: i64, feet: Fixed) -> bool {
@@ -251,6 +277,31 @@ mod tests {
         assert_eq!(y(0), Some(Fixed::ZERO));
         assert_eq!(y(-20), Some(Fixed::from_int(-20)));
         assert_eq!(y(-25), Some(Fixed::from_int(-20)));
+    }
+
+    #[test]
+    fn faces_and_walls_are_hit_from_the_side_but_slopes_arent() {
+        // Flat, then a face rising to the right from 1 px up.
+        let level = staircase(&[0, 0, -1, -5, -9, -13]);
+        let feet = Fixed::ZERO;
+        assert!(!hits_side(&level, 0, 1, 1, feet, slope()));
+        assert!(hits_side(&level, 1, 2, 1, feet, slope()));
+        assert!(hits_side(&level, 3, 4, 1, feet, slope()));
+        // Level with its floor or above it, nothing is hit.
+        assert!(!hits_side(&level, 1, 2, 1, Fixed::from_int(-1), slope()));
+        // Going the other way, the face falls.
+        let falling = staircase(&[-13, -9, -5, -1, 0, 0]);
+        assert!(!hits_side(&falling, 1, 2, 1, Fixed::ZERO, slope()));
+        let gentle = staircase(&[0, 0, 0, 0, -1, -1, -1, -1, -2]);
+        for c in 0..9 {
+            assert!(
+                !hits_side(&gentle, c - 1, c, 1, Fixed::ZERO, slope()),
+                "{c}"
+            );
+        }
+        let wall = staircase(&[0, 0, -64, -64]);
+        assert!(hits_side(&wall, 1, 2, 1, Fixed::ZERO, slope()));
+        assert!(!hits_side(&wall, 0, 1, 1, Fixed::ZERO, slope()));
     }
 
     #[test]

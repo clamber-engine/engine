@@ -492,6 +492,16 @@ params! {
     ThrowGravity => "throw_gravity",
     /// A thrown object's downward speed never exceeds this.
     ThrowMaxFall => "throw_max_fall",
+    /// A thrown object falling onto the floor touches it once it ends a
+    /// frame less than this far above it, and is put on it. px.
+    ThrowLandMargin => "throw_land_margin",
+    /// A thrown object that touches the floor falling at least this fast
+    /// bounces; slower, it rolls along the floor from then on, its speed
+    /// across easing on toward `throw_glide`.
+    ThrowBounceMin => "throw_bounce_min",
+    /// The part of its downward speed before the frame a thrown object
+    /// bounces up with, rounded down to a whole 1/256 px per frame.
+    ThrowBounce => "throw_bounce",
     /// Frames a put-down lasts, counting the frame action is let go; the
     /// target speed is 0 whatever is held. The object is set down on
     /// the last. Whole frames.
