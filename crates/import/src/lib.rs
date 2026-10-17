@@ -22,6 +22,7 @@
 //! The `clamber-import` command and the game's import menu both call
 //! [`Importer::import`].
 
+mod echo;
 mod graphics;
 mod ground;
 mod image;

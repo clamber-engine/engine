@@ -2,13 +2,13 @@
 //! become the audio the console plays. Each [`VoiceOutput`] plays its notes'
 //! sample points at its pitch, blends them, and scales the blend by its
 //! level ([`Envelope`]); a [`Mixer`] adds the voices up with their
-//! volumes and the main volume.
+//! volumes and the main volume, and adds the [`Echo`].
 //!
-//! Echo and noise aren't in the spec, so the output is the one with the
-//! echo volume at 0.
+//! Noise isn't in the spec yet.
 
 use std::sync::OnceLock;
 
+use crate::echo::Echo;
 use crate::songs::CHANNELS;
 use crate::sound::{BLOCK_SIZE, BlockHeader, Earlier, STEPS, Sample};
 use crate::voices::Envelope;
@@ -185,6 +185,8 @@ pub struct VoiceOutput {
     /// Left and right, as bytes.
     pub volume: [u8; 2],
     pub sample: u8,
+    /// The voice also goes into the echo.
+    pub echo: bool,
     note: Option<Note>,
     /// The note a start took, and outputs since the check that took it.
     next: Option<(Note, u8)>,
@@ -231,24 +233,27 @@ impl VoiceOutput {
     }
 }
 
-/// The eight voices and the main volume, giving the audio output one
-/// output at a time.
+/// The eight voices, the main volume and the echo, giving the audio
+/// output one output at a time.
 #[derive(Clone, Debug)]
 pub struct Mixer {
     pub voices: [VoiceOutput; CHANNELS],
     /// Left and right, as bytes.
     pub main_volume: [u8; 2],
+    pub echo: Echo,
     /// The shared count on the next output.
     pub count: u64,
 }
 
 impl Mixer {
-    /// Voices that have never started, main volume 0, and the shared
-    /// count `count` on the first output.
-    pub fn new(count: u64) -> Mixer {
+    /// Voices that have never started, main volume 0, an echo with delay
+    /// `echo_delay` that adds nothing, and the shared count `count` on
+    /// the first output.
+    pub fn new(count: u64, echo_delay: u8) -> Mixer {
         Mixer {
             voices: Default::default(),
             main_volume: [0, 0],
+            echo: Echo::new(echo_delay),
             count,
         }
     }
@@ -256,15 +261,25 @@ impl Mixer {
     /// The next output's left and right values.
     pub fn output(&mut self, samples: &[Sample]) -> [i16; 2] {
         let mut sums = [0; 2];
+        let mut echo_input = [0; 2];
         for voice in &mut self.voices {
             let y = voice.output(samples, self.count);
-            for (sum, volume) in sums.iter_mut().zip(voice.volume) {
-                *sum = limit(*sum + ((y * signed(volume)) >> 7));
+            for side in 0..2 {
+                let part = (y * signed(voice.volume[side])) >> 7;
+                sums[side] = limit(sums[side] + part);
+                if voice.echo {
+                    echo_input[side] = limit(echo_input[side] + part);
+                }
             }
         }
         self.count += 1;
-        // 32 768, from −32 768 under main volume −128, wraps to −32 768.
-        std::array::from_fn(|side| ((sums[side] * signed(self.main_volume[side])) >> 7) as i16)
+        let echo = self.echo.output(echo_input);
+        std::array::from_fn(|side| {
+            // 32 768, from −32 768 under main volume −128, wraps to
+            // −32 768.
+            let main = ((sums[side] * signed(self.main_volume[side])) >> 7) as i16;
+            limit(i32::from(main) + echo[side]) as i16
+        })
     }
 }
 
@@ -313,7 +328,7 @@ mod tests {
                 (k, words.collect())
             })
             .collect();
-        let mut mixer = Mixer::new(first.parse().unwrap());
+        let mut mixer = Mixer::new(first.parse().unwrap(), 0);
         let mut rows = Vec::new();
         for k in 0..outputs.parse().unwrap() {
             for (_, event) in events.iter().filter(|(at, _)| *at == k) {
@@ -385,7 +400,7 @@ mod tests {
             loop_offset: 0,
             data: block.to_vec(),
         }];
-        let mut mixer = Mixer::new(1);
+        let mut mixer = Mixer::new(1, 0);
         mixer.main_volume = [127, 127];
         let voice = &mut mixer.voices[0];
         voice.pitch = 4096;

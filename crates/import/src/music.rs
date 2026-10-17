@@ -1,13 +1,12 @@
 //! A level's song as music: the song played step by step
 //! ([`Player`], `spec/formats/songs.md`), each step's voice settings
-//! turned into audio ([`Mixer`], `spec/formats/voice-output.md`), with
-//! the samples in place while it plays (`spec/formats/sound.md`, "Which
-//! samples a song has").
+//! turned into audio ([`Mixer`], `spec/formats/voice-output.md` and
+//! `spec/formats/echo.md`), with the samples in place while it plays
+//! (`spec/formats/sound.md`, "Which samples a song has").
 //!
-//! The spec doesn't cover echo or noise yet: the music is what plays
-//! with the echo volume at 0, and a voice with noise on is silent. Nor
-//! does it say on which output a value handed between two steps first
-//! counts; here it counts from the first output after the step.
+//! The spec doesn't cover noise yet: a voice with noise on is silent.
+//! Nor does it say on which output a value handed between two steps
+//! first counts; here it counts from the first output after the step.
 
 use crate::songs::{GAIN, Player, Step};
 use crate::sound::{Loop, Read, Sample, read_samples, read_song, song_samples};
@@ -24,6 +23,9 @@ const MAX_STEPS: usize = 200_000;
 /// Outputs after a song ends that are kept while voices still sound:
 /// 10 seconds.
 const MAX_TAIL: usize = 10 * RATE as usize;
+
+/// `title-1`'s echo delay (`echo.md`, "In `title-1`").
+const ECHO_DELAY: u8 = 4;
 
 /// Outputs after the last voice falls silent, for the level's 2-output
 /// delay (`voice-output.md`, "The voice's sound").
@@ -143,10 +145,17 @@ fn shape(song: &Song) -> Result<Shape, String> {
     ))
 }
 
-/// Hands the voices and the main volume what `step` gives them.
+/// Hands the voices, the main volume and the echo what `step` gives
+/// them.
 fn hand(mixer: &mut Mixer, step: &Step) {
-    mixer.main_volume = step.settings.main_volume;
+    let settings = &step.settings;
+    mixer.main_volume = settings.main_volume;
+    mixer.echo.volume = settings.echo_volume;
+    mixer.echo.feedback = settings.echo_feedback;
+    mixer.echo.filter = settings.echo_filter;
+    mixer.echo.writing = settings.echo_writing;
     for (voice, s) in mixer.voices.iter_mut().zip(&step.voices) {
+        voice.echo = s.echo;
         voice.sample = s.voice.sample;
         voice.pitch = s.voice.pitch;
         voice.volume = if s.noise { [0, 0] } else { s.voice.volume };
@@ -163,8 +172,8 @@ fn hand(mixer: &mut Mixer, step: &Step) {
 /// Plays `song` with `samples` (by sample number) as music. A song that
 /// loops is played through its loop twice and loops over the second
 /// time, so that what leads into the loop's start is what the loop's
-/// end leaves sounding. A song that ends is played until its voices fall
-/// silent.
+/// end leaves sounding. A song that ends is played until its voices and
+/// its echo fall silent.
 pub fn render(song: &Song, samples: &[Sample]) -> Result<Music, String> {
     let shape = shape(song)?;
     let (steps, loop_from) = match shape {
@@ -172,7 +181,9 @@ pub fn render(song: &Song, samples: &[Sample]) -> Result<Music, String> {
         Shape::Loops { lead_in, length } => (lead_in + 2 * length, Some(lead_in + length)),
     };
     let mut player = Player::new(song)?;
-    let mut mixer = Mixer::new(0);
+    // The memory starts all 0 when the sound starts; whether a song
+    // starting later finds it so isn't covered, so each starts with it so.
+    let mut mixer = Mixer::new(0, ECHO_DELAY);
     let mut frames = Vec::new();
     let mut loop_start = 0;
     for n in 0..steps {
@@ -191,7 +202,9 @@ pub fn render(song: &Song, samples: &[Sample]) -> Result<Music, String> {
             length: frames.len() - loop_start,
         }),
         None => {
-            let silent = |mixer: &Mixer| mixer.voices.iter().all(|v| v.envelope.level() == 0);
+            let silent = |mixer: &Mixer| {
+                mixer.voices.iter().all(|v| v.envelope.level() == 0) && mixer.echo.is_silent()
+            };
             let mut quiet = 0;
             for _ in 0..MAX_TAIL {
                 if quiet > AFTER_SILENT {
@@ -278,6 +291,29 @@ mod tests {
         let end = &music.frames[music.frames.len() - AFTER_SILENT..];
         assert!(end.iter().all(|f| *f == [0, 0]));
         assert!(music.frames.len() < 2 * RATE as usize);
+    }
+
+    #[test]
+    fn a_song_with_echo_sounds_on_until_the_echo_falls_silent() {
+        let ends = |echo: &[u8]| {
+            let mut track = SETUP.to_vec();
+            track.extend(echo);
+            track.extend([165, 4, 0]);
+            render(&song(128, &track), &[level_sample()]).unwrap()
+        };
+        let dry = ends(&[]);
+        // Feedback 0 and echo volume 64, 64; echo on for the voice; a
+        // filter that gives back what was written, 7 outputs late.
+        let wet = ends(&[21, 0, 64, 64, 22, 24, 127, 0, 0, 0, 0, 0, 0, 0]);
+        // Nothing comes back before the memory has gone round once.
+        let round = 512 * usize::from(ECHO_DELAY);
+        assert_eq!(dry.frames[..round], wet.frames[..round]);
+        assert_ne!(dry.frames, wet.frames[..dry.frames.len()]);
+        // It comes back a round after the last sound.
+        let last = |music: &Music| music.frames.iter().rposition(|f| *f != [0, 0]).unwrap();
+        assert!(last(&wet) >= last(&dry) + round);
+        let end = &wet.frames[wet.frames.len() - AFTER_SILENT..];
+        assert!(end.iter().all(|f| *f == [0, 0]));
     }
 
     #[test]
