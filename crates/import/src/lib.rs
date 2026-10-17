@@ -35,6 +35,7 @@ mod placements;
 mod songs;
 mod sound;
 mod sprites;
+mod voices;
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -65,6 +66,8 @@ pub use sprites::{
     Form, Frame, FrameTable, Header, LAST_SHORT, Mirror, Picture, Piece, Runs, SheetFiles, Size,
     SpritePalette, TABLE_ENTRY_SIZE, TableEntry, read_frames, sprite_sheet,
 };
+
+pub use voices::{Envelope, MAX_LEVEL, Part, due, period};
 
 /// The folder in a pack that holds its levels.
 pub const LEVELS: &str = "levels";

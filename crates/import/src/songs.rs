@@ -4,8 +4,9 @@
 //! effects (`spec/formats/sound-effects.md`) play in the same player, each
 //! taking a voice from the song while it plays.
 //!
-//! How a voice turns those settings into sound isn't in the spec yet, so
-//! this stops at the settings; making audio from them is for later.
+//! A voice's level from those settings is in [`crate::voices`]; the rest
+//! of how a voice turns them into sound isn't in the spec yet, so making
+//! audio from them is for later.
 
 use crate::Location;
 use crate::sound::{Read, Song};
