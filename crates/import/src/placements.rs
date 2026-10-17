@@ -3,6 +3,9 @@
 //! height above the level's bottom edge, read into entries and groups and
 //! turned into Clamber level entities.
 //!
+//! A list whose first entry has class 9 is divided into sections, and
+//! its section table is read with it ("Lists with sections").
+//!
 //! Where its reference's [`Kind`] is known ("Kinds"), an entity is the
 //! engine archetype that behaves as that kind; otherwise its kind names
 //! its reference (`placed-1234`), for a pack to give each one a
@@ -24,6 +27,9 @@ const PLACED: &str = "placed-";
 /// Bytes in an entry.
 pub const ENTRY_SIZE: usize = 8;
 
+/// Bytes in a section table's record.
+pub const RECORD_SIZE: usize = 8;
+
 /// How far left of the view, and right of its left edge, an entry's `x`
 /// can be and still be in the window.
 const WINDOW: std::ops::RangeInclusive<i64> = -31..=288;
@@ -42,13 +48,17 @@ pub struct Entry {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Class {
     /// One object of the definition at the entry's reference (classes 1
-    /// and 2).
+    /// and 2, and class 15, which also needs the vertical window: see
+    /// [`Entry::needs_rows`]).
     Object,
     /// The members listed at the entry's reference + 8 (class 5).
     Group,
     /// No object (class 8). The first level's starts the dimming
     /// (`spec/behavior/dimming.md`).
     Nothing,
+    /// No object (class 9): only ever a list's first entry, whose
+    /// reference is the list's section table.
+    Sections,
     /// A class the spec doesn't cover.
     Other(u16),
 }
@@ -75,11 +85,18 @@ impl Entry {
 
     pub fn kind(self) -> Class {
         match self.class {
-            1 | 2 => Class::Object,
+            1 | 2 | 15 => Class::Object,
             5 => Class::Group,
             8 => Class::Nothing,
+            9 => Class::Sections,
             c => Class::Other(c),
         }
+    }
+
+    /// Whether the entry's object also has to be inside the vertical
+    /// window to appear (class 15).
+    pub fn needs_rows(self) -> bool {
+        self.class == 15
     }
 
     /// The level y of the entry's position, for a level whose bottom edge
@@ -103,20 +120,60 @@ pub struct Placement {
     pub members: Vec<Entry>,
 }
 
-/// A level's placement list, in stored order.
+/// One 8-byte record of a section table: two sections, each given by the
+/// numbers of its first and last entries, and the point where they meet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Record {
+    pub first: (u8, u8),
+    pub x: u16,
+    /// Height above the level's bottom edge, as an entry's.
+    pub h: u16,
+    pub second: (u8, u8),
+}
+
+impl Record {
+    fn read(bytes: &[u8]) -> Record {
+        let word = |i: usize| u16::from_le_bytes([bytes[i], bytes[i + 1]]);
+        Record {
+            first: (bytes[0], bytes[1]),
+            x: word(2),
+            h: word(4),
+            second: (bytes[6], bytes[7]),
+        }
+    }
+
+    /// The level y of the point, for a level whose bottom edge is at
+    /// `bottom`.
+    pub fn level_y(self, bottom: i64) -> i64 {
+        bottom - i64::from(self.h)
+    }
+}
+
+/// A level's placement list, in stored order, with its section table if
+/// it has sections.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Placements(pub Vec<Placement>);
+pub struct Placements {
+    pub list: Vec<Placement>,
+    /// Empty unless the list's first entry has class 9.
+    pub records: Vec<Record>,
+}
 
 impl Placements {
     /// Reads the list at address `list`. `bank` gives the bytes of the
     /// list's bank from an address to the bank's end, or `None` where the
-    /// bank doesn't have that address. Members of a group are read from
-    /// the same bank. A member that is itself a group isn't followed.
+    /// bank doesn't have that address. Members of a group, and a section
+    /// table, are read from the same bank. A member that is itself a group
+    /// isn't followed.
     pub fn read<'a>(
         bank: impl Fn(u16) -> Option<&'a [u8]>,
         list: u16,
     ) -> Result<Placements, String> {
-        let placements = entries(&bank, list)?
+        let stored = entries(&bank, list)?;
+        let records = match stored.first() {
+            Some(&first) if first.kind() == Class::Sections => records(&bank, first.reference)?,
+            _ => Vec::new(),
+        };
+        let list = stored
             .into_iter()
             .map(|entry| {
                 let members = match entry.kind() {
@@ -132,7 +189,7 @@ impl Placements {
                 Ok(Placement { entry, members })
             })
             .collect::<Result<_, String>>()?;
-        Ok(Placements(placements))
+        Ok(Placements { list, records })
     }
 
     /// The objects as level entities, for a level whose bottom edge is at
@@ -164,7 +221,7 @@ impl Placements {
             }
         };
         let mut entities = Vec::new();
-        for (i, placement) in self.0.iter().enumerate() {
+        for (i, placement) in self.list.iter().enumerate() {
             match placement.entry.kind() {
                 Class::Object => entities.push(entity(placement.entry)),
                 Class::Group => {
@@ -187,7 +244,7 @@ impl Placements {
                     params: Table::new(),
                     ..entity(placement.entry)
                 }),
-                Class::Other(_) => {}
+                Class::Sections | Class::Other(_) => {}
             }
         }
         entities
@@ -213,14 +270,36 @@ fn entries<'a>(bank: &impl Fn(u16) -> Option<&'a [u8]>, start: u16) -> Result<Ve
     ))
 }
 
+/// The records of the section table at `start`, up to the record whose
+/// first two bytes are both 0.
+fn records<'a>(bank: &impl Fn(u16) -> Option<&'a [u8]>, start: u16) -> Result<Vec<Record>, String> {
+    let bytes = bank(start).ok_or_else(|| format!("no section table at {start:04x}"))?;
+    let mut records = Vec::new();
+    for chunk in bytes.chunks(RECORD_SIZE) {
+        // Only the end record's first two bytes have to be there.
+        if chunk.len() >= 2 && chunk[..2] == [0, 0] {
+            return Ok(records);
+        }
+        if chunk.len() < RECORD_SIZE {
+            break;
+        }
+        records.push(Record::read(chunk));
+    }
+    Err(format!(
+        "the section table at {start:04x} runs past its bank without an end record"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clamber_sim::{Opening, Sections, Spot, Window};
 
     /// The vectors' bank fragment starts at this address.
     const BASE: u16 = 0x9000;
     const LIST: u16 = 0x9008;
     const BOTTOM: i64 = 512;
+    const SECTIONS_BOTTOM: i64 = 1024;
 
     fn vector(name: &str) -> String {
         let path = format!(
@@ -232,8 +311,12 @@ mod tests {
 
     /// The bank fragment's bytes, checking each line's address.
     fn fragment() -> Vec<u8> {
+        fragment_of("bank.hex")
+    }
+
+    fn fragment_of(name: &str) -> Vec<u8> {
         let mut bytes = Vec::new();
-        for line in vector("bank.hex").lines().filter(|l| !l.trim().is_empty()) {
+        for line in vector(name).lines().filter(|l| !l.trim().is_empty()) {
             let (address, data) = line.split_once(':').unwrap();
             let address = usize::from_str_radix(address.trim(), 16).unwrap();
             assert_eq!(address, usize::from(BASE) + bytes.len(), "{line}");
@@ -263,7 +346,7 @@ mod tests {
     /// Every entry with its index as in the vectors (`3`, `3.0`, …).
     fn indexed(placements: &Placements) -> Vec<(String, Option<usize>, Entry)> {
         let mut out = Vec::new();
-        for (i, p) in placements.0.iter().enumerate() {
+        for (i, p) in placements.list.iter().enumerate() {
             out.push((i.to_string(), None, p.entry));
             for (j, &m) in p.members.iter().enumerate() {
                 out.push((format!("{i}.{j}"), Some(i), m));
@@ -298,7 +381,7 @@ mod tests {
         let placements = read(&fragment()).unwrap();
         // What appears, by index, with the x that decides when.
         let mut objects = Vec::new();
-        for (i, p) in placements.0.iter().enumerate() {
+        for (i, p) in placements.list.iter().enumerate() {
             match p.entry.kind() {
                 Class::Object => objects.push((i.to_string(), p.entry)),
                 Class::Group => {
@@ -319,6 +402,126 @@ mod tests {
             };
             assert_eq!(&got[..], &row[1..], "object {}", row[0]);
         }
+    }
+
+    /// The lists-with-sections vectors' bank fragment.
+    fn sections_fragment() -> Placements {
+        let bytes = fragment_of("sections-bank.hex");
+        read(&bytes).unwrap()
+    }
+
+    #[test]
+    fn section_records_match_the_spec_vectors() {
+        let placements = sections_fragment();
+        assert_eq!(placements.list[0].entry.kind(), Class::Sections);
+        let want = rows("sections-records.tsv");
+        assert_eq!(placements.records.len(), want.len());
+        for (i, (r, row)) in placements.records.iter().zip(&want).enumerate() {
+            let got = [
+                i.to_string(),
+                r.first.0.to_string(),
+                r.first.1.to_string(),
+                r.x.to_string(),
+                r.h.to_string(),
+                r.level_y(SECTIONS_BOTTOM).to_string(),
+                r.second.0.to_string(),
+                r.second.1.to_string(),
+            ];
+            assert_eq!(&got[..], &row[..], "record {i}");
+        }
+    }
+
+    /// The vectors' list as the engine's spots and sections.
+    fn engine_sections(p: &Placements) -> (Vec<Spot>, Sections) {
+        let spots = p
+            .list
+            .iter()
+            .map(|p| {
+                let e = p.entry;
+                match e.kind() {
+                    Class::Object => Spot::Object {
+                        x: i64::from(e.x),
+                        y: e.level_y(SECTIONS_BOTTOM),
+                        rows: e.needs_rows(),
+                    },
+                    Class::Group => Spot::Group {
+                        x: i64::from(e.x),
+                        first: i64::from(p.members[0].x),
+                        last: i64::from(p.members[p.members.len() - 1].x),
+                    },
+                    _ => Spot::Marker,
+                }
+            })
+            .collect();
+        let run = |(a, b): (u8, u8)| usize::from(a)..=usize::from(b);
+        let mut runs = vec![run(p.records[0].first)];
+        runs.extend(p.records.iter().map(|r| run(r.second)));
+        let joins = p
+            .records
+            .iter()
+            .map(|r| (i64::from(r.x), r.level_y(SECTIONS_BOTTOM)))
+            .collect();
+        (spots, Sections { runs, joins })
+    }
+
+    #[test]
+    fn section_appearances_match_the_spec_vectors() {
+        let placements = sections_fragment();
+        let (spots, sections) = engine_sections(&placements);
+        let window = Window {
+            across: -31..=288,
+            down: -31..=256,
+        };
+        let frames = rows("sections-frames.tsv");
+        let view = |row: &[String]| (row[1].parse().unwrap(), row[2].parse().unwrap());
+        let mut open = Opening::begin(&sections, view(&frames[0]).1);
+        // No object is ever removed.
+        let mut there = vec![None; spots.len()];
+        for (n, row) in frames.iter().enumerate() {
+            assert_eq!(row[0], n.to_string());
+            let up = open.step(&sections, &spots, &window, view(row), |i| {
+                there[i].is_some()
+            });
+            for &i in &up {
+                there[i] = Some(n);
+            }
+            let got: Vec<String> = up.iter().map(usize::to_string).collect();
+            let got = if got.is_empty() {
+                "-".to_string()
+            } else {
+                got.join(",")
+            };
+            assert_eq!(got, row[3], "frame {n}");
+        }
+        for row in rows("sections-appear.tsv") {
+            let i: usize = row[0].parse().unwrap();
+            let got = there[i].map_or("never".to_string(), |n| n.to_string());
+            assert_eq!(got, row[4], "entry {i}");
+        }
+    }
+
+    #[test]
+    fn class_15_entries_are_objects_and_class_9_places_nothing() {
+        let placements = sections_fragment();
+        let entities = placements.entities(SECTIONS_BOTTOM, |_| None);
+        // Entries 1–14: 13 objects and a group of 2.
+        assert_eq!(entities.len(), 15);
+        assert_eq!(entities[0].kind, "placed-a000");
+        assert_eq!(entities[0].at, Vec2::ints(100, 900));
+    }
+
+    #[test]
+    fn a_section_table_must_end_inside_its_bank() {
+        // A class 9 entry whose table is at 0x10: one record, then the end.
+        let mut bank = vec![9, 0, 0, 0, 0, 0, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        bank.extend([1, 1, 0, 0, 0, 0, 2, 2, 0, 0]);
+        let read = |bytes: &[u8]| Placements::read(|a| bytes.get(usize::from(a)..), 0);
+        assert_eq!(read(&bank).unwrap().records.len(), 1);
+        // Cut inside the end record's first two bytes, then inside the
+        // record.
+        assert!(read(&bank[..0x19]).is_err());
+        assert!(read(&bank[..0x14]).is_err());
+        assert!(Placements::read(|a| (a == 0).then_some(&bank[..]), 0).is_err());
     }
 
     #[test]

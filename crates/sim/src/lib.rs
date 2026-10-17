@@ -28,7 +28,8 @@
 //! near the view starts the [`Dimming`] of the level's background.
 //!
 //! With a preset that has one, a [`View`] follows the player, and
-//! walkers and throwers are in the level only near it.
+//! walkers and throwers are in the level only near it. Placed objects
+//! divided into [`Sections`] appear by the view's path ([`Opening`]).
 //!
 //! [`Script`] and [`run`] drive a world headlessly from recorded input,
 //! for tests and the `clamber-sim` command, and [`record`] writes what
@@ -50,6 +51,7 @@ mod pose;
 mod record;
 mod ride;
 mod script;
+mod sections;
 mod stinger;
 mod swap;
 mod swim;
@@ -83,6 +85,7 @@ pub use pose::{Air, Pose, PoseClock, Stance, hurt_pose, pose, stance};
 pub use record::record;
 pub use ride::{RidePart, Riding};
 pub use script::{InputFrame, Script};
+pub use sections::{Opening, Sections, Spot, Window};
 pub use swap::{Move, Other, Recent, Swap};
 pub use swim::swim_depth;
 pub use things::{DEFEATED_FRAMES, LAUNCH_REST};
