@@ -395,8 +395,10 @@ impl Ground {
     /// the ground of a surface in the band above, as it does for the
     /// ground below, so stacked cells have no gap between them.
     ///
-    /// In a ceiling grid only the floors are collision: what a ceiling
-    /// does to the player isn't specified yet.
+    /// In a ceiling grid a ceiling is solid ground from its band's top
+    /// line down to its ceiling line, which is the ground's underside, as
+    /// the swimming player meets it (`spec/behavior/swimming.md`). A
+    /// ceiling line below the band is cut to the band's bottom line.
     pub fn colliders(&self, xs: Range<i64>, surface: &str) -> Vec<Collider> {
         let mut colliders = Vec::new();
         let mut push = |shape| {
@@ -459,6 +461,46 @@ impl Ground {
                         points.extend([point(x1, last_top), point(x1, bottom), point(x0, bottom)]);
                         push(Shape::Solid { points, one_way });
                     }
+                    i = end;
+                }
+                // Each column's ceiling line.
+                let undersides: Vec<Option<i64>> = cell_xs
+                    .clone()
+                    .map(|x| match self.half(x, band) {
+                        Half::Ceiling { line, .. } => Some(line.min(bottom)),
+                        _ => None,
+                    })
+                    .collect();
+                let top = bottom - CELL;
+                let mut i = 0;
+                while i < undersides.len() {
+                    if undersides[i].is_none() {
+                        i += 1;
+                        continue;
+                    }
+                    let mut end = i + 1;
+                    while let Some(Some(_)) = undersides.get(end) {
+                        end += 1;
+                    }
+                    let x0 = cell_xs.start + i as i64;
+                    let x1 = cell_xs.start + end as i64;
+                    let mut points = vec![point(x0, top), point(x1, top)];
+                    let mut after = undersides[end - 1].unwrap();
+                    points.push(point(x1, after));
+                    for j in (i..end - 1).rev() {
+                        let before = undersides[j].unwrap();
+                        if before != after {
+                            let x = cell_xs.start + j as i64 + 1;
+                            points.push(point(x, after));
+                            points.push(point(x, before));
+                        }
+                        after = before;
+                    }
+                    points.push(point(x0, after));
+                    push(Shape::Solid {
+                        points,
+                        one_way: false,
+                    });
                     i = end;
                 }
             }
@@ -838,6 +880,35 @@ mod tests {
                 }
                 assert_eq!(spans.len(), found, "{grid} x {x}: {spans:?}");
             }
+        }
+    }
+
+    /// In a ceiling grid, each ceiling is solid from its band's top line
+    /// down to its ceiling line, or to the band's bottom line if that's
+    /// higher, and each floor is as in other grids.
+    #[test]
+    fn ceilings_are_solid_down_to_their_line() {
+        let ground = ceilings();
+        let collision = Collision::new(ground.colliders(0..ground.width(), "normal"));
+        for x in 0..ground.width() {
+            let middle = Fixed::from_int(x as i32) + Fixed::from_ratio_pow2(1, 1);
+            let spans: Vec<(i64, i64, bool)> = collision
+                .spans(middle)
+                .into_iter()
+                .map(|s| (s.top.floor(), s.bottom.floor(), s.one_way))
+                .collect();
+            let mut found = 0;
+            for band in 0..ground.bands() {
+                let bottom = CELL * band + CELL;
+                if let Half::Ceiling { line, .. } = ground.half(x, band) {
+                    let want = (bottom - CELL, line.min(bottom), false);
+                    assert!(spans.contains(&want), "x {x} band {band}: {spans:?}");
+                    found += 1;
+                } else if ground.surface(x, band).is_some() {
+                    found += 1;
+                }
+            }
+            assert_eq!(spans.len(), found, "x {x}: {spans:?}");
         }
     }
 

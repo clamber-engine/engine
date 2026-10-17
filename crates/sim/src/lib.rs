@@ -82,6 +82,7 @@ pub use pose::{Air, Pose, PoseClock, Stance, pose, stance};
 pub use record::record;
 pub use script::{InputFrame, Script};
 pub use swap::{Move, Other, Recent, Swap};
+pub use swim::swim_depth;
 pub use things::{DEFEATED_FRAMES, LAUNCH_REST};
 pub use throwers::BALL;
 pub use view::View;

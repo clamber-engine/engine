@@ -33,6 +33,13 @@ struct Depth {
     collider: usize,
 }
 
+/// How far a swimmer's point in `column` with its feet on line `feet` is
+/// in `level`'s ground, if it is: whole px, and whether that's to a
+/// ceiling (out of it is down) rather than a floor.
+pub fn swim_depth(level: &Level, column: i64, feet: i64) -> Option<(i64, bool)> {
+    depth(level, column, feet).map(|d| (d.px, d.ceiling))
+}
+
 /// The whole number `n` as a [`Fixed`].
 fn px(n: i64) -> Fixed {
     columns::left_edge(n)
