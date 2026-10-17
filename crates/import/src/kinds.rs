@@ -45,6 +45,8 @@ pub enum Kind {
     Stinger,
     /// A tyre that throws the player up.
     Tyre,
+    /// A sign: scenery that nothing touches (`signs.md`).
+    Sign,
     /// A hidden object the ground action strikes, releasing a bunch.
     HiddenBunch,
     /// A hidden object a long fall sets off, releasing a barrel.
@@ -54,7 +56,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 23] = [
+    pub const ALL: [Kind; 24] = [
         Kind::SmallWalker,
         Kind::MediumWalker,
         Kind::LargeWalker,
@@ -75,6 +77,7 @@ impl Kind {
         Kind::RestartBarrel,
         Kind::Stinger,
         Kind::Tyre,
+        Kind::Sign,
         Kind::HiddenBunch,
         Kind::HiddenBarrel,
         Kind::HiddenMetalBarrel,
@@ -103,6 +106,7 @@ impl Kind {
             Kind::RestartBarrel => "restart-barrel",
             Kind::Stinger => "stinger",
             Kind::Tyre => "tyre",
+            Kind::Sign => "sign",
             Kind::HiddenBunch => "hidden-bunch",
             Kind::HiddenBarrel => "hidden-barrel",
             Kind::HiddenMetalBarrel => "hidden-metal-barrel",
@@ -193,6 +197,9 @@ impl Kind {
             // tyre.md's values are the archetype's own. The first level
             // has none.
             Kind::Tyre => "spring",
+            // signs.md: it has no values of its own. How it's drawn isn't
+            // covered, so both of the first level's signs look the same.
+            Kind::Sign => "signpost",
             // hidden-objects.md: a hidden bunch's values are the
             // archetype's own.
             Kind::HiddenBunch => HIDDEN,
@@ -413,6 +420,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::Stinger,
             ),
             (
+                "a589d75d56211618a7b72120ff23715bf7dbfce7afe68a106e75170cc54be675",
+                Kind::EndMarker,
+            ),
+            (
                 "b0b7540b3c061784c8c319b69b0c7db7ed9c67a84d094cefd7b05fa52dcbe7a4",
                 Kind::SmallWalker,
             ),
@@ -441,6 +452,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::EndMarker,
             ),
             (
+                "e332f1969a9e6ec35546e8ef037006fd8d1d4bbc9933646879072cc1f3a10009",
+                Kind::Sign,
+            ),
+            (
                 "f44d17c1cc692790ebee841de128717e08b078d09eb11b1931a12c05fbe5c81c",
                 Kind::Stinger,
             ),
@@ -451,6 +466,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "f85e5c914a63c73583c210056c33f883bcd8fecee32b42323bb458fb6f174819",
                 Kind::Ball,
+            ),
+            (
+                "fc06b850598f866e68da84373087bd70260e200cd74a79edd39e9ee7612b91e3",
+                Kind::Sign,
             ),
         ],
         _ => &[],
@@ -585,7 +604,7 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 41);
+        assert_eq!(want.len(), 44);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }
@@ -651,6 +670,7 @@ mod tests {
                 (Kind::Tyre, behavior) => {
                     assert!(matches!(behavior, Behavior::Spring(_)), "{kind}")
                 }
+                (Kind::Sign, behavior) => assert_eq!(behavior, Behavior::Scenery, "{kind}"),
                 (Kind::HiddenBunch, Behavior::Hidden(h)) => {
                     assert_eq!((h.fall_height, h.becomes), (0, "cluster"))
                 }

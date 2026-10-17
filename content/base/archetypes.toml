@@ -381,6 +381,10 @@
 #   it round in `turn_frames`, facing the other way from the
 #   `turn_facing`th. Jump with Left or Right jumps off at `jump_speed` up,
 #   plus one frame's climbing toward the target without Jump.
+# - `scenery`: stands where it's placed and nothing touches it: it isn't
+#   in anyone's way, never hurts and is never taken. With a view, it's in
+#   the level while its position is near the view, as a thrower is, and
+#   comes back each time it's near again.
 #
 # The player defeats an enemy by landing on it, and bounces off, or by
 # rolling into it. Touching one any other way costs a life.
@@ -874,3 +878,10 @@ air = [-22, 28, -6, 54]
 air_below = []
 jump_early = 6
 land_hold = 0
+
+# title-1's sign (spec/behavior/signs.md): scenery. The size is Clamber's
+# own: it's what's drawn, and touches nothing.
+[archetypes.signpost]
+behavior = "scenery"
+size = [32, 40]
+offset = 0

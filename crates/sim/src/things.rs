@@ -446,7 +446,8 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         | Behavior::Entrance(_)
         | Behavior::Hidden(_)
         | Behavior::Spring(_)
-        | Behavior::Rope(_) => {}
+        | Behavior::Rope(_)
+        | Behavior::Scenery => {}
     }
     false
 }
@@ -1214,7 +1215,8 @@ fn interact(
             | Behavior::Entrance(_)
             | Behavior::Hidden(_)
             | Behavior::Spring(_)
-            | Behavior::Rope(_) => {}
+            | Behavior::Rope(_)
+            | Behavior::Scenery => {}
             _ if riding => {}
             _ => {
                 let middle = Fixed::from_bits((area.1.to_bits() + area.3.to_bits()) / 2);

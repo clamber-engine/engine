@@ -5,7 +5,8 @@ use std::sync::Arc;
 use clamber_level::{Area, Depth, Layer, Shape, Vec2};
 use clamber_pack::Feel;
 use clamber_sim::{
-    DIM, END, EXIT, Facing, FlowEvent, HALF_WIDTH, HEIGHT, HIDDEN, InputFrame, State, World, step,
+    Behavior, DIM, END, EXIT, Facing, FlowEvent, HALF_WIDTH, HEIGHT, HIDDEN, InputFrame, State,
+    World, step,
 };
 
 use crate::camera::{Camera, VIEW, point};
@@ -224,10 +225,40 @@ impl Game {
             }
         }
 
+        self.draw_things(canvas, &to_screen, false);
+
+        self.draw_kegs(canvas, &to_screen);
+
+        if !behind {
+            self.draw_characters(canvas, alpha, origin);
+        }
+        self.draw_things(canvas, &to_screen, true);
+        self.art.draw(canvas, level, Depth::Front, origin, dim);
+        draw_hud(canvas, &self.world);
+        self.draw_relic_image(canvas);
+        let (now, full) = self.world.brightness();
+        if now < full {
+            let dark = 255 * (full - now) / full;
+            canvas.shade(BLACK, dark as u8);
+        }
+    }
+
+    /// The things in the level: scenery, which is drawn over the
+    /// characters (signs.md), or everything else.
+    fn draw_things(
+        &self,
+        canvas: &mut dyn Surface,
+        to_screen: &dyn Fn((f64, f64)) -> (f64, f64),
+        scenery: bool,
+    ) {
         for (thing, pose) in self.world.things.iter().zip(&self.poses.things) {
             // The end marker, exits, the dimming's entity and hidden
             // objects aren't drawn.
+            let is_scenery = thing
+                .archetype
+                .is_some_and(|a| a.behavior == Behavior::Scenery);
             if !thing.active
+                || is_scenery != scenery
                 || ([END, EXIT, DIM, HIDDEN].contains(&thing.kind.as_str()) && !self.debug)
             {
                 continue;
@@ -243,20 +274,6 @@ impl Game {
                 canvas.stroke_rect(x - half, y - half, ENTITY_BOX, ENTITY_BOX, ENTITY);
                 canvas.plot(x, y, ENTITY);
             }
-        }
-
-        self.draw_kegs(canvas, &to_screen);
-
-        if !behind {
-            self.draw_characters(canvas, alpha, origin);
-        }
-        self.art.draw(canvas, level, Depth::Front, origin, dim);
-        draw_hud(canvas, &self.world);
-        self.draw_relic_image(canvas);
-        let (now, full) = self.world.brightness();
-        if now < full {
-            let dark = 255 * (full - now) / full;
-            canvas.shade(BLACK, dark as u8);
         }
     }
 

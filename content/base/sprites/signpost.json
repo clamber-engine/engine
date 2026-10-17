@@ -1,0 +1,53 @@
+{
+  "frames": [
+    {
+      "filename": "signpost stand 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 152,
+        "h": 192
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 21,
+        "y": 30,
+        "w": 152,
+        "h": 192
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 240
+      },
+      "duration": 100,
+      "ticks": 6
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "signpost.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 156,
+      "h": 196
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "stand",
+        "from": 0,
+        "to": 0,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 100,
+        "y": 220
+      },
+      "scale": 5,
+      "normals": "signpost-normals.png"
+    }
+  }
+}

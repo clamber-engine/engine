@@ -147,6 +147,10 @@ pub enum Behavior {
     /// turns round, jumps off and slides off the end of (see
     /// [`rope`](crate::rope)).
     Rope(Rope),
+    /// Scenery: it stands where it's placed and nothing touches it. With
+    /// a view, it appears and is removed as a thrower does, and comes
+    /// back each time its start is near the view again (signs.md).
+    Scenery,
 }
 
 /// A spring (spec/behavior/tyre.md). It never moves. Offsets from it are
@@ -1150,6 +1154,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "rider",
         ],
         "patrol" => &["path", "period"],
+        "scenery" => &[],
         "launcher" => &["velocity"],
         "carry" => &[
             "reach",
@@ -1633,6 +1638,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         "hidden" => Behavior::Hidden(parse_hidden(table, path)?),
         "spring" => Behavior::Spring(parse_spring(table, path)?),
         "rope" => Behavior::Rope(parse_rope(table, path)?),
+        "scenery" => Behavior::Scenery,
         _ => Behavior::Launcher {
             velocity: pair("velocity")?,
         },

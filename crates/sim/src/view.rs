@@ -427,6 +427,9 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 /// Stingers appear and are removed as walkers on their own do, and come
 /// back afresh (stinger.md).
 ///
+/// Scenery appears and is removed as throwers are, and comes back each
+/// time its start is near the view again (signs.md).
+///
 /// In a level with sections, its things in them appear only by the
 /// sections' rules ([`Placing`]), as walkers, throwers, balls and
 /// stingers otherwise would; other things there appear as they are
@@ -507,12 +510,15 @@ pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) 
         let start_near = near(start.x.floor(), left, &physics);
         let by_view = in_spot(thing.index).is_none();
         match archetype.behavior {
-            Behavior::Thrower { .. } | Behavior::Ball(_) | Behavior::Stinger(_)
+            Behavior::Thrower { .. }
+            | Behavior::Ball(_)
+            | Behavior::Stinger(_)
+            | Behavior::Scenery
                 if appear && by_view && start_near =>
             {
                 arrive(thing, start);
             }
-            Behavior::Thrower { .. }
+            Behavior::Thrower { .. } | Behavior::Scenery
                 if !appear && thing.active && far(start.x.floor(), left, &physics) =>
             {
                 thing.active = false;
@@ -570,8 +576,8 @@ fn arrive(thing: &mut Thing, start: Vec2) {
 
 /// Whether each thing is in the level at the start of a level with a
 /// view whose left edge is at `left`: walkers only when their start, or
-/// another start in their group, is near the view, throwers and
-/// stingers only when theirs is, and balls not yet; everything else is.
+/// another start in their group, is near the view, throwers, stingers
+/// and scenery only when theirs is, and balls not yet; everything else is.
 pub(crate) fn at_start(things: &[Thing], level: &Level, left: i64, physics: &Physics) -> Vec<bool> {
     let walker = |thing: &Thing| match thing.archetype.map(|a| a.behavior) {
         Some(Behavior::Walker { group, .. }) => Some(group),
@@ -586,7 +592,9 @@ pub(crate) fn at_start(things: &[Thing], level: &Level, left: i64, physics: &Phy
         .iter()
         .map(|t| match t.archetype.map(|a| a.behavior) {
             Some(Behavior::Walker { group, .. }) => near_start(t) || near_groups.contains(&group),
-            Some(Behavior::Thrower { .. } | Behavior::Stinger(_)) => near_start(t),
+            Some(Behavior::Thrower { .. } | Behavior::Stinger(_) | Behavior::Scenery) => {
+                near_start(t)
+            }
             Some(Behavior::Ball(_)) => false,
             _ => true,
         })
