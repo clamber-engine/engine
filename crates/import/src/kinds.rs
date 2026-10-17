@@ -32,6 +32,8 @@ pub enum Kind {
     /// An object that can be carried and holds the missing character.
     Holder,
     EndMarker,
+    /// The place the characters come out of when the level begins.
+    Entrance,
     /// A crate holding an animal.
     AnimalCrate,
     /// The restart barrel, which marks the level's restart point.
@@ -48,7 +50,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 20] = [
+    pub const ALL: [Kind; 21] = [
         Kind::SmallWalker,
         Kind::MediumWalker,
         Kind::LargeWalker,
@@ -62,6 +64,7 @@ impl Kind {
         Kind::Barrel,
         Kind::Holder,
         Kind::EndMarker,
+        Kind::Entrance,
         Kind::AnimalCrate,
         Kind::RestartBarrel,
         Kind::Stinger,
@@ -87,6 +90,7 @@ impl Kind {
             Kind::Barrel => "barrel",
             Kind::Holder => "holder",
             Kind::EndMarker => "end-marker",
+            Kind::Entrance => "entrance",
             Kind::AnimalCrate => "animal-crate",
             Kind::RestartBarrel => "restart-barrel",
             Kind::Stinger => "stinger",
@@ -159,6 +163,9 @@ impl Kind {
                 "crate"
             }
             Kind::EndMarker => END,
+            // level-start.md: where the characters start is the level's
+            // start record's point, not this entry's.
+            Kind::Entrance => ENTRANCE,
             // animal-crate.md's values are the archetype's own.
             Kind::AnimalCrate => "hutch",
             // stinger.md doesn't cover how a level's stingers get their
@@ -237,6 +244,10 @@ pub const WALKER: &str = "crawler";
 
 /// The kind of entity that marks the end of a level, as in `clamber-sim`.
 pub const END: &str = "end";
+
+/// The kind of entity that marks the level's entrance. The simulation
+/// doesn't act on it yet.
+pub const ENTRANCE: &str = "entrance";
 
 /// The archetype hidden objects are, as in `clamber-sim`.
 pub const HIDDEN: &str = "hidden";
@@ -354,6 +365,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "814362811b6cd4c8fc220ee7fbd04eb626f6837ef7d7e5dc0027700380948338",
                 Kind::Bunch,
+            ),
+            (
+                "8aad3408aa49bd9ceda4b82bd21591b32c7417dd4d4971eba27e30fd47eaf42c",
+                Kind::Entrance,
             ),
             (
                 "9338801286daea12e1f30fd2478b61a44ef3325da9a893f865e2dff0b43c9cc7",
@@ -540,7 +555,7 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 37);
+        assert_eq!(want.len(), 38);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }
@@ -556,6 +571,10 @@ mod tests {
             let (name, params) = kind.entity();
             if kind == Kind::EndMarker {
                 assert_eq!(name, END);
+                continue;
+            }
+            if kind == Kind::Entrance {
+                assert_eq!(name, ENTRANCE);
                 continue;
             }
             let entity = Entity {

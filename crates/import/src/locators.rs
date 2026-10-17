@@ -18,13 +18,15 @@ pub enum Data {
     PictureTable,
     FrameTable,
     PlacementList,
+    StartRecord,
+    RestartRecord,
     MapPoints,
     MapCorners,
     PackedMap,
 }
 
 impl Data {
-    pub const ALL: [Data; 15] = [
+    pub const ALL: [Data; 17] = [
         Data::SampleTable,
         Data::SharedSampleList,
         Data::SampleSetTable,
@@ -37,6 +39,8 @@ impl Data {
         Data::PictureTable,
         Data::FrameTable,
         Data::PlacementList,
+        Data::StartRecord,
+        Data::RestartRecord,
         Data::MapPoints,
         Data::MapCorners,
         Data::PackedMap,
@@ -57,6 +61,8 @@ impl Data {
             Data::PictureTable => "Level graphics: the first level's picture table",
             Data::FrameTable => "Sprite frames: the frame table",
             Data::PlacementList => "Placements: the first level's placement list",
+            Data::StartRecord => "Level start: the first level's start record",
+            Data::RestartRecord => "Level start: the first level's restart record",
             Data::MapPoints => "Level map: point tables",
             Data::MapCorners => "Level map: corner records",
             Data::PackedMap => "Level ground: the first level's packed map",
@@ -79,6 +85,8 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
         ("title-1", Data::PictureTable) => (0xD9, 0xA3C0),
         ("title-1", Data::FrameTable) => (0xFB, 0xCC9C),
         ("title-1", Data::PlacementList) => (0xFD, 0x95DC),
+        ("title-1", Data::StartRecord) => (0xFC, 0xBF78),
+        ("title-1", Data::RestartRecord) => (0xFC, 0xBFB4),
         ("title-1", Data::MapPoints) => (0xFC, 0xF47B),
         ("title-1", Data::MapCorners) => (0xC0, 0xD13C),
         ("title-2", Data::PackedMap) => (0xE3, 0xE006),
