@@ -118,7 +118,7 @@ pub(crate) fn hurt_ahead(world: &World) -> Option<usize> {
                 return false;
             };
             let contact = stinger.contact;
-            let reach = contact.reach(pose::pose(player, &contact), player.facing, 0);
+            let reach = contact.reach(pose::pose(player, &contact.poses), player.facing, 0);
             reach.contains(x - t.pos.x.floor(), y - ceil(t.pos.y))
         })
         .map(|t| t.index)

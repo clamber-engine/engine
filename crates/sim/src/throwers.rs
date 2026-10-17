@@ -18,11 +18,18 @@
 //! (spec/behavior/ball-contact.md); it isn't affected itself, and goes on
 //! moving while the player is knocked out, which the spec doesn't cover.
 //! It can hurt on the step it appears, which the spec doesn't cover
-//! either. The thrower doesn't touch the player, and neither touches
-//! thrown objects or other enemies: the spec doesn't cover what they do
-//! then yet (clamber-engine/spec#19). A ball passes through walls, and
-//! rising into a floor from below, through that, which the spec doesn't
-//! cover either.
+//! either. A thrower with a [`ThrowerContact`](crate::ThrowerContact)
+//! hurts the player as [`thrower_hurt_ahead`] says, and is bounced on as
+//! [`bounced_on`] says, which knocks it out
+//! (spec/behavior/thrower-contact.md). Neither touches other enemies. A
+//! ball passes through walls, and rising into a floor from below,
+//! through that, which the spec doesn't cover either.
+//!
+//! Engine choices where thrower-contact.md says nothing: crouching and
+//! the fidget pose take the upright range and a rolling player isn't
+//! hurt (one rolling through its place on the ledge wasn't seen to be);
+//! a knocked-out thrower doesn't touch the player; and a rider, or a
+//! player on a bounce's frozen frames, doesn't bounce on it.
 
 use clamber_fixed::Fixed;
 use clamber_level::{Level, Vec2};
@@ -31,9 +38,9 @@ use clamber_pack::{Param, Physics};
 use crate::archetype::{Archetypes, Ball, Behavior};
 use crate::columns;
 use crate::player::{Facing, ceil};
-use crate::pose;
+use crate::pose::{self, Pose};
 use crate::view::View;
-use crate::world::{Phase, Thing, World};
+use crate::world::{Event, Phase, Thing, World};
 
 /// The kind of the things throwers throw. Its archetype says how they
 /// move.
@@ -246,9 +253,100 @@ pub(crate) fn hurt_ahead(world: &World) -> Option<usize> {
             else {
                 return false;
             };
-            let pose = pose::pose(player, &contact);
+            let pose = pose::pose(player, &contact.poses);
             let reach = contact.reach(pose, player.facing, t.clock.saturating_sub(1));
             reach.contains(x - t.pos.x.floor(), y - ceil(t.pos.y))
+        })
+        .map(|t| t.index)
+}
+
+/// The thrower that hurts the player on the next step, if any: one with
+/// a [`ThrowerContact`](crate::ThrowerContact) that isn't knocked out,
+/// whose offsets from the player at the end of this step are within the
+/// range for the player's pose and facing then. On its ledge (on the
+/// ground with `above` at `ledge`) only `across` counts, and not on the
+/// step the player landed on. Not when the next step is the one before
+/// one of its throws, nor after a step on which the player bounced.
+pub(crate) fn thrower_hurt_ahead(world: &World) -> Option<usize> {
+    let player = &world.player;
+    if world.events.contains(&Event::Bounce) {
+        return None;
+    }
+    let x = player.pos.x.floor();
+    let y = ceil(player.pos.y);
+    world
+        .things
+        .iter()
+        .filter(|t| t.active && t.phase == Phase::Ready)
+        .find(|t| {
+            let Some(Behavior::Thrower {
+                period,
+                throws,
+                throw_count,
+                contact: Some(contact),
+                ..
+            }) = t.archetype.map(|a| a.behavior)
+            else {
+                return false;
+            };
+            // Its clock is already the next step's frame.
+            let before = (t.clock + 1) % period;
+            if throws[..usize::from(throw_count)]
+                .iter()
+                .any(|t| t.frame == before)
+            {
+                return false;
+            }
+            let range = match pose::pose(player, &contact.poses) {
+                Pose::Rolling => return false,
+                Pose::Airborne => contact.airborne,
+                Pose::Upright | Pose::Crouching | Pose::Fidget => contact.upright,
+            };
+            let mut range = contact.facing(range, player.facing);
+            let above = y - ceil(t.pos.y);
+            if player.grounded() && above == i64::from(contact.ledge) {
+                if player.pose.since_land == Some(0) {
+                    return false;
+                }
+                range.above = (contact.ledge, contact.ledge);
+            }
+            range.contains(x - t.pos.x.floor(), above)
+        })
+        .map(|t| t.index)
+}
+
+/// The thrower the player bounces off on this step, if any: one with a
+/// [`ThrowerContact`](crate::ThrowerContact) that isn't knocked out, with
+/// the player in the air after its move, not rising at `max_rise` or
+/// faster, and its offsets from the thrower then within `bounce` for its
+/// facing.
+pub(crate) fn bounced_on(world: &World, max_rise: Fixed) -> Option<usize> {
+    let player = &world.player;
+    let rising_fast = if max_rise > Fixed::ZERO {
+        player.vel.y <= -max_rise
+    } else {
+        player.vel.y.is_negative()
+    };
+    if player.grounded() || rising_fast {
+        return None;
+    }
+    let x = player.pos.x.floor();
+    let y = ceil(player.pos.y);
+    world
+        .things
+        .iter()
+        .filter(|t| t.active && t.phase == Phase::Ready)
+        .find(|t| {
+            let Some(Behavior::Thrower {
+                contact: Some(contact),
+                ..
+            }) = t.archetype.map(|a| a.behavior)
+            else {
+                return false;
+            };
+            contact
+                .facing(contact.bounce, player.facing)
+                .contains(x - t.pos.x.floor(), y - ceil(t.pos.y))
         })
         .map(|t| t.index)
 }

@@ -131,6 +131,8 @@ pub enum Behavior {
         /// How it leaves once knocked out: as a defeated walker, never
         /// knocked back.
         defeat: Fall,
+        /// When it hurts the player or is bounced on, if it does.
+        contact: Option<ThrowerContact>,
     },
     /// A ball that flies, bounces on floors and drops through them (see
     /// [`throwers`](crate::throwers)).
@@ -680,6 +682,14 @@ pub struct Contact {
     /// Only the first `turn_parts` are used.
     pub turn: [(u32, i32, i32); MAX_TURN_PARTS],
     pub turn_parts: u8,
+    pub poses: Poses,
+}
+
+/// When the player has which [`Pose`](crate::Pose), for a ball's or a
+/// thrower's ranges (spec/behavior/ball-contact.md, "Which pose the
+/// player has").
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Poses {
     /// A jump has the upright pose on the frames up to this many after
     /// the one it starts on, and the airborne one after.
     pub upright_jump: u8,
@@ -696,10 +706,53 @@ pub struct Contact {
     pub fidget_time: (u32, u32, u32),
 }
 
+/// When a thrower hurts the player or is bounced on
+/// (spec/behavior/thrower-contact.md), by offsets as a ball's: `across`,
+/// the player's `x` less the thrower's, both rounded down, and `above`,
+/// the player's `y` less the thrower's, both rounded up.
+///
+/// When the player's offsets at the end of a step are within the range
+/// for its pose then, it's hurt on the next step: `upright`, or
+/// `airborne`; crouching and the fidget take `upright`'s, and a rolling
+/// player isn't hurt. On the ground with `above` at `ledge`, on the
+/// thrower's ledge, only `across` counts, and not at the end of the step
+/// the player lands on. Not on the step before one of the thrower's
+/// throws, though, nor on the one after a bounce.
+///
+/// A player in the air, not rising at the preset's `bounce_max_rise` or
+/// faster, bounces off it with its offsets after its move within
+/// `bounce`, which knocks it out.
+///
+/// Facing left, each `across` turns around: from `mirror` less its high
+/// end to `mirror` less its low end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ThrowerContact {
+    pub upright: Offsets,
+    pub airborne: Offsets,
+    pub ledge: i32,
+    pub bounce: Offsets,
+    pub mirror: i32,
+    pub poses: Poses,
+}
+
+impl ThrowerContact {
+    /// `offsets`, for facing right, for a player facing `facing`.
+    pub fn facing(&self, offsets: Offsets, facing: Facing) -> Offsets {
+        let (from, to) = offsets.across;
+        match facing {
+            Facing::Right => offsets,
+            Facing::Left => Offsets {
+                across: (self.mirror - to, self.mirror - from),
+                above: offsets.above,
+            },
+        }
+    }
+}
+
 /// The most parts a ball's turn can have.
 pub const MAX_TURN_PARTS: usize = 8;
 
-/// How many ways into the air [`Contact::land_hold`] tells apart.
+/// How many ways into the air [`Poses::land_hold`] tells apart.
 pub const AIR_KINDS: usize = 5;
 
 /// Offsets of the player from a ball that it reaches, facing right, in
@@ -1228,6 +1281,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "defeat_jump",
             "defeat_gravity",
             "defeat_max_fall",
+            "contact",
         ],
         "ball" => &[
             "velocity",
@@ -1700,6 +1754,10 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 throw_count: items.len() as u8,
                 from: pair("throw_from")?,
                 defeat,
+                contact: match table.get("contact") {
+                    None => None,
+                    Some(v) => Some(parse_thrower_contact(v, &format!("{path}.contact"))?),
+                },
             }
         }
         "ball" => {
@@ -2683,7 +2741,6 @@ fn parse_contact(value: &Value, path: &str) -> Result<Contact, String> {
             above: (n[2], n[3]),
         })
     };
-    let frames = |v: &Value, at: &str| count(v, at, i64::from(u8::MAX)).map(|n| n as u8);
 
     let parts = match get("turn")? {
         Value::Array(items) if items.len() <= MAX_TURN_PARTS => items,
@@ -2709,6 +2766,98 @@ fn parse_contact(value: &Value, path: &str) -> Result<Contact, String> {
         );
     }
 
+    Ok(Contact {
+        upright: offsets("upright")?,
+        airborne: offsets("airborne")?,
+        rolling: offsets("rolling")?,
+        crouching: offsets("crouching")?,
+        fidget: offsets("fidget")?,
+        mirror: whole(get("mirror")?, &format!("{path}.mirror"))?,
+        turn,
+        turn_parts: parts.len() as u8,
+        poses: parse_poses(table, path)?,
+    })
+}
+
+/// Reads a thrower's [`ThrowerContact`] table. Errors start with `path`.
+fn parse_thrower_contact(value: &Value, path: &str) -> Result<ThrowerContact, String> {
+    let Value::Table(table) = value else {
+        return Err(format!("{path}: expected a table"));
+    };
+    const KEYS: &[&str] = &[
+        "upright",
+        "airborne",
+        "ledge",
+        "bounce",
+        "mirror",
+        "upright_jump",
+        "land_hold",
+        "roll_after",
+        "fidget_time",
+    ];
+    if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
+        return Err(format!("{path}.{key}: no such value"));
+    }
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let whole = |key: &str| match get(key)? {
+        Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+        _ => Err(format!("{path}.{key}: expected a whole number")),
+    };
+    let offsets = |key: &str| -> Result<Offsets, String> {
+        let at = format!("{path}.{key}");
+        let n = match get(key)? {
+            Value::Array(items) if items.len() == 4 => items
+                .iter()
+                .map(|v| match v {
+                    Value::Integer(n) if i32::try_from(*n).is_ok() => Some(*n as i32),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>(),
+            _ => None,
+        }
+        .ok_or_else(|| format!("{at}: expected a list of 4 whole numbers"))?;
+        if n[0] > n[1] || n[2] > n[3] {
+            return Err(format!("{at}: a range ends before it starts"));
+        }
+        Ok(Offsets {
+            across: (n[0], n[1]),
+            above: (n[2], n[3]),
+        })
+    };
+    Ok(ThrowerContact {
+        upright: offsets("upright")?,
+        airborne: offsets("airborne")?,
+        ledge: whole("ledge")?,
+        bounce: offsets("bounce")?,
+        mirror: whole("mirror")?,
+        poses: parse_poses(table, path)?,
+    })
+}
+
+/// Reads the [`Poses`] timings in a ball's or a thrower's contact
+/// `table`. Errors start with `path`.
+fn parse_poses(table: &Table, path: &str) -> Result<Poses, String> {
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let count = |v: &Value, at: &str, most: i64| match v {
+        Value::Integer(n) if (0..=most).contains(n) => Ok(*n),
+        _ => Err(format!("{at}: expected a whole number, 0 to {most}")),
+    };
+    let list = |key: &str, len: usize| -> Result<&Vec<Value>, String> {
+        match get(key)? {
+            Value::Array(items) if items.len() == len => Ok(items),
+            _ => Err(format!("{path}.{key}: expected a list of {len}")),
+        }
+    };
+    let frames = |v: &Value, at: &str| count(v, at, i64::from(u8::MAX)).map(|n| n as u8);
+
     let Value::Table(hold) = get("land_hold")? else {
         return Err(format!("{path}.land_hold: expected a table"));
     };
@@ -2731,15 +2880,7 @@ fn parse_contact(value: &Value, path: &str) -> Result<Contact, String> {
             count(v, &format!("{path}.fidget_time[{i}]"), i64::from(u32::MAX)).map(|n| n as u32)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(Contact {
-        upright: offsets("upright")?,
-        airborne: offsets("airborne")?,
-        rolling: offsets("rolling")?,
-        crouching: offsets("crouching")?,
-        fidget: offsets("fidget")?,
-        mirror: whole(get("mirror")?, &format!("{path}.mirror"))?,
-        turn,
-        turn_parts: parts.len() as u8,
+    Ok(Poses {
         upright_jump: frames(get("upright_jump")?, &format!("{path}.upright_jump"))?,
         land_hold,
         roll_after: (

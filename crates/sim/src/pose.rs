@@ -3,7 +3,7 @@
 //!
 //! [`PoseClock`] keeps the facts a pose is read from up to date on every
 //! step, after the player moves; [`pose`] reads the pose from them with
-//! a ball's [`Contact`] timings.
+//! a ball's or a thrower's [`Poses`] timings.
 //!
 //! Engine choices where the spec says nothing:
 //!
@@ -44,7 +44,7 @@ use clamber_fixed::Fixed;
 
 use clamber_pack::{Param, Physics};
 
-use crate::archetype::{Contact, WalkerContact};
+use crate::archetype::{Poses, WalkerContact};
 use crate::player::{Player, State};
 use crate::world::Event;
 
@@ -89,7 +89,7 @@ pub enum Air {
 }
 
 impl Air {
-    /// Its place in [`Contact::land_hold`].
+    /// Its place in [`Poses::land_hold`].
     pub fn index(self) -> usize {
         self as usize
     }
@@ -250,12 +250,12 @@ pub fn stance(player: &Player, contact: &WalkerContact, physics: &Physics) -> Op
     })
 }
 
-/// The pose `player` has at the end of the last step, by `contact`'s
+/// The pose `player` has at the end of the last step, by `poses`'
 /// timings.
-pub fn pose(player: &Player, contact: &Contact) -> Pose {
+pub fn pose(player: &Player, poses: &Poses) -> Pose {
     let clock = player.pose;
     if let Some(age) = player.jump_age {
-        return if age <= contact.upright_jump {
+        return if age <= poses.upright_jump {
             Pose::Upright
         } else {
             Pose::Airborne
@@ -266,11 +266,11 @@ pub fn pose(player: &Player, contact: &Contact) -> Pose {
     let upright = clock.upright_fall && clock.air == Air::Fall;
     let held = clock
         .since_land
-        .is_some_and(|n| n <= contact.land_hold[clock.air.index()]);
+        .is_some_and(|n| n <= poses.land_hold[clock.air.index()]);
     if !upright && (!player.grounded() || held) {
         return Pose::Airborne;
     }
-    let (on, stopped) = contact.roll_after;
+    let (on, stopped) = poses.roll_after;
     let rolled = clock
         .rolled
         .is_some_and(|(n, ran_on)| n <= if ran_on { on } else { stopped });
@@ -280,7 +280,7 @@ pub fn pose(player: &Player, contact: &Contact) -> Pose {
     if player.crouch.held > 0 && player.ground_action.is_none() {
         return Pose::Crouching;
     }
-    if fidgeting(&clock, contact.fidget_time) {
+    if fidgeting(&clock, poses.fidget_time) {
         return Pose::Fidget;
     }
     Pose::Upright

@@ -80,7 +80,7 @@ impl Play {
     }
 
     fn pose(&self) -> Pose {
-        pose(&self.world.player, &contact())
+        pose(&self.world.player, &contact().poses)
     }
 }
 

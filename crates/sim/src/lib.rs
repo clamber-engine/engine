@@ -96,8 +96,9 @@ pub use archetype::{
     AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
     Entrance, Fall, HIDDEN_ITEMS, Hidden, Hit, Holder, Hutch, KEG_PIECES, Keg, MAX_AIR_STEPS,
     MAX_ARRIVE_RULES, MAX_HOP_STEPS, MAX_LETTERS, MAX_RESPONSE_PARTS, MAX_SHAKE_STAGES,
-    MAX_SPRING_RUNS, MAX_STRIKE_FRAMES, MAX_THROWS, MAX_TURN_PARTS, Offsets, Opens, Reach,
-    Response, Ride, RiderReach, Rope, Sling, Span, Spring, Stinger, Throw, WalkerContact,
+    MAX_SPRING_RUNS, MAX_STRIKE_FRAMES, MAX_THROWS, MAX_TURN_PARTS, Offsets, Opens, Poses, Reach,
+    Response, Ride, RiderReach, Rope, Sling, Span, Spring, Stinger, Throw, ThrowerContact,
+    WalkerContact,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;

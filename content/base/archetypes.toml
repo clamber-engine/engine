@@ -124,7 +124,22 @@
 #   and starts its timetable again each time it appears. Knocked out (by
 #   the ground action), it stops throwing and leaves as a defeated walker
 #   does, by `defeat_jump`, `defeat_gravity` and `defeat_max_fall`.
-#   It doesn't touch the player or anything else yet; its balls can.
+#   With a `contact` table, it hurts the player, on the next frame, when
+#   the player's offsets from it at the end of a frame are within the
+#   range for the player's pose then, `[across from, to, above from,
+#   to]` as a ball's: `upright`, or `airborne` (the poses and their
+#   timings are a ball's; crouching and the fidget take `upright`'s, and
+#   a rolling player isn't hurt). On the ground with `above` at `ledge`,
+#   on its ledge, only `across` counts, and not at the end of the frame
+#   the player lands on. It doesn't hurt on the frame before one of its
+#   throws, nor on the frame after a bounce. A player in the air after
+#   its move, not rising at the preset's `bounce_max_rise` or faster,
+#   with its offsets then within `bounce`, bounces off it (as off a
+#   walker, by the preset's `bounce_speed` and `bounce_freeze`), which
+#   knocks it out; it holds still on the bounce's frozen frames. Facing
+#   left, each `across` turns around as a ball's, by `mirror`. Knocked
+#   out, it touches nothing. Without `contact`, it doesn't touch the
+#   player; its balls can.
 # - `ball`: falls under `gravity`, up to `max_fall`; nothing changes its
 #   speed across. Its floor is the highest in the 1-px column of its x
 #   that's no more than `floor_reach` above where it was at the start of
@@ -565,6 +580,20 @@ throw_from = [0, -8]
 defeat_jump = 5
 defeat_gravity = 0.4375
 defeat_max_fall = 8
+
+# spec/behavior/thrower-contact.md, whose U is `above` turned around.
+# Crouching, the fidget and rolling on its ledge, and the knocked-out
+# thrower, aren't covered.
+[archetypes.thrower.contact]
+upright = [-26, 33, -14, 33]
+airborne = [-26, 30, 7, 50]
+ledge = 1
+bounce = [-28, 43, -27, 20]
+mirror = 1
+upright_jump = 5
+land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }
+roll_after = [3, 9]
+fidget_time = [239, 180, 457]
 
 [archetypes.ball]
 behavior = "ball"

@@ -191,7 +191,7 @@ pub(crate) fn touch(world: &mut World) {
             return None;
         }
         let contact = keg.contact;
-        let reach = contact.reach(pose::pose(player, &contact), player.facing, 0);
+        let reach = contact.reach(pose::pose(player, &contact.poses), player.facing, 0);
         reach
             .contains(x - t.pos.x.floor(), feet - ceil(t.pos.y))
             .then_some((t.index, t.pos, keg))

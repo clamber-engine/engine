@@ -24,6 +24,9 @@
 //!   `roll` range, is rolled into. With `roll_defeat_holds_walkers`, it
 //!   then doesn't move on that frame, and every walker holds still on
 //!   the frozen frames after it.
+//! - A thrower with a contact table hurts the player and is bounced on
+//!   by its own ranges, which knocks it out (see
+//!   [`throwers`](crate::throwers)).
 //! - With a `ground_attack_width` above 0, the ground action knocks out
 //!   walkers and throwers its attack box touches on its attack frames
 //!   (see [`ground_attacks`]). For `ground_attack_pause` frames after,
@@ -176,6 +179,23 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
             None => {}
         }
     }
+    // Throwers with a contact table are bounced on after walkers, and
+    // knocked out once things have moved this frame.
+    let mut bounced_throwers = Vec::new();
+    if !frozen
+        && !riding
+        && !knocked(world)
+        && !world.events.contains(&Event::Bounce)
+        && let Some(index) = throwers::bounced_on(world, physics[Param::BounceMaxRise])
+    {
+        world.player.bounce(
+            physics[Param::BounceSpeed],
+            frames(physics[Param::BounceFreeze]),
+            &mut world.events,
+        );
+        world.flow.events.push(FlowEvent::Defeat(index));
+        bounced_throwers.push(index);
+    }
     let attacked = if attack_boxes && !frozen && !knocked(world) {
         roll_attacks(world, &physics)
     } else {
@@ -281,6 +301,10 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
     for index in bounced {
         bounce_off(&mut world.things[index], facing, freeze);
     }
+    // A thrower holds still on the bounce's frozen frames too.
+    for index in bounced_throwers {
+        defeat(&mut world.things[index], freeze);
+    }
     for &index in &attacked {
         defeat(&mut world.things[index], roll_freeze);
     }
@@ -326,6 +350,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
         };
         world.player.hurt_ahead = walker
             .or_else(|| throwers::hurt_ahead(world))
+            .or_else(|| throwers::thrower_hurt_ahead(world))
             .or_else(|| stinger::hurt_ahead(world));
     }
     hurt_by
