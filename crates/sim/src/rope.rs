@@ -20,6 +20,10 @@
 //! target speed in the air Action's; it's cleared on a frame that ends
 //! on the ground.
 //!
+//! In a trace, every frame that ends holding a rope is `rope`, the catch
+//! frame with `rope_catch` and without the move's other events but a
+//! turn; the let-go frame past the end is `fall` with `rope_slide_off`.
+//!
 //! Engine choices where the spec says nothing:
 //!
 //! - Only the character under control catches ropes, and not while
@@ -121,6 +125,15 @@ pub(crate) fn catch(world: &mut World) {
             values,
             turn: None,
         });
+        // The catch frame is a `rope` row: of the frame's move in the air
+        // only a turn is kept ("In a trace").
+        world.events.retain(|e| {
+            !matches!(
+                e,
+                Event::Land | Event::LeaveGround | Event::JumpStart | Event::JumpRelease
+            )
+        });
+        world.events.push(Event::RopeCatch);
     }
 }
 
@@ -204,6 +217,7 @@ pub(crate) fn hold(world: &mut World, input: &Frame) -> bool {
         if slides {
             // A turn under way stops, and none starts.
             p.slide_off_rope();
+            events.push(Event::RopeSlideOff);
         } else {
             on.turn = match on.turn {
                 Some(n) if n < rope.turn_frames => Some(n + 1),

@@ -54,6 +54,10 @@ pub enum Event {
     Hurt,
     /// A swimming stroke began.
     Stroke,
+    /// Caught a rope from a jump.
+    RopeCatch,
+    /// Let go of a rope past its end.
+    RopeSlideOff,
 }
 
 impl Event {
@@ -69,6 +73,8 @@ impl Event {
             Event::Bounce => "bounce",
             Event::Hurt => "hurt",
             Event::Stroke => "stroke",
+            Event::RopeCatch => "rope_catch",
+            Event::RopeSlideOff => "rope_slide_off",
         }
     }
 }

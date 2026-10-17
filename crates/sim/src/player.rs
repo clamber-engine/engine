@@ -104,10 +104,7 @@ impl State {
             State::Hurt => "hurt",
             State::GroundAction => "ground_action",
             State::Swim => "swim",
-            // The trace vocabulary has no name for holding a rope yet
-            // (asked in clamber-engine/spec#39); the player is off the
-            // ground without having jumped.
-            State::Hold => "fall",
+            State::Hold => "rope",
         }
     }
 }

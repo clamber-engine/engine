@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
-use clamber_sim::{Event, Facing, Fixed, InputFrame, State, World, generic_feel, step};
+use clamber_sim::{Event, Facing, Fixed, InputFrame, State, World, generic_feel, record, step};
+use clamber_trace::{Decimal, Scenario};
 
 use Action::{Action as A, Down as D, Jump as J, Left as L, Right as R, Up as U};
 
@@ -17,7 +18,7 @@ const END: i32 = 250;
 
 /// Flat ground at y = 300 from x = 0 to 2000, the player at `start`, and
 /// a rope at each of `ropes`, with its bottom end at [`END`].
-fn world(start: (f64, f64), ropes: &[i32]) -> World {
+fn level(start: (f64, f64), ropes: &[i32]) -> Level {
     let mut src = format!(
         r#"
         format = 1
@@ -35,9 +36,13 @@ fn world(start: (f64, f64), ropes: &[i32]) -> World {
             "\n[[entities]]\ntype = \"rope\"\nat = [{x}, {END}]\n"
         ));
     }
-    let level = Level::from_toml_str(&src, "test").unwrap();
+    Level::from_toml_str(&src, "test").unwrap()
+}
+
+/// A world on [`level`].
+fn world(start: (f64, f64), ropes: &[i32]) -> World {
     World::new(
-        Arc::new(level),
+        Arc::new(level(start, ropes)),
         Arc::new(generic_feel("classic-1").unwrap()),
     )
 }
@@ -514,4 +519,80 @@ fn ropes_sway_about_12_px_in_all() {
         .fold((f64::MAX, f64::MIN), |(lo, hi), &x| (lo.min(x), hi.max(x)));
     assert!((494.0..495.0).contains(&lo), "{lo}");
     assert!((506.0..507.0).contains(&hi), "{hi}");
+}
+
+#[test]
+fn in_a_trace_example() {
+    // ropes.md, "In a trace", "Example": caught on C facing right with
+    // nothing held, Up on C + 1 and C + 2, Jump pressed with Left on
+    // C + 3, nothing on C + 4.
+    let c = {
+        let mut w = world((505.0, 300.0), &[500]);
+        play_until_caught(&mut w, 0, |_| vec![J]).len() as u32 - 1
+    };
+    let scenario = Scenario::parse(
+        &format!(
+            "# clamber-scenario v1\n\
+             id: t\nsummary: s\nrequires: r\nstart: s\nframes: {}\n\
+             [inputs]\n0-{} J\n{}-{} U\n{} L\n{} J\n",
+            c + 5,
+            c - 1,
+            c + 1,
+            c + 2,
+            c + 3,
+            c + 3,
+        ),
+        "test",
+    )
+    .unwrap();
+    let trace = record(
+        Arc::new(level((505.0, 300.0), &[500])),
+        Arc::new(generic_feel("classic-1").unwrap()),
+        &scenario,
+    )
+    .unwrap();
+    let rows = &trace.rows[c as usize..];
+    use clamber_trace::trace::Facing::{Left, Right};
+    let d = |v: f64| Decimal::parse(&v.to_string()).unwrap();
+    let want = [
+        (0.0, 0.0, "rope", Right, &["rope_catch"][..]),
+        (-0.1875, -0.1875, "rope", Right, &[]),
+        (-0.5390625, -0.3515625, "rope", Right, &[]),
+        (-6.6640625, -6.125, "jump", Left, &["jump_start", "turn"]),
+        (-12.3515625, -5.6875, "jump", Left, &["jump_release"]),
+    ];
+    for (k, (y, vy, state, facing, events)) in want.into_iter().enumerate() {
+        let r = &rows[k];
+        let at = format!("C + {k}: {r:?}");
+        assert_eq!(r.y - rows[0].y, d(y), "{at}");
+        assert_eq!((r.vx, r.vy), (d(0.0), d(vy)), "{at}");
+        assert_eq!(r.state.name(), state, "{at}");
+        assert!(!r.ground, "{at}");
+        assert_eq!(r.facing, facing, "{at}");
+        let mut names: Vec<&str> = r.events.iter().map(|e| e.name()).collect();
+        names.sort();
+        assert_eq!(names, events, "{at}");
+    }
+}
+
+#[test]
+fn sliding_off_the_end_in_a_trace() {
+    // ropes.md, "In a trace": the let-go frame is a `fall` row with
+    // `rope_slide_off`, the rows up to landing `fall` with no events.
+    let (mut w, at) = holding();
+    assert_eq!(at.state.name(), "rope");
+    assert_eq!(at.events, [Event::RopeCatch]);
+    let rows = play(&mut w, 60, |k| if k == 0 { vec![] } else { vec![D] });
+    let off = rows.iter().position(|r| r.rope.is_none()).expect("let go");
+    for r in &rows[..off] {
+        assert_eq!((r.state.name(), &r.events[..]), ("rope", &[][..]));
+    }
+    assert_eq!(rows[off].state.name(), "fall");
+    assert_eq!(rows[off].events, [Event::RopeSlideOff]);
+    let land = (off..rows.len())
+        .find(|&k| rows[k].events.contains(&Event::Land))
+        .expect("landed");
+    for r in &rows[off + 1..land] {
+        assert_eq!((r.state.name(), &r.events[..]), ("fall", &[][..]));
+    }
 }
