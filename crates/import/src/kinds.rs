@@ -39,10 +39,16 @@ pub enum Kind {
     Stinger,
     /// A tyre that throws the player up.
     Tyre,
+    /// A hidden object the ground action strikes, releasing a bunch.
+    HiddenBunch,
+    /// A hidden object a long fall sets off, releasing a barrel.
+    HiddenBarrel,
+    /// A hidden object a long fall sets off, releasing a metal barrel.
+    HiddenMetalBarrel,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 17] = [
+    pub const ALL: [Kind; 20] = [
         Kind::SmallWalker,
         Kind::MediumWalker,
         Kind::LargeWalker,
@@ -60,6 +66,9 @@ impl Kind {
         Kind::RestartBarrel,
         Kind::Stinger,
         Kind::Tyre,
+        Kind::HiddenBunch,
+        Kind::HiddenBarrel,
+        Kind::HiddenMetalBarrel,
     ];
 
     /// The kind's name in the spec, which is also its entities' kind.
@@ -82,6 +91,9 @@ impl Kind {
             Kind::RestartBarrel => "restart-barrel",
             Kind::Stinger => "stinger",
             Kind::Tyre => "tyre",
+            Kind::HiddenBunch => "hidden-bunch",
+            Kind::HiddenBarrel => "hidden-barrel",
+            Kind::HiddenMetalBarrel => "hidden-metal-barrel",
         }
     }
 
@@ -168,6 +180,11 @@ impl Kind {
                 );
                 "launcher"
             }
+            // hidden-objects.md: not drawn, never in the way and never
+            // hurting. Placeholder until they are set off and release
+            // their items (#153): no archetype has the kind's name, so
+            // the object does nothing.
+            Kind::HiddenBunch | Kind::HiddenBarrel | Kind::HiddenMetalBarrel => self.name(),
         };
         (kind, params)
     }
@@ -290,8 +307,16 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::Thrower,
             ),
             (
+                "7d89c7e6b0041ab373a3e96810740ef610b1e112d06596aef72ff8fa0fe46b41",
+                Kind::HiddenBunch,
+            ),
+            (
                 "814362811b6cd4c8fc220ee7fbd04eb626f6837ef7d7e5dc0027700380948338",
                 Kind::Bunch,
+            ),
+            (
+                "9338801286daea12e1f30fd2478b61a44ef3325da9a893f865e2dff0b43c9cc7",
+                Kind::HiddenBarrel,
             ),
             (
                 "96815bf167d1e7ae0187cf583b5e9cd05af19646c808ad1b8abb2fe09ad30e52",
@@ -316,6 +341,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "c8337d0771ac9e0feb76d90747123b32fba93ad3fe8fc5db12cd8a1a647b5910",
                 Kind::MediumWalker,
+            ),
+            (
+                "cc9382a3b49fbd2580834652575cf6c0fb7129761622b5cf7261081c549f25e6",
+                Kind::HiddenMetalBarrel,
             ),
             (
                 "d95f1da6f034e0484756a23152ad6c3ecdc3bf418860bc083e55a33ef6cf6abc",
@@ -470,7 +499,7 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 34);
+        assert_eq!(want.len(), 37);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }
@@ -490,6 +519,20 @@ mod tests {
                 _ => {}
             }
             if matches!(kind, Kind::EndMarker | Kind::RestartBarrel) {
+                continue;
+            }
+            if matches!(
+                kind,
+                Kind::HiddenBunch | Kind::HiddenBarrel | Kind::HiddenMetalBarrel
+            ) {
+                let entity = Entity {
+                    kind: name.to_string(),
+                    id: None,
+                    at: Vec2::ints(0, 0),
+                    params,
+                };
+                let resolved = Archetypes::builtin().resolve(&entity, "test", "e");
+                assert!(matches!(resolved, Ok(None)), "{kind}");
                 continue;
             }
             let entity = Entity {
