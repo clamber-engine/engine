@@ -17,6 +17,7 @@ names! {
         Swap => "swap",
         GroundAction => "ground_action",
         Swim => "swim",
+        Rope => "rope",
     }
 }
 
@@ -34,5 +35,7 @@ names! {
         Hurt => "hurt",
         Turn => "turn",
         Stroke => "stroke",
+        RopeCatch => "rope_catch",
+        RopeSlideOff => "rope_slide_off",
     }
 }
