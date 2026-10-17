@@ -6,7 +6,14 @@
 //! legs, corner to corner, each leg taking about the same number of
 //! frames whatever its length. The map is shown a page at a time; a walk
 //! onto another page changes the page, costs a lag frame and holds the
-//! next walk back for a while, as appearing on the map does.
+//! next walk back for a while, as appearing on the map does. A new press
+//! of an enter button at a node ends the walker's part: the map fades out
+//! and the caller does what the node is for.
+//!
+//! After a level is finished the map appears through
+//! [`LegWalker::after_finish`]: it may hold still for a while, no walk
+//! starts before a gate, and on the gate the direction toward the next
+//! level is given as if just pressed.
 
 use clamber_level::{Fixed, Vec2};
 
@@ -49,10 +56,11 @@ impl Dir {
     }
 }
 
-/// The buttons held on a frame: the four directions and up to four
-/// others, which never choose a path but do replace a remembered press.
+/// The buttons held on a frame: the four directions, up to eight enter
+/// buttons, and up to four others. Only directions choose a path; a new
+/// press of any button replaces a remembered press.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Buttons(pub u8);
+pub struct Buttons(pub u16);
 
 impl Buttons {
     pub const NONE: Buttons = Buttons(0);
@@ -65,6 +73,22 @@ impl Buttons {
     pub const fn other(n: u8) -> Buttons {
         assert!(n < 4);
         Buttons(16 << n)
+    }
+
+    /// An enter button, `n` from 0 to 7: a new press of one at a node
+    /// enters it. Several are kept apart so that pressing one while
+    /// another is held is still a new press.
+    pub const fn enter(n: u8) -> Buttons {
+        assert!(n < 8);
+        Buttons(256 << n)
+    }
+
+    /// All the enter buttons.
+    pub const ENTER: Buttons = Buttons(0xff00);
+
+    /// Whether any of `b` is among these.
+    pub fn any(self, b: Buttons) -> bool {
+        self.0 & b.0 != 0
     }
 
     pub fn contains(self, b: Buttons) -> bool {
@@ -113,6 +137,37 @@ pub struct Legs {
     /// The map's y grows upward; for drawing. Walking uses the values as
     /// they are.
     pub y_up: bool,
+    /// The map fades in from black as it appears, and out after an enter
+    /// press, one step of brightness (0 to [`FULL`]) every this many
+    /// frames.
+    pub fade_step: u32,
+    /// How the map appears after a level is finished, if it differs from
+    /// appearing otherwise.
+    pub finish: Option<Finish>,
+}
+
+/// Full brightness; 0 is black.
+pub const FULL: u32 = 15;
+
+/// The map after a level is finished, the first time and again.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Finish {
+    pub first: FinishTimes,
+    pub again: FinishTimes,
+}
+
+/// When things happen on the map after a level is finished, in frames
+/// counted from the map's first frame.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FinishTimes {
+    /// Black frames between the level's last frame and the map's first.
+    pub black: u32,
+    /// Frames on which the map holds still, nothing on it happening:
+    /// the first one and how many.
+    pub still: Option<(u32, u32)>,
+    /// No walk starts before this frame. On it, the direction toward the
+    /// next level counts as newly pressed.
+    pub gate: u32,
 }
 
 /// What happened on a frame.
@@ -127,6 +182,11 @@ pub struct Step {
     /// A lag frame: nothing happened, the buttons weren't read, and the
     /// frame isn't counted.
     pub lag: bool,
+    /// A still frame: nothing happened and the buttons weren't read.
+    pub still: bool,
+    /// An enter button was newly pressed with the lead standing at this
+    /// node. The map fades out and the walker does nothing more.
+    pub entered: Option<usize>,
 }
 
 /// A walk under way.
@@ -157,6 +217,12 @@ pub struct LegWalker {
     frame: u64,
     no_walk_before: u64,
     lag: bool,
+    /// Still frames: from, up to but not including.
+    still: (u64, u64),
+    /// On this frame this direction counts as newly pressed.
+    given: Option<(u64, Dir)>,
+    /// The frame of the enter press.
+    entered: Option<u64>,
 }
 
 fn axis(v: Vec2, i: usize) -> Fixed {
@@ -194,7 +260,29 @@ impl LegWalker {
             frame: 0,
             no_walk_before: u64::from(legs.appear_wait),
             lag: false,
+            still: (0, 0),
+            given: None,
+            entered: None,
         }
+    }
+
+    /// The lead as the map appears after the level at `node` is finished,
+    /// with the times `t` (from [`Legs::finish`]). `given` is the direction
+    /// toward the next level, if there is one.
+    pub fn after_finish(
+        map: &WorldMap,
+        legs: &Legs,
+        node: usize,
+        t: &FinishTimes,
+        given: Option<Dir>,
+    ) -> LegWalker {
+        let mut lead = LegWalker::appear(map, legs, node);
+        lead.no_walk_before = u64::from(t.gate);
+        if let Some((from, n)) = t.still {
+            lead.still = (u64::from(from), u64::from(from) + u64::from(n));
+        }
+        lead.given = given.map(|d| (u64::from(t.gate), d));
+        lead
     }
 
     pub fn position(&self) -> Vec2 {
@@ -216,6 +304,24 @@ impl LegWalker {
         self.frame
     }
 
+    /// Whether an enter button has been pressed at a node.
+    pub fn entered(&self) -> bool {
+        self.entered.is_some()
+    }
+
+    /// How bright the map is on the frame last run, from 0 (black) to
+    /// [`FULL`]: fading in from the map's first frame, and out from the
+    /// frame of the enter press.
+    pub fn brightness(&self, legs: &Legs) -> u32 {
+        let step = u64::from(legs.fade_step.max(1));
+        let frame = self.frame.saturating_sub(1);
+        let level = match self.entered {
+            None => frame / step,
+            Some(at) => u64::from(FULL).saturating_sub((frame - at) / step),
+        };
+        level.min(u64::from(FULL)) as u32
+    }
+
     /// The page holding the lead's whole-pixel x.
     pub fn page(&self, legs: &Legs) -> i64 {
         self.position
@@ -235,13 +341,40 @@ impl LegWalker {
         }
         let mut step = Step::default();
         let frame = self.frame;
+        if self.entered.is_some() {
+            self.frame += 1;
+            return step;
+        }
+        if (self.still.0..self.still.1).contains(&frame) {
+            self.frame += 1;
+            step.still = true;
+            return step;
+        }
         let new = held.newly(self.held_before);
         self.held_before = held;
         if !new.is_empty() {
             self.remembered = new;
             self.remembered_until = frame + u64::from(legs.remember);
         }
+        // the given direction replaces whatever was pressed on its frame
+        let given = self.given.filter(|&(at, _)| at == frame);
+        if let Some((_, dir)) = given {
+            self.remembered = dir.button();
+            self.remembered_until = frame + u64::from(legs.remember);
+        }
         let page = self.page(legs);
+
+        if self.walk.is_none()
+            && frame >= self.no_walk_before
+            && given.is_none()
+            && new.any(Buttons::ENTER)
+        {
+            // entering beats any direction
+            self.entered = Some(frame);
+            self.frame += 1;
+            step.entered = Some(self.node);
+            return step;
+        }
 
         if self.walk.is_none() && frame >= self.no_walk_before {
             let mut buttons = held;

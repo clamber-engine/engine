@@ -9,7 +9,7 @@ use serde::de::{self, Deserializer, Visitor};
 use toml::{Table, Value};
 
 use crate::curve;
-use crate::legs::{Dir, Legs};
+use crate::legs::{Dir, Finish, FinishTimes, Legs};
 use crate::progress::Progress;
 
 pub const FORMAT: u32 = 1;
@@ -472,6 +472,23 @@ struct LegsFile {
     appear_wait: u32,
     #[serde(default)]
     y_up: bool,
+    fade_step: u32,
+    finish: Option<FinishFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FinishFile {
+    first: FinishTimesFile,
+    again: FinishTimesFile,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FinishTimesFile {
+    black: u32,
+    still: Option<[u32; 2]>,
+    gate: u32,
 }
 
 #[derive(Deserialize)]
@@ -755,7 +772,11 @@ impl Reader<'_> {
         if !l.leg_frames.is_power_of_two() || l.leg_frames > 1 << 16 {
             return Err(self.err("legs.leg_frames", "use a power of two up to 65536"));
         }
-        for (field, n) in [("remember", l.remember), ("page_width", l.page_width)] {
+        for (field, n) in [
+            ("remember", l.remember),
+            ("page_width", l.page_width),
+            ("fade_step", l.fade_step),
+        ] {
             if n == 0 {
                 return Err(self.err(&format!("legs.{field}"), "must be positive"));
             }
@@ -768,6 +789,30 @@ impl Reader<'_> {
             appear_offset: v2(l.appear_offset),
             appear_wait: l.appear_wait,
             y_up: l.y_up,
+            fade_step: l.fade_step,
+            finish: match l.finish {
+                Some(f) => Some(Finish {
+                    first: self.finish_times("first", f.first)?,
+                    again: self.finish_times("again", f.again)?,
+                }),
+                None => None,
+            },
+        })
+    }
+
+    fn finish_times(&self, name: &str, t: FinishTimesFile) -> Result<FinishTimes, MapError> {
+        if let Some([from, n]) = t.still
+            && u64::from(from) + u64::from(n) > u64::from(t.gate)
+        {
+            return Err(self.err(
+                &format!("legs.finish.{name}.still"),
+                "the still frames must end by the gate",
+            ));
+        }
+        Ok(FinishTimes {
+            black: t.black,
+            still: t.still.map(|[from, n]| (from, n)),
+            gate: t.gate,
         })
     }
 

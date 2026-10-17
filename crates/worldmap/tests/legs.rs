@@ -1,5 +1,7 @@
 use clamber_level::{Fixed, Vec2};
-use clamber_worldmap::{Buttons, Dir, LegWalker, Legs, Mode, Progress, Step, WorldMap};
+use clamber_worldmap::{
+    Buttons, Dir, FULL, FinishTimes, LegWalker, Legs, Mode, Progress, Step, WorldMap,
+};
 
 const B: Buttons = Buttons::other(0);
 
@@ -8,7 +10,7 @@ fn map_with(legs: &str, rest: &str) -> WorldMap {
     let src = format!(
         "format = 1\nid = \"m\"\nsize = [1024, 256]\nmode = \"legs\"\nstart = \"a\"\n\
          [legs]\nleg_frames = 64\nremember = 31\npage_width = 256\npage_wait = 64\n\
-         y_up = true\n{legs}\n{rest}"
+         y_up = true\nfade_step = 2\n{legs}\n{rest}"
     );
     WorldMap::from_toml_str(&src, "m.map").unwrap()
 }
@@ -42,7 +44,7 @@ fn map_err(legs: &str, rest: &str) -> String {
 }
 
 const LEGS: &str = "[legs]\nleg_frames = 64\nremember = 31\npage_width = 256\n\
-                    page_wait = 64\nappear_offset = [8, 0]\nappear_wait = 64";
+                    page_wait = 64\nappear_offset = [8, 0]\nappear_wait = 64\nfade_step = 2";
 
 /// The worked example in spec/behavior/level-map.md, "Walking a path".
 #[test]
@@ -105,7 +107,7 @@ fn line() -> WorldMap {
 }
 
 /// Steps `frames` frames with `held(frame)` and returns the frames on
-/// which a walk started.
+/// which a walk started or ended, or a node was entered.
 fn run(
     map: &WorldMap,
     lead: &mut LegWalker,
@@ -118,7 +120,7 @@ fn run(
     while lead.frame() < frames {
         let frame = lead.frame();
         let step = lead.step(map, legs, &p, held(frame));
-        if step.started.is_some() || step.arrived.is_some() {
+        if step.started.is_some() || step.arrived.is_some() || step.entered.is_some() {
             out.push((frame, step));
         }
     }
@@ -388,4 +390,221 @@ fn legs_maps_are_checked() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("legs: only for maps with mode"), "{err}");
+}
+
+const JUMP: Buttons = Buttons::enter(0);
+const ACTION: Buttons = Buttons::enter(1);
+
+/// A finished level at b: Down leads on to c, Left back to a, Right
+/// nowhere. The times are those of spec/behavior/level-map.md, "After
+/// finishing a level".
+fn finished() -> WorldMap {
+    map_with(
+        "appear_wait = 64\nappear_offset = [0, 0]\n\
+         [legs.finish.first]\nblack = 49\nstill = [163, 50]\ngate = 242\n\
+         [legs.finish.again]\nblack = 52\ngate = 64",
+        "[[nodes]]\nid = \"a\"\nkind = \"waypoint\"\nat = [0, 0]\n\
+         [[nodes]]\nid = \"b\"\nkind = \"waypoint\"\nat = [64, 0]\n\
+         [[nodes]]\nid = \"c\"\nkind = \"waypoint\"\nat = [64, 64]\n\
+         [[paths]]\nfrom = \"a\"\nto = \"b\"\nleave = [\"right\"]\nback = [\"left\"]\n\
+         [[paths]]\nfrom = \"b\"\nto = \"c\"\nleave = [\"down\"]",
+    )
+}
+
+fn times(map: &WorldMap, first: bool) -> &FinishTimes {
+    let finish = legs(map).finish.as_ref().unwrap();
+    if first { &finish.first } else { &finish.again }
+}
+
+fn after_finish(map: &WorldMap, first: bool) -> LegWalker {
+    LegWalker::after_finish(map, legs(map), 1, times(map, first), Some(Dir::Down))
+}
+
+/// The example in spec/behavior/level-map.md, "After finishing a level".
+#[test]
+fn the_after_finishing_example() {
+    let map = finished();
+    assert_eq!(times(&map, true).black, 49);
+    assert_eq!(times(&map, false).black, 52);
+    // Right held from 220 to 250, without a path: Down, given on 242, is
+    // still remembered when Right is released on 251.
+    let right = |to: u64| {
+        move |f: u64| {
+            if (220..=to).contains(&f) {
+                Buttons::RIGHT
+            } else {
+                Buttons::NONE
+            }
+        }
+    };
+    let mut lead = after_finish(&map, true);
+    let p = Progress::default();
+    let legs = legs(&map);
+    let mut steps = Vec::new();
+    while lead.frame() < 260 {
+        let f = lead.frame();
+        steps.push(lead.step(&map, legs, &p, right(250)(f)));
+        let fade = if f < 32 { f as u32 / 2 } else { FULL };
+        assert_eq!(lead.brightness(legs), fade, "frame {f}");
+    }
+    let still: Vec<usize> = (0..260).filter(|&f| steps[f].still).collect();
+    assert_eq!(still, (163..213).collect::<Vec<_>>());
+    let started: Vec<usize> = (0..260).filter(|&f| steps[f].started.is_some()).collect();
+    assert_eq!(started, [251]);
+
+    // held up to 271, it starts on 272 = G + 30; up to 272, Down is
+    // forgotten by 273
+    let mut lead = after_finish(&map, true);
+    assert_eq!(run(&map, &mut lead, 400, right(271))[0].0, 272);
+    let mut lead = after_finish(&map, true);
+    assert!(run(&map, &mut lead, 400, right(272)).is_empty());
+    assert_eq!(lead.node, 1);
+
+    // Jump on 245 enters the level: the map is black from 275
+    let mut lead = after_finish(&map, true);
+    let jump = |f| if f == 245 { JUMP } else { right(250)(f) };
+    let mut fades = Vec::new();
+    while lead.frame() < 300 {
+        let f = lead.frame();
+        let step = lead.step(&map, legs, &p, jump(f));
+        assert_eq!(step.entered.is_some(), f == 245, "frame {f}");
+        assert!(step.started.is_none());
+        fades.push(lead.brightness(legs));
+    }
+    assert!(lead.entered());
+    assert_eq!(&fades[244..248], [FULL, FULL, FULL, FULL - 1]);
+    assert_eq!(&fades[273..276], [1, 1, 0]);
+    assert_eq!(lead.node, 1);
+}
+
+#[test]
+fn after_finishing_the_walk_starts_on_the_gate() {
+    let map = finished();
+    for (first, gate) in [(true, 242), (false, 64)] {
+        let mut lead = after_finish(&map, first);
+        // held from before the gate, Down doesn't start it early
+        let events = run(&map, &mut lead, 400, |f| {
+            if f < 100 {
+                Buttons::DOWN
+            } else {
+                Buttons::NONE
+            }
+        });
+        assert_eq!((events[0].0, events[0].1.started), (gate, Some(1)));
+        assert_eq!(events[1].1.arrived, Some(2));
+        let mut lead = after_finish(&map, first);
+        let mut still = 0;
+        let p = Progress::default();
+        while lead.frame() < 300 {
+            still += usize::from(lead.step(&map, legs(&map), &p, Buttons::NONE).still);
+        }
+        assert_eq!(still, if first { 50 } else { 0 });
+    }
+}
+
+#[test]
+fn after_finishing_entering_again() {
+    let map = finished();
+    let g = 64;
+    let enters = |held: &dyn Fn(u64) -> Buttons| {
+        let mut lead = after_finish(&map, false);
+        let events = run(&map, &mut lead, 200, held);
+        events.first().and_then(|(f, s)| s.entered.map(|_| *f))
+    };
+    // before the gate and on it, a press does nothing; on G + 1 it enters
+    for press in [g - 2, g - 1, g] {
+        assert_eq!(
+            enters(&|f| if f == press { JUMP } else { Buttons::RIGHT }),
+            None,
+            "{press}"
+        );
+    }
+    assert_eq!(
+        enters(&|f| if f == g + 1 { JUMP } else { Buttons::RIGHT }),
+        Some(g + 1)
+    );
+    // even with a direction that has a path pressed on the same frame
+    assert_eq!(
+        enters(&|f| if f == g + 3 {
+            ACTION | Buttons::LEFT
+        } else {
+            Buttons::RIGHT
+        }),
+        Some(g + 3)
+    );
+    // a kept held button isn't a new press, but another one is
+    assert_eq!(
+        enters(&|f| if f >= g - 5 {
+            JUMP | Buttons::RIGHT
+        } else {
+            Buttons::NONE
+        }),
+        None
+    );
+    assert_eq!(
+        enters(&|f| match f {
+            f if f > g + 6 => JUMP | ACTION | Buttons::RIGHT,
+            f if f >= g - 5 => JUMP | Buttons::RIGHT,
+            _ => Buttons::NONE,
+        }),
+        Some(g + 7)
+    );
+    // another button doesn't enter; it replaces the given direction
+    let mut lead = after_finish(&map, false);
+    let events = run(&map, &mut lead, 200, |f| match f {
+        f if f == g + 5 => B | Buttons::RIGHT,
+        f if f < g + 20 => Buttons::RIGHT,
+        _ => Buttons::NONE,
+    });
+    assert!(events.is_empty());
+    assert!(!lead.entered());
+}
+
+#[test]
+fn pressing_enter_at_a_stop() {
+    let map = finished();
+    let enters = |held: &dyn Fn(u64) -> Buttons| {
+        let mut lead = LegWalker::appear(&map, legs(&map), 0);
+        run(&map, &mut lead, 300, held)
+            .into_iter()
+            .find_map(|(f, s)| s.entered.map(|n| (f, n)))
+    };
+    // not before the map's wait, then on it
+    assert_eq!(
+        enters(&|f| if f == 63 { JUMP } else { Buttons::NONE }),
+        None
+    );
+    assert_eq!(
+        enters(&|f| if f == 64 { JUMP } else { Buttons::NONE }),
+        Some((64, 0))
+    );
+    // not during a walk (Right from 64 to L = 127), only from L + 1
+    for (press, entered) in [(100, None), (127, None), (128, Some((128, 1)))] {
+        let held = move |f| match f {
+            64 => Buttons::RIGHT,
+            f if f == press => JUMP,
+            _ => Buttons::NONE,
+        };
+        assert_eq!(enters(&held), entered, "press on {press}");
+    }
+    // after entering, nothing more happens
+    let mut lead = LegWalker::appear(&map, legs(&map), 0);
+    let events = run(&map, &mut lead, 300, |f| match f {
+        64 => JUMP,
+        _ => Buttons::RIGHT,
+    });
+    assert_eq!(events.len(), 1);
+    assert_eq!(lead.node, 0);
+}
+
+#[test]
+fn still_frames_must_end_by_the_gate() {
+    let err = map_err(
+        &format!(
+            "{LEGS}\n[legs.finish.first]\nblack = 1\nstill = [10, 50]\ngate = 59\n\
+                  [legs.finish.again]\nblack = 1\ngate = 1"
+        ),
+        "",
+    );
+    assert!(err.contains("legs.finish.first.still"), "{err}");
 }

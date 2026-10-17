@@ -270,7 +270,15 @@ impl LevelMap {
         let _ = writeln!(
             w,
             "[legs]\nleg_frames = 64\nremember = 31\npage_width = 256\npage_wait = 64\n\
-             appear_offset = [{APPEARANCE_OFFSET}, 0]\nappear_wait = 64\ny_up = true"
+             appear_offset = [{APPEARANCE_OFFSET}, 0]\nappear_wait = 64\ny_up = true\n\
+             fade_step = 2"
+        );
+        // behavior/level-map.md, "After finishing a level". The black
+        // frames were 52 or 53 when finishing again; the engine takes 52.
+        let _ = writeln!(
+            w,
+            "\n[legs.finish.first]\nblack = 49\nstill = [163, 50]\ngate = 242\n\
+             \n[legs.finish.again]\nblack = 52\ngate = 64"
         );
         for &stop in &stops {
             let _ = writeln!(
@@ -434,6 +442,15 @@ mod tests {
             panic!("not a legs map")
         };
         assert!(legs.y_up);
+        let finish = legs.finish.as_ref().unwrap();
+        assert_eq!(
+            (finish.first.black, finish.first.still, finish.first.gate),
+            (49, Some((163, 50)), 242)
+        );
+        assert_eq!(
+            (finish.again.black, finish.again.still, finish.again.gate),
+            (52, None, 64)
+        );
         assert_eq!(world.start.as_deref(), Some("stop-10"));
         let p = Progress::default();
         let mut walks = 0;
