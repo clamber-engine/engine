@@ -553,6 +553,12 @@ mod tests {
                     | Param::LivesSpeed
                     | Param::LivesX
                     | Param::LivesChange
+                    | Param::RelicApproach
+                    | Param::RelicSize
+                    | Param::RelicX
+                    | Param::RelicY
+                    | Param::RelicRest
+                    | Param::RelicRise
                     | Param::ViewWidth
                     | Param::ViewBack
                     | Param::ViewBackLeft

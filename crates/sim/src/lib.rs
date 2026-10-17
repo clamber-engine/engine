@@ -37,8 +37,9 @@
 //! holding it breaks ([`Join`]).
 //!
 //! Collectibles add to the collectible count ([`Release`]), shown by
-//! the count display ([`CountDisplay`]), and letters to the letters
-//! taken ([`LetterRow`]).
+//! the count display ([`CountDisplay`]), letters to the letters taken
+//! ([`LetterRow`]), and a taken relic's image flies to the top of the
+//! picture ([`RelicImage`]).
 //!
 //! Walking past a level's [`END`] marker finishes it, after a walk-out
 //! and a fade if the preset has them ([`Ending`]). An [`EXIT`] takes the
@@ -94,7 +95,9 @@ pub use archetype::{
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
-pub use collect::{CountDisplay, LetterRow, LivesDisplay, LivesStep, Pickup, Release};
+pub use collect::{
+    CountDisplay, LetterRow, LivesDisplay, LivesStep, Pickup, Release, RelicFlight, RelicImage,
+};
 pub use dimming::{DIM, Dimming};
 pub use ending::{END, Ending};
 pub use entrance::Entering;

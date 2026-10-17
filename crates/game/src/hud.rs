@@ -69,7 +69,7 @@ fn draw_items(canvas: &mut dyn Surface, world: &World) {
 
 /// Where the world's picture's left edge is on the canvas: it's centred
 /// across it when the world has a view narrower than it.
-fn picture_left(canvas: &dyn Surface, world: &World) -> i32 {
+pub(crate) fn picture_left(canvas: &dyn Surface, world: &World) -> i32 {
     let picture = world.feel.world[Param::ViewWidth].floor();
     let width = i64::from(canvas.view().0);
     if picture > 0 && picture < width {

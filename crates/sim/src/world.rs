@@ -681,6 +681,17 @@ impl World {
             }
             None => out.push(0),
         }
+        match f.relic_flight {
+            Some(r) => {
+                out.push(1);
+                out.extend(r.taken.to_le_bytes());
+                out.extend(r.at.0.to_le_bytes());
+                out.extend(r.at.1.to_le_bytes());
+                out.extend(r.arrived.map_or(0, |a| a + 1).to_le_bytes());
+                count(&mut out, r.thing);
+            }
+            None => out.push(0),
+        }
         count(&mut out, f.events.len());
         for e in &f.events {
             let (tag, index) = match *e {

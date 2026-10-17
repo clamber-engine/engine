@@ -1041,6 +1041,26 @@ params! {
     /// many frames after the step, and the new number from then on. Whole
     /// frames.
     LivesChange => "lives_change",
+    /// Above 0, the image of a taken `relic` is shown flying to its
+    /// resting place (see `clamber_sim::World::relic_image`): each frame
+    /// it covers this part of the distance left, 1 / `relic_approach`.
+    /// 0: no image. Whole.
+    RelicApproach => "relic_approach",
+    /// The relic image's box is this many px square. It starts the
+    /// flight centred on where the relic was in the picture. Whole px.
+    RelicSize => "relic_size",
+    /// Where the relic image's box rests: its top-left corner, px right
+    /// of the picture's left edge. Whole px.
+    RelicX => "relic_x",
+    /// The same, px below the picture's top. Whole px.
+    RelicY => "relic_y",
+    /// Frames the relic image rests for, counting the first it's there.
+    /// Whole frames.
+    RelicRest => "relic_rest",
+    /// After resting, the relic image moves up this many px a frame,
+    /// and isn't drawn once its box is wholly above the picture. Whole
+    /// px.
+    RelicRise => "relic_rise",
     /// Above 0, the world has a view this wide that follows the player
     /// (see `clamber_sim::View`), and walkers are in the level only near
     /// it: one appears at its start, at rest, when its start comes within

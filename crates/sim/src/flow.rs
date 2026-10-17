@@ -26,7 +26,7 @@ use clamber_level::Vec2;
 
 use clamber_pack::Param;
 
-use crate::collect::{self, LivesStep, Pickup, Release};
+use crate::collect::{self, LivesStep, Pickup, Release, RelicFlight};
 use crate::keg;
 use crate::loss;
 use crate::player::{Facing, Knockout, Player, State, frames};
@@ -135,6 +135,9 @@ pub struct Flow {
     /// The step `shown` last went from `count_life` less one to 0 on,
     /// for the lives display.
     pub lives_step: Option<LivesStep>,
+    /// The image of the relic taken last, for
+    /// [`World::relic_image`](crate::World::relic_image).
+    pub relic_flight: Option<RelicFlight>,
     /// Indices of the checkpoints reached, in order; the player comes
     /// back at the last.
     pub checkpoints: Vec<usize>,

@@ -12,7 +12,7 @@ use crate::camera::{Camera, VIEW, point};
 use crate::canvas::{Canvas, Color, rgb};
 use crate::cast::{Cast, Poses};
 use crate::display::Look;
-use crate::hud::draw_hud;
+use crate::hud::{draw_hud, picture_left};
 use crate::layers::LayerArt;
 use crate::surface::{Lighting, PointLight, Surface};
 
@@ -252,10 +252,31 @@ impl Game {
         }
         self.art.draw(canvas, level, Depth::Front, origin, dim);
         draw_hud(canvas, &self.world);
+        self.draw_relic_image(canvas);
         let (now, full) = self.world.brightness();
         if now < full {
             let dark = 255 * (full - now) / full;
             canvas.shade(BLACK, dark as u8);
+        }
+    }
+
+    /// The image of a taken relic, while the world shows it: its sprite
+    /// centred in the image's box, which is in the world's picture. How
+    /// it looks isn't in the spec; without a sprite, it's the box.
+    fn draw_relic_image(&self, canvas: &mut dyn Surface) {
+        let Some(image) = self.world.relic_image() else {
+            return;
+        };
+        let left = picture_left(canvas, &self.world);
+        let (x, y) = (left + image.x, image.y);
+        let thing = &self.world.things[image.thing];
+        if self.cast.has_kind(&thing.kind) {
+            let pose = &self.poses.things[image.thing];
+            let half = image.size as f32 / 2.0;
+            self.cast
+                .draw_thing(canvas, thing, pose, x as f32 + half, y as f32 + half);
+        } else {
+            canvas.stroke_rect(x, y, image.size, image.size, ENTITY);
         }
     }
 

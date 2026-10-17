@@ -269,6 +269,12 @@ lives_rise = 0
 lives_speed = 0
 lives_x = 0
 lives_change = 0
+relic_approach = 0
+relic_size = 0
+relic_x = 0
+relic_y = 0
+relic_rest = 0
+relic_rise = 0
 view_width = 0
 view_back = 0
 view_back_left = 0
@@ -674,6 +680,15 @@ lives_rise = 18
 lives_speed = 4
 lives_x = 220
 lives_change = 25
+# The taken figure's image (figure.md): its 34 px box flies from where
+# the figure was to (74, 2), covering about an eighth of the distance
+# left each frame, rests there for 63 frames, then rises 4 px a frame.
+relic_approach = 8
+relic_size = 34
+relic_x = 74
+relic_y = 2
+relic_rest = 63
+relic_rise = 4
 # The view (view.md) and walkers appearing and being removed with it
 # (walker-view.md). The picture is 256 wide; the window for a walker's
 # start runs from 31 left of it to 32 right of it, and a walker is

@@ -35,14 +35,21 @@
 //! for the visit to the level, losing a life included.
 //!
 //! A collectible that's a `relic` adds one to the relic count when it's
-//! taken (figure.md's figure count).
+//! taken (figure.md's figure count). With `relic_approach` above 0, its
+//! image is then shown flying to a resting place at the top of the
+//! picture, resting there and leaving upward (see
+//! [`World::relic_image`]).
 //!
 //! Engine choices where the spec says nothing: a letter taken while the
 //! row is shown for another shows it again from the start, and the row
 //! shows no sequence for the last letter, only the life. A part of what
 //! a pickup is worth that never reaches the count is no longer owed, and
 //! a step from a count with no pickup waiting (a generic gem) goes to
-//! none.
+//! none. The relic image starts centred on where the relic was in the
+//! picture before the step it's taken on, rounded down to whole px, and
+//! each frame moves 1 / `relic_approach` of the distance left on each
+//! axis, rounded down but at least 1 px. A relic taken while another's
+//! image is shown replaces it.
 
 use clamber_fixed::Fixed;
 use clamber_pack::Param;
@@ -83,6 +90,31 @@ pub struct LivesStep {
     /// The lives before the one it gave, and with it.
     pub before: u8,
     pub after: u8,
+}
+
+/// A taken relic's image, flying to its resting place.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct RelicFlight {
+    /// The step it was taken on.
+    pub taken: u32,
+    /// The top-left corner of the image's box, px from the picture's
+    /// top-left corner.
+    pub at: (i32, i32),
+    /// The first step it was at its resting place on.
+    pub arrived: Option<u32>,
+    /// Index into the world's things.
+    pub thing: usize,
+}
+
+/// A taken relic's image as drawn in a picture: the top-left corner of
+/// its `size` px square box, px from the picture's top-left corner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct RelicImage {
+    /// Index into the world's things.
+    pub thing: usize,
+    pub x: i32,
+    pub y: i32,
+    pub size: i32,
 }
 
 /// The count display as drawn in a picture: the collectible image's
@@ -222,6 +254,66 @@ impl World {
     }
 }
 
+impl World {
+    /// The image of the relic taken last in the picture made from the
+    /// last step, if it's drawn in it: from the step after it's taken,
+    /// flying to (`relic_x`, `relic_y`); resting there for `relic_rest`
+    /// frames from the first it's there; then rising `relic_rise` px a
+    /// frame until its box is wholly above the picture.
+    pub fn relic_image(&self) -> Option<RelicImage> {
+        let physics = &self.feel.world;
+        let int = |p: Param| i64::from(i32::try_from(physics[p].floor()).unwrap_or(0));
+        let n = self.frame.checked_sub(1)?;
+        let flight = self.flow.relic_flight?;
+        if int(Param::RelicApproach) <= 0 || n <= flight.taken {
+            return None;
+        }
+        let size = int(Param::RelicSize);
+        let (x, y) = (int(Param::RelicX), int(Param::RelicY));
+        let (x, y) = match flight.arrived {
+            None => (i64::from(flight.at.0), i64::from(flight.at.1)),
+            Some(a) => {
+                let since = i64::from(n - a) - int(Param::RelicRest);
+                let y = y - int(Param::RelicRise) * (since + 1).max(0);
+                if y + size <= 0 {
+                    return None;
+                }
+                (x, y)
+            }
+        };
+        Some(RelicImage {
+            thing: flight.thing,
+            x: i32::try_from(x).ok()?,
+            y: i32::try_from(y).ok()?,
+            size: i32::try_from(size).ok()?,
+        })
+    }
+}
+
+/// Moves the relic image on a step toward its resting place, noting the
+/// step it gets there.
+fn fly(world: &mut World) {
+    let physics = &world.feel.world;
+    let approach = whole(physics[Param::RelicApproach]) as i32;
+    let int = |p: Param| i32::try_from(physics[p].floor()).unwrap_or(0);
+    let to = (int(Param::RelicX), int(Param::RelicY));
+    let frame = world.frame;
+    let Some(flight) = &mut world.flow.relic_flight else {
+        return;
+    };
+    if approach == 0 || flight.arrived.is_some() || frame <= flight.taken {
+        return;
+    }
+    let close = |at: i32, to: i32| {
+        let left = to.saturating_sub(at);
+        at + left.signum() * (left.abs() / approach).max(1).min(left.abs())
+    };
+    flight.at = (close(flight.at.0, to.0), close(flight.at.1, to.1));
+    if flight.at == to {
+        flight.arrived = Some(frame);
+    }
+}
+
 /// Where something that slides in and out is, `since` frames after it's
 /// set off: first drawn `into` frames after, sliding down `speed` px a
 /// frame for `slide` frames from `rise` above `rest`, then at `rest`,
@@ -250,8 +342,9 @@ fn slide_y(
 pub(crate) fn update(world: &mut World, can_take: bool, start: Option<View>) {
     note_landing(&mut world.player, &world.events);
     if can_take && world.flow.outcome == Outcome::Playing && world.player.knockout.is_none() {
-        take(world);
+        take(world, start);
     }
+    fly(world);
     let life = whole(world.feel.world[Param::CountLife]);
     let frame = world.frame;
     let vertical = view::vertical(&world.player_physics());
@@ -386,8 +479,11 @@ fn arrival(arrive: &Arrive, x: i64, y: Option<i64>) -> Option<u8> {
         .map_or(arrive.otherwise, |r| r.delay)
 }
 
-fn take(world: &mut World) {
+fn take(world: &mut World, start: Option<View>) {
     let view_left = world.view.map(|v| v.x());
+    let (picture_x, picture_y) = start.map_or((0, 0), |v| (v.x(), v.y()));
+    let shows = whole(world.feel.world[Param::RelicApproach]) > 0;
+    let half = world.feel.world[Param::RelicSize].floor() / 2;
     let player = &world.player;
     let crouch_start = frames(world.player_physics()[Param::CrouchStart]);
     let x = player.pos.x.floor();
@@ -452,6 +548,15 @@ fn take(world: &mut World) {
         }
         if relic {
             flow.relics += 1;
+        }
+        if relic && shows {
+            let at = |v: Fixed, edge: i64| i32::try_from(v.floor() - edge - half).unwrap_or(0);
+            flow.relic_flight = Some(RelicFlight {
+                taken: world.frame,
+                at: (at(thing.pos.x, picture_x), at(thing.pos.y, picture_y)),
+                arrived: None,
+                thing: i,
+            });
         }
         if letter > 0 {
             flow.joining

@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
-use clamber_sim::{Event, Facing, FlowEvent, InputFrame, START_LIVES, World, generic_feel, step};
+use clamber_sim::{
+    Event, Facing, FlowEvent, InputFrame, RelicImage, START_LIVES, World, generic_feel, step,
+};
 
 use Action::{Down, Jump};
 
@@ -166,4 +168,76 @@ fn a_figure_adds_one_to_the_figure_count_and_nothing_else() {
     assert_eq!(w.flow.relics, 3);
     assert_eq!(w.flow.gems, 0);
     assert_eq!(w.flow.lives, START_LIVES);
+}
+
+/// The relic image in each picture from the one made on the step a
+/// figure at (`xf`, `yf`) is taken by a standing player, over `steps`.
+fn images(xf: i32, yf: i32, preset: &str, steps: usize) -> Vec<Option<RelicImage>> {
+    let mut w = world(&[(xf, yf)]);
+    w.feel = Arc::new(generic_feel(preset).unwrap());
+    assert!(step_keys(&mut w, &[], &[]));
+    let mut out = vec![w.relic_image()];
+    for _ in 1..steps {
+        step_keys(&mut w, &[], &[]);
+        out.push(w.relic_image());
+    }
+    out
+}
+
+/// figure.md, "How the taken figure is shown": the frame `A` the image
+/// is first at its resting place, counted from `P`.
+fn arrival(images: &[Option<RelicImage>]) -> usize {
+    images
+        .iter()
+        .position(|i| i.is_some_and(|i| (i.x, i.y) == (74, 2)))
+        .unwrap()
+}
+
+#[test]
+fn the_taken_figure_flies_to_its_resting_place() {
+    // Figures as high above the floor as a standing player reaches.
+    for (xf, yf) in [(X + 20, F - 37), (X, F - 37), (X - 20, F - 37)] {
+        let images = images(xf, yf, "classic-1", 120);
+        assert_eq!(images[0], None, "not drawn in the picture made on P");
+        let a = arrival(&images);
+        assert!((29..=33).contains(&a), "A = P + {a} for ({xf}, {yf})");
+        // Slowing as it gets near: each frame's move is no bigger than the
+        // one before, and never past the resting place.
+        let at: Vec<_> = images[1..=a].iter().map(|i| i.unwrap()).collect();
+        assert_eq!(at[0].size, 34);
+        let moves: Vec<_> = at
+            .windows(2)
+            .map(|w| ((w[1].x - w[0].x), (w[1].y - w[0].y)))
+            .collect();
+        for w in moves.windows(2) {
+            assert!(w[1].0.abs() <= w[0].0.abs() && w[1].1.abs() <= w[0].1.abs());
+        }
+        for i in &at {
+            assert!((i.x - 74).signum() * (at[0].x - 74).signum() >= 0);
+            assert!((i.y - 2).signum() * (at[0].y - 2).signum() >= 0);
+        }
+    }
+}
+
+#[test]
+fn the_taken_figure_rests_then_rises_out_of_the_picture() {
+    let images = images(X, F - 37, "classic-1", 140);
+    let a = arrival(&images);
+    for (n, image) in images.iter().enumerate().skip(a) {
+        let image = image.map(|i| (i.x, i.y));
+        match n - a {
+            0..=62 => assert_eq!(image, Some((74, 2)), "A + {}", n - a),
+            k @ 63..=70 => {
+                // The bottom row of the box: 31 on A + 63 … 3 on A + 70.
+                let bottom = 31 - 4 * (k as i32 - 63);
+                assert_eq!(image, Some((74, bottom - 33)), "A + {k}");
+            }
+            k => assert_eq!(image, None, "A + {k}"),
+        }
+    }
+}
+
+#[test]
+fn without_a_relic_image_none_is_shown() {
+    assert!(images(X, F - 4, "default", 60).iter().all(Option::is_none));
 }
