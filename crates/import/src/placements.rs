@@ -208,32 +208,36 @@ impl Placements {
     }
 
     /// The [`entities`](Placements::entities), and the level's sections
-    /// if the list has them ("In a list with sections"): one for each of
-    /// the table's sections, meeting the next at its record's point. Each
-    /// entry that places objects is a spot: an object at its entry's
-    /// position, needing the view's rows too for class 15 and class 2
-    /// ("Class 1 and class 2 entries in these lists"), or a group, at its
-    /// entry's `x`. Entries that place nothing hold nothing back, so they
-    /// aren't spots.
+    /// ("In a list with sections"): one for each of the table's sections,
+    /// meeting the next at its record's point, or for a list without
+    /// sections one covering the whole list ("Stored order"). Each entry
+    /// that places objects is a spot: an object at its entry's position,
+    /// needing the view's rows too for class 15 and, in a list with
+    /// sections, class 2 ("Class 1 and class 2 entries in these lists"),
+    /// or a group, at its entry's `x`. A class 8 entry is a spot of its
+    /// [`DIM`] entity, clear only in the window. Other entries that place
+    /// nothing hold nothing back, so they aren't spots.
+    ///
+    /// Whether class 2 entries far above or below the view appear in a
+    /// list without sections isn't covered; as the engine's choice they
+    /// need only the window, as in "When an entry appears".
     pub fn objects(
         &self,
         bottom: i64,
         kind: impl Fn(u16) -> Option<Kind>,
     ) -> (Vec<Entity>, Vec<Section>) {
         let (entities, of_entry) = self.placed(bottom, kind);
-        let Some(first) = self.records.first() else {
-            return (entities, Vec::new());
-        };
+        let sectioned = !self.records.is_empty();
         let spot = |i: usize| {
             let placement = &self.list[i];
             let entry = placement.entry;
             let spot_entities = of_entry[i].clone();
             let at = Vec2::ints(i32::from(entry.x), entry.level_y(bottom) as i32);
             match entry.kind() {
-                Class::Object => Some(Spot {
+                Class::Object | Class::Nothing => Some(Spot {
                     at: (entities[spot_entities[0]].at != at).then_some(at),
                     entities: spot_entities,
-                    rows: entry.needs_rows() || entry.class == 2,
+                    rows: entry.needs_rows() || sectioned && entry.class == 2,
                 }),
                 Class::Group if !spot_entities.is_empty() => Some(Spot {
                     at: (entities[spot_entities[0]].at.x != at.x).then_some(at),
@@ -242,6 +246,13 @@ impl Placements {
                 }),
                 _ => None,
             }
+        };
+        let Some(first) = self.records.first() else {
+            let whole = Section {
+                spots: (0..self.list.len()).filter_map(spot).collect(),
+                meets: None,
+            };
+            return (entities, vec![whole]);
         };
         let runs = std::iter::once(first.first).chain(self.records.iter().map(|r| r.second));
         let sections = runs
@@ -445,29 +456,43 @@ mod tests {
     #[test]
     fn appearances_match_the_spec_vectors() {
         let placements = read(&fragment()).unwrap();
-        // What appears, by index, with the x that decides when.
-        let mut objects = Vec::new();
-        for (i, p) in placements.list.iter().enumerate() {
-            match p.entry.kind() {
-                Class::Object => objects.push((i.to_string(), p.entry)),
-                Class::Group => {
-                    objects.extend((0..p.members.len()).map(|j| (format!("{i}.{j}"), p.entry)))
-                }
-                _ => {}
+        let (placed, entries) = engine_sections(&placements, BOTTOM);
+        assert_eq!(placed.sections.runs.len(), 1);
+        assert_eq!(placed.sections.runs[0], 0..=placed.spots.len() - 1);
+        let mut there = vec![None; placed.spots.len()];
+        let mut open = Opening::begin(&placed.sections, 0);
+        let window = Window {
+            across: -31..=288,
+            down: -31..=256,
+        };
+        for n in 0..300 {
+            let view = (-40 + 3 * n, 0);
+            let up = open.step(&placed.sections, &placed.spots, &window, view, |i| {
+                there[i].is_some()
+            });
+            for i in up {
+                there[i] = Some(n);
             }
         }
-        for row in rows("appear.tsv") {
-            let (_, decider) = objects
-                .iter()
-                .find(|(index, _)| *index == row[0])
-                .unwrap_or_else(|| panic!("no object {}", row[0]));
-            let frame = (0..300).find(|n| decider.in_window(-40 + 3 * n));
-            let got = match frame {
-                Some(n) => [n.to_string(), (-40 + 3 * n).to_string()],
-                None => ["never".to_string(), "-".to_string()],
+        let mut got = Vec::new();
+        for (spot, at) in there.iter().enumerate() {
+            let entry = entries[spot];
+            let names: Vec<String> = match placements.list[entry].entry.kind() {
+                Class::Group => (0..placed.entities[spot].len())
+                    .map(|j| format!("{entry}.{j}"))
+                    .collect(),
+                // Class 8 places nothing, so it isn't in the vectors.
+                Class::Nothing => Vec::new(),
+                _ => vec![entry.to_string()],
             };
-            assert_eq!(&got[..], &row[1..], "object {}", row[0]);
+            for name in names {
+                got.push(match at {
+                    Some(n) => vec![name, n.to_string(), (-40 + 3 * n).to_string()],
+                    None => vec![name, "never".to_string(), "-".to_string()],
+                });
+            }
         }
+        assert_eq!(got, rows("appear.tsv"));
     }
 
     /// The lists-with-sections vectors' bank fragment.
@@ -499,14 +524,14 @@ mod tests {
 
     /// The vectors' list as a level's sections, through a level file,
     /// as the simulation takes them, with each spot's entry number.
-    fn engine_sections(p: &Placements) -> (Placed, Vec<usize>) {
-        let (entities, sections) = p.objects(SECTIONS_BOTTOM, |_| None);
+    fn engine_sections(p: &Placements, bottom: i64) -> (Placed, Vec<usize>) {
+        let (entities, sections) = p.objects(bottom, |_| None);
         let src = "format = 1\nsize = [2000, 1024]\nstart = [10, 10]\n";
         let mut level = Level::from_toml_str(src, "t").unwrap();
         (level.entities, level.sections) = (entities, sections);
         let level = Level::from_toml_str(&level.to_toml_string(), "saved").unwrap();
         let placed = Placed::of(&level).unwrap();
-        let of_entry = p.placed(SECTIONS_BOTTOM, |_| None).1;
+        let of_entry = p.placed(bottom, |_| None).1;
         let entry = |e: usize| of_entry.iter().position(|of| of.contains(&e)).unwrap();
         let entries = placed.entities.iter().map(|es| entry(es[0])).collect();
         (placed, entries)
@@ -515,7 +540,7 @@ mod tests {
     #[test]
     fn section_appearances_match_the_spec_vectors() {
         let placements = sections_fragment();
-        let (placed, entries) = engine_sections(&placements);
+        let (placed, entries) = engine_sections(&placements, SECTIONS_BOTTOM);
         let (spots, sections) = (&placed.spots, &placed.sections);
         let window = Window {
             across: -31..=288,
@@ -602,14 +627,12 @@ mod tests {
         assert_eq!(ats[3], Some(Vec2::ints(700, 924)));
         assert_eq!(ats.iter().flatten().count(), 1);
         assert_eq!(entities.len(), 15);
-        // A list without sections has none.
-        assert!(
-            read(&fragment())
-                .unwrap()
-                .objects(BOTTOM, |_| None)
-                .1
-                .is_empty()
-        );
+        // A list without sections is one section, with no point to meet
+        // another at, and class 2 entries need only the window.
+        let sections = read(&fragment()).unwrap().objects(BOTTOM, |_| None).1;
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].meets, None);
+        assert!(sections[0].spots.iter().all(|p| !p.rows));
     }
 
     #[test]

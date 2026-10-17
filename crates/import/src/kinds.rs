@@ -38,6 +38,9 @@ pub enum Kind {
     Entrance,
     /// An exit that takes the lead out of the area (`exits.md`).
     Exit,
+    /// An exit hidden in a wall, opened by a thrown object
+    /// (`wall-exits.md`).
+    WallExit,
     /// A crate holding an animal.
     AnimalCrate,
     /// The restart barrel, which marks the level's restart point.
@@ -45,6 +48,9 @@ pub enum Kind {
     Stinger,
     /// A tyre that throws the player up.
     Tyre,
+    /// A tyre that throws the player up and never squashes (`tyre.md`,
+    /// "The stiff tyre").
+    StiffTyre,
     /// A sign: scenery that nothing touches (`signs.md`).
     Sign,
     /// A small flying creature: scenery that nothing touches
@@ -65,7 +71,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 29] = [
+    pub const ALL: [Kind; 31] = [
         Kind::SmallWalker,
         Kind::MediumWalker,
         Kind::LargeWalker,
@@ -82,10 +88,12 @@ impl Kind {
         Kind::EndMarker,
         Kind::Entrance,
         Kind::Exit,
+        Kind::WallExit,
         Kind::AnimalCrate,
         Kind::RestartBarrel,
         Kind::Stinger,
         Kind::Tyre,
+        Kind::StiffTyre,
         Kind::Sign,
         Kind::Critter,
         Kind::ExtraLife(1),
@@ -116,10 +124,12 @@ impl Kind {
             Kind::EndMarker => "end-marker",
             Kind::Entrance => "entrance",
             Kind::Exit => "exit",
+            Kind::WallExit => "wall-exit",
             Kind::AnimalCrate => "animal-crate",
             Kind::RestartBarrel => "restart-barrel",
             Kind::Stinger => "stinger",
             Kind::Tyre => "tyre",
+            Kind::StiffTyre => "stiff-tyre",
             Kind::Sign => "sign",
             Kind::Critter => "critter",
             Kind::ExtraLife(1) => "extra-life-1",
@@ -202,6 +212,9 @@ impl Kind {
             // exits.md: placed and not drawn. Its values are the
             // preset's (`exit_*`).
             Kind::Exit => EXIT,
+            // wall-exits.md: placed and not drawn. The engine doesn't open
+            // one yet (#203), so it does nothing.
+            Kind::WallExit => WALL_EXIT,
             // animal-crate.md's values are the archetype's own.
             Kind::AnimalCrate => "hutch",
             // stinger.md doesn't cover how a level's stingers get their
@@ -216,6 +229,22 @@ impl Kind {
             // tyre.md's values are the archetype's own. The first level
             // has none.
             Kind::Tyre => "spring",
+            // tyre.md, "The stiff tyre": its top stays 15 up through the
+            // catch and after a throw, over runs as long as the tyre's,
+            // with its own touch and throw ranges.
+            Kind::StiffTyre => {
+                let ints =
+                    |ns: &[i64]| Value::Array(ns.iter().map(|&n| Value::Integer(n)).collect());
+                set("top", Value::Integer(15));
+                set("squash", Value::Array(vec![ints(&[15, 14])]));
+                set("wobble", Value::Array(vec![ints(&[15, 32])]));
+                set(
+                    "across",
+                    Value::Array(vec![ints(&[-24, 24]), ints(&[-26, 22])]),
+                );
+                set("throw_up", ints(&[-51, 18]));
+                "spring"
+            }
             // signs.md: it has no values of its own. How it's drawn isn't
             // covered, so both of the first level's signs look the same.
             Kind::Sign => "signpost",
@@ -304,6 +333,9 @@ pub const ENTRANCE: &str = "entrance";
 
 /// The kind of entity an exit is.
 pub const EXIT: &str = "exit";
+
+/// The kind of entity a wall exit is: no archetype's.
+pub const WALL_EXIT: &str = "wall-exit";
 
 /// The kind of entity a critter is: no archetype's.
 pub const CRITTER: &str = "critter";
@@ -445,6 +477,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::Figure,
             ),
             (
+                "858bd5ab1c8e2b25e0d23f36da439e91cc09f4578483506115836f355c507396",
+                Kind::WallExit,
+            ),
+            (
                 "8aad3408aa49bd9ceda4b82bd21591b32c7417dd4d4971eba27e30fd47eaf42c",
                 Kind::Entrance,
             ),
@@ -493,6 +529,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::HiddenMetalBarrel,
             ),
             (
+                "d3c74b9f836d76f4cf056376f253b9e2810e44323ff3fabbf0415ef3b99cbfc2",
+                Kind::WallExit,
+            ),
+            (
                 "d95f1da6f034e0484756a23152ad6c3ecdc3bf418860bc083e55a33ef6cf6abc",
                 Kind::Stinger,
             ),
@@ -511,6 +551,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "e332f1969a9e6ec35546e8ef037006fd8d1d4bbc9933646879072cc1f3a10009",
                 Kind::Sign,
+            ),
+            (
+                "ef9f527e7d99c063327beb2e5ab910b66859e3251df85554202bade9aa887b16",
+                Kind::StiffTyre,
             ),
             (
                 "f44d17c1cc692790ebee841de128717e08b078d09eb11b1931a12c05fbe5c81c",
@@ -661,7 +705,7 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 49);
+        assert_eq!(want.len(), 52);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }
@@ -679,8 +723,8 @@ mod tests {
                 assert_eq!(name, END);
                 continue;
             }
-            if kind == Kind::Exit || kind == Kind::Critter {
-                assert!([EXIT, CRITTER].contains(&name), "{kind}");
+            if [Kind::Exit, Kind::WallExit, Kind::Critter].contains(&kind) {
+                assert!([EXIT, WALL_EXIT, CRITTER].contains(&name), "{kind}");
                 assert!(!Archetypes::builtin().names().any(|n| n == name));
                 continue;
             }
@@ -741,6 +785,11 @@ mod tests {
                 (Kind::Tyre, behavior) => {
                     assert!(matches!(behavior, Behavior::Spring(_)), "{kind}")
                 }
+                (Kind::StiffTyre, Behavior::Spring(s)) => {
+                    assert_eq!((s.top, s.across), (15, [(-24, 24), (-26, 22)]));
+                    assert_eq!(s.squash_frames(), 14);
+                }
+                (Kind::StiffTyre, _) => panic!("{kind} isn't a spring"),
                 (Kind::Sign, behavior) => assert_eq!(behavior, Behavior::Scenery, "{kind}"),
                 (Kind::HiddenBunch, Behavior::Hidden(h)) => {
                     assert_eq!((h.fall_height, h.becomes), (0, "cluster"))
