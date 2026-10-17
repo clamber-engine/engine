@@ -167,6 +167,8 @@ pub enum Phase {
     Rope { target: Fixed, reach: bool },
     /// Gone for good: it doesn't appear with the view again.
     Gone,
+    /// A wall exit a thrown object opened (see [`exit`](crate::exit)).
+    Open,
 }
 
 /// Everything the simulation advances.
@@ -564,6 +566,7 @@ impl World {
                 Phase::Wobbling { m, .. } => [19, m],
                 Phase::Rope { reach, .. } => [20, reach.into()],
                 Phase::Gone => [21, 0],
+                Phase::Open => [22, 0],
             });
             if let Phase::Wobbling { thrown, .. } = t.phase {
                 out.push(thrown.map_or(0, |n| n.saturating_add(1)));
@@ -643,6 +646,7 @@ impl World {
             Some(l) => {
                 out.push(1);
                 count(&mut out, l.exit);
+                out.push(u8::from(l.way == Facing::Right));
                 out.extend(l.frame.to_le_bytes());
                 out.push(l.fade.map_or(0, |n| n.saturating_add(1)));
             }

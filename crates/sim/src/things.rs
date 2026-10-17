@@ -82,6 +82,7 @@ use clamber_pack::{Param, Physics};
 use crate::archetype::{Archetype, Behavior, Fall, Response};
 use crate::carry;
 use crate::columns;
+use crate::exit;
 use crate::flow::{FlowEvent, overlap};
 use crate::hidden;
 use crate::hutch;
@@ -263,6 +264,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
             }
         }
     }
+    exit::open(world);
     let untouchable = knocked(world);
     hutch::update(world, &physics, frozen, untouchable);
     if !frozen && !untouchable && world.swap.is_none() {
@@ -362,7 +364,8 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         | Phase::Squashed { .. }
         | Phase::Wobbling { .. }
         | Phase::Rope { .. }
-        | Phase::Gone => return false,
+        | Phase::Gone
+        | Phase::Open => return false,
         Phase::Knocked { vy } => {
             if let Behavior::Walker {
                 response,

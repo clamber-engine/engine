@@ -1,5 +1,6 @@
 //! Leaving an area through an exit, as `spec/behavior/exits.md`
-//! describes.
+//! describes, or through a wall exit, as `spec/behavior/wall-exits.md`
+//! does.
 //!
 //! An [`EXIT`] entity doesn't move and isn't drawn. With
 //! `exit_walk_speed` above 0, it takes over the lead at the end of a
@@ -35,13 +36,31 @@
 //! world: an exit's `arrival` param names the level's [`Arrival`] that
 //! play comes into next ([`World::arriving`]).
 //!
+//! A [`WALL_EXIT`] entity doesn't move and isn't drawn either. It's
+//! closed until a thrown object that [`Opens`] wall exits hits it, moving
+//! right and still there at the end of a frame; it opens on that frame
+//! (the spec has it open on that frame or the next, and doesn't cover
+//! what decides). Once open, it takes over the lead as an exit does,
+//! turned around: the lead moving left is never taken, and the reaches
+//! are `wall_exit_reach` standing, walking or running facing right,
+//! `wall_exit_reach_roll` rolling facing right, `wall_exit_reach_crouch`
+//! crouching facing right, still sliding or not, and
+//! `wall_exit_reach_left` standing or turning facing left, how far left
+//! of the wall exit the lead's `x` rounded down is. The lead walks out
+//! right, and F is the first frame it ends `exit_leave_at` px or more
+//! right of the wall exit; the rest is an exit's. The spec covers barrels
+//! only: here any thrown object with [`Opens`] boxes opens one, and a
+//! wall exit stays open for the rest of the visit.
+//!
 //! [`Arrival`]: clamber_level::Arrival
+//! [`Opens`]: crate::Opens
 
 use clamber_fixed::Fixed;
 use clamber_input::Frame;
 use clamber_level::Vec2;
 use clamber_pack::{Param, Physics};
 
+use crate::archetype::Behavior;
 use crate::carry;
 use crate::collect;
 use crate::columns;
@@ -51,16 +70,23 @@ use crate::loss;
 use crate::player::{Crouch, Facing, Player, State, frames};
 use crate::things;
 use crate::view::{self, Begin};
-use crate::world::{Event, World};
+use crate::world::{Event, Phase, World};
 
 /// The kind of entity that takes the lead out of the area.
 pub const EXIT: &str = "exit";
+
+/// The kind of entity that takes the lead out of the area to the right
+/// once a thrown object has opened it.
+pub const WALL_EXIT: &str = "wall-exit";
 
 /// The walk-out after an exit took over the lead.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Leaving {
     /// The exit's entity index.
     pub exit: usize,
+    /// The way the lead walks out: left for an exit, right for a wall
+    /// exit.
+    pub way: Facing,
     /// Steps of the walk-out taken so far: `k` on T + `k`.
     pub frame: u32,
     /// Frames since F, 0 on it, once the lead has passed it.
@@ -94,57 +120,118 @@ pub(crate) fn take_over(world: &mut World) {
         && player.riding.is_none()
         && player.spring.is_none()
         && player.ground.is_some()
-        && player.vel.x <= Fixed::ZERO
         && !world.events.contains(&Event::Hurt);
     if !can_leave {
         return;
     }
-    let Some(reach) = reach(player, &physics) else {
-        return;
-    };
     let slope = physics[Param::FaceSlope];
     let column = columns::column(player.pos.x);
     if slope > Fixed::ZERO && columns::face(&world.level, column, player.pos.y, slope).is_some() {
         return;
     }
+    // A lead moving right isn't taken by an exit, nor one moving left by
+    // a wall exit.
+    let reach = |way| {
+        let still_or_going = match way {
+            Facing::Left => player.vel.x <= Fixed::ZERO,
+            Facing::Right => player.vel.x >= Fixed::ZERO,
+        };
+        still_or_going
+            .then(|| reach(player, &physics, way))
+            .flatten()
+    };
+    let (left, right) = (reach(Facing::Left), reach(Facing::Right));
     let x = player.pos.x.floor();
     let nearest = -physics[Param::ExitLeaveAt].floor() + 1;
     let (above, below) = (physics[Param::ExitAbove], physics[Param::ExitBelow]);
-    let exit = world.level.entities.iter().position(|e| {
-        let ahead = x - e.at.x.floor();
+    let open = |i: usize| world.things.get(i).is_some_and(|t| t.phase == Phase::Open);
+    let exit = world.level.entities.iter().enumerate().find_map(|(i, e)| {
+        let (way, reach, ahead) = match e.kind.as_str() {
+            EXIT => (Facing::Left, left?, x - e.at.x.floor()),
+            WALL_EXIT if open(i) => (Facing::Right, right?, e.at.x.floor() - x),
+            _ => return None,
+        };
         let down = player.pos.y - e.at.y;
-        e.kind == EXIT && (nearest..=reach).contains(&ahead) && -above <= down && down <= below
+        ((nearest..=reach).contains(&ahead) && -above <= down && down <= below).then_some((i, way))
     });
-    let Some(exit) = exit else {
+    let Some((exit, way)) = exit else {
         return;
     };
     let ye = world.level.entities[exit].at.y.floor() + 1;
     world.player.pos.y = Fixed::from_int(i32::try_from(ye).unwrap_or(i32::MAX));
     world.leaving = Some(Leaving {
         exit,
+        way,
         frame: 0,
         fade: None,
     });
 }
 
-/// How far right of an exit, `x` rounded down, it takes over `player`
-/// in its state, if it does in that state.
-fn reach(player: &Player, physics: &Physics) -> Option<i64> {
+/// How far from an exit leading `way`, on the side it's entered from,
+/// `x` rounded down, it takes over `player` in its state, if it does in
+/// that state.
+fn reach(player: &Player, physics: &Physics, way: Facing) -> Option<i64> {
     if player.ground_action.is_some() || player.roll_stop > 0 {
         return None;
     }
     let rolling = player.state == State::Roll || player.roll.is_some();
     let crouching = player.crouch.held > 0;
     let upright = matches!(player.state, State::Idle | State::Walk | State::Run);
-    let param = match player.facing {
-        Facing::Left if player.turn.is_some() => return None,
-        Facing::Left if rolling => Param::ExitReachRoll,
-        Facing::Left if crouching && player.vel.x != Fixed::ZERO => Param::ExitReachCrouch,
-        Facing::Left if upright && !crouching => Param::ExitReach,
-        Facing::Right if upright && !rolling && !crouching => Param::ExitReachRight,
+    let param = match (way, player.facing) {
+        (Facing::Left, Facing::Left) if player.turn.is_some() => return None,
+        (Facing::Left, Facing::Left) if rolling => Param::ExitReachRoll,
+        (Facing::Left, Facing::Left) if crouching && player.vel.x != Fixed::ZERO => {
+            Param::ExitReachCrouch
+        }
+        (Facing::Left, Facing::Left) if upright && !crouching => Param::ExitReach,
+        (Facing::Left, Facing::Right) if upright && !rolling && !crouching => Param::ExitReachRight,
+        (Facing::Right, Facing::Right) if player.turn.is_some() => return None,
+        (Facing::Right, Facing::Right) if rolling => Param::WallExitReachRoll,
+        (Facing::Right, Facing::Right) if crouching => Param::WallExitReachCrouch,
+        (Facing::Right, Facing::Right) if upright => Param::WallExitReach,
+        (Facing::Right, Facing::Left) if upright && !rolling && !crouching => {
+            Param::WallExitReachLeft
+        }
         _ => return None,
     };
     Some(physics[param].floor())
+}
+
+/// Opens every closed wall exit that a thrown object moving right, still
+/// there at the end of this step, hits.
+pub(crate) fn open(world: &mut World) {
+    for i in 0..world.things.len() {
+        let object = &world.things[i];
+        let (Phase::Thrown(flight), Some(archetype)) = (object.phase, object.archetype) else {
+            continue;
+        };
+        let Behavior::Carry {
+            hit_early_time,
+            opens: Some(opens),
+            ..
+        } = archetype.behavior
+        else {
+            continue;
+        };
+        if !object.active || !flight.thrown || !flight.right() {
+            continue;
+        }
+        let hit = if flight.age <= hit_early_time {
+            opens.hit_early
+        } else {
+            opens.hit
+        };
+        let pos = object.pos;
+        for wall in world.things.iter_mut() {
+            if wall.active
+                && wall.kind == WALL_EXIT
+                && wall.phase == Phase::Ready
+                && hit.holds(pos, true, wall.pos)
+            {
+                wall.phase = Phase::Open;
+            }
+        }
+    }
 }
 
 /// One step of the walk-out, whatever is held.
@@ -167,6 +254,7 @@ pub(crate) fn step(world: &mut World) {
     let previous_feet = world.player.pos.y;
     walk(
         &mut world.player,
+        leaving.way,
         leaving.frame,
         &physics,
         &mut world.events,
@@ -180,9 +268,14 @@ pub(crate) fn step(world: &mut World) {
     }
     let xe = world.level.entities[leaving.exit].at.x.floor();
     let leave_at = physics[Param::ExitLeaveAt].floor();
+    let x = world.player.pos.x.floor();
+    let past = match leaving.way {
+        Facing::Left => x <= xe - leave_at,
+        Facing::Right => x >= xe + leave_at,
+    };
     leaving.fade = match leaving.fade {
         Some(f) => Some(f.saturating_add(1)),
-        None => (world.player.pos.x.floor() <= xe - leave_at).then_some(0),
+        None => past.then_some(0),
     };
     if let Some(at) = view_at {
         view::walkers(world, at, false);
@@ -199,9 +292,12 @@ pub(crate) fn step(world: &mut World) {
     world.leaving = Some(leaving);
 }
 
-/// Moves the lead on step `frame` of the walk-out.
-fn walk(player: &mut Player, frame: u32, physics: &Physics, events: &mut Vec<Event>) {
-    let speed = -physics[Param::ExitWalkSpeed];
+/// Moves the lead on step `frame` of the walk-out `way`.
+fn walk(player: &mut Player, way: Facing, frame: u32, physics: &Physics, events: &mut Vec<Event>) {
+    let speed = match way {
+        Facing::Left => -physics[Param::ExitWalkSpeed],
+        Facing::Right => physics[Param::ExitWalkSpeed],
+    };
     player.vel = Vec2::new(speed, Fixed::ZERO);
     player.target = speed;
     player.state = State::Walk;
@@ -221,14 +317,14 @@ fn walk(player: &mut Player, frame: u32, physics: &Physics, events: &mut Vec<Eve
         return;
     }
     player.pos.x += speed;
-    // A lead facing right turns to face left as on the ground.
+    // A lead facing away turns to face `way` as on the ground.
     let turn_time = frames(physics[Param::TurnTime]);
     player.turn = player.turn.map(|n| n + 1).filter(|&n| n < turn_time);
-    if frame == 2 && player.facing == Facing::Right {
+    if frame == 2 && player.facing != way {
         player.turn = Some(0);
     }
-    if player.facing == Facing::Right && player.turn == Some(turn_time / 2) {
-        player.facing = Facing::Left;
+    if player.facing != way && player.turn == Some(turn_time / 2) {
+        player.facing = way;
         events.push(Event::Turn);
     }
 }

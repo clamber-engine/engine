@@ -212,8 +212,9 @@ impl Kind {
             // exits.md: placed and not drawn. Its values are the
             // preset's (`exit_*`).
             Kind::Exit => EXIT,
-            // wall-exits.md: placed and not drawn. The engine doesn't open
-            // one yet (#203), so it does nothing.
+            // wall-exits.md: placed and not drawn, and closed until a
+            // thrown barrel opens it. Its values are the preset's
+            // (`wall_exit_*`, and `exit_*` for the rest).
             Kind::WallExit => WALL_EXIT,
             // animal-crate.md's values are the archetype's own.
             Kind::AnimalCrate => "hutch",
@@ -717,6 +718,8 @@ mod tests {
 
         assert_eq!(END, clamber_sim::END);
         assert_eq!(HIDDEN, clamber_sim::HIDDEN);
+        assert_eq!(EXIT, clamber_sim::EXIT);
+        assert_eq!(WALL_EXIT, clamber_sim::WALL_EXIT);
         for kind in Kind::ALL {
             let (name, params) = kind.entity();
             if kind == Kind::EndMarker {

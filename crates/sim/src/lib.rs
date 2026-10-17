@@ -44,7 +44,8 @@
 //! Walking past a level's [`END`] marker finishes it, after a walk-out
 //! and a fade if the preset has them ([`Ending`]). An [`EXIT`] takes the
 //! lead out of the area, walking it out as the picture fades
-//! ([`Leaving`]). A [`DIM`] entity near the view starts the [`Dimming`]
+//! ([`Leaving`]), and so does a [`WALL_EXIT`] once a thrown object has
+//! opened it. A [`DIM`] entity near the view starts the [`Dimming`]
 //! of the level's background.
 //!
 //! With a preset that has one, a [`View`] follows the player, and
@@ -91,8 +92,8 @@ pub use archetype::{
     AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
     Entrance, Fall, HIDDEN_ITEMS, Hidden, Hit, Holder, Hutch, KEG_PIECES, Keg, MAX_AIR_STEPS,
     MAX_ARRIVE_RULES, MAX_HOP_STEPS, MAX_LETTERS, MAX_RESPONSE_PARTS, MAX_SHAKE_STAGES,
-    MAX_SPRING_RUNS, MAX_STRIKE_FRAMES, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Ride,
-    RiderReach, Rope, Span, Spring, Stinger, Throw, WalkerContact,
+    MAX_SPRING_RUNS, MAX_STRIKE_FRAMES, MAX_THROWS, MAX_TURN_PARTS, Offsets, Opens, Reach,
+    Response, Ride, RiderReach, Rope, Span, Spring, Stinger, Throw, WalkerContact,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
@@ -103,7 +104,7 @@ pub use collect::{
 pub use dimming::{DIM, Dimming};
 pub use ending::{END, Ending};
 pub use entrance::Entering;
-pub use exit::{EXIT, Leaving};
+pub use exit::{EXIT, Leaving, WALL_EXIT};
 pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };

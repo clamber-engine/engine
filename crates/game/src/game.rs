@@ -6,7 +6,7 @@ use clamber_level::{Area, Depth, Layer, Shape, Vec2};
 use clamber_pack::Feel;
 use clamber_sim::{
     Behavior, DIM, END, EXIT, Facing, FlowEvent, HALF_WIDTH, HEIGHT, HIDDEN, InputFrame, State,
-    World, step,
+    WALL_EXIT, World, step,
 };
 
 use crate::camera::{Camera, VIEW, point};
@@ -279,14 +279,15 @@ impl Game {
         scenery: bool,
     ) {
         for (thing, pose) in self.world.things.iter().zip(&self.poses.things) {
-            // The end marker, exits, the dimming's entity and hidden
+            // The end marker, exits, wall exits, the dimming's entity and hidden
             // objects aren't drawn.
             let is_scenery = thing
                 .archetype
                 .is_some_and(|a| a.behavior == Behavior::Scenery);
             if !thing.active
                 || is_scenery != scenery
-                || ([END, EXIT, DIM, HIDDEN].contains(&thing.kind.as_str()) && !self.debug)
+                || ([END, EXIT, WALL_EXIT, DIM, HIDDEN].contains(&thing.kind.as_str())
+                    && !self.debug)
             {
                 continue;
             }

@@ -623,6 +623,10 @@ mod tests {
                     | Param::ExitReachRoll
                     | Param::ExitReachCrouch
                     | Param::ExitReachRight
+                    | Param::WallExitReach
+                    | Param::WallExitReachRoll
+                    | Param::WallExitReachCrouch
+                    | Param::WallExitReachLeft
                     | Param::ExitAbove
                     | Param::ExitBelow
                     | Param::ExitLeaveAt

@@ -339,6 +339,10 @@ exit_reach = 0
 exit_reach_roll = 0
 exit_reach_crouch = 0
 exit_reach_right = 0
+wall_exit_reach = 0
+wall_exit_reach_roll = 0
+wall_exit_reach_crouch = 0
+wall_exit_reach_left = 0
 exit_above = 0
 exit_below = 0
 exit_leave_at = 0
@@ -822,6 +826,13 @@ exit_reach = 31
 exit_reach_roll = 29
 exit_reach_crouch = 34
 exit_reach_right = 37
+# Wall exits (wall-exits.md) lead right, with every reach 2 px shorter
+# than an exit's turned around, and a crouching lead in reach whether it
+# still slides or not; the rest is as for exits.
+wall_exit_reach = 29
+wall_exit_reach_roll = 27
+wall_exit_reach_crouch = 32
+wall_exit_reach_left = 35
 exit_above = 39
 exit_below = 35
 exit_leave_at = 4

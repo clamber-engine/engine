@@ -112,6 +112,9 @@
 #   frames of a throw before it leaves the hands, but not the first, it
 #   breaks on walkers its `hit_early` box touches in the hands.
 #   Carried, put down, lying or dropped, it doesn't break.
+#   With `hit_wall_exit` and `hit_wall_exit_early`, thrown and moving
+#   right, it opens wall exits those boxes hold, as `hit_thrower` does
+#   throwers.
 # - `thrower`: never moves, and throws a `ball` on a timetable:
 #   `throws = [[frame, vx, vy], ...]`, up to four, each on that frame of
 #   every `period` frames, counting from 0 on the frame it appeared on,
@@ -464,6 +467,15 @@ hit_thrower = [36, 30, 23, 32]
 hit_thrower_early = [37, 55, 47, 65]
 hit_ball = [27, 21, 25, 20]
 hit_ball_early = [27, 47, 52, 50]
+# title-1's (spec/behavior/wall-exits.md, "Opening"): thrown and moving
+# right, it opens a wall exit whose position, both rounded down across
+# and up down, is inside `hit_wall_exit`, `[behind, ahead, above,
+# below]` from its own, ends included, or `hit_wall_exit_early` for its
+# first `hit_early_time` frames out of the hands. Without them it opens
+# none. The spec covers barrels; one holding the character opens them
+# too here.
+hit_wall_exit = [24, 24, 26, 33]
+hit_wall_exit_early = [25, 49, 50, 66]
 
 # title-1's (spec/behavior/animal-crate.md), measured on the first
 # level's crate with the first character. The spec doesn't say how big
@@ -683,6 +695,8 @@ hit_thrower = [36, 30, 23, 32]
 hit_thrower_early = [37, 55, 47, 65]
 hit_ball = [27, 21, 25, 20]
 hit_ball_early = [27, 47, 52, 50]
+hit_wall_exit = [24, 24, 26, 33]
+hit_wall_exit_early = [25, 49, 50, 66]
 
 # title-1's restart barrel (spec/behavior/restart-barrel.md). The player
 # touches it by the ranges for its pose, the ball's poses with the ball's

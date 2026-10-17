@@ -69,13 +69,15 @@ pub enum Behavior {
     /// (see [`carry`](crate::carry)), from `reach` px away or closer.
     /// Thrown, it hits walkers its `hit` box touches, or its `hit_early`
     /// box for its first `hit_early_time` frames out of the hands. With a
-    /// `holder`, it holds the missing character.
+    /// `holder`, it holds the missing character. With `opens`, it opens
+    /// wall exits.
     Carry {
         reach: Fixed,
         hit: Hit,
         hit_early: Hit,
         hit_early_time: u8,
         holder: Option<Holder>,
+        opens: Option<Opens>,
     },
     /// A collectible the player takes from within its [`Reach`] (see
     /// [`collect`](crate::collect)). It adds `worth` to the collectible
@@ -942,6 +944,16 @@ pub struct Holder {
     pub ball_early: Hit,
 }
 
+/// What makes a thrown object open wall exits (see
+/// [`exit`](crate::exit)): moving right, it opens one its `hit` box holds
+/// at the end of a frame, or its `hit_early` box for its first
+/// `hit_early_time` frames out of the hands ([`Hit::holds`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Opens {
+    pub hit: Hit,
+    pub hit_early: Hit,
+}
+
 impl Behavior {
     /// Whether it's an enemy: it hurts the player and can be defeated.
     pub fn is_enemy(self) -> bool {
@@ -1174,6 +1186,8 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "hit_thrower_early",
             "hit_ball",
             "hit_ball_early",
+            "hit_wall_exit",
+            "hit_wall_exit_early",
         ],
         "thrower" => &[
             "period",
@@ -1465,12 +1479,23 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 }),
                 Some(_) => return Err(format!("{path}.holds_character: expected true or false")),
             };
+            let opens = match (
+                table.contains_key("hit_wall_exit"),
+                table.contains_key("hit_wall_exit_early"),
+            ) {
+                (false, false) => None,
+                _ => Some(Opens {
+                    hit: hit("hit_wall_exit")?,
+                    hit_early: hit("hit_wall_exit_early")?,
+                }),
+            };
             Behavior::Carry {
                 reach,
                 hit: hit("hit")?,
                 hit_early: hit("hit_early")?,
                 hit_early_time,
                 holder,
+                opens,
             }
         }
         "collect" => {
