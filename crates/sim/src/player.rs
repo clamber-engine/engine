@@ -233,6 +233,10 @@ pub struct Player {
     pub swim_floor: bool,
     /// Riding an animal, if it is (see [`crate::ride`]).
     pub riding: Option<Riding>,
+    /// Knocked off an animal, until it lands or bounces: facing doesn't
+    /// change, and Jump must stay held on the frames it holds still for
+    /// the held gravity.
+    pub unseated: bool,
 }
 
 impl Player {
@@ -292,6 +296,7 @@ impl Player {
             touched: Vec::new(),
             swim_floor: false,
             riding: None,
+            unseated: false,
         };
         player.ground = level
             .collision
@@ -351,6 +356,7 @@ impl Player {
         self.jump_hold = true;
         self.takeoff = false;
         self.takeoff_wait = None;
+        self.unseated = false;
         self.end_roll();
         self.ground_action = None;
         if !events.contains(&Event::Bounce) {
@@ -648,8 +654,14 @@ impl Player {
     ) {
         self.touched.clear();
         if self.frozen > 0 {
+            if self.unseated {
+                self.jump_hold &= input.held.contains(Action::Jump);
+            }
             self.frozen -= 1;
             return;
+        }
+        if self.grounded() {
+            self.unseated = false;
         }
         self.swap = self.swap.saturating_sub(1);
         // While swapping, nothing is pressed or held.
@@ -1011,6 +1023,7 @@ impl Player {
             }
         } else if keep_fall_facing
             || keep_takeoff_facing
+            || self.unseated
             || (self.walked_off && physics[Param::WalkOffKeepsFacing] > Fixed::ZERO)
         {
             self.turn = None;
@@ -2250,6 +2263,7 @@ impl Player {
         self.vel.y = Fixed::ZERO;
         self.ground = Some(collider);
         self.jump_hold = false;
+        self.unseated = false;
         self.touched.push(collider);
         events.push(Event::Land);
     }

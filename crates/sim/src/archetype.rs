@@ -42,7 +42,8 @@ pub enum Behavior {
     /// With a `contact`, it hurts the player or is bounced on as that
     /// says, instead of by the preset's boxes. With a `hurt_jump_lift`,
     /// the preset's hurt box rises that far late in a jump against it,
-    /// instead of the preset's `hurt_jump_lift`.
+    /// instead of the preset's `hurt_jump_lift`. A player riding an
+    /// animal meets it as `rider` says instead (see [`ride`](crate::ride)).
     Walker {
         speed: Fixed,
         response: Response,
@@ -51,6 +52,7 @@ pub enum Behavior {
         bounced_speed: Option<Fixed>,
         contact: Option<WalkerContact>,
         hurt_jump_lift: Option<Fixed>,
+        rider: RiderReach,
         facing: Facing,
         turn_delay: u8,
         appear_wait: u8,
@@ -223,6 +225,58 @@ pub struct Ride {
     pub approach_row: i32,
     pub approach_steer: u8,
     pub approach_land: u8,
+    /// A walker in front of the animal on this frame of a charge or later
+    /// is thrown, and the rider's speed becomes `throw_rise` up.
+    pub throw_from: u8,
+    pub throw_rise: Fixed,
+    /// Knocked off, the player's speed becomes `knock_rise` up, and it
+    /// holds still with everything else for `knock_hold` frames after.
+    pub knock_rise: Fixed,
+    pub knock_hold: u8,
+    /// The animal left behind runs off at `bolt_speed` for `bolt_dash`
+    /// frames after those, then eases toward `bolt_glide` by
+    /// `bolt_response` of the gap a frame, rounded toward zero to 1/256
+    /// px per frame (reaching it when that rounds to nothing).
+    pub bolt_speed: Fixed,
+    pub bolt_dash: u8,
+    pub bolt_glide: Fixed,
+    pub bolt_response: Fixed,
+}
+
+/// How a walker meets a player riding an animal
+/// (spec/behavior/riding-walkers.md). Offsets are whole px: `across` is
+/// the rider's `x` less the walker's, rounded down, and `above` how far
+/// the rider is above the walker, both rounded toward the floor. Each
+/// `*_across` is a pair of ranges for a rider facing right: for a walker
+/// facing the same way, then the other way. For a rider facing left, the
+/// pair's range for how the walker faces turns around: from minus its
+/// end to minus its start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct RiderReach {
+    /// The walker is in front of the animal within these, with the rider
+    /// where it is after its move on a frame and the walker where it was
+    /// before its own, and `above` at most `attack_above`.
+    pub attack_across: [(i32, i32); 2],
+    pub attack_above: i32,
+    /// On the rider's floor, it knocks the rider off within these at the
+    /// end of a frame, if the rider was on the floor at the end of that
+    /// frame and the one before, or `above` is at most `knock_above`.
+    pub knock_across: [(i32, i32); 2],
+    pub knock_above: i32,
+    /// Thrown, its speed across is the rider's times this.
+    pub throw_speed: Fixed,
+}
+
+impl RiderReach {
+    /// The range of `across` for a rider facing `rider`, from `ranges`,
+    /// and a walker facing `walker`.
+    pub fn across(ranges: [(i32, i32); 2], rider: Facing, walker: Facing) -> (i32, i32) {
+        let (from, to) = ranges[usize::from(rider != walker)];
+        match rider {
+            Facing::Right => (from, to),
+            Facing::Left => (-to, -from),
+        }
+    }
 }
 
 /// The most frames an animal's hop out of its crate can have.
@@ -818,6 +872,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "bounced_speed",
             "contact",
             "hurt_jump_lift",
+            "rider",
         ],
         "patrol" => &["path", "period"],
         "launcher" => &["velocity"],
@@ -972,6 +1027,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                     Some(v) => Some(parse_walker_contact(v, &format!("{path}.contact"))?),
                 },
                 hurt_jump_lift,
+                rider: parse_rider(get("rider")?, &format!("{path}.rider"))?,
                 facing,
                 turn_delay,
                 appear_wait,
@@ -1212,14 +1268,9 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
     })
 }
 
-/// Reads a crate holding an animal's values. Errors start with `path`.
-fn parse_hutch(table: &Table, path: &str) -> Result<Hutch, String> {
-    let get = |key: &str| {
-        table
-            .get(key)
-            .ok_or_else(|| format!("{path}: missing `{key}`"))
-    };
-    let range = |value: &Value, at: &str| match value {
+/// Reads `[from, to]`, whole px. Errors start with `at`.
+fn parse_range(value: &Value, at: &str) -> Result<(i32, i32), String> {
+    match value {
         Value::Array(items) if items.len() == 2 => {
             let end = |i: usize| match &items[i] {
                 Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
@@ -1232,19 +1283,74 @@ fn parse_hutch(table: &Table, path: &str) -> Result<Hutch, String> {
             Ok((from, to))
         }
         _ => Err(format!("{at}: expected [from, to]")),
+    }
+}
+
+/// Reads `[[from, to], [from, to]]`, whole px, which come in the order
+/// `order` says. Errors start with `at`.
+fn parse_ranges(value: &Value, at: &str, order: &str) -> Result<[(i32, i32); 2], String> {
+    match value {
+        Value::Array(items) if items.len() == 2 => Ok([
+            parse_range(&items[0], &format!("{at}[0]"))?,
+            parse_range(&items[1], &format!("{at}[1]"))?,
+        ]),
+        _ => Err(format!("{at}: expected [[from, to], [from, to]], {order}")),
+    }
+}
+
+/// Reads how a walker meets a rider. Errors start with `path`.
+fn parse_rider(value: &Value, path: &str) -> Result<RiderReach, String> {
+    const KEYS: [&str; 5] = [
+        "attack_across",
+        "attack_above",
+        "knock_across",
+        "knock_above",
+        "throw_speed",
+    ];
+    let Value::Table(table) = value else {
+        return Err(format!("{path}: expected a table"));
+    };
+    if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
+        return Err(format!("{path}.{key}: a rider table has no such value"));
+    }
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
     };
     let ranges = |key: &str| {
-        let at = format!("{path}.{key}");
-        match get(key)? {
-            Value::Array(items) if items.len() == 2 => Ok([
-                range(&items[0], &format!("{at}[0]"))?,
-                range(&items[1], &format!("{at}[1]"))?,
-            ]),
-            _ => Err(format!(
-                "{at}: expected [[from, to], [from, to]], right then left"
-            )),
-        }
+        parse_ranges(
+            get(key)?,
+            &format!("{path}.{key}"),
+            "the same facing then the other",
+        )
     };
+    let px = |key: &str| match get(key)? {
+        Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+        _ => Err(format!("{path}.{key}: expected a whole number of px")),
+    };
+    Ok(RiderReach {
+        attack_across: ranges("attack_across")?,
+        attack_above: px("attack_above")?,
+        knock_across: ranges("knock_across")?,
+        knock_above: px("knock_above")?,
+        throw_speed: clamber_pack::read_number(
+            get("throw_speed")?,
+            "",
+            &format!("{path}.throw_speed"),
+        )
+        .map_err(|e| e.message)?,
+    })
+}
+
+/// Reads a crate holding an animal's values. Errors start with `path`.
+fn parse_hutch(table: &Table, path: &str) -> Result<Hutch, String> {
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let ranges = |key: &str| parse_ranges(get(key)?, &format!("{path}.{key}"), "right then left");
     let frames = |key: &str| match get(key)? {
         Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
         _ => Err(format!(
@@ -1267,12 +1373,12 @@ fn parse_hutch(table: &Table, path: &str) -> Result<Hutch, String> {
     }
     Ok(Hutch {
         break_across: ranges("break_across")?,
-        break_above: range(get("break_above")?, &format!("{path}.break_above"))?,
+        break_above: parse_range(get("break_above")?, &format!("{path}.break_above"))?,
         animal_after: frames("animal_after")?,
         animal_hop,
         hop_steps: items.len() as u8,
         mount_across: ranges("mount_across")?,
-        mount_above: range(get("mount_above")?, &format!("{path}.mount_above"))?,
+        mount_above: parse_range(get("mount_above")?, &format!("{path}.mount_above"))?,
         mount_hold: frames("mount_hold")?,
         ride: parse_ride(get("ride")?, &format!("{path}.ride"))?,
     })
@@ -1280,7 +1386,7 @@ fn parse_hutch(table: &Table, path: &str) -> Result<Hutch, String> {
 
 /// Reads how an animal is ridden. Errors start with `path`.
 fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
-    const KEYS: [&str; 23] = [
+    const KEYS: [&str; 31] = [
         "speed",
         "run_speed",
         "response",
@@ -1304,6 +1410,14 @@ fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
         "approach_row",
         "approach_steer",
         "approach_land",
+        "throw_from",
+        "throw_rise",
+        "knock_rise",
+        "knock_hold",
+        "bolt_speed",
+        "bolt_dash",
+        "bolt_glide",
+        "bolt_response",
     ];
     let Value::Table(table) = value else {
         return Err(format!("{path}: expected a table"));
@@ -1355,6 +1469,14 @@ fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
         approach_row: px("approach_row")?,
         approach_steer: frames("approach_steer")?,
         approach_land: frames("approach_land")?,
+        throw_from: frames("throw_from")?,
+        throw_rise: number("throw_rise")?,
+        knock_rise: number("knock_rise")?,
+        knock_hold: frames("knock_hold")?,
+        bolt_speed: number("bolt_speed")?,
+        bolt_dash: frames("bolt_dash")?,
+        bolt_glide: number("bolt_glide")?,
+        bolt_response: number("bolt_response")?,
     })
 }
 
@@ -1971,6 +2093,21 @@ mod tests {
             "contact.nope: no such value",
         );
         check("ball", "contact = 1", "contact: expected a table");
+        check(
+            "crawler",
+            "rider = { attack_across = [[1, 0], [0, 1]] }",
+            "rider.attack_across[0]: it ends before it starts",
+        );
+        check(
+            "crawler",
+            "rider = { attack_across = [[0, 1]] }",
+            "the same facing then the other",
+        );
+        check(
+            "crawler",
+            "rider = { nope = 1 }",
+            "rider.nope: a rider table has no such value",
+        );
         check("spark", "worth = 0", "entities[3].params.worth");
         check("letter", "letter = 0", "entities[3].params.worth");
         check("letter", "letter = 9", "entities[3].params.letter");

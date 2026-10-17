@@ -66,7 +66,22 @@
 #   range, a player on a frame of a timed roll within it defeats it, and
 #   one in the stop after a timed roll within it is hurt; without one, it
 #   doesn't touch the player then. The preset's bounce and hurt boxes
-#   don't apply to it.
+#   don't apply to it. A player riding an animal meets it only as its
+#   `rider` table says, by offsets in whole px: `across`, the rider's x
+#   less the walker's, rounded down, and `above`, how far the rider is
+#   above the walker, rounded toward the floor. `attack_across` and
+#   `knock_across` are `[[from, to], [from, to]]`, ends included, for a
+#   rider facing right and the walker facing the same way, then the
+#   other way; for a rider facing left, the range for how the walker
+#   faces turns around (from minus its end to minus its start). Within
+#   `attack_across` and up to `attack_above`, with the rider after its
+#   move on a frame and the walker before its own, the walker is in
+#   front of the animal: it starts a charge, or is thrown by one (the
+#   ride's `throw_*` values), its speed across becoming `throw_speed`
+#   times the rider's. On the rider's floor, within `knock_across` at
+#   the end of a frame, it knocks the rider off on the next one if the
+#   rider was on the floor at the end of that frame and the one before,
+#   or is no more than `knock_above` above it.
 # - `patrol`: an enemy that flies from where it's placed to `path = [x, y]`
 #   away and back, taking `period` frames for the round trip.
 # - `launcher`: fires the player off at `velocity = [x, y]` on touch.
@@ -243,8 +258,18 @@
 #   `approach_steer` frames after its approach frame (the first, after it
 #   starts falling, with floor below at most `approach_reach` px and
 #   `approach_rows` rows of `approach_row` px down) stays steered until
-#   then and rides on `approach_land` frames after it. Only the character
-#   under control breaks a crate or mounts an animal.
+#   then and rides on `approach_land` frames after it. A walker in front
+#   of the animal (its `rider` table) starts a charge on the next frame
+#   unless one is under way, ending what the rider was doing; from
+#   `throw_from` frames into a charge it's thrown, out of the level as
+#   when defeated, and the rider's speed becomes `throw_rise` up. A walker
+#   that knocks the rider off: the player doesn't move on that frame, its
+#   speed becomes `knock_rise` up, and it holds still with everything
+#   else for `knock_hold` frames, then falls on foot, facing as it was
+#   until it lands. The animal runs off the way the rider faced, after
+#   those frames: at `bolt_speed` for `bolt_dash` frames, then easing
+#   toward `bolt_glide` by `bolt_response` of the gap a frame. Only the
+#   character under control breaks a crate or mounts an animal.
 #
 # The player defeats an enemy by landing on it, and bounces off, or by
 # rolling into it. Touching one any other way costs a life.
@@ -268,6 +293,14 @@ defeat_gravity = 0.375
 defeat_max_fall = 8
 defeat_knock = 4
 defeat_knock_glide = 2
+
+# title-1's small walker's (spec/behavior/riding-walkers.md).
+[archetypes.crawler.rider]
+attack_across = [[-55, 24], [-56, 23]]
+attack_above = 25
+knock_across = [[-18, 26], [-19, 25]]
+knock_above = -3
+throw_speed = 2
 
 [archetypes.flutter]
 behavior = "patrol"
@@ -326,8 +359,7 @@ mount_above = [5, 45]
 mount_hold = 22
 
 # Riding the animal (spec/behavior/riding.md, riding-slopes.md,
-# riding-faces.md). What the animal does to enemies, and getting off it,
-# aren't covered yet.
+# riding-faces.md, riding-walkers.md). Getting off it isn't covered yet.
 [archetypes.hutch.ride]
 speed = 2
 run_speed = 3.5
@@ -353,6 +385,15 @@ approach_rows = 2
 approach_row = 32
 approach_steer = 5
 approach_land = 14
+# Walkers (riding-walkers.md).
+throw_from = 2
+throw_rise = 6
+knock_rise = 6
+knock_hold = 15
+bolt_speed = 6
+bolt_dash = 5
+bolt_glide = 4
+bolt_response = 0.125
 
 # title-1's thrower and balls (spec/behavior/thrower.md). The spec
 # doesn't say how big either is; the sizes are Clamber's own and only

@@ -61,8 +61,8 @@ mod world;
 pub use archetype::{
     AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
     Fall, Hit, Holder, Hutch, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_HOP_STEPS, MAX_LETTERS,
-    MAX_RESPONSE_PARTS, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Ride, Span, Stinger,
-    Throw, WalkerContact,
+    MAX_RESPONSE_PARTS, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Ride, RiderReach,
+    Span, Stinger, Throw, WalkerContact,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;

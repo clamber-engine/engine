@@ -17,6 +17,7 @@ use crate::follow::{self, Lead, Mode};
 use crate::join::{self, Join};
 use crate::loss::{self, Loss, Lost};
 use crate::player::{Act, Facing, Player, ROLL, Roll, frames};
+use crate::ride;
 use crate::script::{InputFrame, Script};
 use crate::swap::{self, Move, Other, Recent, Swap};
 use crate::things;
@@ -134,6 +135,8 @@ pub enum Phase {
     Mounted(u8),
     /// An animal the player rides.
     Ridden,
+    /// An animal whose rider was knocked off, running off at `vx`.
+    Bolting { vx: Fixed },
     /// A stinger swaying around its start, with its vertical speed and
     /// its target speeds (see [`stinger`](crate::stinger)).
     Swaying { vy: Fixed, tx: Fixed, ty: Fixed },
@@ -438,10 +441,12 @@ impl World {
                 Phase::Mounted(since) => [10, since],
                 Phase::Ridden => [11, 0],
                 Phase::Swaying { .. } => [12, 0],
+                Phase::Bolting { .. } => [13, 0],
             });
             if let Phase::Falling { vy, .. }
             | Phase::Knocked { vy: Some(vy) }
-            | Phase::Flying { vy, .. } = t.phase
+            | Phase::Flying { vy, .. }
+            | Phase::Bolting { vx: vy } = t.phase
             {
                 fixed(&mut out, vy);
             }
@@ -683,6 +688,7 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
         None => out.push(0),
     }
     out.push(p.hop.map_or(0, |n| n.saturating_add(1)));
+    out.push(p.unseated.into());
     match p.hands {
         Some(h) => {
             out.push(1);
@@ -776,6 +782,8 @@ pub fn step(world: &mut World, input: &InputFrame) {
             world.player.hit(&mut world.events);
         } else if loss::update(world) {
             // The loss moves the characters.
+        } else if ride::unseat(world) {
+            // Knocked off the animal, the player doesn't move.
         } else if !swap::update(world, &physics, &input.players[0]) {
             carry::before(world, &input.players[0]);
             // After a swap, the physics are the new player's.

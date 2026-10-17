@@ -45,6 +45,11 @@
 //! bounces off it, and the player can mount the animal that comes out
 //! (see [`hutch`]).
 //!
+//! A player riding the animal meets walkers only by their rider tables:
+//! it charges at and throws them, or is knocked off (see
+//! [`ride`](crate::ride)). While a player knocked off holds still,
+//! nothing moves or touches it.
+//!
 //! Objects that can be carried don't act on the player; the player picks
 //! them up (see [`carry`](crate::carry)).
 //!
@@ -77,6 +82,7 @@ use crate::hutch;
 use crate::join;
 use crate::player::{Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, frames, is_wall};
 use crate::pose::{self, Stance};
+use crate::ride;
 use crate::stinger;
 use crate::throwers::{self, Picture};
 use crate::view;
@@ -104,8 +110,15 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
             || world.events.contains(&Event::Hurt)
             || world.losing()
             || world.ending.is_some()
+            // Nor while a player knocked off an animal holds still.
+            || (world.player.unseated && (frozen || world.player.frozen > 0))
     };
-    let mut bounced = if boxes && !knocked(world) {
+    // A rider meets walkers only by their rider tables.
+    let riding = world.player.riding.is_some();
+    if riding && !frozen && !knocked(world) {
+        ride::attack(world);
+    }
+    let mut bounced = if boxes && !riding && !knocked(world) {
         bounce_on_boxes(world, &physics)
     } else {
         Vec::new()
@@ -117,7 +130,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
     let roll_freeze = frames(physics[Param::RollDefeatFreeze]);
     let roll_holds = physics[Param::RollDefeatHoldsWalkers] > Fixed::ZERO;
     let mut rolled_into = Vec::new();
-    if !frozen && !knocked(world) {
+    if !frozen && !riding && !knocked(world) {
         match walker_contact(world, &physics) {
             Some((index, Touch::Bounce)) => {
                 world.player.bounce(
@@ -184,6 +197,11 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
     let knockout_frame = world.player.knockout.map(|k| k.frame);
     let waiting = wait > 0 && knockout_frame.is_some_and(|f| f >= 1 && f <= wait);
     let catch_up = wait > 0 && knockout_frame == Some(wait + 1);
+    // Nothing moves while a player knocked off an animal holds still.
+    if frozen && world.player.unseated {
+        hutch::update(world, &physics, frozen, true);
+        return None;
+    }
     throwers::throw(world);
     // Balls leave by where the view was at the start of the step.
     let picture = world.view.map(|v| Picture::of(v, &physics));
@@ -274,7 +292,10 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
     // pause either.
     let pausing = world.player.ground_action.is_some() && (frozen || world.player.frozen > 0);
     if !knocked(world) && !pausing {
-        let walker = if hurt_boxes {
+        // Walkers don't hurt a player knocked off an animal before it
+        // lands (riding-walkers.md's example flies on over one), but it
+        // can bounce off them.
+        let walker = if hurt_boxes && !riding && !world.player.unseated {
             hurt_ahead(world, &physics)
         } else {
             None
@@ -342,7 +363,9 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
             return false;
         }
         // Crates holding an animal move in [`hutch::update`].
-        Phase::Opened(_) | Phase::Mounted(_) | Phase::Ridden => return false,
+        Phase::Opened(_) | Phase::Mounted(_) | Phase::Ridden | Phase::Bolting { .. } => {
+            return false;
+        }
         Phase::Swaying { .. } => {
             if let Behavior::Stinger(stinger) = archetype.behavior {
                 stinger::sway(thing, level.entities[thing.index].at, &stinger);
@@ -1131,6 +1154,7 @@ fn interact(
     let bounce = physics[Param::BounceSpeed];
     let freeze = frames(physics[Param::BounceFreeze]);
     let player = &mut world.player;
+    let riding = player.riding.is_some();
     let rolling = player.state == State::Roll && !attack_boxes;
     for thing in world.things.iter_mut().filter(|t| t.active) {
         let Some(archetype) = thing.archetype else {
@@ -1154,6 +1178,7 @@ fn interact(
             | Behavior::Thrower { .. }
             | Behavior::Ball(_)
             | Behavior::Stinger(_) => {}
+            _ if riding => {}
             _ => {
                 let middle = Fixed::from_bits((area.1.to_bits() + area.3.to_bits()) / 2);
                 let landed = !boxes && previous_feet <= middle && player.pos.y >= previous_feet;

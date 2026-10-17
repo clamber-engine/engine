@@ -21,7 +21,7 @@ use clamber_pack::{Param, Physics};
 
 use crate::archetype::{Behavior, Hutch, within};
 use crate::player::{State, frames};
-use crate::ride::Riding;
+use crate::ride::{self, Riding};
 use crate::world::{Phase, World};
 
 /// Moves every crate and animal on a step, after the player has moved,
@@ -53,6 +53,7 @@ pub(crate) fn update(world: &mut World, physics: &Physics, frozen: bool, untouch
             }
             Phase::Mounted(since) => thing.phase = Phase::Mounted(since + 1),
             Phase::Ridden => thing.pos = world.player.pos,
+            Phase::Bolting { vx } => ride::bolt(&world.level, thing, &hutch.ride, vx),
             _ => {}
         }
     }

@@ -22,16 +22,25 @@
 //! end of a face over a drop is always left. A jump that lands soon
 //! after its **approach frame**, when floor first comes within reach
 //! below, stays steered and lands for longer.
+//!
+//! Walkers meet a rider by their [`RiderReach`]
+//! (spec/behavior/riding-walkers.md). One **in front of the animal**
+//! after the rider's move starts a charge, unless one is under way, and
+//! a charge far enough along throws it out of the level, sending the
+//! rider up. One that reached the rider at the end of a step knocks it
+//! off the animal on the next: the player holds still with everything
+//! else for a while, then falls on foot, and the animal runs off.
 
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame};
-use clamber_level::Level;
+use clamber_level::{Level, Vec2};
 use clamber_pack::{Param, Physics};
 
-use crate::archetype::Ride;
+use crate::archetype::{Behavior, Ride, RiderReach};
 use crate::columns;
-use crate::player::{Player, Reach, State, ceil, direction, ease, facing_of};
-use crate::world::Event;
+use crate::flow::FlowEvent;
+use crate::player::{Facing, Player, Reach, State, ceil, direction, ease, facing_of};
+use crate::world::{Event, Phase, Thing, World};
 
 /// Which part of riding a frame is in, with how many frames of it came
 /// before this one.
@@ -48,6 +57,11 @@ pub enum RidePart {
     /// steering.
     Charge {
         age: u8,
+        steered: bool,
+    },
+    /// The frame a walker in front of the animal starts a charge on,
+    /// which counts from the next frame.
+    Rush {
         steered: bool,
     },
     /// The end of a charge.
@@ -72,6 +86,7 @@ impl RidePart {
                 age: age.saturating_add(1),
                 steered,
             },
+            RidePart::Rush { steered } => RidePart::Charge { age: 0, steered },
             RidePart::ChargeEnd { age, steered } if on(age, ride.charge_end) => {
                 RidePart::ChargeEnd {
                     age: age + 1,
@@ -88,7 +103,9 @@ impl RidePart {
     fn steers(self) -> bool {
         match self {
             RidePart::Jump(_) => true,
-            RidePart::Charge { steered, .. } | RidePart::ChargeEnd { steered, .. } => steered,
+            RidePart::Charge { steered, .. }
+            | RidePart::Rush { steered }
+            | RidePart::ChargeEnd { steered, .. } => steered,
             _ => false,
         }
     }
@@ -103,9 +120,13 @@ pub struct Riding {
     /// Steering was on at the end of the last frame, so this one is
     /// steered.
     pub steer: bool,
+    /// The last frame was steered.
+    pub steered: bool,
     /// On the floor at the end of the last frame. A take-off frame ends
     /// on the floor.
     pub on_floor: bool,
+    /// ... and at the end of the one before.
+    pub was_on_floor: bool,
     /// How many frames ago Jump was pressed, while it has been held since
     /// and the press hasn't started a jump.
     pub press: Option<u8>,
@@ -137,7 +158,9 @@ impl Riding {
             ride,
             part: RidePart::Riding,
             steer: false,
+            steered: false,
             on_floor: false,
+            was_on_floor: false,
             press: None,
             held: false,
             push: Fixed::ZERO,
@@ -169,6 +192,7 @@ impl Player {
             self.put_down(level, y, events);
         }
         let steered = r.steer;
+        r.steered = steered;
         let grounded = self.grounded();
         r.part = r.part.next(&ride, r.landing);
         r.approach = r.approach.map(|age| age.saturating_add(1));
@@ -341,6 +365,7 @@ impl Player {
                 }
             }
         };
+        r.was_on_floor = r.on_floor;
         r.on_floor = self.grounded();
         // Landing soon after the approach frame stays steered until a
         // while after it.
@@ -408,5 +433,179 @@ impl Player {
                 top - feet <= i64::from(ride.approach_reach)
                     && row(top) - row(feet) <= i64::from(ride.approach_rows)
             })
+    }
+}
+
+/// A walker's [`RiderReach`], if it's a walker going about its walk.
+fn rider_reach(thing: &Thing) -> Option<RiderReach> {
+    match thing.archetype.map(|a| a.behavior) {
+        Some(Behavior::Walker { rider, .. }) if thing.active && thing.phase == Phase::Ready => {
+            Some(rider)
+        }
+        _ => None,
+    }
+}
+
+/// A walker's offsets from the rider, whole px: the rider's `x` less the
+/// walker's, rounded down, and how far the rider is above the walker,
+/// both rounded toward the floor.
+fn offsets(player: &Player, walker: &Thing) -> (i64, i64) {
+    (
+        player.pos.x.floor() - walker.pos.x.floor(),
+        ceil(walker.pos.y) - ceil(player.pos.y),
+    )
+}
+
+/// Whether `across` is within the range of `ranges` for a rider facing
+/// `rider` and a walker facing `walker`.
+fn across_within(ranges: [(i32, i32); 2], rider: Facing, walker: Facing, across: i64) -> bool {
+    let (from, to) = RiderReach::across(ranges, rider, walker);
+    (i64::from(from)..=i64::from(to)).contains(&across)
+}
+
+/// Starts a charge for walkers in front of the animal, or throws them,
+/// with the rider where it is after its move on a step and the walkers
+/// where they were before theirs.
+pub(crate) fn attack(world: &mut World) {
+    let player = &world.player;
+    let Some(mut r) = player.riding else {
+        return;
+    };
+    let in_front: Vec<usize> = (0..world.things.len())
+        .filter(|&i| {
+            let walker = &world.things[i];
+            rider_reach(walker).is_some_and(|reach| {
+                let (across, above) = offsets(player, walker);
+                above <= i64::from(reach.attack_above)
+                    && across_within(reach.attack_across, player.facing, walker.facing, across)
+            })
+        })
+        .collect();
+    if in_front.is_empty() {
+        return;
+    }
+    match r.part {
+        RidePart::Charge { age, .. } if age >= r.ride.throw_from => {
+            let vx = world.player.vel.x;
+            world.player.vel.y = -r.ride.throw_rise;
+            for i in in_front {
+                throw(&mut world.things[i], vx);
+                world
+                    .flow
+                    .events
+                    .push(FlowEvent::Defeat(world.things[i].index));
+            }
+        }
+        RidePart::Charge { .. } | RidePart::Rush { .. } => {}
+        part => {
+            // As an Action press would, keeping a jump's steering.
+            let from_jump = match part {
+                RidePart::Jump(_) => true,
+                RidePart::Landing(_) => r.steered,
+                _ => false,
+            };
+            r.part = RidePart::Rush { steered: from_jump };
+            r.held &= from_jump;
+            r.steer = r.part.steers();
+            world.player.riding = Some(r);
+        }
+    }
+}
+
+/// Throws a walker by a rider moving at `vx`: it moves across at once,
+/// then leaves the level as a defeated walker does, from the next step.
+fn throw(walker: &mut Thing, vx: Fixed) {
+    let Some(Behavior::Walker { rider, defeat, .. }) = walker.archetype.map(|a| a.behavior) else {
+        return;
+    };
+    walker.vx = vx * rider.throw_speed;
+    walker.pos.x += walker.vx;
+    walker.phase = Phase::Falling {
+        vy: -defeat.jump,
+        hold: 1,
+    };
+}
+
+/// The top of the floor below the rider's feet in its column, rounded
+/// toward the floor.
+fn floor_below(level: &Level, player: &Player) -> Option<i64> {
+    columns::spans(level, columns::column(player.pos.x))
+        .into_iter()
+        .map(|s| s.top)
+        .filter(|&top| top >= player.pos.y)
+        .min()
+        .map(ceil)
+}
+
+/// Knocks the rider off the animal if a walker on its floor reached it
+/// by the end of the last step. The player doesn't move on this step,
+/// but goes up from the next one it moves on, and the animal runs off.
+/// Returns whether it did.
+pub(crate) fn unseat(world: &mut World) -> bool {
+    let player = &world.player;
+    let Some(r) = player.riding else {
+        return false;
+    };
+    let floor = floor_below(&world.level, player);
+    let on_floor = r.on_floor && r.was_on_floor;
+    let knocked = world.things.iter().any(|walker| {
+        rider_reach(walker).is_some_and(|reach| {
+            let (across, above) = offsets(player, walker);
+            Some(ceil(walker.pos.y)) == floor
+                && across_within(reach.knock_across, player.facing, walker.facing, across)
+                && (on_floor || above <= i64::from(reach.knock_above))
+        })
+    });
+    if !knocked {
+        return false;
+    }
+    let ride = r.ride;
+    let player = &mut world.player;
+    let vx = player.vel.x;
+    player.launch(Vec2::new(vx, -ride.knock_rise), &mut world.events);
+    player.jump_hold = r.held;
+    player.frozen = ride.knock_hold;
+    player.unseated = true;
+    player.riding = None;
+    let (pos, facing) = (player.pos, player.facing);
+    let speed = match facing {
+        Facing::Left => -ride.bolt_speed,
+        Facing::Right => ride.bolt_speed,
+    };
+    for animal in world.things.iter_mut() {
+        if animal.phase == Phase::Ridden {
+            animal.phase = Phase::Bolting { vx: speed };
+            animal.clock = 0;
+            animal.facing = facing;
+            animal.pos = Vec2::new(pos.x, floor.map_or(pos.y, |y| Fixed::from_int(y as i32)));
+        }
+    }
+    true
+}
+
+/// Moves an animal running off after its rider was knocked off, by
+/// `ride`, from `vx`: it holds still with everything else first. It's
+/// gone once it's past either end of the level.
+pub(crate) fn bolt(level: &Level, animal: &mut Thing, ride: &Ride, vx: Fixed) {
+    let age = animal.clock;
+    animal.clock = animal.clock.saturating_add(1);
+    let hold = u32::from(ride.knock_hold);
+    if age <= hold {
+        return;
+    }
+    let vx = if age > hold + u32::from(ride.bolt_dash) {
+        let glide = if vx.is_negative() {
+            -ride.bolt_glide
+        } else {
+            ride.bolt_glide
+        };
+        ease(vx, glide, ride.bolt_response)
+    } else {
+        vx
+    };
+    animal.phase = Phase::Bolting { vx };
+    animal.pos.x += vx;
+    if animal.pos.x < Fixed::ZERO || animal.pos.x > level.size.x {
+        animal.active = false;
     }
 }

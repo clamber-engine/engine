@@ -302,7 +302,7 @@ fn thing_animation(world: &World, thing: &Thing) -> Option<&'static str> {
             });
             return Some(if out { "animal" } else { "break" });
         }
-        Phase::Mounted(_) | Phase::Ridden => return Some("animal"),
+        Phase::Mounted(_) | Phase::Ridden | Phase::Bolting { .. } => return Some("animal"),
         Phase::Ready
         | Phase::Held
         | Phase::Thrown(_)

@@ -141,6 +141,7 @@ impl Kind {
                 if self == Kind::MediumWalker {
                     set("hurt_jump_lift", Value::Integer(25));
                 }
+                set("rider", self.rider());
                 set("speed", Value::Integer(1));
                 set("response", Value::Float(0.125));
                 set("size", Value::Array(size.map(Value::Integer).into()));
@@ -192,6 +193,35 @@ impl Kind {
             Kind::HiddenBunch | Kind::HiddenBarrel | Kind::HiddenMetalBarrel => self.name(),
         };
         (kind, params)
+    }
+}
+
+impl Kind {
+    /// A walker kind's `rider` table: riding-walkers.md's ranges, for a
+    /// rider facing right (the spec's are for one facing left, so each
+    /// is turned around). The spec doesn't cover how fast a thrown large
+    /// walker moves across; it gives "often, but not always, 1.5 times
+    /// the rider's", which is used here.
+    fn rider(self) -> Value {
+        let (attack, attack_above, knock, knock_above, throw) = match self {
+            Kind::SmallWalker => ([[-55, 24], [-56, 23]], 25, [[-18, 26], [-19, 25]], -3, 2.0),
+            Kind::MediumWalker => ([[-53, 31], [-63, 21]], 38, [[-16, 33], [-26, 23]], 10, 2.0),
+            _ => ([[-58, 27], [-59, 26]], 51, [[-21, 29], [-22, 28]], 23, 1.5),
+        };
+        let ranges = |r: [[i64; 2]; 2]| {
+            Value::Array(
+                r.iter()
+                    .map(|p| Value::Array(p.iter().map(|&n| Value::Integer(n)).collect()))
+                    .collect(),
+            )
+        };
+        let mut table = Table::new();
+        table.insert("attack_across".into(), ranges(attack));
+        table.insert("attack_above".into(), Value::Integer(attack_above));
+        table.insert("knock_across".into(), ranges(knock));
+        table.insert("knock_above".into(), Value::Integer(knock_above));
+        table.insert("throw_speed".into(), Value::Float(throw));
+        Value::Table(table)
     }
 }
 
@@ -561,6 +591,10 @@ mod tests {
                     assert_eq!(letter, n, "{kind}")
                 }
                 (Kind::Holder, Behavior::Carry { holder, .. }) => assert!(holder.is_some()),
+                (Kind::MediumWalker, Behavior::Walker { rider, .. }) => {
+                    assert_eq!(rider.attack_above, 38);
+                    assert_eq!(rider.knock_across, [(-16, 33), (-26, 23)]);
+                }
                 (Kind::Barrel, Behavior::Carry { holder, .. }) => assert!(holder.is_none()),
                 (Kind::AnimalCrate, behavior) => {
                     assert!(matches!(behavior, Behavior::Hutch(_)), "{kind}")
