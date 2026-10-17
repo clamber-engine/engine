@@ -77,9 +77,10 @@ use clamber_level::{Dir, Level, Rect, Vec2};
 use clamber_pack::{Param, Physics};
 
 use crate::archetype::Behavior;
+use crate::exit::EXIT;
 use crate::flow::FlowEvent;
 use crate::player::{Facing, Player, ceil, frames};
-use crate::sections::{Opening, Window};
+use crate::sections::{Opening, Spot, Window};
 use crate::world::{Phase, Thing, World};
 
 /// What the view's speed is kept to, px per frame.
@@ -513,8 +514,28 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 /// Stingers appear and are removed as walkers on their own do, and come
 /// back afresh (stinger.md).
 ///
-/// Scenery appears and is removed as throwers are, and comes back each
-/// time its start is near the view again (signs.md).
+/// Scenery appears as throwers do, and comes back each time its start is
+/// near the view again (signs.md).
+///
+/// Placed objects that are still as they appeared (there, in place and
+/// `Ready`) are removed by where their start is (placements.md, "When
+/// placed objects are removed"), "in the window" being near the view:
+///
+/// - Scenery, and in a spot collectibles other than letters, relics and
+///   those there `once`, objects that can be carried, kegs and hidden
+///   objects: once their start isn't near the view and either it's far
+///   from it or outside the view's rows (`appear_above` and
+///   `appear_below`), even on a step on which only the view's top moved.
+/// - In a spot, letters, relics, crates holding an animal and exits: on
+///   the first step their start isn't near the view, and for a spot that
+///   needs the view's rows to appear, as exits do, on the first step it's
+///   outside them.
+///
+/// Engine choices where the spec says nothing: near the level's left end
+/// "in the window" is near the view as for appearing (`V` counted as 32),
+/// so nothing is removed on the step it appears; objects that were moved
+/// and set down aren't removed this way; and outside spots only scenery
+/// is, the other objects staying in the level.
 ///
 /// A collectible there `once` appears as throwers do, rising from where
 /// it's placed if it rises, and is removed on the first step its start
@@ -546,9 +567,13 @@ pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) 
         }
     }
     let placing = world.placing.as_mut();
-    let (spot_of, mut there) = match placing {
-        Some(p) => (Some(&p.placed.spot_of), Some(&mut p.there)),
-        None => (None, None),
+    let (spot_of, spots, mut there) = match placing {
+        Some(p) => (
+            Some(&p.placed.spot_of),
+            Some(&p.placed.spots),
+            Some(&mut p.there),
+        ),
+        None => (None, None, None),
     };
     let in_spot = |index: usize| spot_of.and_then(|s| s.get(index).copied().flatten());
     // A thing in a spot that the view removes is no longer there.
@@ -615,7 +640,7 @@ pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) 
                 thing.phase = Phase::Gone;
                 removed(thing.index);
             }
-            Behavior::Thrower { .. } | Behavior::Scenery
+            Behavior::Thrower { .. }
                 if !appear && thing.active && far(start.x.floor(), left, &physics) =>
             {
                 thing.active = false;
@@ -632,6 +657,74 @@ pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) 
             }
             _ => {}
         }
+    }
+    if appear {
+        return;
+    }
+    let window = Window::of(&physics);
+    for thing in &mut world.things {
+        let Some(entity) = level.entities.get(thing.index) else {
+            continue;
+        };
+        let spot = in_spot(thing.index);
+        let Some(leaves) = leaves(thing, spot.is_some()) else {
+            continue;
+        };
+        // Only while it's still as it appeared.
+        let start = entity.at;
+        if !thing.active || thing.phase != Phase::Ready || thing.pos != start {
+            continue;
+        }
+        let (x, y) = (start.x.floor(), start.y.floor());
+        let start_near = near(x, left, &physics);
+        let in_rows = window.holds_y(y, top);
+        let gone = match leaves {
+            Leaves::Far => !start_near && (far(x, left, &physics) || !in_rows),
+            Leaves::Soon => {
+                let rows = spot
+                    .zip(spots)
+                    .is_some_and(|(s, spots)| matches!(spots[s], Spot::Object { rows: true, .. }));
+                !start_near || rows && !in_rows
+            }
+        };
+        if gone {
+            thing.active = false;
+            removed(thing.index);
+        }
+    }
+}
+
+/// How the view removes a placed object while it's still as it appeared
+/// (placements.md, "When placed objects are removed").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Leaves {
+    /// Once its start isn't near the view and either it's far from it or
+    /// it's outside the view's rows.
+    Far,
+    /// As soon as its start isn't near the view, or, for one that appears
+    /// only within the view's rows, isn't within them.
+    Soon,
+}
+
+/// How `thing` leaves with the view, if it's one of the objects that
+/// leave as placed objects do: scenery anywhere, and in a spot,
+/// collectibles other than those there `once`, objects that can be
+/// carried, kegs, hidden objects, crates holding an animal and exits.
+fn leaves(thing: &Thing, in_spot: bool) -> Option<Leaves> {
+    if thing.kind == EXIT {
+        return in_spot.then_some(Leaves::Soon);
+    }
+    match thing.archetype?.behavior {
+        Behavior::Scenery => Some(Leaves::Far),
+        _ if !in_spot => None,
+        Behavior::Collect { once: true, .. } => None,
+        Behavior::Collect { letter, relic, .. } if letter > 0 || relic => Some(Leaves::Soon),
+        Behavior::Hutch(_) => Some(Leaves::Soon),
+        Behavior::Collect { .. }
+        | Behavior::Carry { .. }
+        | Behavior::Keg(_)
+        | Behavior::Hidden(_) => Some(Leaves::Far),
+        _ => None,
     }
 }
 

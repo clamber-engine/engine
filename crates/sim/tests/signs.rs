@@ -43,11 +43,19 @@ fn world(player: i32, sign: Option<i32>) -> World {
     )
 }
 
-/// One step with the view's left edge at `left` when it starts. Returns
-/// whether the sign is in the level after the step.
+/// One step with the view's left edge at `left` when it starts, and its
+/// top 100 px above the sign. Returns whether the sign is in the level
+/// after the step.
 fn step_at(world: &mut World, left: i32) -> bool {
+    step_at_rows(world, left, 300)
+}
+
+/// One step with the view's left edge at `left` and its top at `top` when
+/// it starts. Returns whether the sign is in the level after the step.
+fn step_at_rows(world: &mut World, left: i32, top: i32) -> bool {
     world.view = Some(View {
         left: Fixed::from_int(left),
+        top: Fixed::from_int(top),
         ..View::default()
     });
     step(world, &InputFrame::default());
@@ -76,6 +84,30 @@ fn appears_and_is_removed_with_the_view_and_comes_back() {
         assert!(!step_at(&mut w, x + 128));
         assert!(!step_at(&mut w, x + 32));
     }
+}
+
+/// placements.md, "When placed objects are removed": inside the margin,
+/// a sign is removed once it's outside the vertical window (`y` − `U`
+/// from −31 to 256), even on a step on which only the top moves. In the
+/// window it stays wherever the top is, and it appears again by `x`
+/// alone.
+#[test]
+fn inside_the_margin_it_is_removed_outside_the_vertical_window() {
+    let x = 2000;
+    let mut w = world(300, Some(x));
+    assert!(step_at(&mut w, x - 288));
+    // In the margin on the right.
+    assert!(step_at_rows(&mut w, x - 350, 144));
+    assert!(!step_at_rows(&mut w, x - 350, 143));
+    assert!(step_at_rows(&mut w, x - 288, 143), "appears by x alone");
+    assert!(step_at_rows(&mut w, x - 350, 431));
+    assert!(!step_at_rows(&mut w, x - 350, 432));
+    // In the window, the vertical window plays no part.
+    assert!(step_at_rows(&mut w, x - 100, 0));
+    assert!(step_at_rows(&mut w, x - 100, 1000));
+    // In the margin on the left.
+    assert!(step_at_rows(&mut w, x + 100, 300));
+    assert!(!step_at_rows(&mut w, x + 100, 1000));
 }
 
 #[test]

@@ -52,7 +52,7 @@ impl Window {
         self.across.contains(&(x - self.left(view_left)))
     }
 
-    fn holds_y(&self, y: i64, view_top: i64) -> bool {
+    pub(crate) fn holds_y(&self, y: i64, view_top: i64) -> bool {
         self.down.contains(&(y - view_top))
     }
 

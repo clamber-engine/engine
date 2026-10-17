@@ -12,7 +12,9 @@
 //! those), `exit_reach_roll` rolling facing left, `exit_reach_crouch`
 //! crouching and still sliding facing left, and `exit_reach_right`
 //! standing or turning facing right. At the end of T the lead's `y` is
-//! the exit's plus 1.
+//! the exit's plus 1. It takes over only while it's there: placed in a
+//! spot, it appears and is removed with the view, rows and all
+//! (placements.md, "Exits"; see [`view::walkers`]).
 //!
 //! From T + 1 nothing held has any effect ([`Leaving`]). The lead stays
 //! where it is on T + 1 and walks left at `exit_walk_speed` from T + 2,
@@ -189,9 +191,10 @@ pub(crate) fn take_over(world: &mut World) {
     let nearest = -physics[Param::ExitLeaveAt].floor() + 1;
     let (above, below) = (physics[Param::ExitAbove], physics[Param::ExitBelow]);
     let open = |i: usize| world.things.get(i).is_some_and(|t| t.phase == Phase::Open);
+    let there = |i: usize| world.things.get(i).is_some_and(|t| t.active);
     let exit = world.level.entities.iter().enumerate().find_map(|(i, e)| {
         let (way, reach, ahead) = match e.kind.as_str() {
-            EXIT => (Facing::Left, left?, x - e.at.x.floor()),
+            EXIT if there(i) => (Facing::Left, left?, x - e.at.x.floor()),
             WALL_EXIT if open(i) => (Facing::Right, right?, e.at.x.floor() - x),
             _ => return None,
         };

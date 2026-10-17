@@ -15,7 +15,7 @@ use clamber_level::{Entity, Section, Spot, Vec2};
 use toml::{Table, Value};
 
 use crate::Kind;
-use crate::kinds::WALKER;
+use crate::kinds::{EXIT, WALKER};
 
 /// The kind of entity that starts the dimming, as in `clamber-sim`.
 pub const DIM: &str = "dim";
@@ -218,6 +218,9 @@ impl Placements {
     /// [`DIM`] entity, clear only in the window. Other entries that place
     /// nothing hold nothing back, so they aren't spots.
     ///
+    /// An exit needs the view's rows too, in either class ("When placed
+    /// objects are removed", "Exits").
+    ///
     /// Whether class 2 entries far above or below the view appear in a
     /// list without sections isn't covered; as the engine's choice they
     /// need only the window, as in "When an entry appears".
@@ -232,12 +235,13 @@ impl Placements {
             let placement = &self.list[i];
             let entry = placement.entry;
             let spot_entities = of_entry[i].clone();
+            let exit = matches!(spot_entities[..], [e] if entities[e].kind == EXIT);
             let at = Vec2::ints(i32::from(entry.x), entry.level_y(bottom) as i32);
             match entry.kind() {
                 Class::Object | Class::Nothing => Some(Spot {
                     at: (entities[spot_entities[0]].at != at).then_some(at),
                     entities: spot_entities,
-                    rows: entry.needs_rows() || sectioned && entry.class == 2,
+                    rows: entry.needs_rows() || sectioned && entry.class == 2 || exit,
                 }),
                 Class::Group if !spot_entities.is_empty() => Some(Spot {
                     at: (entities[spot_entities[0]].at.x != at.x).then_some(at),
@@ -704,6 +708,22 @@ mod tests {
         let entities = read(&fragment()).unwrap().entities(BOTTOM, kind);
         let crate_ = entities.iter().find(|e| e.kind == "hutch").unwrap();
         assert_eq!(crate_.at, Vec2::ints(40, 313));
+    }
+
+    /// placements.md, "Exits": an exit needs the vertical window. Here the
+    /// fragment's three entries with references 1234 and 2000 place exits.
+    #[test]
+    fn exits_need_the_views_rows() {
+        let kind = |r| (r == 0x1234 || r == 0x2000).then_some(Kind::Exit);
+        let (entities, sections) = read(&fragment()).unwrap().objects(BOTTOM, kind);
+        let rows: Vec<(String, bool)> = sections[0]
+            .spots
+            .iter()
+            .map(|p| (entities[p.entities[0]].kind.clone(), p.rows))
+            .collect();
+        assert!(rows.iter().all(|(kind, rows)| *rows == (kind == EXIT)));
+        assert_eq!(rows.iter().filter(|(_, rows)| *rows).count(), 3);
+        assert_eq!(EXIT, clamber_sim::EXIT);
     }
 
     #[test]
