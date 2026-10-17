@@ -78,6 +78,8 @@ pub enum State {
     /// In the ground action, started by down and action on the ground
     /// (`ground_action_time` above 0).
     GroundAction,
+    /// Swimming, inside a water region (see `swim`).
+    Swim,
 }
 
 impl State {
@@ -93,6 +95,7 @@ impl State {
             State::Bounce => "bounce",
             State::Hurt => "hurt",
             State::GroundAction => "ground_action",
+            State::Swim => "swim",
         }
     }
 }
@@ -225,6 +228,8 @@ pub struct Player {
     /// Colliders the body ran into or stood on during the last step:
     /// walls it was stopped by, a ceiling it hit, the ground.
     pub touched: Vec<usize>,
+    /// Swimming, and resting on the floor at the end of the last step.
+    pub swim_floor: bool,
 }
 
 impl Player {
@@ -282,12 +287,16 @@ impl Player {
             pick: None,
             inside: false,
             touched: Vec::new(),
+            swim_floor: false,
         };
         player.ground = level
             .collision
             .cast(pos, Dir::Down, Fixed::ZERO)
             .map(|hit| hit.collider);
-        if !player.grounded() {
+        if Player::in_water(level, pos) {
+            player.ground = None;
+            player.state = State::Swim;
+        } else if !player.grounded() {
             player.state = State::Fall;
         }
         player
@@ -652,6 +661,15 @@ impl Player {
             (false, true) => 1,
             _ => 0,
         };
+        if Player::in_water(level, self.pos) {
+            self.swim(level, physics, input, held_dir);
+            return;
+        }
+        if self.state == State::Swim {
+            // Out of the water, with nothing under the feet yet.
+            self.state = State::Fall;
+            self.swim_floor = false;
+        }
         let ran_before = std::mem::replace(&mut self.ran, held(Action::Action) && held_dir != 0);
         let timed = physics[Param::RollTime] > Fixed::ZERO;
         let start_vx = self.vel.x;

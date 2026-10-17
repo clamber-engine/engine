@@ -259,12 +259,14 @@ impl Poses {
     }
 }
 
-/// The player's animation: its state's, `jump` while bouncing, or
-/// `hurt` while losing a life.
+/// The player's animation: its state's, `jump` while bouncing, `fall`
+/// while swimming (there's no swimming art yet), or `hurt` while losing
+/// a life.
 fn player_animation(world: &World) -> &'static str {
     match (world.flow.outcome, world.player.state) {
         (Outcome::Dying(_) | Outcome::GameOver, _) => "hurt",
         (_, State::Bounce) => "jump",
+        (_, State::Swim) => "fall",
         (_, state) => state.name(),
     }
 }

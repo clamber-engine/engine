@@ -66,7 +66,12 @@ fn decimal(v: Fixed) -> Decimal {
 }
 
 /// Simulation states and events are named after the trace vocabulary.
+/// The vocabulary has no name for swimming yet (spec#34), so a swimmer
+/// is recorded as falling.
 fn state(s: State) -> clamber_trace::State {
+    if s == State::Swim {
+        return clamber_trace::State::Fall;
+    }
     clamber_trace::State::from_name(s.name())
         .unwrap_or_else(|| panic!("state `{}` isn't in the vocabulary", s.name()))
 }

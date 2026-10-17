@@ -356,6 +356,7 @@ fn state_color(state: State) -> Color {
         State::Bounce => rgb(0x70, 0xe0, 0xb0),
         State::Hurt => rgb(0xf0, 0x40, 0x40),
         State::GroundAction => rgb(0xd0, 0x80, 0xb0),
+        State::Swim => rgb(0x50, 0xc8, 0xd0),
     }
 }
 

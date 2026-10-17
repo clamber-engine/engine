@@ -51,6 +51,7 @@ mod record;
 mod script;
 mod stinger;
 mod swap;
+mod swim;
 mod things;
 mod throwers;
 mod view;

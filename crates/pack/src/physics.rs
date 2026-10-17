@@ -994,6 +994,40 @@ params! {
     /// many frames or more after the one its entity came near the view on.
     /// Whole frames.
     DimDelay => "dim_delay",
+    /// Inside a water region the player swims (see `clamber_sim::Player`)
+    /// and its horizontal speed eases toward this with Left or Right held,
+    /// or 0 with no direction. px/frame.
+    SwimSpeed => "swim_speed",
+    /// Every swimming frame, horizontal speed closes this fraction of the
+    /// gap to its target, as `speed_response` does on land.
+    SwimResponse => "swim_response",
+    /// A Jump press while swimming is a stroke: it sets the upward speed
+    /// to this, whatever it was. px/frame.
+    StrokeSpeed => "stroke_speed",
+    /// ... or to this with Up held. px/frame.
+    StrokeUpSpeed => "stroke_up_speed",
+    /// ... or to this with Down held. px/frame.
+    StrokeDownSpeed => "stroke_down_speed",
+    /// Added to the downward speed every swimming frame. px/frame².
+    SinkGravity => "sink_gravity",
+    /// A swimmer's downward speed never exceeds this. px/frame.
+    SinkSpeed => "sink_speed",
+    /// ... or this on frames with Down held. px/frame.
+    SinkDownSpeed => "sink_down_speed",
+    /// A swimmer moving across into ground this deep or less is lifted
+    /// onto it, or pushed below it when it's nearer the ground's
+    /// underside; deeper ground is a wall. Whole px.
+    SwimStep => "swim_step",
+    /// How far below the underside of ground a swimmer pushed below it
+    /// ends, between the underside and the top of its feet. Whole px.
+    SwimCeilingGap => "swim_ceiling_gap",
+    /// Above 0, a swimmer moving left with `x` rounded down below this
+    /// stops. 0: only below x = 0. Whole px.
+    SwimLeftEdge => "swim_left_edge",
+    /// Above 0, a swimmer that ends a frame off the floor it rested on
+    /// at the end of the frame before, without a stroke, sinks at this
+    /// speed. 0: it goes on sinking as it was. px/frame.
+    SwimLeaveSpeed => "swim_leave_speed",
 }
 
 impl Param {

@@ -558,6 +558,8 @@ mod tests {
                     | Param::JoinLift
                     | Param::JoinRise
                     | Param::JoinSag
+                    | Param::SwimLeftEdge
+                    | Param::SwimLeaveSpeed
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

@@ -270,6 +270,20 @@ fall_out_time = 0
 dim_steps = 0
 dim_step_time = 0
 dim_delay = 0
+# Swimming in water regions: a little quicker than Classic 1, with
+# stronger strokes.
+swim_speed = 2.5
+swim_response = 0.0625
+stroke_speed = 2.5
+stroke_up_speed = 3
+stroke_down_speed = 1.25
+sink_gravity = 0.0625
+sink_speed = 1.5
+sink_down_speed = 2.5
+swim_step = 4
+swim_ceiling_gap = 1
+swim_left_edge = 0
+swim_leave_speed = 0
 
 [presets.snappy]
 label = "Snappy"
@@ -590,6 +604,24 @@ fall_out_time = 96
 dim_steps = 32
 dim_step_time = 8
 dim_delay = 4
+# Swimming (swimming.md): targets of 2 approached by 1/32 of the gap,
+# strokes of 2 (2.5 with Up, 1 with Down), sinking by 12/256 up to 1.25
+# (2 with Down). Ground 1 to 3 px deep across a move is a step up, or a
+# push down to 2 px below a ceiling line (1 px between the ceiling and
+# the feet's top); deeper is a wall. The left end stops a swimmer below
+# x = 18, and leaving the floor without a stroke ends at 1/256.
+swim_speed = 2
+swim_response = 0.03125
+stroke_speed = 2
+stroke_up_speed = 2.5
+stroke_down_speed = 1
+sink_gravity = 0.046875
+sink_speed = 1.25
+sink_down_speed = 2
+swim_step = 3
+swim_ceiling_gap = 1
+swim_left_edge = 18
+swim_leave_speed = 0.00390625
 
 # The second character (roster slot 1): spec/behavior/second-character.md.
 # It moves by the same rules with its own speeds, jump and crouch
