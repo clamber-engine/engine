@@ -28,6 +28,7 @@ mod image;
 mod installed;
 mod kinds;
 mod level;
+mod level_map;
 mod location;
 mod locators;
 mod manifest;
@@ -50,6 +51,10 @@ pub use image::{COPIER_HEADER, Catalog, Image, Known, MAX_IMAGE_SIZE, Outcome, S
 pub use installed::{Installed, check_shareable, installed};
 pub use kinds::{END, FINGERPRINT_SIZE, Kind, KindRow, WALKER, candidate, kind_of, kind_rows};
 pub use level::{LevelDecoder, LevelParts};
+pub use level_map::{
+    APPEARANCE_OFFSET, CORNER_SIZE, Direction, FIRST_CORNER, LAST_CORNER, LevelMap, Point,
+    TABLE_SIZE, corner_count, is_corner,
+};
 pub use location::{BANK_SIZE, Location};
 pub use locators::{Data, first_level, locate};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
