@@ -32,11 +32,15 @@ pub enum Kind {
     EndMarker,
     /// A crate holding an animal.
     AnimalCrate,
+    /// The restart barrel, which marks the level's restart point.
+    RestartBarrel,
     Stinger,
+    /// A tyre that throws the player up.
+    Tyre,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 14] = [
+    pub const ALL: [Kind; 16] = [
         Kind::SmallWalker,
         Kind::LargeWalker,
         Kind::Thrower,
@@ -50,7 +54,9 @@ impl Kind {
         Kind::Holder,
         Kind::EndMarker,
         Kind::AnimalCrate,
+        Kind::RestartBarrel,
         Kind::Stinger,
+        Kind::Tyre,
     ];
 
     /// The kind's name in the spec, which is also its entities' kind.
@@ -69,7 +75,9 @@ impl Kind {
             Kind::Holder => "holder",
             Kind::EndMarker => "end-marker",
             Kind::AnimalCrate => "animal-crate",
+            Kind::RestartBarrel => "restart-barrel",
             Kind::Stinger => "stinger",
+            Kind::Tyre => "tyre",
         }
     }
 
@@ -137,6 +145,21 @@ impl Kind {
             // reaches and speeds, so they keep the archetype's: they stay
             // at their start. The first level has none.
             Kind::Stinger => "stinger",
+            // restart-barrel.md: touching it makes the level's restart
+            // point reached, which is what a checkpoint is. Placeholder
+            // until the barrel gets its own touch ranges, breaking and
+            // resume (#145).
+            Kind::RestartBarrel => CHECKPOINT,
+            // tyre.md's throw is 6 px per frame up. Placeholder until
+            // tyres get tyre.md's catch, squash and tyre jump (#146);
+            // the first level has none.
+            Kind::Tyre => {
+                set(
+                    "velocity",
+                    Value::Array(vec![Value::Integer(0), Value::Integer(-6)]),
+                );
+                "launcher"
+            }
         };
         (kind, params)
     }
@@ -147,6 +170,10 @@ pub const WALKER: &str = "crawler";
 
 /// The kind of entity that marks the end of a level, as in `clamber-sim`.
 pub const END: &str = "end";
+
+/// The kind of entity that marks where play resumes after a lost life,
+/// as in `clamber-sim`.
+pub const CHECKPOINT: &str = "checkpoint";
 
 impl fmt::Display for Kind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -173,6 +200,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "0e1f45ccf4bc6e7a48005c73ce0003f0a0d0205fbb063ade26b4f1fe83877da0",
                 Kind::Stinger,
+            ),
+            (
+                "12ddb2c3b0a218c0ccb5c1798e7094b5a2b61d21d2361da03b6f6286fa191e0a",
+                Kind::RestartBarrel,
             ),
             (
                 "15ac2312a3f8d89089ee4c658cf1bee3df8b12254e7ebe4d7646b35028b932d6",
@@ -203,6 +234,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::AnimalCrate,
             ),
             (
+                "334d93d686429e72e3c6a60e23570cd379765c0db2cae288375dc82355f418f7",
+                Kind::Tyre,
+            ),
+            (
                 "3b1534a2da04c2655ee410d9570846bf8da60ecabf7afa758b2e5cab13c547a0",
                 Kind::Stinger,
             ),
@@ -217,6 +252,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "46a03d0df615a0aff54b9f2a823f9ead4e500b9ecdeb48c2fe2dfe37aa02431f",
                 Kind::Letter(2),
+            ),
+            (
+                "4c90ae328510dac24fa35424acdaa6b793fcbebfa288220cce41179f518d9978",
+                Kind::Tyre,
             ),
             (
                 "4cb625b24ccb2edc0d7487e5ff9aa9de2cd5409110383d64bfa5ff1a97a22170",
@@ -281,6 +320,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "f44d17c1cc692790ebee841de128717e08b078d09eb11b1931a12c05fbe5c81c",
                 Kind::Stinger,
+            ),
+            (
+                "f4b1fad5059ecd6ac05c3a59a129e6b47adf0feabddab5c437e06aec2b6214e2",
+                Kind::Tyre,
             ),
             (
                 "f85e5c914a63c73583c210056c33f883bcd8fecee32b42323bb458fb6f174819",
@@ -419,21 +462,26 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 30);
+        assert_eq!(want.len(), 34);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }
 
     #[test]
-    fn every_kind_is_a_builtin_archetype_or_the_end_marker() {
+    fn every_kind_is_a_builtin_archetype_or_a_flow_kind() {
         use clamber_level::{Entity, Vec2};
         use clamber_sim::{Archetypes, Behavior};
 
         assert_eq!(END, clamber_sim::END);
+        assert_eq!(CHECKPOINT, clamber_sim::CHECKPOINT);
         for kind in Kind::ALL {
             let (name, params) = kind.entity();
-            if kind == Kind::EndMarker {
-                assert_eq!(name, END);
+            match kind {
+                Kind::EndMarker => assert_eq!(name, END),
+                Kind::RestartBarrel => assert_eq!(name, CHECKPOINT),
+                _ => {}
+            }
+            if matches!(kind, Kind::EndMarker | Kind::RestartBarrel) {
                 continue;
             }
             let entity = Entity {
