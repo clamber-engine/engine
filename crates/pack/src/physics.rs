@@ -560,8 +560,26 @@ params! {
     /// bottom of the hurt box is `hurt_jump_lift` above the feet. Whole
     /// frames.
     HurtJumpTime => "hurt_jump_time",
-    /// How far the bottom of the hurt box rises late in a jump, px.
+    /// How far the bottom of the hurt box rises late in a jump, px. A
+    /// walker with its own `hurt_jump_lift` uses that instead.
     HurtJumpLift => "hurt_jump_lift",
+    /// Above 0, in the fidget pose the hurt box is this wide instead of
+    /// `hurt_width`, its middle `hurt_fidget_offset` in front of the
+    /// player's position. 0: the fidget pose has the usual hurt box.
+    HurtFidgetWidth => "hurt_fidget_width",
+    /// How far the middle of the fidget pose's hurt box is in front of
+    /// the player's position, px. Negative is behind.
+    HurtFidgetOffset => "hurt_fidget_offset",
+    /// A player standing still takes the fidget pose this many frames
+    /// into standing, counting the first frame of standing as 0. Whole
+    /// frames.
+    FidgetStart => "fidget_start",
+    /// Frames the fidget pose lasts each time. Whole frames.
+    FidgetLength => "fidget_length",
+    /// Above 0, while the player keeps standing the fidget pose comes
+    /// again this many frames after each start. 0: only once. Whole
+    /// frames.
+    FidgetEvery => "fidget_every",
     /// Above 0, a hurt player is knocked out before losing the life: it
     /// holds still for `knockout_hold` frames from the hit, flies up at
     /// this speed, and lands, rebounds and lies still. Its flight falls
@@ -990,6 +1008,7 @@ impl Param {
                 | Param::FallGravity
                 | Param::BounceOffset
                 | Param::HurtOffset
+                | Param::HurtFidgetOffset
                 | Param::RollAttackOffset
                 | Param::GroundAttackOffset
         )

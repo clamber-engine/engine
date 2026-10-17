@@ -412,27 +412,34 @@ fn classic_bounce_arc_follows_the_formula() {
 }
 
 /// Whether a classic-1 player facing `facing`, falling straight down
-/// `i` px from a still small walker heading `heading`, bounces off it.
-fn classic_bounces_at(i: i32, facing: Facing, heading: &str) -> bool {
-    let mut w = world_on(
-        "classic-1",
-        [300 + i, 340],
-        &small_walker("300", "0", heading),
-    );
+/// `i` px from a still walker made by `walker` heading `heading`, bounces
+/// off it.
+fn classic_bounces_at(
+    walker: fn(&str, &str, &str) -> String,
+    i: i32,
+    facing: Facing,
+    heading: &str,
+) -> bool {
+    let mut w = world_on("classic-1", [300 + i, 340], &walker("300", "0", heading));
     w.player.facing = facing;
     let steps = play(&mut w, 40, |_| false);
     steps.iter().any(|s| s.2.contains(&Event::Bounce))
 }
 
 #[test]
-fn classic_bounce_ranges_for_the_small_walker() {
-    let table = [
-        (Facing::Right, "left", -21, 34),
-        (Facing::Right, "right", -20, 35),
-        (Facing::Left, "left", -35, 20),
-        (Facing::Left, "right", -34, 21),
+fn classic_bounce_ranges_for_the_small_and_medium_walkers() {
+    type Walker = fn(&str, &str, &str) -> String;
+    let table: [(Walker, Facing, &str, i32, i32); 8] = [
+        (small_walker, Facing::Right, "left", -21, 34),
+        (small_walker, Facing::Right, "right", -20, 35),
+        (small_walker, Facing::Left, "left", -35, 20),
+        (small_walker, Facing::Left, "right", -34, 21),
+        (medium_walker, Facing::Right, "left", -28, 32),
+        (medium_walker, Facing::Right, "right", -18, 42),
+        (medium_walker, Facing::Left, "left", -42, 18),
+        (medium_walker, Facing::Left, "right", -32, 28),
     ];
-    for (facing, heading, low, high) in table {
+    for (walker, facing, heading, low, high) in table {
         for (i, bounces) in [
             (low - 1, false),
             (low, true),
@@ -440,11 +447,34 @@ fn classic_bounce_ranges_for_the_small_walker() {
             (high + 1, false),
         ] {
             assert_eq!(
-                classic_bounces_at(i, facing, heading),
+                classic_bounces_at(walker, i, facing, heading),
                 bounces,
                 "I = {i}, facing {facing:?}, heading {heading}"
             );
         }
+    }
+}
+
+/// Whether a classic-1 player falling slowly onto a still walker made
+/// by `walker`, `u` px above its floor at the end of the frame, bounces
+/// on that frame.
+fn classic_bounces_from(walker: fn(&str, &str, &str) -> String, u: i32) -> bool {
+    let mut w = world_on("classic-1", [300, 0], &walker("300", "0", "left"));
+    // After this frame's gravity it falls 1/16 px, to `u` above the floor.
+    w.player.pos.y = Fixed::from_int(400 - u) - fx(0.0625);
+    w.player.vel.y = fx(0.0625 - 0.4375);
+    let steps = play(&mut w, 1, |_| false);
+    steps[0].2.contains(&Event::Bounce)
+}
+
+#[test]
+fn classic_bounce_height_limits_by_walker() {
+    // walker-contact.md: U at most 24 (small), 37 (medium), 50 (large).
+    type Walker = fn(&str, &str, &str) -> String;
+    let table: [(Walker, i32); 3] = [(small_walker, 24), (medium_walker, 37), (large_walker, 50)];
+    for (n, (walker, top)) in table.into_iter().enumerate() {
+        assert!(classic_bounces_from(walker, top), "row {n}");
+        assert!(!classic_bounces_from(walker, top + 1), "row {n}");
     }
 }
 
@@ -666,6 +696,20 @@ fn large_walker(x: &str, speed: &str, facing: &str) -> String {
     )
 }
 
+/// A walker as in walker-contact.md's medium walker, with the size and
+/// offset the classic-1 bounce and hurt boxes go with, and the lift late
+/// in a jump that keeps it from hurting from U = 0 up.
+fn medium_walker(x: &str, speed: &str, facing: &str) -> String {
+    format!(
+        r#"
+        [[entities]]
+        type = "crawler"
+        at = [{x}, 400]
+        params = {{ speed = {speed}, facing = "{facing}", size = [25, 25], offset = 5, hurt_jump_lift = 25, {CLASSIC_WALKER} }}
+        "#
+    )
+}
+
 /// Whether a classic-1 player standing `i` px from a still walker, made
 /// by `walker`, is hurt by it on the second frame and not the first.
 fn classic_hurt_at(
@@ -684,11 +728,15 @@ fn classic_hurt_at(
 #[test]
 fn classic_hurt_ranges_by_walker_facing_and_heading() {
     type Walker = fn(&str, &str, &str) -> String;
-    let table: [(Walker, Facing, &str, i32, i32); 8] = [
+    let table: [(Walker, Facing, &str, i32, i32); 12] = [
         (small_walker, Facing::Right, "left", -19, 24),
         (small_walker, Facing::Right, "right", -18, 25),
         (small_walker, Facing::Left, "left", -25, 18),
         (small_walker, Facing::Left, "right", -24, 19),
+        (medium_walker, Facing::Right, "left", -26, 22),
+        (medium_walker, Facing::Right, "right", -16, 32),
+        (medium_walker, Facing::Left, "left", -32, 16),
+        (medium_walker, Facing::Left, "right", -22, 26),
         (large_walker, Facing::Right, "left", -22, 27),
         (large_walker, Facing::Right, "right", -21, 28),
         (large_walker, Facing::Left, "left", -28, 21),
@@ -739,6 +787,120 @@ fn classic_hurt_reach_early_and_later_in_a_jump() {
     assert!(!classic_hurt_in_the_air(large_walker, 17, 6));
     for u in [0, 4, 11, 16] {
         assert!(!classic_hurt_in_the_air(small_walker, u, 6), "U = {u}");
+    }
+}
+
+#[test]
+fn classic_medium_walker_hurt_reach_early_and_later_in_a_jump() {
+    // Up to T + 5: at most 24 px above; from T + 6 not at all from U = 0.
+    assert!(classic_hurt_in_the_air(medium_walker, 24, 5));
+    assert!(!classic_hurt_in_the_air(medium_walker, 25, 5));
+    for u in [0, 3, 4, 16, 24] {
+        assert!(!classic_hurt_in_the_air(medium_walker, u, 6), "U = {u}");
+    }
+}
+
+/// Whether a classic-1 player standing `i` px from a still walker, made
+/// by `walker`, in the fidget pose at the end of the frame (its
+/// `standing`th frame of standing), is about to be hurt.
+fn classic_fidget_hurt_at(
+    walker: fn(&str, &str, &str) -> String,
+    i: i32,
+    facing: Facing,
+    heading: &str,
+    standing: u32,
+) -> bool {
+    let mut w = world_on("classic-1", [300 + i, 400], &walker("300", "0", heading));
+    w.player.facing = facing;
+    w.player.pose.standing = Some(standing - 1);
+    step(&mut w, &InputFrame::default());
+    assert_eq!(w.player.pose.standing, Some(standing));
+    w.player.hurt_ahead.is_some()
+}
+
+#[test]
+fn classic_fidget_pose_shifts_the_hurt_range() {
+    // walker-contact.md: facing right, the low end 10 px higher and the
+    // high end 3 px higher; facing left, 3 and 10 px lower.
+    type Walker = fn(&str, &str, &str) -> String;
+    let table: [(Walker, Facing, &str, i32, i32); 8] = [
+        (small_walker, Facing::Right, "left", -9, 27),
+        (small_walker, Facing::Right, "right", -8, 28),
+        (small_walker, Facing::Left, "left", -28, 8),
+        (small_walker, Facing::Left, "right", -27, 9),
+        (medium_walker, Facing::Right, "left", -16, 25),
+        (medium_walker, Facing::Right, "right", -6, 35),
+        (medium_walker, Facing::Left, "left", -35, 6),
+        (medium_walker, Facing::Left, "right", -25, 16),
+    ];
+    for (n, (walker, facing, heading, low, high)) in table.into_iter().enumerate() {
+        for (i, hurt) in [
+            (low - 1, false),
+            (low, true),
+            (high, true),
+            (high + 1, false),
+        ] {
+            assert_eq!(
+                classic_fidget_hurt_at(walker, i, facing, heading, 239),
+                hurt,
+                "row {n}: I = {i}, facing {facing:?}, heading {heading}"
+            );
+        }
+    }
+}
+
+#[test]
+fn classic_fidget_pose_is_on_frames_239_to_418_and_696_to_875() {
+    // I = 26 is inside the fidget range only (−9 to 27, not −19 to 24).
+    for (standing, fidget) in [
+        (238, false),
+        (239, true),
+        (418, true),
+        (419, false),
+        (695, false),
+        (696, true),
+        (875, true),
+        (876, false),
+    ] {
+        assert_eq!(
+            classic_fidget_hurt_at(small_walker, 26, Facing::Right, "left", standing),
+            fidget,
+            "standing frame {standing}"
+        );
+    }
+}
+
+#[test]
+fn classic_medium_walker_from_behind_follows_the_worked_example() {
+    // A player facing right at x 120.25 and a medium walker heading right
+    // at full speed, at 86.5 at the end of frame 1; here 200 px further
+    // right, clear of the arena's wall.
+    for (fidget, hurt_on) in [(false, 4), (true, 2)] {
+        let mut w = world_on(
+            "classic-1",
+            [320, 400],
+            &medium_walker("285.5", "1", "right"),
+        );
+        w.player.pos.x = fx(320.25);
+        w.player.facing = Facing::Right;
+        if fidget {
+            w.player.pose.standing = Some(300);
+        }
+        let mut xs = Vec::new();
+        let mut hurt = None;
+        for frame in 1..=4 {
+            step(&mut w, &InputFrame::default());
+            xs.push(w.things[0].pos.x);
+            if hurt.is_none() && w.events.contains(&Event::Hurt) {
+                hurt = Some(frame);
+            }
+        }
+        assert_eq!(
+            xs[..3],
+            [fx(286.5), fx(287.5), fx(288.5)],
+            "fidget {fidget}"
+        );
+        assert_eq!(hurt, Some(hurt_on), "fidget {fidget}");
     }
 }
 

@@ -40,7 +40,9 @@ pub enum Behavior {
     /// counting the one it appears on, before it moves. Walkers with the
     /// same `group` above 0 appear and are removed with the view together.
     /// With a `contact`, it hurts the player or is bounced on as that
-    /// says, instead of by the preset's boxes.
+    /// says, instead of by the preset's boxes. With a `hurt_jump_lift`,
+    /// the preset's hurt box rises that far late in a jump against it,
+    /// instead of the preset's `hurt_jump_lift`.
     Walker {
         speed: Fixed,
         response: Response,
@@ -48,6 +50,7 @@ pub enum Behavior {
         columns: bool,
         bounced_speed: Option<Fixed>,
         contact: Option<WalkerContact>,
+        hurt_jump_lift: Option<Fixed>,
         facing: Facing,
         turn_delay: u8,
         appear_wait: u8,
@@ -758,6 +761,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "columns",
             "bounced_speed",
             "contact",
+            "hurt_jump_lift",
         ],
         "patrol" => &["path", "period"],
         "launcher" => &["velocity"],
@@ -854,6 +858,16 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                     Some(v)
                 }
             };
+            let hurt_jump_lift = match table.get("hurt_jump_lift") {
+                None => None,
+                Some(_) => {
+                    let v = number("hurt_jump_lift")?;
+                    if v.is_negative() {
+                        return Err(format!("{path}.hurt_jump_lift: must not be negative"));
+                    }
+                    Some(v)
+                }
+            };
             let frames = |key: &str| match get(key)? {
                 Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
                 _ => Err(format!(
@@ -900,6 +914,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                     None => None,
                     Some(v) => Some(parse_walker_contact(v, &format!("{path}.contact"))?),
                 },
+                hurt_jump_lift,
                 facing,
                 turn_delay,
                 appear_wait,

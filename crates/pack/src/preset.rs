@@ -434,6 +434,11 @@ mod tests {
                     | Param::HurtOffset
                     | Param::HurtJumpTime
                     | Param::HurtJumpLift
+                    | Param::HurtFidgetWidth
+                    | Param::HurtFidgetOffset
+                    | Param::FidgetStart
+                    | Param::FidgetLength
+                    | Param::FidgetEvery
                     | Param::KnockoutJump
                     | Param::KnockoutSpeed
                     | Param::KnockoutMaxFall

@@ -126,20 +126,25 @@ impl Kind {
             Kind::SmallWalker | Kind::MediumWalker | Kind::LargeWalker => {
                 // walker.md: full speed 1, closing an eighth of the gap
                 // each frame, turning 4 frames late; bounce.md's fall.
-                // The sizes are the ones the classic-1 preset's bounce
-                // and hurt boxes give walker-contact.md's ranges with.
-                // walker-contact.md doesn't cover the medium walker, so
-                // it is the small one made 13 px taller, as
-                // riding-walkers.md has it.
-                let size = match self {
-                    Kind::SmallWalker => [20, 12],
-                    Kind::MediumWalker => [20, 25],
-                    _ => [26, 38],
+                // The sizes and offsets are the ones the classic-1
+                // preset's bounce and hurt boxes give walker-contact.md's
+                // ranges with. The medium walker's ranges move 10 px
+                // with its heading, and late in a jump it doesn't hurt
+                // from U = 0 up, which the preset's lift of 21 px would
+                // leave it doing up to U = 3; 25 px is the least that
+                // doesn't (lower U wasn't measured).
+                let (size, offset) = match self {
+                    Kind::SmallWalker => ([20, 12], 0.5),
+                    Kind::MediumWalker => ([25, 25], 5.0),
+                    _ => ([26, 38], 0.5),
                 };
+                if self == Kind::MediumWalker {
+                    set("hurt_jump_lift", Value::Integer(25));
+                }
                 set("speed", Value::Integer(1));
                 set("response", Value::Float(0.125));
                 set("size", Value::Array(size.map(Value::Integer).into()));
-                set("offset", Value::Float(0.5));
+                set("offset", Value::Float(offset));
                 set("turn_delay", Value::Integer(4));
                 set("defeat_jump", Value::Integer(6));
                 set("defeat_gravity", Value::Float(0.4375));

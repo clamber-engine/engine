@@ -146,6 +146,11 @@ hurt_width = 0
 hurt_offset = 0
 hurt_jump_time = 0
 hurt_jump_lift = 0
+hurt_fidget_width = 0
+hurt_fidget_offset = 0
+fidget_start = 0
+fidget_length = 0
+fidget_every = 0
 knockout_jump = 0
 knockout_speed = 0
 knockout_max_fall = 0
@@ -322,11 +327,16 @@ air_acceleration = 0.09375
 #
 # The bounce box is one way to split walker-contact.md's bounce ranges
 # between the player and a walker: it gives exactly those ranges against
-# a walker with `size = [20, 12]` and `offset = 0.5` (the small walker)
-# or `size = [26, 38]` and `offset = 0.5` (the large one). The hurt box
-# (24 wide, 3 behind) splits walker-contact.md's hurt ranges the same
-# way; lifting its bottom 21 px from 6 frames into a jump gives the
-# vertical reach there. The roll's attack box (22 wide, 4 behind),
+# a walker with `size = [20, 12]` and `offset = 0.5` (the small walker),
+# `size = [25, 25]` and `offset = 5` (the medium one) or `size = [26, 38]`
+# and `offset = 0.5` (the large one). The hurt box (24 wide, 3 behind)
+# splits walker-contact.md's hurt ranges the same way; lifting its bottom
+# 21 px from 6 frames into a jump gives the vertical reach there (the
+# medium walker lifts it 25 px, its own `hurt_jump_lift`). In the fidget
+# pose (frames 239 to 418 of standing, and every 457 frames again, as in
+# ball-contact.md) the hurt box is 17 wide, 9.5 behind, which gives that
+# pose's hurt ranges; the large walker wasn't measured against it, and
+# the engine uses the same box. The roll's attack box (22 wide, 4 behind),
 # checked against walkers before they move as the bounce box is, gives
 # rolling-into-walkers.md's defeat ranges at the end of the frame for
 # walkers walking at full speed. The ground action's attack box (53 wide,
@@ -429,6 +439,11 @@ hurt_width = 24
 hurt_offset = -3
 hurt_jump_time = 6
 hurt_jump_lift = 21
+hurt_fidget_width = 17
+hurt_fidget_offset = -9.5
+fidget_start = 239
+fidget_length = 180
+fidget_every = 457
 knockout_jump = 8
 knockout_speed = 0.78125
 knockout_max_fall = 6

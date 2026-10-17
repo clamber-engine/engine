@@ -263,18 +263,23 @@ pub fn pose(player: &Player, contact: &Contact) -> Pose {
     if player.crouch.held > 0 && player.ground_action.is_none() {
         return Pose::Crouching;
     }
-    let (start, length, every) = contact.fidget_time;
-    if let Some(n) = clock.standing
-        && n >= start
-    {
-        let into = if every > 0 {
-            (n - start) % every
-        } else {
-            n - start
-        };
-        if into < length {
-            return Pose::Fidget;
-        }
+    if fidgeting(&clock, contact.fidget_time) {
+        return Pose::Fidget;
     }
     Pose::Upright
+}
+
+/// Whether a player with `clock` is in the fidget pose at the end of the
+/// last step, taking it `start` frames into standing, for `length`
+/// frames, and again every `every` frames (0: only once).
+pub fn fidgeting(clock: &PoseClock, (start, length, every): (u32, u32, u32)) -> bool {
+    let Some(n) = clock.standing.filter(|&n| n >= start) else {
+        return false;
+    };
+    let into = if every > 0 {
+        (n - start) % every
+    } else {
+        n - start
+    };
+    into < length
 }

@@ -1030,10 +1030,12 @@ fn strike(
 
 /// The enemy that hurts the player on the next step, if any: one its
 /// hurt box touches now, on whole pixels. The box is `hurt_width` wide,
-/// centred `hurt_offset` in front of the player, and reaches from the
-/// top of the body to the feet, or to `hurt_jump_lift` above them from
-/// `hurt_jump_time` frames into a jump. A rolling player isn't hurt, nor
-/// one in the first `roll_stop_guard` frames of the stop after a roll.
+/// centred `hurt_offset` in front of the player, or `hurt_fidget_width`
+/// and `hurt_fidget_offset` in the fidget pose, and reaches from the top
+/// of the body to the feet, or to `hurt_jump_lift` (or the walker's own)
+/// above them from `hurt_jump_time` frames into a jump. A rolling player
+/// isn't hurt, nor one in the first `roll_stop_guard` frames of the stop
+/// after a roll.
 fn hurt_ahead(world: &World, physics: &Physics) -> Option<usize> {
     let player = &world.player;
     let guarded = player.roll_stop > 0 && player.roll_stop <= frames(physics[Param::RollStopGuard]);
@@ -1041,33 +1043,53 @@ fn hurt_ahead(world: &World, physics: &Physics) -> Option<usize> {
         return None;
     }
     let at = whole_pixels(player.pos);
-    let offset = physics[Param::HurtOffset];
+    let long = |p: Param| physics[p].floor().clamp(0, u32::MAX.into()) as u32;
+    let fidget_time = (
+        long(Param::FidgetStart),
+        long(Param::FidgetLength),
+        long(Param::FidgetEvery),
+    );
+    let fidget =
+        physics[Param::HurtFidgetWidth] > Fixed::ZERO && pose::fidgeting(&player.pose, fidget_time);
+    let (width, offset) = if fidget {
+        (
+            physics[Param::HurtFidgetWidth],
+            physics[Param::HurtFidgetOffset],
+        )
+    } else {
+        (physics[Param::HurtWidth], physics[Param::HurtOffset])
+    };
     let middle = match player.facing {
         Facing::Left => at.x - offset,
         Facing::Right => at.x + offset,
     };
-    let half_width = Fixed::from_bits(physics[Param::HurtWidth].to_bits() / 2);
+    let half_width = Fixed::from_bits(width.to_bits() / 2);
     let late = player
         .jump_age
         .is_some_and(|age| age >= frames(physics[Param::HurtJumpTime]));
-    let lift = if late {
-        physics[Param::HurtJumpLift]
-    } else {
-        Fixed::ZERO
+    let reach = |archetype: &Archetype| {
+        let lift = match archetype.behavior {
+            _ if !late => Fixed::ZERO,
+            Behavior::Walker {
+                hurt_jump_lift: Some(lift),
+                ..
+            } => lift,
+            _ => physics[Param::HurtJumpLift],
+        };
+        (
+            middle - half_width,
+            at.y - HEIGHT,
+            middle + half_width,
+            at.y - lift,
+        )
     };
-    let reach = (
-        middle - half_width,
-        at.y - HEIGHT,
-        middle + half_width,
-        at.y - lift,
-    );
     world
         .things
         .iter()
         .filter(|t| t.active && t.phase == Phase::Ready && !has_contact(t))
         .find(|t| {
             t.archetype.is_some_and(|a| {
-                a.behavior.is_enemy() && overlap(reach, a.bounds(whole_pixels(t.pos), going(t)))
+                a.behavior.is_enemy() && overlap(reach(&a), a.bounds(whole_pixels(t.pos), going(t)))
             })
         })
         .map(|t| t.index)
