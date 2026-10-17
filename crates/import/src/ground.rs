@@ -1,7 +1,8 @@
 //! A level's ground (`spec/formats/level-ground.md`): a grid of 32-px
 //! cells in 32-line bands, each cell a type whose two halves have a shape,
 //! read into where the surface is in each 1-px column and turned into
-//! Clamber collision.
+//! Clamber collision. A ceiling grid's halves can also be ceilings, with
+//! ground above a line.
 //!
 //! Lines are level y in whole px, growing downward. A surface at line `L`
 //! is stood on with the feet at `L`, and its ground is lines `L` + 1 to
@@ -36,6 +37,9 @@ pub enum Layout {
     Columns,
     /// Row by row, 64 cells to a row, as many bands as there are rows.
     Rows,
+    /// Stored as [`Layout::Rows`], with its own shapes, half of them
+    /// ceilings.
+    Ceilings,
 }
 
 /// A level's ground grid with its type table.
@@ -54,6 +58,27 @@ pub struct Surface {
     pub passable_from_below: bool,
 }
 
+/// What one half of a cell gives in a 1-px column of one band.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Half {
+    Empty,
+    /// A floor, with its surface if it has one there.
+    Floor(Option<Surface>),
+    /// A ceiling (only in a ceiling grid): ground above `line`, which is
+    /// `u` lines above the band's bottom line. `u` is 31 or less and can
+    /// be below 0, putting the line below the band.
+    Ceiling {
+        line: i64,
+        u: i64,
+    },
+}
+
+impl Half {
+    fn is_ceiling(self) -> bool {
+        matches!(self, Half::Ceiling { .. })
+    }
+}
+
 /// The surface that something at a point stands on or lands on next.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Below {
@@ -69,7 +94,7 @@ impl Ground {
     pub fn new(layout: Layout, grid: &[u8], types: &[u8]) -> Result<Ground, String> {
         let unit = match layout {
             Layout::Columns => 2 * COLUMN_BANDS as usize,
-            Layout::Rows => 2 * ROW_CELLS as usize,
+            Layout::Rows | Layout::Ceilings => 2 * ROW_CELLS as usize,
         };
         if !grid.len().is_multiple_of(unit) {
             return Err(format!(
@@ -78,7 +103,7 @@ impl Ground {
                 unit,
                 match layout {
                     Layout::Columns => "columns",
-                    Layout::Rows => "rows",
+                    Layout::Rows | Layout::Ceilings => "rows",
                 }
             ));
         }
@@ -108,7 +133,7 @@ impl Ground {
     pub fn bands(&self) -> i64 {
         match self.layout {
             Layout::Columns => i64::from(COLUMN_BANDS),
-            Layout::Rows => self.cells.len() as i64 / ROW_CELLS,
+            Layout::Rows | Layout::Ceilings => self.cells.len() as i64 / ROW_CELLS,
         }
     }
 
@@ -116,7 +141,7 @@ impl Ground {
     pub fn width(&self) -> i64 {
         match self.layout {
             Layout::Columns => self.cells.len() as i64 / i64::from(COLUMN_BANDS) * CELL,
-            Layout::Rows => ROW_CELLS * CELL,
+            Layout::Rows | Layout::Ceilings => ROW_CELLS * CELL,
         }
     }
 
@@ -129,14 +154,15 @@ impl Ground {
             Layout::Columns if band >= i64::from(COLUMN_BANDS) => return None,
             Layout::Columns => x / CELL * i64::from(COLUMN_BANDS) + band,
             // Past the end of a row, this reads on into the next one.
-            Layout::Rows => band * ROW_CELLS + x / CELL,
+            Layout::Rows | Layout::Ceilings => band * ROW_CELLS + x / CELL,
         };
         self.cells.get(usize::try_from(index).ok()?).copied()
     }
 
-    /// The surface in level x column `x` in `band`, if there is one.
-    pub fn surface(&self, x: i64, band: i64) -> Option<Surface> {
-        let word = self.cell(x, band)?;
+    /// The half byte that level x column `x` uses in `band`, and the
+    /// position in that half, unless the cell is empty.
+    fn half_byte(&self, x: i64, band: i64) -> Option<(u8, i64)> {
+        let word = self.cell(x, band).filter(|&w| w != 0)?;
         let halves = self.types.get(usize::from(word & TYPE_MASK))?;
         let mut p = x.rem_euclid(CELL);
         if word & MIRRORED != 0 {
@@ -147,15 +173,64 @@ impl Ground {
         if half & FLIPPED != 0 {
             c = CELL / 2 - 1 - c;
         }
-        let rise = rise(half & SHAPE_MASK, c)?;
-        Some(Surface {
-            line: CELL * band + CELL - rise,
-            passable_from_below: half & PASSABLE != 0,
-        })
+        Some((half, c))
+    }
+
+    /// The shape number of the half that level x column `x` uses in
+    /// `band`, 0 if the cell is empty.
+    fn shape(&self, x: i64, band: i64) -> u8 {
+        self.half_byte(x, band)
+            .map_or(0, |(half, _)| half & SHAPE_MASK)
+    }
+
+    /// What the half that level x column `x` uses in `band` gives there.
+    pub fn half(&self, x: i64, band: i64) -> Half {
+        let Some((half, c)) = self.half_byte(x, band) else {
+            return Half::Empty;
+        };
+        let shape = half & SHAPE_MASK;
+        let bottom = CELL * band + CELL;
+        let floor = |rise: Option<i64>| {
+            Half::Floor(rise.map(|rise| Surface {
+                line: bottom - rise,
+                passable_from_below: half & PASSABLE != 0,
+            }))
+        };
+        match (self.layout, shape) {
+            (_, 0) => Half::Empty,
+            (Layout::Columns | Layout::Rows, _) => floor(rise(shape, c)),
+            (Layout::Ceilings, 1..=31) => floor(
+                ceiling_grid_value(shape, c)
+                    .filter(|&v| v >= 0)
+                    .map(|v| v.min(31)),
+            ),
+            (Layout::Ceilings, _) => {
+                let u = match ceiling_grid_value(shape - 32, c) {
+                    Some(v) if v >= 1 => 31 - v,
+                    _ => 31,
+                };
+                Half::Ceiling {
+                    line: bottom - u,
+                    u,
+                }
+            }
+        }
+    }
+
+    /// The surface in level x column `x` in `band`, if there is one. In a
+    /// ceiling grid, only floors have surfaces.
+    pub fn surface(&self, x: i64, band: i64) -> Option<Surface> {
+        match self.half(x, band) {
+            Half::Floor(surface) => surface,
+            _ => None,
+        }
     }
 
     /// The ground below level x column `x` for feet at line `feet`.
     pub fn below(&self, x: i64, feet: i64) -> Below {
+        if self.layout == Layout::Ceilings {
+            return self.below_in_ceilings(x, feet);
+        }
         let rows = self.layout == Layout::Rows;
         let mut band = (feet - 1).div_euclid(CELL);
         if !rows {
@@ -178,6 +253,42 @@ impl Ground {
         }
     }
 
+    /// [`Ground::below`] in a ceiling grid.
+    fn below_in_ceilings(&self, x: i64, feet: i64) -> Below {
+        let band = (feet - 1).div_euclid(CELL);
+        let top = CELL * band + 1;
+        let here = self.half(x, band);
+        match here {
+            Half::Ceiling { line, u } if u >= 1 => return Below::Line(line),
+            Half::Floor(Some(s)) if s.line != top => return Below::Line(s.line),
+            Half::Floor(Some(_)) => {
+                return Below::Line(match self.half(x, band - 1) {
+                    Half::Ceiling { line, .. } => line - CELL,
+                    Half::Floor(Some(s)) => s.line,
+                    _ => top,
+                });
+            }
+            _ => {}
+        }
+        // Nothing at the feet.
+        let found = |half| match half {
+            Half::Floor(Some(s)) => Some(s.line),
+            Half::Ceiling { line, u } if u >= 0 => Some(line),
+            _ => None,
+        };
+        let next = self.half(x, band + 1);
+        if here.is_ceiling() != next.is_ceiling() {
+            return if next == Half::Empty || self.shape(x, band + 1) == 32 {
+                Below::Line(CELL * band + CELL)
+            } else {
+                Below::None
+            };
+        }
+        found(next)
+            .or_else(|| found(self.half(x, band + 2)))
+            .map_or(Below::None, Below::Line)
+    }
+
     /// The ground in level x `xs` as collision, every collider of surface
     /// type `surface`.
     ///
@@ -187,6 +298,9 @@ impl Ground {
     /// and is a one-way segment. A surface on its band's top line meets
     /// the ground of a surface in the band above, as it does for the
     /// ground below, so stacked cells have no gap between them.
+    ///
+    /// In a ceiling grid only the floors are collision: what a ceiling
+    /// does to the player isn't specified yet.
     pub fn colliders(&self, xs: Range<i64>, surface: &str) -> Vec<Collider> {
         let mut colliders = Vec::new();
         let mut push = |shape| {
@@ -260,6 +374,24 @@ impl Ground {
 fn point(x: i64, y: i64) -> Vec2 {
     // Grids are at most 64 Ki cells of 32 px, well inside an i32.
     Vec2::ints(x as i32, y as i32)
+}
+
+/// The value `v` of floor shape `shape` (0 to 31) of a ceiling grid at
+/// position `c` (0 to 15) of a half, if the shape has one.
+fn ceiling_grid_value(shape: u8, c: i64) -> Option<i64> {
+    let s = i64::from(shape);
+    Some(match shape {
+        1..=4 => 31 - 8 * (s - 1),
+        5..=12 => c / 4 + 4 * (s - 5),
+        13..=16 => c / 2 + 8 * (s - 13),
+        17..=21 => c + 8 * (s - 18),
+        22..=26 => 4 * c + 16 * (s - 25),
+        27 => (4 * c - 16).min(15),
+        28 => (4 * c - 16).max(15),
+        29 => 31,
+        30 => 15,
+        _ => return None,
+    })
 }
 
 /// The rise of `shape` at position `c` (0 to 15) of a half, 0 to 31, or
@@ -378,6 +510,65 @@ mod tests {
                 assert_eq!(ground.below(x, feet), want, "{table} x {x} feet {feet}");
             }
         }
+    }
+
+    fn ceilings() -> Ground {
+        Ground::new(
+            Layout::Ceilings,
+            &hex("ceiling-grid.hex"),
+            &hex("ceiling-types.hex"),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn ceiling_grid_halves_match_the_spec_vectors() {
+        let ground = ceilings();
+        for row in rows("ceiling-cells.tsv") {
+            let x: i64 = row[0].parse().unwrap();
+            for (band, want) in row[1..].iter().enumerate() {
+                let got = match ground.half(x, band as i64) {
+                    Half::Empty => "empty".to_string(),
+                    Half::Floor(None) => "floor:none".to_string(),
+                    Half::Floor(Some(s)) => format!("floor:{}", s.line),
+                    Half::Ceiling { line, .. } => format!("ceiling:{line}"),
+                };
+                assert_eq!(&got, want, "x {x} band {band}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_ground_below_in_a_ceiling_grid_matches_the_spec_vectors() {
+        let ground = ceilings();
+        for row in rows("ceiling-ground-below.tsv") {
+            let x: i64 = row[0].parse().unwrap();
+            let feet: i64 = row[1].parse().unwrap();
+            let want = match row[2].as_str() {
+                "none" => Below::None,
+                line => Below::Line(line.parse().unwrap()),
+            };
+            assert_eq!(ground.below(x, feet), want, "x {x} feet {feet}");
+        }
+    }
+
+    #[test]
+    fn the_ceiling_grid_example_in_the_format() {
+        // Type 1 floor shape 3, type 2 ceiling shape 35, type 3 ceiling
+        // shape 33.
+        let types = [0, 0, 0x03, 0x03, 0x23, 0x23, 0x21, 0x21];
+        let mut grid = vec![0; 3 * 128];
+        grid[128] = 0x02;
+        grid[130] = 0x03;
+        grid[256] = 0x01;
+        let ground = Ground::new(Layout::Ceilings, &grid, &types).unwrap();
+        assert_eq!(ground.below(5, 40), Below::Line(48));
+        assert_eq!(ground.below(5, 60), Below::Line(48));
+        assert_eq!(ground.below(5, 70), Below::Line(81));
+        assert_eq!(ground.below(5, 10), Below::None);
+        assert_eq!(ground.below(37, 40), Below::Line(64));
+        assert_eq!(ground.below(37, 10), Below::None);
+        assert_eq!(ground.below(2053, 8), Below::Line(16));
     }
 
     #[test]

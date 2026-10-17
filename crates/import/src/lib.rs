@@ -44,7 +44,7 @@ use std::path::{Component, Path, PathBuf};
 pub use graphics::{
     Background, GridPicture, PaletteSet, Pictures, TILE, TileEntry, TileSet, channels, rgb, unpack,
 };
-pub use ground::{Below, COLUMN_BANDS, Ground, Layout, Surface};
+pub use ground::{Below, COLUMN_BANDS, Ground, Half, Layout, Surface};
 pub use image::{COPIER_HEADER, Catalog, Image, Known, MAX_IMAGE_SIZE, Outcome, Sha256Hash};
 pub use installed::{Installed, check_shareable, installed};
 pub use kinds::{END, FINGERPRINT_SIZE, Kind, KindRow, WALKER, candidate, kind_of, kind_rows};
