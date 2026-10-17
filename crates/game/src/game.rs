@@ -123,7 +123,7 @@ impl Game {
             .and_then(|name| level.arrival(name));
         match arrival {
             Some(arrival) => {
-                let world = World::arriving(level.clone(), self.world.feel.clone(), arrival);
+                let world = self.world.coming_back(arrival);
                 self.replace_world(world);
             }
             None => self.restart(),

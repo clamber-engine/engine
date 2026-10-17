@@ -34,7 +34,8 @@
 //! object in the hands stays there, and the other character goes on
 //! following. Where play goes after the exit is up to whatever runs the
 //! world: an exit's `arrival` param names the level's [`Arrival`] that
-//! play comes into next ([`World::arriving`]).
+//! play comes into next ([`World::arriving`]), and coming back to the
+//! level keeps some of what happened in it ([`World::coming_back`]).
 //!
 //! A [`WALL_EXIT`] entity doesn't move and isn't drawn either. It's
 //! closed until a thrown object that [`Opens`] wall exits hits it, moving
@@ -52,12 +53,11 @@
 //! only: here any thrown object with [`Opens`] boxes opens one, and a
 //! wall exit stays open for the rest of the visit.
 //!
-//! [`Arrival`]: clamber_level::Arrival
 //! [`Opens`]: crate::Opens
 
 use clamber_fixed::Fixed;
 use clamber_input::Frame;
-use clamber_level::Vec2;
+use clamber_level::{Arrival, Vec2};
 use clamber_pack::{Param, Physics};
 
 use crate::archetype::Behavior;
@@ -94,6 +94,50 @@ pub struct Leaving {
 }
 
 impl World {
+    /// The level as play comes back into it at `arrival` after this
+    /// world left it through an exit (exits.md, "Coming back to the
+    /// level"). It begins as [`World::arriving`] has it, except that the
+    /// collectible count, the lives, the letters taken, the relic count
+    /// and the restart points reached are kept as they were on leaving,
+    /// and things gone for good stay gone: collectibles that are there
+    /// `once` or `kept`, and kegs broken. Everything else is there again,
+    /// as at the level's start.
+    ///
+    /// Engine choices where the spec says nothing: the relic count is
+    /// kept, the lead is the same character, and a character lost
+    /// before stays lost.
+    ///
+    /// # Panics
+    ///
+    /// As [`World::new`].
+    pub fn coming_back(&self, arrival: &Arrival) -> World {
+        let mut world = World::arriving(self.level.clone(), self.feel.clone(), arrival);
+        let flow = &self.flow;
+        world.flow.lives = flow.lives;
+        world.flow.gems = flow.gems;
+        world.flow.shown = flow.shown;
+        world.flow.relics = flow.relics;
+        world.flow.letters = flow.letters;
+        world.flow.checkpoints = flow.checkpoints.clone();
+        for (new, old) in world.things.iter_mut().zip(&self.things) {
+            let keg = matches!(old.archetype.map(|a| a.behavior), Some(Behavior::Keg(_)));
+            if old.phase == Phase::Gone || (keg && old.phase == Phase::Broken) {
+                new.active = false;
+                new.phase = old.phase;
+            }
+        }
+        world.player.character = self.player.character;
+        match &self.other {
+            Some(old) => {
+                if let Some(other) = &mut world.other {
+                    other.character = old.character;
+                }
+            }
+            None => world.other = None,
+        }
+        world
+    }
+
     /// The brightness of the fade after leaving through an exit, as in
     /// [`World::brightness`], once it has started.
     pub(crate) fn leaving_brightness(&self) -> Option<(u32, u32)> {

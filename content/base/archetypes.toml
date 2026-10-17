@@ -235,6 +235,9 @@
 #   from. With a view and `once = true`, it appears when its position
 #   comes near the view, as a thrower does, and is removed on the first
 #   frame it isn't near; removed or risen out, it doesn't come back.
+#   With `kept = true`, taken, it stays gone when play comes back to the
+#   level from another area (an exit's `arrival`); otherwise it's there
+#   again then, as at the level's start.
 # - `hutch`: a crate holding an animal. It stands on its position and
 #   never moves; walking, running or rolling through it does nothing.
 #   Offsets from it are whole px, ends included: `across`, the player's
@@ -290,7 +293,8 @@
 #   The character under control touches it by its `contact` table, as a
 #   ball's without a turn, at the end of a frame after its move; it then
 #   breaks, once, and is gone, and its position becomes where play
-#   resumes after a lost life. Touching it changes nothing about the
+#   resumes after a lost life. Both last when play comes back to the
+#   level from another area. Touching it changes nothing about the
 #   player. It breaks into four `pieces = [[across, up], ...]`, each
 #   moving across by its `across` every frame and up by its `up` at the
 #   start, less `piece_gravity` every frame, and a flash rising
@@ -782,7 +786,9 @@ burst_time = 40
 # and doesn't cover whether a bunch appears with the view. Where the
 # spec doesn't cover what the player is doing (bouncing, falling without
 # a jump, carried down a face, landing while moving, and so on), the
-# reach is the one for the nearest pose above.
+# reach is the one for the nearest pose above. A bunch taken stays gone
+# when play comes back to the level from another area, and a single is
+# there again (spec/behavior/exits.md, "Coming back to the level").
 [archetypes.spark]
 behavior = "collect"
 size = [16, 16]
@@ -830,6 +836,7 @@ count_delay = 17
 arrive_view = "start"
 arrive = [{ x_from = 9, y_from = 11, delay = 17 }]
 arrive_else = 0
+kept = true
 
 [[archetypes.cluster.reach]]
 stand = [-15, 21, -8, 40]
@@ -849,7 +856,8 @@ land_hold = 4
 # It joins the letters taken 30 frames after: the spec measured 30, 31
 # and 33 and leaves the exact frame open. It adds nothing to the count.
 # Landing wasn't measured for letters, so it's a bunch's. The size is
-# Clamber's own and only draws it.
+# Clamber's own and only draws it. Taken, it stays gone when play comes
+# back to the level from another area (spec/behavior/exits.md).
 [archetypes.letter]
 behavior = "collect"
 size = [16, 16]
@@ -859,6 +867,7 @@ release_every = 0
 count_delay = 0
 letter = 1
 join_delay = 30
+kept = true
 
 [[archetypes.letter.reach]]
 stand = [-15, 21, -8, 40]
@@ -879,7 +888,9 @@ land_hold = 4
 # measured, so those use the jump's later row, the standing row from the
 # frame it lands, and the first character's ranges. How the taken figure
 # is shown flying away isn't drawn yet. The size is Clamber's own and
-# only draws it.
+# only draws it. The spec doesn't cover whether a taken figure is there
+# again when play comes back to the level from another area: here it
+# stays gone, as the relic count is kept.
 [archetypes.idol]
 behavior = "collect"
 size = [24, 24]
@@ -889,6 +900,7 @@ release_every = 0
 count_delay = 0
 relic = true
 left_shift = 3
+kept = true
 
 [[archetypes.idol.reach]]
 stand = [-22, 31, -27, 37]

@@ -708,6 +708,7 @@ fn take(world: &mut World, start: Option<View>) {
             lives,
             rise,
             once,
+            kept,
             ..
         }) = thing.archetype.map(|a| a.behavior)
         else {
@@ -740,7 +741,7 @@ fn take(world: &mut World, start: Option<View>) {
             continue;
         }
         thing.active = false;
-        if once {
+        if once || kept {
             thing.phase = Phase::Gone;
         }
         let flow = &mut world.flow;
