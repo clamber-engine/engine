@@ -998,6 +998,41 @@ params! {
     /// Each letter's image is this far right of the one before. Whole
     /// px.
     LetterRowGap => "letter_row_gap",
+    /// Above 0, the letter row shows an ending after the last letter of
+    /// the word joins (see `clamber_sim::World::letter_row`): from the
+    /// frame after, it doesn't slide out; each letter blinks, then moves
+    /// right from this many frames after the join, letter 1 first.
+    /// 0: the row slides out as for any letter. Whole frames.
+    LetterEndMove => "letter_end_move",
+    /// Each letter starts moving this many frames after the one before.
+    /// Whole frames.
+    LetterEndStagger => "letter_end_stagger",
+    /// The letters blink this many times: off for `letter_end_blink`
+    /// frames from the frame after the join, then on for as many. Whole.
+    LetterEndBlinks => "letter_end_blinks",
+    /// See `letter_end_blinks`. Whole frames.
+    LetterEndBlink => "letter_end_blink",
+    /// The letter that joined last does all of this this many frames
+    /// later than the others. Whole frames.
+    LetterEndLate => "letter_end_late",
+    /// Where a moving letter's image's left edge goes, px right of the
+    /// picture's left edge. On the frame after it gets there it's no
+    /// longer drawn. Whole px.
+    LetterEndX => "letter_end_x",
+    /// Each frame a moving letter covers 1 / `letter_end_approach` of
+    /// the distance left, but at least `letter_end_least`, and it's
+    /// there once less than that would be left. Whole.
+    LetterEndApproach => "letter_end_approach",
+    /// See `letter_end_approach`. px.
+    LetterEndLeast => "letter_end_least",
+    /// With an ending, the lives display is first drawn this many
+    /// frames after the join, sliding in as from `lives_in`. Whole
+    /// frames.
+    LetterEndLivesIn => "letter_end_lives_in",
+    /// With an ending, the lives display shows the new number from the
+    /// first frame the last letter of the word is gone, and slides back
+    /// up from this many frames after that. Whole frames.
+    LetterEndLivesOut => "letter_end_lives_out",
     /// Above 0, the world has a count display (see
     /// `clamber_sim::World::count_display`): the number shown follows the
     /// collectible count one step a frame, and the display is shown while
@@ -1030,13 +1065,20 @@ params! {
     /// Where the top of the lives number is while it's shown, px below
     /// the picture's top. Whole px.
     LivesY => "lives_y",
-    /// See `lives_slide` and `lives_out`. Whole px.
+    /// See `lives_slide`. Whole px.
     LivesRise => "lives_rise",
+    /// Sliding back up, the lives display is last drawn on the frame it's
+    /// this many px above `lives_y` or less. Whole px.
+    LivesGone => "lives_gone",
     /// See `lives_slide` and `lives_out`. Whole px.
     LivesSpeed => "lives_speed",
     /// The left edge of the lives number's digit, px right of the
     /// picture's left edge. Whole px.
     LivesX => "lives_x",
+    /// A lives number of more than one digit has each digit this far
+    /// right of the one before, the digits centred on where a single one
+    /// would be. Whole px.
+    LivesDigitGap => "lives_digit_gap",
     /// The lives display shows the lives before the new one until this
     /// many frames after the step, and the new number from then on. Whole
     /// frames.

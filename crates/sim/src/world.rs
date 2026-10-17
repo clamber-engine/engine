@@ -681,6 +681,14 @@ impl World {
             }
             None => out.push(0),
         }
+        match f.letter_end {
+            Some(e) => {
+                out.push(1);
+                out.extend(e.at.to_le_bytes());
+                out.extend([e.late, e.before, e.after]);
+            }
+            None => out.push(0),
+        }
         match f.relic_flight {
             Some(r) => {
                 out.push(1);

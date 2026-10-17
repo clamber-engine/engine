@@ -540,6 +540,16 @@ mod tests {
                     | Param::LetterRowSpeed
                     | Param::LetterRowX
                     | Param::LetterRowGap
+                    | Param::LetterEndMove
+                    | Param::LetterEndStagger
+                    | Param::LetterEndBlinks
+                    | Param::LetterEndBlink
+                    | Param::LetterEndLate
+                    | Param::LetterEndX
+                    | Param::LetterEndApproach
+                    | Param::LetterEndLeast
+                    | Param::LetterEndLivesIn
+                    | Param::LetterEndLivesOut
                     | Param::CountShowFor
                     | Param::CountX
                     | Param::CountY
@@ -550,8 +560,10 @@ mod tests {
                     | Param::LivesOut
                     | Param::LivesY
                     | Param::LivesRise
+                    | Param::LivesGone
                     | Param::LivesSpeed
                     | Param::LivesX
+                    | Param::LivesDigitGap
                     | Param::LivesChange
                     | Param::RelicApproach
                     | Param::RelicSize

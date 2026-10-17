@@ -96,7 +96,8 @@ pub use archetype::{
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
 pub use collect::{
-    CountDisplay, LetterRow, LivesDisplay, LivesStep, Pickup, Release, RelicFlight, RelicImage,
+    CountDisplay, LetterEnd, LetterRow, LivesDisplay, LivesStep, Pickup, Release, RelicFlight,
+    RelicImage,
 };
 pub use dimming::{DIM, Dimming};
 pub use ending::{END, Ending};

@@ -32,7 +32,11 @@
 //! letter row is shown (see [`World::letter_row`]). On the step the last
 //! of the `letter_count` letters joins, the player gets one more life
 //! and the letters taken start again from none. The letters taken last
-//! for the visit to the level, losing a life included.
+//! for the visit to the level, losing a life included. With
+//! `letter_end_move` above 0, the row then shows an ending instead of
+//! sliding out: the letters blink and move right one at a time, and the
+//! lives display comes in and shows the new number once the last letter
+//! is gone.
 //!
 //! A collectible that's a `relic` adds one to the relic count when it's
 //! taken (figure.md's figure count). With `relic_approach` above 0, its
@@ -41,8 +45,11 @@
 //! [`World::relic_image`]).
 //!
 //! Engine choices where the spec says nothing: a letter taken while the
-//! row is shown for another shows it again from the start, and the row
-//! shows no sequence for the last letter, only the life. A part of what
+//! row is shown for another shows it again from the start, and one taken
+//! during the ending shows the row for it instead. Of the lives display
+//! after the count reaches `count_life` and the one in the ending, the
+//! one that started last is shown. Displays show at most 99 lives. A
+//! part of what
 //! a pickup is worth that never reaches the count is no longer owed, and
 //! a step from a count with no pickup waiting (a generic gem) goes to
 //! none. The relic image starts centred on where the relic was in the
@@ -92,6 +99,18 @@ pub struct LivesStep {
     pub after: u8,
 }
 
+/// The letter row's ending, after the last letter of the word joined.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct LetterEnd {
+    /// The step the last letter joined on.
+    pub at: u32,
+    /// That letter, the late one.
+    pub late: u8,
+    /// The lives before the one it gave, and with it.
+    pub before: u8,
+    pub after: u8,
+}
+
 /// A taken relic's image, flying to its resting place.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RelicFlight {
@@ -131,13 +150,15 @@ pub struct CountDisplay {
 }
 
 /// The lives display as drawn in a picture: the number of lives, and
-/// the left edge and top of its digit, px from the picture's top-left
-/// corner.
+/// the left edge of its first digit and the top of all of them, px from
+/// the picture's top-left corner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LivesDisplay {
     pub number: u8,
     pub x: i32,
     pub y: i32,
+    /// Each digit is this far right of the one before.
+    pub gap: i32,
 }
 
 /// The letter row as drawn in a picture: where the top of its images
@@ -161,9 +182,13 @@ impl World {
         let int = |p: Param| i32::try_from(physics[p].floor()).unwrap_or(0);
         let count = whole(physics[Param::LetterCount]).min(u32::from(MAX_LETTERS));
         let taken = self.flow.letter_taken?;
-        let since = self.frame.checked_sub(1)?.checked_sub(taken)?;
+        let n = self.frame.checked_sub(1)?;
+        let since = n.checked_sub(taken)?;
         if count == 0 {
             return None;
+        }
+        if let Some(end) = self.letter_end().filter(|e| e.at >= taken) {
+            return self.ending_row(end, n, count as u8);
         }
         let since = i64::from(since);
         let (into, slide, out) = (
@@ -176,7 +201,7 @@ impl World {
             i64::from(int(Param::LetterRowRise)),
             i64::from(int(Param::LetterRowSpeed)),
         );
-        let y = slide_y(since, (into, slide, out), (rest, rise, speed))?;
+        let y = slide_y(since, (into, slide, out), (rest, rise, rise, speed))?;
         let (left, gap) = (int(Param::LetterRowX), int(Param::LetterRowGap));
         let mut x = [0; MAX_LETTERS as usize];
         for (k, x) in x.iter_mut().enumerate() {
@@ -220,38 +245,175 @@ impl World {
 
     /// The lives display in the picture made from the last step, if it's
     /// drawn in it: after the number shown went from `count_life` less
-    /// one to 0, sliding in and out as the letter row does.
+    /// one to 0, or with the letter row's ending, sliding in and out. Of
+    /// the two, the one that started last.
     pub fn lives_display(&self) -> Option<LivesDisplay> {
         let physics = &self.feel.world;
         let int = |p: Param| i64::from(i32::try_from(physics[p].floor()).unwrap_or(0));
         if whole(physics[Param::CountShowFor]) == 0 {
             return None;
         }
-        let step = self.flow.lives_step?;
-        let since = i64::from(self.frame.checked_sub(1)?.checked_sub(step.at)?);
+        let n = self.frame.checked_sub(1)?;
+        let step = self.flow.lives_step.filter(|s| s.at <= n);
+        let end = self.letter_end().filter(|e| e.at <= n);
+        // The step it started on, when it's drawn, when it slides out,
+        // when it changes to the new number, and the numbers.
+        let (at, into, out, change, before, after) = match (step, end) {
+            (Some(s), e) if e.is_none_or(|e| e.at < s.at) => (
+                s.at,
+                int(Param::LivesIn),
+                int(Param::LivesOut),
+                int(Param::LivesChange),
+                s.before,
+                s.after,
+            ),
+            (_, Some(e)) => {
+                let gone = i64::from(self.letter_gone(e, self.letter_count()));
+                (
+                    e.at,
+                    int(Param::LetterEndLivesIn),
+                    gone + int(Param::LetterEndLivesOut),
+                    gone,
+                    e.before,
+                    e.after,
+                )
+            }
+            _ => return None,
+        };
+        let since = i64::from(n - at);
         let y = slide_y(
             since,
-            (
-                int(Param::LivesIn),
-                int(Param::LivesSlide),
-                int(Param::LivesOut),
-            ),
+            (into, int(Param::LivesSlide), out),
             (
                 int(Param::LivesY),
                 int(Param::LivesRise),
+                int(Param::LivesGone),
                 int(Param::LivesSpeed),
             ),
         )?;
+        let number = if since < change { before } else { after }.min(MAX_SHOWN);
+        let gap = int(Param::LivesDigitGap) as i32;
+        let digits = if number >= 10 { 2 } else { 1 };
         Some(LivesDisplay {
-            number: if since < int(Param::LivesChange) {
-                step.before
-            } else {
-                step.after
-            },
-            x: int(Param::LivesX) as i32,
+            number,
+            x: int(Param::LivesX) as i32 - (digits - 1) * gap / 2,
             y: i32::try_from(y).unwrap_or(i32::MAX),
+            gap,
         })
     }
+
+    /// The letter row's ending, if the world shows one and it has begun.
+    fn letter_end(&self) -> Option<LetterEnd> {
+        let end = self.flow.letter_end?;
+        (whole(self.feel.world[Param::LetterEndMove]) > 0).then_some(end)
+    }
+
+    /// The letters in the level's word.
+    fn letter_count(&self) -> u8 {
+        whole(self.feel.world[Param::LetterCount]).min(u32::from(MAX_LETTERS)) as u8
+    }
+
+    /// Where letter `k` of the ending is in the picture made on frame
+    /// `n`: its image's left edge, or `None` while it isn't drawn; and
+    /// whether it's gone for good.
+    fn ending_letter(&self, end: LetterEnd, k: u8, n: u32) -> (Option<i32>, bool) {
+        let physics = &self.feel.world;
+        let int = |p: Param| i64::from(i32::try_from(physics[p].floor()).unwrap_or(0));
+        let slot = int(Param::LetterRowX) + int(Param::LetterRowGap) * i64::from(k - 1);
+        let late = if k == end.late {
+            int(Param::LetterEndLate)
+        } else {
+            0
+        };
+        let n = i64::from(n) - i64::from(end.at) - late;
+        let at = |x: i64| Some(i32::try_from(x).unwrap_or(i32::MAX));
+        let (blink, blinks) = (int(Param::LetterEndBlink), int(Param::LetterEndBlinks));
+        if n >= 1 && blink > 0 && n <= 2 * blink * blinks && ((n - 1) / blink) % 2 == 0 {
+            return (None, false);
+        }
+        let start = int(Param::LetterEndMove) + int(Param::LetterEndStagger) * i64::from(k - 1);
+        if n < start {
+            return (at(slot), false);
+        }
+        let moves = n - start + 1;
+        match ending_path(
+            Fixed::from_int(slot as i32),
+            physics[Param::LetterEndX],
+            whole(physics[Param::LetterEndApproach]),
+            physics[Param::LetterEndLeast],
+        )
+        .nth(moves as usize - 1)
+        {
+            Some(x) => (at(x.floor()), false),
+            None => (None, true),
+        }
+    }
+
+    /// The first frame letter `count`, the word's last, is gone for good
+    /// in the ending, counting from the frame the last letter joined.
+    fn letter_gone(&self, end: LetterEnd, count: u8) -> u32 {
+        let physics = &self.feel.world;
+        let int = |p: Param| whole(physics[p]);
+        let slot = int(Param::LetterRowX) + int(Param::LetterRowGap) * u32::from(count - 1);
+        let late = if count == end.late {
+            int(Param::LetterEndLate)
+        } else {
+            0
+        };
+        let start = int(Param::LetterEndMove) + int(Param::LetterEndStagger) * u32::from(count - 1);
+        let path = ending_path(
+            Fixed::from_int(slot as i32),
+            physics[Param::LetterEndX],
+            int(Param::LetterEndApproach),
+            physics[Param::LetterEndLeast],
+        );
+        late + start + path.count() as u32
+    }
+
+    /// The letter row in the ending, in the picture made on frame `n`.
+    fn ending_row(&self, end: LetterEnd, n: u32, count: u8) -> Option<LetterRow> {
+        let mut x = [0; MAX_LETTERS as usize];
+        let (mut letters, mut all_gone) = (0, true);
+        for k in 1..=count {
+            let (at, gone) = self.ending_letter(end, k, n);
+            all_gone &= gone;
+            if let Some(at) = at {
+                x[usize::from(k - 1)] = at;
+                letters |= 1 << (k - 1);
+            }
+        }
+        (!all_gone).then(|| LetterRow {
+            y: i32::try_from(self.feel.world[Param::LetterRowY].floor()).unwrap_or(0),
+            x,
+            count,
+            letters,
+        })
+    }
+}
+
+/// The most a display shows of a number: two digits.
+const MAX_SHOWN: u8 = 99;
+
+/// Where a letter moving in the ending is on each frame it moves, from
+/// `from` toward `to`: each frame 1 / `approach` of the distance left,
+/// but at least `least`, and at `to` once less than `least` would be
+/// left. The last is the frame it gets there.
+fn ending_path(from: Fixed, to: Fixed, approach: u32, least: Fixed) -> impl Iterator<Item = Fixed> {
+    let approach = i64::from(approach.max(1));
+    let least = least.max(Fixed::from_bits(1));
+    let mut x = Some(from);
+    std::iter::from_fn(move || {
+        let at = x?;
+        if at >= to {
+            x = None;
+            return None;
+        }
+        let step = Fixed::from_bits((to - at).to_bits() / approach).max(least);
+        let next = at + step;
+        let next = if to - next < least { to } else { next };
+        x = Some(next);
+        Some(next)
+    })
 }
 
 impl World {
@@ -318,11 +480,11 @@ fn fly(world: &mut World) {
 /// set off: first drawn `into` frames after, sliding down `speed` px a
 /// frame for `slide` frames from `rise` above `rest`, then at `rest`,
 /// and from `out` frames after sliding back up `speed` px a frame until
-/// it's more than `rise` above `rest`.
+/// it's more than `gone` above `rest`.
 fn slide_y(
     since: i64,
     (into, slide, out): (i64, i64, i64),
-    (rest, rise, speed): (i64, i64, i64),
+    (rest, rise, gone, speed): (i64, i64, i64, i64),
 ) -> Option<i64> {
     if since < into {
         None
@@ -332,7 +494,7 @@ fn slide_y(
         Some(rest)
     } else {
         let y = rest - speed * (since - out + 1);
-        (speed != 0 && y >= rest - rise).then_some(y)
+        (speed != 0 && y >= rest - gone).then_some(y)
     }
 }
 
@@ -396,8 +558,9 @@ pub(crate) fn update(world: &mut World, can_take: bool, start: Option<View>) {
         .map(|&(_, k)| k)
         .collect();
     flow.joining.retain(|&(at, _)| at != frame);
+    let ending = whole(world.feel.world[Param::LetterEndMove]) > 0;
     for k in joined {
-        join(flow, k, word);
+        join(flow, k, word, ending.then_some(frame));
     }
 }
 
@@ -434,15 +597,25 @@ fn forgive(flow: &mut Flow, thing: usize) {
 }
 
 /// Adds letter `k` to the letters taken, with one more life and none
-/// taken again once they hold all `word` letters (above 0).
-fn join(flow: &mut Flow, k: u8, word: u32) {
+/// taken again once they hold all `word` letters (above 0). With an
+/// ending, that begins it on step `ending`.
+fn join(flow: &mut Flow, k: u8, word: u32, ending: Option<u32>) {
     flow.letters |= 1 << (k - 1);
     flow.events.push(FlowEvent::Letter(k));
     let all = (1u16 << word) - 1;
     if word > 0 && u16::from(flow.letters) & all == all {
         flow.letters = 0;
+        let before = flow.lives;
         flow.lives = flow.lives.saturating_add(1);
         flow.events.push(FlowEvent::Life);
+        if let Some(at) = ending {
+            flow.letter_end = Some(LetterEnd {
+                at,
+                late: k,
+                before,
+                after: flow.lives,
+            });
+        }
     }
 }
 

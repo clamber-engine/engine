@@ -94,11 +94,14 @@ fn draw_count(canvas: &mut dyn Surface, left: i32, count: &CountDisplay) {
 
 /// Draws the lives display with its picture's left edge at `left`: the
 /// life icon to the left of the number (the spec doesn't cover the
-/// image), then its digits.
+/// image), then each digit from its place.
 fn draw_lives(canvas: &mut dyn Surface, left: i32, lives: &LivesDisplay) {
     let x = left + lives.x;
     draw_text(canvas, x - ADVANCE - 1, lives.y + 4, "♥", LIFE);
-    draw_text(canvas, x, lives.y + 4, &lives.number.to_string(), COUNT);
+    for (k, digit) in lives.number.to_string().chars().enumerate() {
+        let x = x + lives.gap * k as i32;
+        draw_text(canvas, x, lives.y + 4, &digit.to_string(), COUNT);
+    }
 }
 
 /// Draws the letters taken in their slots. The row's places are in the

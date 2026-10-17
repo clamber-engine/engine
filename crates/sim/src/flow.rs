@@ -26,7 +26,7 @@ use clamber_level::Vec2;
 
 use clamber_pack::Param;
 
-use crate::collect::{self, LivesStep, Pickup, Release, RelicFlight};
+use crate::collect::{self, LetterEnd, LivesStep, Pickup, Release, RelicFlight};
 use crate::keg;
 use crate::loss;
 use crate::player::{Facing, Knockout, Player, State, frames};
@@ -124,6 +124,9 @@ pub struct Flow {
     /// The step the last letter was taken on, for the letter row
     /// ([`World::letter_row`](crate::World::letter_row)).
     pub letter_taken: Option<u32>,
+    /// The letter row's ending, from the step the word's last letter
+    /// joined on ([`World::letter_row`](crate::World::letter_row)).
+    pub letter_end: Option<LetterEnd>,
     /// The number the count display shows
     /// ([`World::count_display`](crate::World::count_display)): it
     /// follows `gems` one step a frame.

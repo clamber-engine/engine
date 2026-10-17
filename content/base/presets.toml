@@ -256,6 +256,16 @@ letter_row_rise = 0
 letter_row_speed = 0
 letter_row_x = 0
 letter_row_gap = 0
+letter_end_move = 0
+letter_end_stagger = 0
+letter_end_blinks = 0
+letter_end_blink = 0
+letter_end_late = 0
+letter_end_x = 0
+letter_end_approach = 0
+letter_end_least = 0
+letter_end_lives_in = 0
+letter_end_lives_out = 0
 count_show_for = 0
 count_x = 0
 count_y = 0
@@ -266,8 +276,10 @@ lives_slide = 0
 lives_out = 0
 lives_y = 0
 lives_rise = 0
+lives_gone = 0
 lives_speed = 0
 lives_x = 0
+lives_digit_gap = 0
 lives_change = 0
 relic_approach = 0
 relic_size = 0
@@ -650,7 +662,13 @@ count_life = 100
 # first drawn at y -12 two frames after a letter is taken, slides down
 # 4 px a frame to 16, is at 12 from the frame after, and slides back up
 # from 122 frames after, last drawn at -12. Images 16 x 16, from x 84,
-# 24 apart.
+# 24 apart. After the fourth letter joins (J), the ending: the letters
+# blink off 8 frames and on 8, four times from J + 1, and from J + 67
+# (letter 1), 24 apart, move right toward x 192 an eighth of the
+# distance left a frame, at least half a px; the letter taken last does
+# all of it a frame late. The lives display comes in from J + 7, shows
+# the new number from the first frame letter 4 is gone (G), and slides
+# back up from G + 122.
 letter_count = 4
 letter_row_in = 2
 letter_row_slide = 8
@@ -660,25 +678,38 @@ letter_row_rise = 24
 letter_row_speed = 4
 letter_row_x = 84
 letter_row_gap = 24
+letter_end_move = 67
+letter_end_stagger = 24
+letter_end_blinks = 4
+letter_end_blink = 8
+letter_end_late = 1
+letter_end_x = 192
+letter_end_approach = 8
+letter_end_least = 0.5
+letter_end_lives_in = 7
+letter_end_lives_out = 122
 # The count display (count-display.md): shown while a pickup waits for
 # its steps and up to 59 frames after the latest one. The image's top
 # left is at (16, 8), the digits at x 32 and 40, y 8. When the count
-# reaches 100 the lives number, at x 220, is first drawn 9 frames after
-# that step at y -8, slides down 4 px a frame, is at 10 from 14 frames
-# after, and slides back up from 147 after, last drawn at -6. It shows
-# the new number from 25 frames after.
+# reaches 100 the lives number, at x 220 (two digits at 215 and 225),
+# is first drawn 8 frames after that step at y -12, slides down 4 px a
+# frame, is at 10 from 14 frames after, and slides back up from 147
+# after, last drawn at -14. It shows the new number from 25 frames
+# after.
 count_show_for = 59
 count_x = 16
 count_y = 8
 count_digit_x = 32
 count_digit_gap = 8
-lives_in = 9
-lives_slide = 5
+lives_in = 8
+lives_slide = 6
 lives_out = 147
 lives_y = 10
-lives_rise = 18
+lives_rise = 22
+lives_gone = 24
 lives_speed = 4
 lives_x = 220
+lives_digit_gap = 10
 lives_change = 25
 # The taken figure's image (figure.md): its 34 px box flies from where
 # the figure was to (74, 2), covering about an eighth of the distance

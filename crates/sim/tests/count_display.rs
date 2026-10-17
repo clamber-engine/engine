@@ -195,12 +195,14 @@ fn reaching_100_slides_the_lives_number_in_and_out() {
 
     let at = |frame: u32| rows[(frame - rows[0].frame) as usize].lives;
     let ys: Vec<Option<i32>> = (s..=s + 152).map(|f| at(f).map(|l| l.y)).collect();
-    let mut expected = vec![None; 9];
-    expected.extend([-8, -4, 0, 4, 8].map(Some));
+    // Corrected in spec-v0.114.0: drawn from S + 8 to S + 152, partly
+    // above the picture's top on the first and last two.
+    let mut expected = vec![None; 8];
+    expected.extend([-12, -8, -4, 0, 4, 8].map(Some));
     expected.extend(std::iter::repeat_n(Some(10), 133));
-    expected.extend([6, 2, -2, -6].map(Some));
-    expected.extend([None, None]);
+    expected.extend([6, 2, -2, -6, -10, -14].map(Some));
     assert_eq!(ys, expected);
+    assert_eq!(at(s + 153), None);
 
     let lives = |f: u32| at(f).map(|l| l.number);
     assert_eq!(lives(s + 24), Some(before));
