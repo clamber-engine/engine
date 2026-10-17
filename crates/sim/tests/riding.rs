@@ -488,3 +488,184 @@ fn riding_starts_after_the_mount() {
     play.step(&[R, J]);
     assert_eq!(play.part(), RidePart::Jump(0));
 }
+
+/// riding-faces.md's floor for "Examples", in level y: 33 up to column
+/// 99, a face falling to the right at columns 100 to 107 (36, 40, …, 64),
+/// and no floor from column 108 on.
+fn face_floor(c: i32) -> Option<i32> {
+    match c {
+        ..100 => Some(33),
+        100..=107 => Some(36 + 4 * (c - 100)),
+        _ => None,
+    }
+}
+
+impl Play {
+    /// A `classic-1` level whose floor in column `c` is at level y
+    /// `floor(c)`, or none, with the player riding at `(x, y)` as in
+    /// [`Play::on`], in the air unless there's floor right under it.
+    fn columns(
+        floor: impl Fn(i32) -> Option<i32>,
+        (x, y): (f64, f64),
+        vel: (i64, i64),
+        facing: Facing,
+        held: &[Action],
+    ) -> Play {
+        let width = 1200;
+        let mut src = format!(
+            "format = 1\nname = \"faces\"\nsize = [{width}, 600]\nstart = [{x}, {y}]\n\
+             [[entities]]\ntype = \"hutch\"\nat = [40, {}]\n",
+            floor(40).unwrap(),
+        );
+        let mut c = 0;
+        while c < width {
+            let at = floor(c);
+            let end = (c..width).find(|&e| floor(e) != at).unwrap_or(width);
+            if let Some(h) = at {
+                src += &format!(
+                    "[[collision]]\nshape = \"rect\"\nrect = [{c}, {h}, {}, {}]\n",
+                    end - c,
+                    600 - h
+                );
+            }
+            c = end;
+        }
+        let level = Level::from_toml_str(&src, "faces").unwrap();
+        let mut world = World::new(
+            Arc::new(level),
+            Arc::new(generic_feel("classic-1").unwrap()),
+        );
+        let Some(Behavior::Hutch(hutch)) = world.things[0].archetype.map(|a| a.behavior) else {
+            panic!("no animal crate");
+        };
+        let player = &mut world.player;
+        player.pos = Vec2::new(fx(x), fx(y));
+        player.vel = Vec2::new(from_grains(vel.0), from_grains(vel.1));
+        player.facing = facing;
+        let on_floor = floor(x as i32) == Some(y as i32) && fx(y) == fx(y.floor());
+        if !on_floor {
+            player.ground = None;
+        }
+        assert_eq!(player.grounded(), on_floor);
+        player.riding = Some(Riding {
+            on_floor,
+            mount: None,
+            ..Riding::new(hutch.ride, Fixed::ZERO)
+        });
+        Play {
+            world,
+            held: held.iter().copied().collect(),
+        }
+    }
+
+    fn riding(&mut self) -> &mut Riding {
+        self.world.player.riding.as_mut().unwrap()
+    }
+
+    /// `x`, `y`, `vx` and `vy` in 1/256, and whether on the floor.
+    fn face_row(&self) -> (Fixed, Fixed, i64, i64, bool) {
+        let p = &self.world.player;
+        (
+            p.pos.x,
+            p.pos.y,
+            grains(p.vel.x),
+            grains(p.vel.y),
+            p.grounded(),
+        )
+    }
+}
+
+/// "Landing on a face, holding the uphill direction": a jump falling to
+/// the left over the drop, Left held throughout.
+#[test]
+fn landing_on_a_face_soon_after_the_approach_frame() {
+    let mut play = Play::columns(
+        face_floor,
+        (109.76953125, 4.5625),
+        (-202, 1120),
+        Facing::Left,
+        &[L],
+    );
+    let r = play.riding();
+    r.part = RidePart::Jump(20);
+    r.steer = true;
+    r.fell = true;
+    let mut rows = vec![play.face_row()];
+    let mut parts = vec![play.part()];
+    for _ in 5..=20 {
+        play.step(&[L]);
+        rows.push(play.face_row());
+        parts.push(play.part());
+    }
+    let row = |frame: usize| rows[frame - 4];
+    let part = |frame: usize| parts[frame - 4];
+    let air = |x, y, vx, vy| (fx(x), fx(y), vx, vy, false);
+    let floor = |x, y, vx| (fx(x), fx(y), vx, 0, true);
+    assert_eq!(row(5), air(108.83203125, 9.375, -240, 1232));
+    assert_eq!(row(6), air(107.76171875, 14.625, -274, 1344));
+    assert_eq!(play.world.player.riding.unwrap().approach, Some(14));
+    assert_eq!(row(7), air(106.578125, 20.3125, -303, 1456));
+    assert_eq!(row(9), air(103.921875, 33.0, -351, 1680));
+    assert_eq!(row(10), floor(102.47265625, 44.0, -371));
+    assert_eq!(part(10), RidePart::Landing(0));
+    // Steered, Left ignored on the face, and blocked by the rise.
+    assert_eq!(row(11), floor(102.0, 44.0, 0));
+    assert_eq!(row(12), floor(102.0, 44.0, 0));
+    assert_eq!(row(13), floor(102.046875, 44.0, 12));
+    assert_eq!(row(14), floor(102.13671875, 44.0, 23));
+    assert_eq!(row(18), floor(102.90234375, 44.0, 64));
+    assert_eq!(row(19), floor(103.19140625, 48.0, 74));
+    assert_eq!(part(19), RidePart::Landing(9));
+    assert_eq!(row(20), floor(103.515625, 48.0, 83));
+    assert_eq!(part(20), RidePart::Riding);
+    assert_eq!(play.world.player.facing, Facing::Left);
+}
+
+/// "Leaving at the low end": at rest on the face, with the push already
+/// down it, Left held throughout.
+#[test]
+fn leaving_at_the_low_end_of_a_face() {
+    let mut play = Play::columns(face_floor, (106.0, 60.0), (0, 0), Facing::Left, &[L]);
+    play.riding().push = fx(1.5);
+    let mut rows = vec![play.face_row()];
+    for _ in 1..=11 {
+        play.step(&[L]);
+        rows.push(play.face_row());
+    }
+    let floor = |x, y, vx| (fx(x), fx(y), vx, 0, true);
+    let air = |x, y, vx, vy| (fx(x), fx(y), vx, vy, false);
+    assert_eq!(rows[1], floor(106.046875, 60.0, 12));
+    assert_eq!(rows[2], floor(106.13671875, 60.0, 23));
+    assert_eq!(rows[6], floor(106.90234375, 60.0, 64));
+    assert_eq!(rows[7], floor(107.19140625, 64.0, 74));
+    assert_eq!(rows[8], air(107.515625, 67.4375, 83, 1));
+    assert_eq!(rows[9], air(107.76953125, 67.87890625, 65, 113));
+    assert_eq!(rows[10], air(107.953125, 68.7578125, 47, 225));
+    assert_eq!(rows[11], air(108.0703125, 70.07421875, 30, 337));
+}
+
+/// Holding the downhill direction on a face: a target of 2 plus the push.
+#[test]
+fn the_push_adds_to_the_downhill_target() {
+    let mut play = Play::columns(face_floor, (103.0, 48.0), (0, 0), Facing::Right, &[R]);
+    play.riding().push = fx(1.5);
+    play.step(&[R]);
+    assert_eq!(play.face_row().2, 896 / 32);
+    let mut play = Play::columns(face_floor, (103.0, 48.0), (0, 0), Facing::Right, &[R]);
+    play.riding().push = fx(1.5);
+    play.step(&[R, A]);
+    assert_eq!(play.face_row().2, (896 + 384) / 32);
+}
+
+/// No jump starts on a face, and holding up it doesn't turn.
+#[test]
+fn no_jump_or_uphill_turn_on_a_face() {
+    let mut play = Play::columns(face_floor, (103.0, 48.0), (0, 0), Facing::Right, &[]);
+    play.step(&[L, J]);
+    assert_eq!(play.part(), RidePart::Riding);
+    assert_eq!(play.world.player.facing, Facing::Right);
+    // Pressed on flat floor, it does.
+    let mut play = Play::columns(face_floor, (60.0, 33.0), (0, 0), Facing::Right, &[]);
+    play.step(&[J]);
+    assert_eq!(play.part(), RidePart::Jump(0));
+}

@@ -236,8 +236,15 @@
 #   if on the floor, and from `charge` frames on, once on the floor, a
 #   `charge_end` frames long end. Floor up to `follow` lower is
 #   followed; lower floor, or none, is left by moving `leave_drop` plus
-#   the gravity down, at `leave_speed`. Only the character under control
-#   breaks a crate or mounts an animal.
+#   the gravity down, at `leave_speed`. On a steep face a held direction
+#   up it counts as none and no jump starts; the frames after one ending
+#   on it add `push` down it to the target speed, unless steered; and the
+#   face's low end over a drop is always left. A jump landing up to
+#   `approach_steer` frames after its approach frame (the first, after it
+#   starts falling, with floor below at most `approach_reach` px and
+#   `approach_rows` rows of `approach_row` px down) stays steered until
+#   then and rides on `approach_land` frames after it. Only the character
+#   under control breaks a crate or mounts an animal.
 #
 # The player defeats an enemy by landing on it, and bounces off, or by
 # rolling into it. Touching one any other way costs a life.
@@ -318,8 +325,8 @@ mount_across = [[-27, 19], [-26, 20]]
 mount_above = [5, 45]
 mount_hold = 22
 
-# Riding the animal (spec/behavior/riding.md, riding-slopes.md).
-# What the animal does to enemies, getting off it, and steep faces
+# Riding the animal (spec/behavior/riding.md, riding-slopes.md,
+# riding-faces.md). What the animal does to enemies, and getting off it,
 # aren't covered yet.
 [archetypes.hutch.ride]
 speed = 2
@@ -339,6 +346,13 @@ charge_end = 12
 follow = 8
 leave_drop = 3
 leave_speed = 0.00390625
+# Steep faces (riding-faces.md).
+push = 1.5
+approach_reach = 71
+approach_rows = 2
+approach_row = 32
+approach_steer = 5
+approach_land = 14
 
 # title-1's thrower and balls (spec/behavior/thrower.md). The spec
 # doesn't say how big either is; the sizes are Clamber's own and only

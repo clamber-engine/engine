@@ -2245,7 +2245,7 @@ impl Player {
     }
 
     /// Lands with the feet at `y` on `collider`.
-    fn land(&mut self, y: Fixed, collider: usize, events: &mut Vec<Event>) {
+    pub(crate) fn land(&mut self, y: Fixed, collider: usize, events: &mut Vec<Event>) {
         self.pos.y = y;
         self.vel.y = Fixed::ZERO;
         self.ground = Some(collider);
@@ -2298,7 +2298,7 @@ impl Reach {
     /// Whether a body at `x` that would end a frame with its feet at `to`
     /// lands on ground at `ground`. `slope_landing_reach` applies over a
     /// sloped piece and over a steep face's columns.
-    fn lands(self, level: &Level, x: Fixed, ground: Fixed, to: Fixed) -> bool {
+    pub(crate) fn lands(self, level: &Level, x: Fixed, ground: Fixed, to: Fixed) -> bool {
         let above = ground - to;
         let column = columns::column(x);
         above <= Fixed::ZERO

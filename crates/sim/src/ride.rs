@@ -1,4 +1,5 @@
-//! Riding an animal (spec/behavior/riding.md, riding-slopes.md).
+//! Riding an animal (spec/behavior/riding.md, riding-slopes.md,
+//! riding-faces.md).
 //!
 //! A rider has none of the player's own moves. Its speed across eases
 //! toward a target set by Left or Right, faster with Action, closing a
@@ -11,8 +12,16 @@
 //! On the floor its feet are on the floor of the column holding `x`,
 //! followed down as far as `follow` and left beyond that. Taking off, it
 //! starts from the higher of where it was and the floor under its new
-//! `x`. In the air it falls with the preset's jump gravity and lands as
-//! the player does.
+//! `x`. In the air it falls with the preset's jump gravity, meets walls
+//! as the player does, and lands on the floor of its column, but not on
+//! floor whose top it's already below.
+//!
+//! On a steep face it can't jump, a direction held up the face counts as
+//! none, and on frames that aren't steered a `push` down the face is
+//! added to its target speed. Rising face columns stop it, and the low
+//! end of a face over a drop is always left. A jump that lands soon
+//! after its **approach frame**, when floor first comes within reach
+//! below, stays steered and lands for longer.
 
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame};
@@ -21,7 +30,7 @@ use clamber_pack::{Param, Physics};
 
 use crate::archetype::Ride;
 use crate::columns;
-use crate::player::{Player, Reach, State, direction, ease, facing_of};
+use crate::player::{Player, Reach, State, ceil, direction, ease, facing_of};
 use crate::world::Event;
 
 /// Which part of riding a frame is in, with how many frames of it came
@@ -53,12 +62,12 @@ pub enum RidePart {
 impl RidePart {
     /// The part the frame after one in this part is in, before anything
     /// starts on it.
-    fn next(self, ride: &Ride) -> RidePart {
+    fn next(self, ride: &Ride, landing: u8) -> RidePart {
         let on = |age: u8, length: u8| age.saturating_add(1) < length;
         match self {
             RidePart::Turn(age) if on(age, ride.turn) => RidePart::Turn(age + 1),
             RidePart::Jump(age) => RidePart::Jump(age.saturating_add(1)),
-            RidePart::Landing(age) if on(age, ride.landing) => RidePart::Landing(age + 1),
+            RidePart::Landing(age) if on(age, landing) => RidePart::Landing(age + 1),
             RidePart::Charge { age, steered } => RidePart::Charge {
                 age: age.saturating_add(1),
                 steered,
@@ -107,6 +116,16 @@ pub struct Riding {
     /// Where the feet are put at the start of the next frame, the first
     /// one riding.
     pub mount: Option<Fixed>,
+    /// The speed down a steep face added to the next frame's target.
+    pub push: Fixed,
+    /// The jump under way has ended a frame after its take-off moving
+    /// down.
+    pub fell: bool,
+    /// How many frames ago the jump under way, or the last one, had its
+    /// approach frame.
+    pub approach: Option<u8>,
+    /// How many landing frames the last jump's landing has.
+    pub landing: u8,
 }
 
 impl Riding {
@@ -121,6 +140,10 @@ impl Riding {
             on_floor: false,
             press: None,
             held: false,
+            push: Fixed::ZERO,
+            fell: false,
+            approach: None,
+            landing: ride.landing,
         }
     }
 }
@@ -147,7 +170,19 @@ impl Player {
         }
         let steered = r.steer;
         let grounded = self.grounded();
-        r.part = r.part.next(&ride);
+        r.part = r.part.next(&ride, r.landing);
+        r.approach = r.approach.map(|age| age.saturating_add(1));
+
+        // The way the steep face the frame starts on falls, if any, and a
+        // direction held up it, which counts as none.
+        let slope = physics[Param::FaceSlope];
+        let (start_column, start_y) = (columns::column(self.pos.x), self.pos.y);
+        let face = if slope > Fixed::ZERO && r.on_floor {
+            columns::face(level, start_column, start_y, slope)
+        } else {
+            None
+        };
+        let way = if face == Some(-dir) { 0 } else { dir };
 
         // Jump presses are remembered for a while if Jump stays held.
         r.press = if pressed(Action::Jump) {
@@ -159,17 +194,19 @@ impl Player {
         };
         r.press = r.press.filter(|&age| age <= ride.jump_memory);
         r.held &= held(Action::Jump);
-        if r.press.is_some() && r.on_floor && !steered {
+        if r.press.is_some() && r.on_floor && !steered && face.is_none() {
             r.press = None;
             r.part = RidePart::Jump(0);
             r.held = true;
+            r.fell = false;
+            r.approach = None;
         }
         // A jump started on this frame is taken first, so an Action press
         // with it charges from its crouch.
         if pressed(Action::Action) {
             let from_jump = match r.part {
                 RidePart::Jump(_) => true,
-                RidePart::Landing(0) => steered,
+                RidePart::Landing(_) => steered,
                 _ => false,
             };
             if from_jump
@@ -187,7 +224,7 @@ impl Player {
         }
         if !steered
             && matches!(r.part, RidePart::Riding | RidePart::Settling)
-            && dir == -direction(self.facing)
+            && way == -direction(self.facing)
         {
             r.part = RidePart::Turn(0);
         }
@@ -208,15 +245,16 @@ impl Player {
         } else {
             ride.speed
         };
-        self.target = speed * Fixed::from_int(dir);
-        let response = if steered {
-            ride.steer_response
+        let target = speed * Fixed::from_int(way);
+        let (push, response) = if steered {
+            (Fixed::ZERO, ride.steer_response)
         } else {
-            ride.response
+            (r.push, ride.response)
         };
+        self.target = target + push;
         self.vel.x = ease(self.vel.x, self.target, response);
         let moved = if grounded {
-            self.move_by_columns(level, physics[Param::FaceSlope], None)
+            self.move_by_columns(level, slope, None)
         } else {
             self.move_in_air_by_columns(level, physics, events)
         };
@@ -227,6 +265,10 @@ impl Player {
             physics[Param::Gravity]
         };
         let column = columns::column(self.pos.x);
+        // The low end of a face that ends at a drop is always left.
+        let low_end = face.is_some_and(|way| {
+            columns::floor(level, start_column + i64::from(way), start_y).is_none()
+        });
         if grounded && self.vel.y.is_negative() {
             // Taking off, from the higher of where it was and the floor
             // under it now.
@@ -235,10 +277,10 @@ impl Player {
             }
             self.ground = None;
             self.vel.y += gravity;
-            self.move_vertically(level, moved, Reach::new(physics), true, events);
+            self.ride_vertically(level, physics, moved, events);
         } else if grounded {
             match columns::floor(level, column, self.pos.y) {
-                Some(floor) if floor.y - self.pos.y <= ride.follow => {
+                Some(floor) if !low_end && floor.y - self.pos.y <= ride.follow => {
                     self.pos.y = floor.y;
                     self.ground = Some(floor.collider);
                     self.touched.push(floor.collider);
@@ -252,13 +294,22 @@ impl Player {
             }
         } else if !self.grounded() {
             self.vel.y = (self.vel.y + gravity).min(physics[Param::MaxFallSpeed]);
-            self.move_vertically(level, moved, Reach::new(physics), true, events);
-        }
-        let landed = !grounded && self.grounded();
-        if landed && matches!(r.part, RidePart::Jump(age) if age > ride.crouch) {
-            r.part = RidePart::Landing(0);
+            self.ride_vertically(level, physics, moved, events);
         }
 
+        if matches!(r.part, RidePart::Jump(age) if age > ride.crouch) {
+            if r.fell && r.approach.is_none() && self.approaching(level, &ride) {
+                r.approach = Some(0);
+            }
+            r.fell |= self.vel.y > Fixed::ZERO;
+            if !grounded && self.grounded() {
+                r.part = RidePart::Landing(0);
+                r.landing = match r.approach {
+                    Some(age) if age <= ride.approach_steer => ride.approach_land - age,
+                    _ => ride.landing,
+                };
+            }
+        }
         match r.part {
             RidePart::Jump(age) if age == ride.crouch => {
                 self.vel.y = -ride.jump_speed;
@@ -272,8 +323,30 @@ impl Player {
             }
             _ => {}
         }
+
+        // The push for the next frame, from where this one ended.
+        let end_face = if self.grounded() && !steered && slope > Fixed::ZERO {
+            columns::face(level, columns::column(self.pos.x), self.pos.y, slope)
+        } else {
+            None
+        };
+        r.push = match end_face {
+            None => Fixed::ZERO,
+            Some(way) => {
+                let down = |v: Fixed| v * Fixed::from_int(way) >= Fixed::ZERO;
+                if down(target) && down(self.vel.x) {
+                    ride.push * Fixed::from_int(way)
+                } else {
+                    r.push
+                }
+            }
+        };
         r.on_floor = self.grounded();
-        r.steer = r.part.steers();
+        // Landing soon after the approach frame stays steered until a
+        // while after it.
+        r.steer = r.part.steers()
+            || (matches!(r.part, RidePart::Landing(_))
+                && r.approach.is_some_and(|age| age < ride.approach_steer));
         self.riding = Some(r);
         self.state = if !self.grounded() {
             if self.vel.y.is_negative() {
@@ -288,5 +361,52 @@ impl Player {
         } else {
             State::Walk
         };
+    }
+
+    /// Moves up or down in the air by the frame's speed after moving
+    /// `moved` across. Falling, it lands on the floor of the column holding
+    /// `x`, the highest top that isn't above the feet, as the player does;
+    /// floor whose top is above the feet doesn't catch it.
+    fn ride_vertically(
+        &mut self,
+        level: &Level,
+        physics: &Physics,
+        moved: Fixed,
+        events: &mut Vec<Event>,
+    ) {
+        if self.vel.y.is_negative() {
+            self.move_vertically(level, moved, Reach::new(physics), true, events);
+            return;
+        }
+        let to = self.pos.y + self.vel.y;
+        let floor = columns::spans(level, columns::column(self.pos.x))
+            .into_iter()
+            .filter(|s| s.top >= self.pos.y)
+            .min_by_key(|s| s.top);
+        match floor {
+            Some(s)
+                if self.vel.y > Fixed::ZERO
+                    && Reach::new(physics).lands(level, self.pos.x, s.top, to) =>
+            {
+                self.land(s.top, s.collider, events);
+            }
+            _ => self.pos.y = to,
+        }
+    }
+
+    /// Whether there's floor within an approach's reach below the feet
+    /// line, in the column holding `x`.
+    fn approaching(&self, level: &Level, ride: &Ride) -> bool {
+        let feet = ceil(self.pos.y);
+        let row = |y: i64| (y - 1).div_euclid(i64::from(ride.approach_row));
+        columns::spans(level, columns::column(self.pos.x))
+            .into_iter()
+            .map(|s| ceil(s.top))
+            .filter(|&top| top >= feet)
+            .min()
+            .is_some_and(|top| {
+                top - feet <= i64::from(ride.approach_reach)
+                    && row(top) - row(feet) <= i64::from(ride.approach_rows)
+            })
     }
 }

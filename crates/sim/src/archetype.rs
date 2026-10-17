@@ -210,6 +210,19 @@ pub struct Ride {
     /// frame's gravity, and the speed down it ends with.
     pub leave_drop: Fixed,
     pub leave_speed: Fixed,
+    /// The speed down a steep face added to the target speed on frames
+    /// after one that ended on it.
+    pub push: Fixed,
+    /// A jump's approach frame is the first after it starts falling that
+    /// ends with floor below the feet line at most `approach_reach` px
+    /// down and `approach_rows` rows of `approach_row` px lower. A
+    /// landing up to `approach_steer` frames after it stays steered until
+    /// then, and riding resumes `approach_land` frames after it.
+    pub approach_reach: i32,
+    pub approach_rows: i32,
+    pub approach_row: i32,
+    pub approach_steer: u8,
+    pub approach_land: u8,
 }
 
 /// The most frames an animal's hop out of its crate can have.
@@ -1267,7 +1280,7 @@ fn parse_hutch(table: &Table, path: &str) -> Result<Hutch, String> {
 
 /// Reads how an animal is ridden. Errors start with `path`.
 fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
-    const KEYS: [&str; 17] = [
+    const KEYS: [&str; 23] = [
         "speed",
         "run_speed",
         "response",
@@ -1285,6 +1298,12 @@ fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
         "follow",
         "leave_drop",
         "leave_speed",
+        "push",
+        "approach_reach",
+        "approach_rows",
+        "approach_row",
+        "approach_steer",
+        "approach_land",
     ];
     let Value::Table(table) = value else {
         return Err(format!("{path}: expected a table"));
@@ -1306,6 +1325,12 @@ fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
             "{path}.{key}: expected a whole number of frames, 0 to 255"
         )),
     };
+    let px = |key: &str| match get(key)? {
+        Value::Integer(n) if (1..=i64::from(i32::MAX)).contains(n) => Ok(*n as i32),
+        _ => Err(format!(
+            "{path}.{key}: expected a whole number of px above 0"
+        )),
+    };
     Ok(Ride {
         speed: number("speed")?,
         run_speed: number("run_speed")?,
@@ -1324,6 +1349,12 @@ fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
         follow: number("follow")?,
         leave_drop: number("leave_drop")?,
         leave_speed: number("leave_speed")?,
+        push: number("push")?,
+        approach_reach: px("approach_reach")?,
+        approach_rows: px("approach_rows")?,
+        approach_row: px("approach_row")?,
+        approach_steer: frames("approach_steer")?,
+        approach_land: frames("approach_land")?,
     })
 }
 
