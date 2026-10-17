@@ -220,6 +220,13 @@ params! {
     /// starts on the face, still gives the fall `held_jump_gravity` for
     /// as long as jump stays held, from the drop off the ledge on.
     FacePressGravity => "face_press_gravity",
+    /// Above 0, a jump press on a frame that starts on a steep face, or
+    /// whose next frame does, is remembered while jump stays held and
+    /// takes off on the frame after the first one that starts on the
+    /// floor off the face, within `jump_buffer`. The take-off frame isn't
+    /// stopped from starting toward a rise, and has no push down a face
+    /// or exit from one.
+    FaceJumpWait => "face_jump_wait",
     /// Above 0, a jump leaves the ground on the frame after it starts:
     /// on the start frame the body still follows the ground, with its
     /// upward speed already set. 0 leaves on the start frame.

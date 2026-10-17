@@ -372,6 +372,7 @@ mod tests {
                     | Param::GroundedTakeoff
                     | Param::NoFaceCoyote
                     | Param::FacePressGravity
+                    | Param::FaceJumpWait
                     | Param::TakeoffOverEnd
                     | Param::RollTime
                     | Param::RollSpeed

@@ -138,6 +138,13 @@ pub struct Player {
     pub face_press: bool,
     /// The last frame started on the ground, and not on a steep face.
     pub clear_start: bool,
+    /// The buffered press was made on a frame that started on a steep
+    /// face, or whose next frame did (`face_jump_wait`).
+    pub carried_press: bool,
+    /// The last frame moved onto a steep face from other floor with only
+    /// its uphill direction held, so this one doesn't count as starting
+    /// on the face for jumps (`face_jump_wait`).
+    pub uphill_onto_face: bool,
     /// The jump started this frame on the ground and leaves it next frame.
     pub takeoff: bool,
     /// A jump has started and takes off this many frames from now
@@ -298,6 +305,8 @@ impl Player {
             jump_held_since_press: false,
             jump_hold: false,
             face_press: false,
+            carried_press: false,
+            uphill_onto_face: false,
             clear_start: false,
             takeoff: false,
             takeoff_wait: None,
@@ -916,6 +925,11 @@ impl Player {
         } else {
             None
         };
+        // For jumps, with `face_jump_wait`, a frame that moves onto a face
+        // with only its uphill direction held is followed by one that
+        // doesn't count as starting on it.
+        let face_wait = physics[Param::FaceJumpWait] > Fixed::ZERO;
+        let jump_face = face.is_some() && !std::mem::take(&mut self.uphill_onto_face);
         // With `face_speed`, a direction held up the face, or back up one
         // just come off, counts as none.
         let downhill = face
@@ -980,10 +994,27 @@ impl Player {
             self.takeoff_crouched = false;
         }
         let waiting = due || self.takeoff_wait.is_some();
+        // A press on a frame that starts on the face, or whose next frame
+        // does, is carried: held, it takes off on the frame after the
+        // first that starts on the floor off the face.
+        if face_wait {
+            match self.jump_buffer.age() {
+                Some(0) => self.carried_press = jump_face,
+                Some(1) => self.carried_press |= jump_face && self.clear_start,
+                _ => {}
+            }
+            if self.carried_press && self.jump_buffer.is_buffered() {
+                self.jump_needs_hold = physics[Param::JumpBufferHold] > Fixed::ZERO;
+            }
+        }
+        // After a fall from the face, that's the frame after the landing's,
+        // whatever the landing lockout.
+        let carried = face_wait && self.carried_press;
         let can_jump = self.swap == 0
-            && !locked
+            && (!locked || carried)
             && !waiting
-            && face.is_none()
+            && !jump_face
+            && !(carried && !self.clear_start)
             // Caught in the air, only a spring jump leaves the top.
             && !on_top.is_some_and(|on| on.from_air)
             && !spring_jump
@@ -1002,7 +1033,8 @@ impl Player {
                 self.face_press = true;
             }
         }
-        self.clear_start = self.grounded() && face.is_none();
+        let clear_start = self.grounded() && face.is_none();
+        self.clear_start = clear_start;
         let takeoff_frame = physics[Param::GroundedTakeoff] > Fixed::ZERO;
         let mut air_takeoff = None;
         // A jump that waited to take off in a timed roll, or the stop
@@ -1085,6 +1117,15 @@ impl Player {
         if self.jump_needs_hold && !held(Action::Jump) {
             self.jump_buffer.take();
         }
+        // With `face_jump_wait` the take-off frame moves as a frame of the
+        // jump: a direction back up a face just left counts, and there's
+        // no push down one.
+        let face_takeoff = face_wait && self.takeoff;
+        let dir = if face_takeoff && face.is_none() {
+            held_dir
+        } else {
+            dir
+        };
         // A jump pressed during a timed roll ends it on this frame.
         if self.roll.is_some() && pressed(Action::Jump) {
             self.roll_jump = true;
@@ -1342,7 +1383,9 @@ impl Player {
                 1 => cap,
                 _ => Fixed::ZERO,
             };
-            if pushed {
+            if face_takeoff {
+                // Nothing down the face on the take-off frame.
+            } else if pushed {
                 push = self.push;
                 target += push;
             } else {
@@ -1631,6 +1674,12 @@ impl Player {
             self.off_face
                 .and_then(|(way, n)| (n > 1).then_some((way, n - 1)))
         };
+        self.uphill_onto_face = face_wait
+            && clear_start
+            && self.grounded()
+            && !held(Action::Action)
+            && columns::face(level, columns::column(self.pos.x), self.pos.y, slope)
+                .is_some_and(|way| held_dir == -way);
         // A press on a frame that ends on the ground, landing included,
         // jumps when it can whether or not jump is still held.
         if self.jump_buffer.age() == Some(0) {

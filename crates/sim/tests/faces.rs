@@ -984,3 +984,220 @@ fn running_over_the_face_keeps_the_grace_frame() {
         );
     }
 }
+
+/// The floor of "Examples (jumps)": flat, a face falling to the right over
+/// columns 300 to 311, and flat again 47 px down from column 312.
+fn short_fall(c: i32) -> Option<i32> {
+    Some(match c {
+        ..300 => 0,
+        300..312 => 2 + 4 * (c - 300),
+        _ => 47,
+    })
+}
+
+/// A frame of [`jump_rows`]: `x`, `y` below the starting floor, `vx` in
+/// 1/256, `vy`, and whether the frame started a jump.
+type JumpRow = (Fixed, Fixed, i64, Fixed, bool);
+
+/// Steps `world` for `frames` frames, holding `keys(frame)` on each
+/// (counting from 1).
+fn jump_rows(mut world: World, frames: usize, keys: impl Fn(usize) -> Vec<Action>) -> Vec<JumpRow> {
+    let mut previous = keys(0);
+    let mut rows = Vec::new();
+    for frame in 1..=frames {
+        let held = keys(frame);
+        press(&mut world, &previous, &held);
+        previous = held;
+        let p = &world.player;
+        rows.push((
+            p.pos.x,
+            p.pos.y - Fixed::from_int(FLOOR),
+            grains(p.vel.x),
+            p.vel.y,
+            world.events.contains(&Event::JumpStart),
+        ));
+    }
+    rows
+}
+
+/// Coasting down [`short_fall`] from `x` = 299 at 1 px per frame, with
+/// Jump pressed on frame `press` and held for `held` frames.
+fn coast_and_press(press: Option<(usize, usize)>) -> Vec<JumpRow> {
+    let mut world = ground(short_fall, 299.0);
+    world.player.vel.x = Fixed::ONE;
+    jump_rows(world, 20, |f| {
+        if press.is_some_and(|(p, held)| (p..p + held).contains(&f)) {
+            vec![Action::Jump]
+        } else {
+            vec![]
+        }
+    })
+}
+
+fn starts(rows: &[JumpRow]) -> Vec<usize> {
+    (0..rows.len())
+        .filter(|&i| rows[i].4)
+        .map(|i| i + 1)
+        .collect()
+}
+
+#[test]
+fn a_press_while_carried_down_a_face_takes_off_past_it() {
+    // steep-faces.md, "Jumping on or next to a face", the first example.
+    let rows = coast_and_press(Some((4, 20)));
+    let plain = coast_and_press(None);
+    for (frame, x, y, vx) in [
+        (3, 301.49609375, 6.0, 219),
+        (4, 302.4296875, 10.0, 239),
+        (5, 303.43359375, 14.0, 257),
+        (12, 311.78515625, 46.0, 332),
+        (13, 313.10546875, 47.0, 338),
+        (14, 314.26171875, 47.0, 296),
+        (15, 315.2734375, 47.0, 259),
+        (16, 316.16015625, 40.28125, 227),
+    ] {
+        let (rx, ry, rvx, _, _) = rows[frame - 1];
+        assert_eq!((rx, ry, rvx), (fx(x), fx(y), vx), "frame {frame}");
+    }
+    // Until T the press changes nothing.
+    assert_eq!(rows[..14], plain[..14]);
+    assert_eq!(starts(&rows), [15]);
+    assert_eq!(rows[14].3, fx(-7.0));
+    assert_eq!(rows[15].3, fx(-6.71875));
+
+    // Let go before Q, no jump starts.
+    for held in [1, 5, 10] {
+        assert_eq!(coast_and_press(Some((4, held))), plain, "held {held}");
+    }
+    // Pressed on the frame that moves onto the face, T would be P + 13:
+    // too late.
+    assert_eq!(coast_and_press(Some((2, 20)))[..17], plain[..17]);
+    assert_eq!(starts(&coast_and_press(Some((2, 20)))), Vec::<usize>::new());
+    // Pressed on frame 3, T = P + 12 is still in time.
+    assert_eq!(starts(&coast_and_press(Some((3, 20)))), [15]);
+}
+
+#[test]
+fn a_jump_from_in_front_of_a_rise_moves_on_its_take_off_frame() {
+    // steep-faces.md, "Jumping on or next to a face", standing in front
+    // of a rise: Right and Jump pressed together on frame 1.
+    let keys = |f: usize| {
+        if f == 0 {
+            vec![]
+        } else {
+            vec![Action::Right, Action::Jump]
+        }
+    };
+    let rows = jump_rows(ground(rise, 199.0), 2, keys);
+    let o = Fixed::ZERO;
+    assert_eq!(rows[0], (fx(199.0), o, 0, o, false));
+    assert_eq!(rows[1], (fx(199.25), o, 64, fx(-7.0), true));
+
+    let rows = jump_rows(ground(rise, 199.875), 2, keys);
+    assert_eq!(rows[0], (fx(199.875), o, 0, o, false));
+    // The move to 200.125 is into face column 200: blocked.
+    assert_eq!(rows[1], (fx(199.0), o, 0, fx(-7.0), true));
+}
+
+#[test]
+fn a_direction_up_the_face_counts_again_on_the_take_off_frame() {
+    // "Leaving a face onto floor" ignores Left on Q, but not on T.
+    let mut world = ground(short_fall, 299.0);
+    world.player.vel.x = Fixed::ONE;
+    let rows = jump_rows(world, 15, |f| match f {
+        4..14 => vec![Action::Jump],
+        14.. => vec![Action::Jump, Action::Left],
+        _ => vec![],
+    });
+    assert_eq!(starts(&rows), [15]);
+    assert_eq!(rows[13].2, 296);
+    // Eased an eighth of the way to −2.
+    assert_eq!(rows[14].2, 296 - 101);
+}
+
+/// Moving left at 1 px per frame onto [`fall_left`] from its top,
+/// holding `base`, with Jump pressed on the frame that moves onto the
+/// face and held. The frames that started a jump, and that frame.
+fn onto_the_left_face(base: &[Action]) -> (Vec<usize>, usize) {
+    let run = |press: Option<usize>| {
+        let mut world = ground(fall_left, 110.5);
+        world.player.vel.x = -Fixed::ONE;
+        world.player.facing = Facing::Left;
+        jump_rows(world, 12, |f| {
+            let mut keys = base.to_vec();
+            if press.is_some_and(|p| f >= p) {
+                keys.push(Action::Jump);
+            }
+            keys
+        })
+    };
+    let plain = run(None);
+    let onto = 1 + plain.iter().position(|r| r.0 < fx(110.0)).unwrap();
+    (starts(&run(Some(onto))), onto)
+}
+
+#[test]
+fn moving_onto_a_face_with_only_uphill_held_the_next_frame_can_take_off() {
+    // "When the jump takes off": the exception for the frame that moves
+    // onto a face falling to the left with only Right held.
+    let (jumps, onto) = onto_the_left_face(&[Action::Right]);
+    assert_eq!(jumps, [onto + 1]);
+    // With nothing held, or Left, the next frame starts on the face, and
+    // the press is carried.
+    for base in [&[][..], &[Action::Left]] {
+        let (jumps, onto) = onto_the_left_face(base);
+        assert!(!jumps.contains(&(onto + 1)), "{base:?}: {jumps:?}");
+    }
+}
+
+#[test]
+fn a_carried_press_held_through_a_fall_from_the_face_takes_off_after_landing() {
+    // "When the jump takes off": leaving the ground on the face and
+    // landing on other floor, Q = L + 1 and T = L + 2.
+    let floor = |c: i32| {
+        Some(match c {
+            ..300 => 0,
+            300..304 => 2 + 4 * (c - 300),
+            _ => 30,
+        })
+    };
+    let run = |jump: Option<usize>| {
+        let mut world = ground(floor, 292.0);
+        world.player.vel.x = Fixed::from_int(2);
+        let mut landed = None;
+        let mut leave = None;
+        let mut on_face = None;
+        let mut jumps = Vec::new();
+        let mut previous = vec![Action::Right];
+        for frame in 1..=30 {
+            if on_face.is_none() && world.player.pos.x >= Fixed::from_int(300) {
+                on_face = Some(frame);
+            }
+            let mut keys = vec![Action::Right];
+            if jump.is_some_and(|p| frame >= p) {
+                keys.push(Action::Jump);
+            }
+            press(&mut world, &previous, &keys);
+            previous = keys;
+            if world.events.contains(&Event::Land) && landed.is_none() {
+                landed = Some(frame);
+            }
+            if world.events.contains(&Event::LeaveGround) && leave.is_none() {
+                leave = Some(frame);
+            }
+            if world.events.contains(&Event::JumpStart) {
+                jumps.push(frame);
+            }
+        }
+        (jumps, on_face.unwrap(), leave.unwrap(), landed.unwrap())
+    };
+    let (_, face, leave, l) = run(None);
+    // Presses on the frames that start on the face, the leave frame
+    // included. Presses in the air are as in jump-input.md.
+    assert!(face < leave);
+    for p in face..=leave {
+        let (jumps, ..) = run(Some(p));
+        let expected = if l + 2 <= p + 12 { vec![l + 2] } else { vec![] };
+        assert_eq!(jumps, expected, "press on {p}, L {l}");
+    }
+}
