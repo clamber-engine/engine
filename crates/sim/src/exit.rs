@@ -32,7 +32,10 @@
 //! moving but don't touch the characters, nothing is collected, an
 //! object in the hands stays there, and the other character goes on
 //! following. Where play goes after the exit is up to whatever runs the
-//! world.
+//! world: an exit's `arrival` param names the level's [`Arrival`] that
+//! play comes into next ([`World::arriving`]).
+//!
+//! [`Arrival`]: clamber_level::Arrival
 
 use clamber_fixed::Fixed;
 use clamber_input::Frame;

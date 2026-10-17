@@ -151,6 +151,21 @@ fn regions_and_camera() {
 }
 
 #[test]
+fn reads_arrivals() {
+    let l = full();
+    let cave = l.arrival("from-the-cave").unwrap();
+    assert_eq!((cave.at, cave.walk), (v(1200.0, 400.0), Some(Dir::Left)));
+    assert_eq!(l.arrival("top").unwrap().walk, None);
+    assert!(l.arrival("nowhere").is_none());
+    let arrival = |body: &str| level_err(&format!("[[arrivals]]\n{body}"));
+    assert!(arrival("name = \"a\"\nat = [0, 0]\nwalk = \"up\"").contains("arrivals[0].walk"));
+    assert!(arrival("name = \"A b\"\nat = [0, 0]").contains("arrivals[0].name"));
+    assert!(arrival("name = \"a\"\nat = [200, 0]").contains("arrivals[0].at: is outside"));
+    let twice = "[[arrivals]]\nname = \"a\"\nat = [0, 0]\n[[arrivals]]\nname = \"a\"\nat = [1, 0]";
+    assert!(level_err(twice).contains("arrivals[1].name: `a` is used twice"));
+}
+
+#[test]
 fn writes_and_reads_back_the_same() {
     let l = full();
     let text = l.to_toml_string();

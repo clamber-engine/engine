@@ -7,6 +7,8 @@
 //! - **layers**: images or tiles, each behind or in front of entities, with
 //!   its own parallax factor, drawn smoothly or as pixel art, at any
 //!   number of texels per world unit
+//! - **arrivals**: named points other areas lead into, where the
+//!   characters walk in or the level begins as at its start
 //! - **entities**: placed things with per-instance parameters
 //! - **sections**: optionally, when entities appear: section by section,
 //!   by the path the view takes ([`Section`])
@@ -31,7 +33,7 @@ pub use clamber_fixed::Fixed;
 pub use collision::{Collider, Collision, Dir, Hit, Shape, Span};
 pub use geom::{Area, Rect, Vec2};
 pub use level::{
-    Camera, CameraRule, Depth, Entity, FORMAT, KeyLight, Layer, LayerContent, Level, LevelError,
-    Light, Lighting, Region, Rgb, Section, Spot, Surface, Tile, TileLayer, Tileset, Track,
-    builtin_surfaces,
+    Arrival, Camera, CameraRule, Depth, Entity, FORMAT, KeyLight, Layer, LayerContent, Level,
+    LevelError, Light, Lighting, Region, Rgb, Section, Spot, Surface, Tile, TileLayer, Tileset,
+    Track, builtin_surfaces,
 };

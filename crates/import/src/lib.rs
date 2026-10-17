@@ -58,7 +58,7 @@ pub use installed::{Installed, check_shareable, installed};
 pub use kinds::{
     CRITTER, END, EXIT, FINGERPRINT_SIZE, KEG, Kind, KindRow, WALKER, candidate, kind_of, kind_rows,
 };
-pub use level::{LevelDecoder, LevelParts, PackedGround, water};
+pub use level::{LevelDecoder, LevelParts, PackedGround, ROOM_RETURN, SCENE_RETURN, water};
 pub use level_map::{
     APPEARANCE_OFFSET, CORNER_SIZE, Direction, FIRST_CORNER, LAST_CORNER, LevelMap, Point,
     TABLE_SIZE, corner_count, is_corner,

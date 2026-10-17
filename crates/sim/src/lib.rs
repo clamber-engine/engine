@@ -84,6 +84,7 @@ mod swim;
 mod things;
 mod throwers;
 mod view;
+mod walk_in;
 mod world;
 
 pub use archetype::{
@@ -127,6 +128,7 @@ pub use swim::swim_depth;
 pub use things::{DEFEATED_FRAMES, LAUNCH_REST};
 pub use throwers::BALL;
 pub use view::View;
+pub use walk_in::WalkingIn;
 pub use world::{Event, Phase, Thing, World, generic_feel, run, step};
 
 /// Logic frames per second.

@@ -340,6 +340,13 @@ exit_below = 0
 exit_leave_at = 0
 exit_fade_time = 0
 exit_fade_step = 0
+walk_in_speed = 0
+walk_in_back = 0
+walk_in_time = 0
+walk_in_ahead = 0
+walk_in_other = 0
+walk_in_fade_step = 0
+walk_in_fade_steps = 0
 fall_out_depth = 0
 fall_out_time = 0
 dim_steps = 0
@@ -807,6 +814,18 @@ exit_below = 35
 exit_leave_at = 4
 exit_fade_time = 30
 exit_fade_step = 2
+# Walking into an area (exits.md, "Walking in"): the lead starts 80
+# behind the point and walks 3 a frame, its last step on frame 27 to 4
+# past it, with the other character 28 behind; the player has control
+# from frame 28 at 3 a frame. The picture fades in a step every 3 frames
+# over 15 steps.
+walk_in_speed = 3
+walk_in_back = 80
+walk_in_time = 27
+walk_in_ahead = 4
+walk_in_other = 28
+walk_in_fade_step = 3
+walk_in_fade_steps = 15
 # Falling out of the level (falling-out.md): the life is lost once the
 # feet are more than 48 px below the level's bottom, and the level's last
 # frame is 96 frames after that one.

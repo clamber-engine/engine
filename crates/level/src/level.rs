@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde::de::{self, Deserializer, Visitor};
 use toml::{Table, Value};
 
-use crate::collision::{Collider, Collision, Shape};
+use crate::collision::{Collider, Collision, Dir, Shape};
 use crate::geom::{self, Area, Rect, Vec2};
 
 /// The format version this engine reads and writes.
@@ -28,6 +28,8 @@ pub struct Level {
     pub size: Vec2,
     /// Where the lead character starts, at its feet.
     pub start: Vec2,
+    /// The other ways play comes into the level, from other areas.
+    pub arrivals: Vec<Arrival>,
     /// Drawn in order; [`Depth`] puts each behind or in front of entities.
     pub layers: Vec<Layer>,
     pub entities: Vec<Entity>,
@@ -46,6 +48,26 @@ pub struct Level {
     /// When entities appear, if they appear section by section as the
     /// view goes; empty if they don't.
     pub sections: Vec<Section>,
+}
+
+/// A way play comes into a level from another area: where the lead
+/// character is, at its feet, and whether the characters walk in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Arrival {
+    /// What exits that lead here call it, unique in the level.
+    pub name: String,
+    pub at: Vec2,
+    /// The way the characters walk in towards `at`, [`Dir::Left`] or
+    /// [`Dir::Right`]; `None` if the level begins at `at` as it does at
+    /// its start.
+    pub walk: Option<Dir>,
+}
+
+impl Level {
+    /// The arrival called `name`, if there is one.
+    pub fn arrival(&self, name: &str) -> Option<&Arrival> {
+        self.arrivals.iter().find(|a| a.name == name)
+    }
 }
 
 /// A run of entities that appear section by section: which sections are
@@ -399,6 +421,8 @@ struct File {
     size: [N; 2],
     start: [N; 2],
     #[serde(default)]
+    arrivals: Vec<ArrivalFile>,
+    #[serde(default)]
     layers: Vec<LayerFile>,
     #[serde(default)]
     entities: Vec<EntityFile>,
@@ -415,6 +439,14 @@ struct File {
     lights: Vec<LightFile>,
     #[serde(default)]
     sections: Vec<SectionFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArrivalFile {
+    name: String,
+    at: [N; 2],
+    walk: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -634,6 +666,47 @@ impl Reader<'_> {
         if !bounds.contains(start) {
             return Err(self.err("start", "is outside the level"));
         }
+        let mut arrival_names = BTreeSet::new();
+        let arrivals = f
+            .arrivals
+            .into_iter()
+            .enumerate()
+            .map(|(i, a)| {
+                let path = format!("arrivals[{i}]");
+                if !is_name(&a.name) {
+                    return Err(self.err(
+                        &format!("{path}.name"),
+                        "use lowercase letters, digits, - and _",
+                    ));
+                }
+                if !arrival_names.insert(a.name.clone()) {
+                    return Err(self.err(
+                        &format!("{path}.name"),
+                        format!("`{}` is used twice", a.name),
+                    ));
+                }
+                let at = v2(a.at);
+                if !bounds.contains(at) {
+                    return Err(self.err(&format!("{path}.at"), "is outside the level"));
+                }
+                let walk = match a.walk.as_deref() {
+                    None => None,
+                    Some("left") => Some(Dir::Left),
+                    Some("right") => Some(Dir::Right),
+                    Some(other) => {
+                        return Err(self.err(
+                            &format!("{path}.walk"),
+                            format!("`{other}` isn't `left` or `right`"),
+                        ));
+                    }
+                };
+                Ok(Arrival {
+                    name: a.name,
+                    at,
+                    walk,
+                })
+            })
+            .collect::<Result<_, _>>()?;
 
         let mut surfaces = builtin_surfaces();
         for (name, s) in f.surfaces {
@@ -717,6 +790,7 @@ impl Reader<'_> {
             name: f.name,
             size,
             start,
+            arrivals,
             layers,
             entities,
             collision: Collision::new(colliders),
@@ -1192,6 +1266,21 @@ impl Level {
         t.insert("name".into(), Value::String(self.name.clone()));
         t.insert("size".into(), pair(self.size));
         t.insert("start".into(), pair(self.start));
+        let arrivals = self.arrivals.iter().map(|a| {
+            let mut at = Table::new();
+            at.insert("name".into(), Value::String(a.name.clone()));
+            at.insert("at".into(), pair(a.at));
+            let walk = match a.walk {
+                Some(Dir::Left) => Some("left"),
+                Some(Dir::Right) => Some("right"),
+                _ => None,
+            };
+            if let Some(walk) = walk {
+                at.insert("walk".into(), Value::String(walk.into()));
+            }
+            Value::Table(at)
+        });
+        insert_array(&mut t, "arrivals", arrivals);
 
         let mut camera = self.camera.rule;
         let bounds = Rect {

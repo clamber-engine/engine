@@ -204,6 +204,8 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
         placements: Some(at(Data::PlacementList)?),
         start: Some(at(Data::StartRecord)?),
         restart: Some(at(Data::RestartRecord)?),
+        scene_return: Some(at(Data::SceneReturnRecord)?),
+        room_return: Some(at(Data::RoomReturnRecord)?),
         view_limits: Some(at(Data::ViewLimits)?),
         // `sound.md`: "The first level plays song 0".
         song: Some(LevelSong {

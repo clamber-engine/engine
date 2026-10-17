@@ -127,6 +127,8 @@ fn parts() -> LevelParts {
         placements: Some(Location::new(BANK, 0x7000)),
         start: Some(Location::new(BANK, 0x7400)),
         restart: None,
+        scene_return: None,
+        room_return: None,
         view_limits: Some(Location::new(BANK, 0x7500)),
         song: Some(LevelSong {
             sample_table: Location::new(BANK, 0x8000),

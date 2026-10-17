@@ -13,11 +13,13 @@
 
 use std::collections::BTreeMap;
 
-use clamber_level::{Area, Collision, Entity, FORMAT, Fixed, Level, Rect, Region, Section, Track};
+use clamber_level::{
+    Area, Arrival, Collision, Dir, Entity, FORMAT, Fixed, Level, Rect, Region, Section, Track, Vec2,
+};
 
 use crate::{
-    BANK_SIZE, Background, COLUMN_BANDS, Decoder, GridPicture, Ground, Image, KEG, Known, LEVELS,
-    Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures, Placements, StartRecord,
+    BANK_SIZE, Background, COLUMN_BANDS, Decoder, EXIT, GridPicture, Ground, Image, KEG, Known,
+    LEVELS, Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures, Placements, StartRecord,
     TileSet, ViewLimits, kind_of, kind_rows, unpack, unpack_nibbles,
 };
 
@@ -60,6 +62,12 @@ pub struct LevelParts {
     pub start: Option<Location>,
     /// The restart record, if the level has a restart point.
     pub restart: Option<Location>,
+    /// The scene-return record, if play comes back to the level after
+    /// the area its floor exit leads to, walking in rightward.
+    pub scene_return: Option<Location>,
+    /// The room-return record, if play comes back to the level after the
+    /// area its upper exit leads to, beginning as at its start.
+    pub room_return: Option<Location>,
     /// The view-limit record, if the level has one (`view-limits.md`).
     pub view_limits: Option<Location>,
     /// The level's song, if it has its music.
@@ -90,6 +98,46 @@ pub fn water(ground: &Ground, riding: bool) -> Option<Region> {
         physics: None,
         camera: None,
     })
+}
+
+/// The arrival play comes back to the first level at after the scene its
+/// floor exit leads to.
+pub const SCENE_RETURN: &str = "from-scene";
+
+/// The arrival play comes back to the first level at after the room its
+/// upper exit leads to.
+pub const ROOM_RETURN: &str = "from-room";
+
+/// Gives each exit in `entities` the arrival play comes back at, with
+/// `scene` and `room` the arrivals there are of [`SCENE_RETURN`] and
+/// [`ROOM_RETURN`]: exits.md has the floor exit lead to the scene and the
+/// upper one to the room. Where an exit leads is a setting of its
+/// definition that no format spec gives, so the lowest exit is taken to
+/// be the floor one and the others the upper one.
+///
+/// The scene and the room aren't imported yet, so each exit leads
+/// straight to where play comes back after them.
+fn lead_exits(entities: &mut [Entity], scene: bool, room: bool) {
+    let floor = entities
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.kind == EXIT)
+        .max_by_key(|(_, e)| e.at.y)
+        .map(|(i, _)| i);
+    for (i, exit) in entities
+        .iter_mut()
+        .enumerate()
+        .filter(|(_, e)| e.kind == EXIT)
+    {
+        let leads = match Some(i) == floor {
+            true => scene.then_some(SCENE_RETURN),
+            false => room.then_some(ROOM_RETURN),
+        };
+        if let Some(arrival) = leads {
+            exit.params
+                .insert("arrival".into(), toml::Value::String(arrival.into()));
+        }
+    }
 }
 
 /// Makes `at` the restart point of every restart barrel in `entities`:
@@ -218,6 +266,31 @@ impl LevelDecoder {
         if let Some(at) = p.restart {
             restart_at(&mut level.entities, record("restart", at)?);
         }
+        let returns = [
+            (
+                SCENE_RETURN,
+                "scene-return",
+                p.scene_return,
+                Some(Dir::Right),
+            ),
+            (ROOM_RETURN, "room-return", p.room_return, None),
+        ];
+        for (name, what, at, walk) in returns {
+            if let Some(at) = at {
+                let (x, y) = record(what, at)?;
+                let px = |n: i64| Fixed::from_int(i32::try_from(n).expect("a level fits in i32"));
+                level.arrivals.push(Arrival {
+                    name: name.into(),
+                    at: Vec2::new(px(x), px(y)),
+                    walk,
+                });
+            }
+        }
+        lead_exits(
+            &mut level.entities,
+            p.scene_return.is_some(),
+            p.room_return.is_some(),
+        );
         if let Some(song) = p.song {
             let music = song.music(|at| image.at(at))?;
             let file = format!("{}-music.wav", self.file);
@@ -276,9 +349,29 @@ impl Decoder for LevelDecoder {
 
 #[cfg(test)]
 mod tests {
-    use clamber_level::Vec2;
-
     use super::*;
+
+    #[test]
+    fn the_lowest_exit_leads_to_the_scene_and_the_others_to_the_room() {
+        let entity = |kind: &str, y| Entity {
+            kind: kind.into(),
+            id: None,
+            at: Vec2::ints(100, y),
+            params: Default::default(),
+        };
+        let mut entities = [entity(EXIT, 300), entity(KEG, 450), entity(EXIT, 400)];
+        lead_exits(&mut entities, true, true);
+        fn leads(e: &Entity) -> Option<&str> {
+            e.params.get("arrival").and_then(|v| v.as_str())
+        }
+        assert_eq!(leads(&entities[0]), Some(ROOM_RETURN));
+        assert_eq!(leads(&entities[1]), None);
+        assert_eq!(leads(&entities[2]), Some(SCENE_RETURN));
+        let mut entities = [entity(EXIT, 300), entity(EXIT, 400)];
+        lead_exits(&mut entities, false, true);
+        assert_eq!(leads(&entities[0]), Some(ROOM_RETURN));
+        assert_eq!(leads(&entities[1]), None);
+    }
 
     #[test]
     fn the_restart_record_moves_the_kegs_restart_point() {

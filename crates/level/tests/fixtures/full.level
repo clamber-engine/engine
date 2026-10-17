@@ -55,6 +55,15 @@ image = "fg/fog.png"
 parallax = [1.5, 1]
 offset = [0, -32]
 
+[[arrivals]]
+name = "from-the-cave"
+at = [1200, 400]
+walk = "left"
+
+[[arrivals]]
+name = "top"
+at = [80, 100]
+
 [[entities]]
 type = "spring"
 id = "spring-a"

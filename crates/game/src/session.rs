@@ -637,10 +637,7 @@ impl Session {
         match self.game.world.flow.outcome {
             Outcome::Complete => self.screen = Screen::complete(),
             Outcome::GameOver => self.screen = Screen::game_over(),
-            // The areas exits lead to aren't there yet; until they are,
-            // the level begins again, as it does after the first level's
-            // room (exits.md).
-            Outcome::Exited(_) => self.game.restart(),
+            Outcome::Exited(exit) => self.game.leave_by(exit),
             _ => {}
         }
     }

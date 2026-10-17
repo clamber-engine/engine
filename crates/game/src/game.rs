@@ -106,6 +106,33 @@ impl Game {
     /// Starts the level over, keeping the debug view setting.
     pub fn restart(&mut self) {
         let world = World::new(self.world.level.clone(), self.world.feel.clone());
+        self.replace_world(world);
+    }
+
+    /// Goes on where the level's entity `exit` leads, once play has left
+    /// through it: the level's arrival its `arrival` param names, or the
+    /// level's start if it names none there. The areas the first level's
+    /// exits lead to aren't in the level data yet, so their arrivals are
+    /// the ones coming back from them.
+    pub fn leave_by(&mut self, exit: usize) {
+        let level = self.world.level.clone();
+        let arrival = level
+            .entities
+            .get(exit)
+            .and_then(|e| e.params.get("arrival")?.as_str())
+            .and_then(|name| level.arrival(name));
+        match arrival {
+            Some(arrival) => {
+                let world = World::arriving(level.clone(), self.world.feel.clone(), arrival);
+                self.replace_world(world);
+            }
+            None => self.restart(),
+        }
+    }
+
+    /// Plays `world` in place of the one under way, keeping the debug
+    /// view setting.
+    fn replace_world(&mut self, world: World) {
         *self = Game {
             debug: self.debug,
             art: self.art.clone(),
@@ -804,6 +831,39 @@ mod tests {
         assert_eq!(game.poses, poses);
         assert!(game.step(&idle));
         assert_eq!(game.world.frame, frame + 1);
+    }
+
+    #[test]
+    fn goes_on_at_the_arrival_an_exit_leads_to() {
+        let src = format!(
+            r#"{LEVEL}
+        [[entities]]
+        type = "exit"
+        at = [100, 300]
+        params = {{ arrival = "back" }}
+
+        [[arrivals]]
+        name = "back"
+        at = [800, 300]
+        walk = "left"
+        "#
+        );
+        let level = Level::from_toml_str(&src, "test").unwrap();
+        let mut game = Game::new(World::new(
+            Arc::new(level),
+            Arc::new(generic_feel("classic-1").unwrap()),
+        ));
+        game.debug = false;
+        game.step(&InputFrame::default());
+        game.leave_by(1);
+        assert_eq!(game.world.frame, 0);
+        assert!(game.world.walking_in.is_some());
+        assert_eq!(game.world.player.pos, clamber_level::Vec2::ints(880, 300));
+        assert!(!game.debug, "keeps the debug view setting");
+        // An exit that names no arrival leads back to the level's start.
+        game.leave_by(0);
+        assert!(game.world.walking_in.is_none());
+        assert_eq!(game.world.player.pos, game.world.level.start);
     }
 
     #[test]

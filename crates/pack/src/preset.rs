@@ -624,6 +624,13 @@ mod tests {
                     | Param::ExitLeaveAt
                     | Param::ExitFadeTime
                     | Param::ExitFadeStep
+                    | Param::WalkInSpeed
+                    | Param::WalkInBack
+                    | Param::WalkInTime
+                    | Param::WalkInAhead
+                    | Param::WalkInOther
+                    | Param::WalkInFadeStep
+                    | Param::WalkInFadeSteps
                     | Param::FallOutDepth
                     | Param::FallOutTime
                     | Param::DimSteps

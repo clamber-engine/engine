@@ -1280,6 +1280,26 @@ params! {
     /// Frames the picture stays at each brightness during that fade.
     /// Whole frames.
     ExitFadeStep => "exit_fade_step",
+    /// Above 0, characters arriving in an area by walking in (see
+    /// `clamber_sim::WalkingIn`) walk this fast, and the lead has this
+    /// speed when the player takes over. px/frame.
+    WalkInSpeed => "walk_in_speed",
+    /// On the area's first frame the lead is this far behind the point it
+    /// walks in to. Whole px.
+    WalkInBack => "walk_in_back",
+    /// The frame the lead takes its last step on, to `walk_in_ahead` past
+    /// the point; the player has control from the frame after. Whole
+    /// frames.
+    WalkInTime => "walk_in_time",
+    /// How far past the point the lead is after its last step. Whole px.
+    WalkInAhead => "walk_in_ahead",
+    /// How far behind the lead the other character walks in. Whole px.
+    WalkInOther => "walk_in_other",
+    /// The picture fades in from black a step every this many frames.
+    /// Whole frames.
+    WalkInFadeStep => "walk_in_fade_step",
+    /// How many steps that fade takes to full brightness.
+    WalkInFadeSteps => "walk_in_fade_steps",
     /// Above 0, a player falls out of the level on the first frame it
     /// ends with its feet more than this far below the level's bottom.
     /// 0: once the top of its body is below the bottom. px.

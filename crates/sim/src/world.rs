@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_fixed::Fixed;
-use clamber_level::{Level, Vec2};
+use clamber_level::{Arrival, Level, Vec2};
 use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 
 use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior, Rope, Spring};
@@ -27,6 +27,7 @@ use crate::sections::{Placed, Placing};
 use crate::swap::{self, Move, Other, Recent, Swap};
 use crate::things;
 use crate::view::{self, View};
+use crate::walk_in::{self, WalkingIn};
 
 /// Something that happened during a step. Names follow
 /// `spec/traces/VOCABULARY.md`, so traces can record them directly.
@@ -215,6 +216,9 @@ pub struct World {
     /// The characters entering the level, if it has an entrance, until
     /// they're in play and the picture has faded in.
     pub entering: Option<Entering>,
+    /// The characters walking into the area, when it began at an arrival
+    /// they walk in by, until the picture has faded in.
+    pub walking_in: Option<WalkingIn>,
     /// Frames the whole game should stand still after the last step
     /// before the next, as during a knock-out. Whatever runs the world in
     /// real time holds the screen for them; they aren't steps, and a
@@ -238,8 +242,46 @@ impl World {
     /// The level at its start, or why an entity's params don't fit its
     /// archetype in the built-in [`Archetypes`].
     pub fn try_new(level: Arc<Level>, feel: Arc<Feel>) -> Result<World, ArchetypeError> {
+        let start = level.start;
+        World::begin(level, feel, start, None)
+    }
+
+    /// The level as play comes into it at `arrival`: the characters walk
+    /// in to its point if it says they do, and the level begins there as
+    /// at its start otherwise.
+    ///
+    /// # Panics
+    ///
+    /// As [`World::new`].
+    pub fn arriving(level: Arc<Level>, feel: Arc<Feel>, arrival: &Arrival) -> World {
+        World::try_arriving(level, feel, arrival).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// The level as play comes into it at `arrival`, or why an entity's
+    /// params don't fit its archetype.
+    pub fn try_arriving(
+        level: Arc<Level>,
+        feel: Arc<Feel>,
+        arrival: &Arrival,
+    ) -> Result<World, ArchetypeError> {
         assert!(!feel.roster.is_empty(), "a world needs a character");
-        let player = Player::new(&level, level.start);
+        let walk = WalkingIn::of(arrival, &feel.world);
+        World::begin(level, feel, arrival.at, walk)
+    }
+
+    /// The level beginning with the lead at `start`, or walking in to it.
+    fn begin(
+        level: Arc<Level>,
+        feel: Arc<Feel>,
+        start: Vec2,
+        walk: Option<WalkingIn>,
+    ) -> Result<World, ArchetypeError> {
+        assert!(!feel.roster.is_empty(), "a world needs a character");
+        let mut player = Player::new(&level, start);
+        if let Some(walk) = walk {
+            player.pos = walk.lead_at(0, &feel.world);
+            player.facing = walk.facing;
+        }
         // Both characters start where play starts (following.md).
         let other = (feel.roster.len() > 1 && feel.world[Param::SwapMoves] > Fixed::ZERO)
             .then(|| Other::new(1, player.pos, player.facing, player.pos));
@@ -277,11 +319,21 @@ impl World {
             })
             .collect::<Result<_, _>>()?;
         // A level with an entrance begins as an area does (view.md, "When
-        // an area begins"); the view starts settled on the lead otherwise.
-        let entering = entrance::begin(&things);
-        let view = view::enabled(&physics).then(|| match entering {
-            Some(_) => View::begun(&player, &level, &physics),
-            None => View::settled(&player, &level, &physics),
+        // an area begins"), and so does one walked into; the view starts
+        // settled on the lead otherwise. Walking in, the entrance is gone.
+        let mut entering = entrance::begin(&things);
+        if walk.is_some()
+            && let Some(e) = entering.take()
+        {
+            things[e.entrance].active = false;
+            things[e.entrance].phase = Phase::Broken;
+        }
+        let view = view::enabled(&physics).then(|| {
+            if entering.is_some() || walk.is_some() {
+                View::begun(&player, &level, &physics)
+            } else {
+                View::settled(&player, &level, &physics)
+            }
         });
         // With a view, walkers whose start is near it are in the level as
         // placed, and the others appear later. Things in sections appear
@@ -323,6 +375,7 @@ impl World {
             resume: None,
             bursts: Vec::new(),
             entering,
+            walking_in: walk,
             pause: 0,
         })
     }
@@ -1020,6 +1073,11 @@ pub fn step(world: &mut World, input: &InputFrame) {
     }
     if world.leaving.is_some() {
         exit::step(world);
+        world.frame += 1;
+        return;
+    }
+    if walk_in::hold(world) {
+        // Everything waits while the characters walk in.
         world.frame += 1;
         return;
     }
