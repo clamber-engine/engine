@@ -195,6 +195,14 @@ pub struct Player {
     /// The jump under way, or the last one, reached its approach frame
     /// this many frames after it started (`switch_from`).
     pub approach: Option<u8>,
+    /// Its approach frame ended in a steep face's column.
+    pub approach_face: bool,
+    /// Added to the next frame's target speed down the steep face under
+    /// the player (`face_slide_switch`).
+    pub push: Fixed,
+    /// After a landing, what the switch frame steep faces wait for is,
+    /// until it has come (`face_slide_switch`).
+    pub face_switch: Option<FaceSwitch>,
     /// The jump under way, or the last one, started out of a roll.
     pub rolled_jump: bool,
     /// Falling after walking off the ground, until landing.
@@ -297,6 +305,9 @@ impl Player {
             after_face: None,
             jump_age: None,
             approach: None,
+            approach_face: false,
+            push: Fixed::ZERO,
+            face_switch: None,
             rolled_jump: false,
             walked_off: false,
             walked_off_face: false,
@@ -697,6 +708,10 @@ impl Player {
             (false, true) => 1,
             _ => 0,
         };
+        if self.riding.is_some() || Player::in_water(level, self.pos) {
+            self.push = Fixed::ZERO;
+            self.face_switch = None;
+        }
         if self.riding.is_some() {
             self.ride(level, physics, input, held_dir, events);
             return;
@@ -1094,6 +1109,7 @@ impl Player {
             && self.grounded()
             && !rolling
             && !events.contains(&Event::JumpStart)
+            && self.face_switch.is_none()
             && columns::rise_ahead(level, columns::column(self.pos.x), dir, ahead, self.pos.y);
         // With Up keeping crouches going, Down held with Up still stops
         // the player, without a crouch.
@@ -1115,6 +1131,8 @@ impl Player {
             physics[Param::WalkSpeed]
         };
         let response = physics[Param::SpeedResponse];
+        let pushed = physics[Param::FaceSlideSwitch] > Fixed::ZERO;
+        let mut push = Fixed::ZERO;
         self.target = Fixed::ZERO;
         self.vel.x = if let Some(action) = acting {
             self.target = physics[Param::GroundActionSpeed] * Fixed::from_int(action.dir);
@@ -1148,10 +1166,15 @@ impl Player {
                 1 => cap,
                 _ => Fixed::ZERO,
             };
-            match face {
-                Some(-1) => target -= physics[Param::FaceSpeed],
-                Some(_) => target += physics[Param::FaceSpeed],
-                None => {}
+            if pushed {
+                push = self.push;
+                target += push;
+            } else {
+                match face {
+                    Some(-1) => target -= physics[Param::FaceSpeed],
+                    Some(_) => target += physics[Param::FaceSpeed],
+                    None => {}
+                }
             }
             if let Some(way) = pull {
                 target += Fixed::from_int(direction(way)) * physics[Param::FacePull];
@@ -1437,6 +1460,9 @@ impl Player {
             && (self.grounded() || self.floor_within_reach(level, physics))
         {
             self.approach = Some(age);
+            self.approach_face =
+                columns::face_below(level, columns::column(self.pos.x), self.pos.y, slope)
+                    .is_some();
         }
         if events.contains(&Event::Land) {
             let lockout = frames(
@@ -1473,6 +1499,9 @@ impl Player {
                     })
                 };
             }
+        }
+        if pushed {
+            self.push_down_face(level, events, jump_age, self.target - push, physics);
         }
         self.jump_age = if self.grounded() && !self.takeoff {
             None
@@ -2083,6 +2112,71 @@ impl Player {
             frames(physics[Param::LandingModeAfterLast])
         };
         (switch, settle)
+    }
+
+    /// At the end of a frame, after a landing, says whether the switch
+    /// frame steep faces wait for has come, and works out the push down a
+    /// face for the next frame (`face_slide_switch`). `jump_age` is the
+    /// jump's age on this frame, and `target` this frame's target speed
+    /// without the push.
+    fn push_down_face(
+        &mut self,
+        level: &Level,
+        events: &[Event],
+        jump_age: Option<u8>,
+        target: Fixed,
+        physics: &Physics,
+    ) {
+        let from = frames(physics[Param::SwitchFrom]);
+        if events.contains(&Event::Land) {
+            // Other landings have their switch frame on the landing frame.
+            self.face_switch = match jump_age {
+                Some(land) if from > 0 && !self.rolled_jump => {
+                    let (switch, _) = self.switch_wait(land, physics);
+                    let approach = self.approach.unwrap_or(from).max(from);
+                    Some(if approach > land {
+                        let left = approach - land;
+                        FaceSwitch::Approach {
+                            left,
+                            plain: switch - left,
+                        }
+                    } else if self.approach_face {
+                        FaceSwitch::Slide(None)
+                    } else {
+                        FaceSwitch::Plain(switch)
+                    })
+                }
+                _ => None,
+            };
+        }
+        let face = if self.grounded() {
+            columns::face(
+                level,
+                columns::column(self.pos.x),
+                self.pos.y,
+                physics[Param::FaceSlope],
+            )
+        } else {
+            None
+        };
+        let down = |v: Fixed, way: i32| v * Fixed::from_int(way) >= Fixed::ZERO;
+        // On the floor of a face column with no speed or speed down it,
+        // the switch frame has come at the latest.
+        let stopped = face.is_some_and(|way| down(self.vel.x, way));
+        self.face_switch = self
+            .face_switch
+            .filter(|_| self.grounded() && !stopped)
+            .and_then(|s| s.advance(face.is_some(), frames(physics[Param::FaceSlideSwitch])));
+        self.push = match face {
+            Some(way) if self.face_switch.is_none() => {
+                if down(target, way) && down(self.vel.x, way) {
+                    physics[Param::FaceSpeed] * Fixed::from_int(way)
+                } else {
+                    self.push
+                }
+            }
+            _ => Fixed::ZERO,
+        };
     }
 
     /// The state after this step's movement.
@@ -2745,6 +2839,46 @@ pub enum Gait {
     /// On the frames after a jump's landing, before any of the others
     /// starts. No turn starts.
     Landing(Landing),
+}
+
+/// What the switch frame after a landing that steep faces wait for is
+/// waiting for (`face_slide_switch`). Each count is of frames from the
+/// one ending next.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FaceSwitch {
+    /// The approach frame, this many frames on. The switch frame is
+    /// `plain` frames after it, unless it ends in a face column.
+    Approach { left: u8, plain: u8 },
+    /// A plain landing: the switch frame, this many frames on.
+    Plain(u8),
+    /// A slide landing: the switch frame, this many frames on, once a
+    /// frame has ended on the floor off a face.
+    Slide(Option<u8>),
+}
+
+impl FaceSwitch {
+    /// After a frame that ended on the floor, in a face column or not:
+    /// `None` if it was the switch frame. A slide landing's switch frame
+    /// is `wait` frames after the frame that ends off a face.
+    fn advance(self, on_face: bool, wait: u8) -> Option<FaceSwitch> {
+        match self {
+            FaceSwitch::Approach { left: 0, .. } if on_face => {
+                FaceSwitch::Slide(None).advance(on_face, wait)
+            }
+            FaceSwitch::Approach { left: 0, plain } => {
+                FaceSwitch::Plain(plain).advance(on_face, wait)
+            }
+            FaceSwitch::Approach { left, plain } => Some(FaceSwitch::Approach {
+                left: left - 1,
+                plain,
+            }),
+            FaceSwitch::Plain(0) | FaceSwitch::Slide(Some(0)) => None,
+            FaceSwitch::Plain(n) => Some(FaceSwitch::Plain(n - 1)),
+            FaceSwitch::Slide(None) if on_face => Some(self),
+            FaceSwitch::Slide(None) => FaceSwitch::Slide(Some(wait)).advance(on_face, wait),
+            FaceSwitch::Slide(Some(n)) => Some(FaceSwitch::Slide(Some(n - 1))),
+        }
+    }
 }
 
 /// How far into the frames after a jump's landing the player is.

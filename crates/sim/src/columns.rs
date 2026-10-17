@@ -204,6 +204,17 @@ pub(crate) fn face(level: &Level, column: i64, feet: Fixed, slope: Fixed) -> Opt
     }
 }
 
+/// As [`face`], for the nearest floor at or below `feet` in `column`,
+/// however far down.
+pub(crate) fn face_below(level: &Level, column: i64, feet: Fixed, slope: Fixed) -> Option<i32> {
+    let top = spans(level, column)
+        .into_iter()
+        .map(|s| s.top)
+        .filter(|&top| top >= feet)
+        .min()?;
+    face(level, column, top, slope)
+}
+
 /// Whether a grounded body moving `dir` (-1 or 1) is stopped going into
 /// `column`: the floor climbs into it from the column behind by more than
 /// a step, a wall, or it's part of a face that climbs into it or onward

@@ -428,6 +428,7 @@ mod tests {
                     | Param::SlopePiece
                     | Param::FaceSpeed
                     | Param::FaceExit
+                    | Param::FaceSlideSwitch
                     | Param::StartRiseAhead
                     | Param::AirStep
                     | Param::AirWholePixels

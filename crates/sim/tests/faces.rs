@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
-use clamber_sim::{Event, Facing, Fixed, InputFrame, World, generic_feel, step};
+use clamber_sim::{Event, Facing, Fixed, InputFrame, State, World, generic_feel, step};
 
 const FLOOR: i32 = 300;
 
@@ -390,6 +390,112 @@ fn faces_work_however_the_ground_is_drawn() {
         Vec2::new(fx(199.0), Fixed::from_int(FLOOR))
     );
     assert_eq!(world.player.vel.x, Fixed::ZERO);
+}
+
+/// The floor of "Examples (landings)", whose `y` is 81 on the flat:
+/// a face rising to the right over columns 100 to 115, and flat again
+/// from column 116.
+fn landing_face(c: i32) -> Option<i32> {
+    Some(match c {
+        ..100 => 0,
+        100..116 => -1 - 4 * (c - 100),
+        _ => -64,
+    })
+}
+
+/// A world on [`landing_face`] in the air during a jump, at the end of
+/// the frame `age` frames after the jump's start, with `x`, `y` (the
+/// spec's level y), `vx` and `vy` (1/256) as given and jump let go of.
+fn mid_jump(age: u8, x: f64, y: f64, vx: i64, vy: i64) -> World {
+    let mut world = ground(landing_face, 90.0);
+    let p = &mut world.player;
+    p.pos = Vec2::new(fx(x), fx(y - 81.0) + Fixed::from_int(FLOOR));
+    p.vel = Vec2::new(fx(vx as f64 / 256.0), fx(vy as f64 / 256.0));
+    p.ground = None;
+    p.state = if vy < 0 { State::Jump } else { State::Fall };
+    p.jump_age = Some(age);
+    world
+}
+
+/// A row of a landing example: frame, held, `x`, level `y`, `vx` and
+/// `vy` (1/256), and whether grounded.
+type LandingRow = (u32, Option<Action>, f64, f64, i64, i64, bool);
+
+/// Steps through `rows`, from a world at the end of the frame before the
+/// first, holding `before` on that frame.
+fn check_rows(world: &mut World, before: Action, rows: &[LandingRow]) {
+    let mut previous: Vec<Action> = vec![before];
+    for &(frame, held, x, y, vx, vy, grounded) in rows {
+        let held: Vec<Action> = held.into_iter().collect();
+        press(world, &previous, &held);
+        let p = &world.player;
+        let got = (
+            p.pos.x,
+            p.pos.y - Fixed::from_int(FLOOR) + fx(81.0),
+            grains(p.vel.x),
+            grains(p.vel.y),
+            p.grounded(),
+        );
+        assert_eq!(got, (fx(x), fx(y), vx, vy, grounded), "frame {frame}");
+        previous = held;
+    }
+}
+
+#[test]
+fn a_plain_landing_on_a_face_waits_for_the_switch_frame() {
+    // A jump from standing at x = 95.75, from frame 19.
+    let mut world = mid_jump(19, 97.953125, 28.15625, 211, 296);
+    let (l, r) = (Some(Action::Left), Some(Action::Right));
+    check_rows(
+        &mut world,
+        Action::Right,
+        &[
+            (20, r, 98.921875, 29.75, 248, 408, false),
+            (21, r, 100.01953125, 31.78125, 281, 520, false),
+            (22, None, 100.98046875, 34.25, 246, 632, false),
+            (23, None, 101.82421875, 37.15625, 216, 744, false),
+            (24, l, 102.3125, 40.5, 125, 856, false),
+            (25, r, 102.98828125, 44.28125, 173, 968, false),
+            (26, r, 103.828125, 48.5, 215, 1080, false),
+            (27, r, 104.8125, 53.15625, 252, 1192, false),
+            // L: A = T + 20 and L = A + 8, so M = L + 2.
+            (28, l, 105.42578125, 60.0, 157, 0, true),
+            (29, l, 105.71484375, 60.0, 74, 0, true),
+            // M, still moving uphill: no push yet.
+            (30, l, 105.71875, 60.0, 1, 0, true),
+            (31, l, 105.47265625, 60.0, -63, 0, true),
+            (32, l, 104.8203125, 64.0, -167, 0, true),
+            (33, l, 103.8125, 68.0, -258, 0, true),
+        ],
+    );
+}
+
+#[test]
+fn a_slide_landing_waits_until_a_rise_stops_the_player() {
+    let mut world = mid_jump(11, 111.7578125, 32.875, 407, -560);
+    let r = Some(Action::Right);
+    check_rows(
+        &mut world,
+        Action::Right,
+        &[
+            // Blocked in the air by face columns above the feet.
+            (12, r, 111.0, 31.125, 0, -448, false),
+            (13, r, 111.25, 29.8125, 64, -336, false),
+            (14, r, 111.71875, 28.9375, 120, -224, false),
+            (15, r, 112.37890625, 28.5, 169, -112, false),
+            (16, r, 112.0, 28.5, 0, 0, false),
+            // L, on face column 112; A = 20 on it too: a slide landing.
+            (17, r, 112.25, 32.0, 64, 0, true),
+            (18, r, 112.46875, 32.0, 56, 0, true),
+            (19, r, 112.66015625, 32.0, 49, 0, true),
+            (20, r, 112.828125, 32.0, 43, 0, true),
+            (21, r, 112.9765625, 32.0, 38, 0, true),
+            // M: blocked by the rise, with no speed.
+            (22, r, 112.0, 32.0, 0, 0, true),
+            (23, r, 111.8125, 36.0, -48, 0, true),
+            (24, r, 111.4609375, 36.0, -90, 0, true),
+        ],
+    );
 }
 
 /// The `title-2` examples' floor: flat, a face rising to the right over

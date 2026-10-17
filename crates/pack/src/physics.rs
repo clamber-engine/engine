@@ -550,6 +550,17 @@ params! {
     /// direction held back up the face counts as none for this many
     /// frames. Whole frames.
     FaceExit => "face_exit",
+    /// Above 0, with `face_speed` and `switch_from`, `face_speed` is a
+    /// push worked out at the end of each frame on a face column, given
+    /// once the frame's target and speed both point down the face or are
+    /// 0, and kept otherwise; after a jump's landing it, and
+    /// `start_rise_ahead`, wait until after a switch frame. That is the
+    /// jump's switch frame, unless its approach frame ends in a face
+    /// column: then this many frames after the first frame from the
+    /// landing and the approach frame on that ends on the floor off a
+    /// face. It comes earlier on a frame that ends on the floor of a face
+    /// column with no speed or speed down it. Whole frames.
+    FaceSlideSwitch => "face_slide_switch",
     /// Above 0, a grounded body standing still doesn't start moving toward
     /// ground that, this many columns ahead, is 8 px or more higher than
     /// its own column. Whole columns.
