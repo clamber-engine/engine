@@ -273,6 +273,7 @@ pub(crate) fn hold(world: &mut World) -> bool {
         player.spring = None;
         player.spring_arc = None;
         player.rope = None;
+        player.sling = None;
         player.rope_fall = false;
         player.state = State::Fall;
     }

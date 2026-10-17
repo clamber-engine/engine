@@ -93,6 +93,7 @@ fn the_cast_sheets_are_rendered_with_their_animations() {
         ("canister", &["whole", "break"]),
         ("spring", &["rest", "squash"]),
         ("rope", &["hang"]),
+        ("sling", &["whole"]),
         ("signpost", &["stand"]),
     ] {
         let path = content_dir().join(SPRITES).join(format!("{name}.json"));

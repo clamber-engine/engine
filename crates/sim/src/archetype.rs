@@ -159,6 +159,9 @@ pub enum Behavior {
     /// turns round, jumps off and slides off the end of (see
     /// [`rope`](crate::rope)).
     Rope(Rope),
+    /// A launch barrel, which catches the player, holds it and shoots it
+    /// out (see [`sling`](crate::sling)).
+    Sling(Sling),
     /// Scenery: it stands where it's placed and nothing touches it. With
     /// a view, it appears and is removed as a thrower does, and comes
     /// back each time its start is near the view again (signs.md).
@@ -293,6 +296,32 @@ pub struct Rope {
     pub turn_frames: u8,
     pub turn_facing: u8,
     pub jump_speed: Fixed,
+}
+
+/// A launch barrel (spec/behavior/launch-barrel.md). It never moves. It
+/// catches the player within `reach` of it, by what the player is doing
+/// at the end of a frame after its move, as a collectible's reach does,
+/// measured `left_shift` px right of it facing left. It holds the player
+/// for `hold` frames after the catch, then shoots it at `shot` (+y down),
+/// breaking if it `breaks`. The player moves at that speed for `glide`
+/// frames, and then flies until it lands: its speed across closes
+/// `steer_response` of the gap to `steer` toward the direction held, or
+/// to 0, rounded toward zero to a 1/256 px per frame, and its speed down
+/// grows by `gravity` up to `max_fall`. After a catch it catches no one
+/// for `rest` frames.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Sling {
+    pub reach: Reach,
+    pub left_shift: i32,
+    pub hold: u8,
+    pub shot: Vec2,
+    pub glide: u8,
+    pub breaks: bool,
+    pub rest: u8,
+    pub steer: Fixed,
+    pub steer_response: Fixed,
+    pub gravity: Fixed,
+    pub max_fall: Fixed,
 }
 
 /// A hidden object (spec/behavior/hidden-objects.md). Offsets from it are
@@ -1302,6 +1331,19 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "turn_facing",
             "jump_speed",
         ],
+        "sling" => &[
+            "reach",
+            "left_shift",
+            "hold",
+            "shot",
+            "glide",
+            "breaks",
+            "rest",
+            "steer",
+            "steer_response",
+            "gravity",
+            "max_fall",
+        ],
         "collect" => &[
             "worth",
             "release_every",
@@ -1700,6 +1742,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         "hidden" => Behavior::Hidden(parse_hidden(table, path)?),
         "spring" => Behavior::Spring(parse_spring(table, path)?),
         "rope" => Behavior::Rope(parse_rope(table, path)?),
+        "sling" => Behavior::Sling(parse_sling(table, path)?),
         "scenery" => Behavior::Scenery,
         _ => Behavior::Launcher {
             velocity: pair("velocity")?,
@@ -2043,6 +2086,69 @@ fn parse_spring(table: &Table, path: &str) -> Result<Spring, String> {
         jump_gravity: number("jump_gravity")?,
         gravity: number("gravity")?,
         max_fall: number("max_fall")?,
+    })
+}
+
+/// Reads a launch barrel's values. Errors start with `path`.
+fn parse_sling(table: &Table, path: &str) -> Result<Sling, String> {
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let read = |v: &Value, at: &str| -> Result<Fixed, String> {
+        clamber_pack::read_number(v, "", at).map_err(|e| e.message)
+    };
+    let positive = |key: &str| {
+        let at = format!("{path}.{key}");
+        let v = read(get(key)?, &at)?;
+        if v <= Fixed::ZERO {
+            return Err(format!("{at}: must be positive"));
+        }
+        Ok(v)
+    };
+    let frames = |key: &str| match get(key)? {
+        Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
+        _ => Err(format!(
+            "{path}.{key}: expected a whole number of frames, 0 to 255"
+        )),
+    };
+    let at = format!("{path}.shot");
+    let shot = match get("shot")? {
+        Value::Array(items) if items.len() == 2 => Vec2::new(
+            read(&items[0], &format!("{at}[0]"))?,
+            read(&items[1], &format!("{at}[1]"))?,
+        ),
+        _ => return Err(format!("{at}: expected [x, y]")),
+    };
+    let left_shift = match get("left_shift")? {
+        Value::Integer(n) if i32::try_from(*n).is_ok() => *n as i32,
+        _ => return Err(format!("{path}.left_shift: expected a whole number of px")),
+    };
+    let breaks = match get("breaks")? {
+        Value::Boolean(b) => *b,
+        _ => return Err(format!("{path}.breaks: expected true or false")),
+    };
+    let steer_response = positive("steer_response")?;
+    if steer_response > Fixed::ONE {
+        return Err(format!("{path}.steer_response: must be from 0 to 1"));
+    }
+    let steer = read(get("steer")?, &format!("{path}.steer"))?;
+    if steer.is_negative() {
+        return Err(format!("{path}.steer: must not be negative"));
+    }
+    Ok(Sling {
+        reach: parse_reach(get("reach")?, &format!("{path}.reach"))?,
+        left_shift,
+        hold: frames("hold")?,
+        shot,
+        glide: frames("glide")?,
+        breaks,
+        rest: frames("rest")?,
+        steer,
+        steer_response,
+        gravity: positive("gravity")?,
+        max_fall: positive("max_fall")?,
     })
 }
 

@@ -45,6 +45,15 @@ pub enum Kind {
     AnimalCrate,
     /// The restart barrel, which marks the level's restart point.
     RestartBarrel,
+    /// The place the lead comes out of when play comes back to the level
+    /// from the area behind its first wall exit (`wall-exits.md`).
+    WallReturnEntrance,
+    /// A barrel that catches the player and shoots them to the left
+    /// (`launch-barrel.md`).
+    LeftLaunchBarrel,
+    /// A barrel that catches the player, shoots them straight down and
+    /// breaks.
+    DownLaunchBarrel,
     Stinger,
     /// A tyre that throws the player up.
     Tyre,
@@ -71,7 +80,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 31] = [
+    pub const ALL: [Kind; 34] = [
         Kind::SmallWalker,
         Kind::MediumWalker,
         Kind::LargeWalker,
@@ -91,6 +100,9 @@ impl Kind {
         Kind::WallExit,
         Kind::AnimalCrate,
         Kind::RestartBarrel,
+        Kind::WallReturnEntrance,
+        Kind::LeftLaunchBarrel,
+        Kind::DownLaunchBarrel,
         Kind::Stinger,
         Kind::Tyre,
         Kind::StiffTyre,
@@ -127,6 +139,9 @@ impl Kind {
             Kind::WallExit => "wall-exit",
             Kind::AnimalCrate => "animal-crate",
             Kind::RestartBarrel => "restart-barrel",
+            Kind::WallReturnEntrance => "wall-return-entrance",
+            Kind::LeftLaunchBarrel => "left-launch-barrel",
+            Kind::DownLaunchBarrel => "down-launch-barrel",
             Kind::Stinger => "stinger",
             Kind::Tyre => "tyre",
             Kind::StiffTyre => "stiff-tyre",
@@ -227,6 +242,25 @@ impl Kind {
             // one ([`crate::LevelDecoder`]), and the barrel's position
             // otherwise.
             Kind::RestartBarrel => KEG,
+            // wall-exits.md: placed and not drawn. The engine doesn't
+            // come back from a wall exit's area yet (#207), so it does
+            // nothing.
+            Kind::WallReturnEntrance => WALL_RETURN,
+            // launch-barrel.md: the one that shoots left has the
+            // archetype's own values. The one that shoots down holds
+            // for 28 frames, shoots at the same speed down for a frame
+            // before the flight, breaks, and is never ready again.
+            Kind::LeftLaunchBarrel => SLING,
+            Kind::DownLaunchBarrel => {
+                set("hold", Value::Integer(28));
+                set(
+                    "shot",
+                    Value::Array(vec![Value::Integer(0), Value::Float(2167.0 / 256.0)]),
+                );
+                set("glide", Value::Integer(1));
+                set("breaks", Value::Boolean(true));
+                SLING
+            }
             // tyre.md's values are the archetype's own. The first level
             // has none.
             Kind::Tyre => "spring",
@@ -338,6 +372,12 @@ pub const EXIT: &str = "exit";
 /// The kind of entity a wall exit is: no archetype's.
 pub const WALL_EXIT: &str = "wall-exit";
 
+/// The kind of entity a wall-return entrance is: no archetype's.
+pub const WALL_RETURN: &str = "wall-return";
+
+/// The archetype launch barrels are.
+pub const SLING: &str = "sling";
+
 /// The kind of entity a critter is: no archetype's.
 pub const CRITTER: &str = "critter";
 
@@ -426,6 +466,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::Stinger,
             ),
             (
+                "3bd63880d0c8f6e81a4975e1549c730655b1f1e7957454c0ce6ea980044a1718",
+                Kind::DownLaunchBarrel,
+            ),
+            (
                 "3e1f6c2f24fa461bc637adec8e62fe520d4f2a69e7cf8e0d950610235d2e3486",
                 Kind::Letter(4),
             ),
@@ -438,12 +482,24 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::Letter(2),
             ),
             (
+                "47a9fc70cf6be73792670830d89523401fe75b8ad5ade692f5fe8d534962429c",
+                Kind::Sign,
+            ),
+            (
                 "4c90ae328510dac24fa35424acdaa6b793fcbebfa288220cce41179f518d9978",
                 Kind::Tyre,
             ),
             (
                 "4cb625b24ccb2edc0d7487e5ff9aa9de2cd5409110383d64bfa5ff1a97a22170",
                 Kind::LargeWalker,
+            ),
+            (
+                "558635a3657029cd26bc9e52c8c3a2d79fe81ebbad040fff194828098afe61a5",
+                Kind::LeftLaunchBarrel,
+            ),
+            (
+                "5624aa1b5f08527d0ddab7f1d5fc72f4fc0559b083ce1cd80be4baf05eac1997",
+                Kind::WallReturnEntrance,
             ),
             (
                 "5fae0c706628b184dc3d2db99a589d70ce53d54750e685369dd03f73f71e7f06",
@@ -706,7 +762,7 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 52);
+        assert_eq!(want.len(), 56);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }
@@ -726,8 +782,18 @@ mod tests {
                 assert_eq!(name, END);
                 continue;
             }
-            if [Kind::Exit, Kind::WallExit, Kind::Critter].contains(&kind) {
-                assert!([EXIT, WALL_EXIT, CRITTER].contains(&name), "{kind}");
+            if [
+                Kind::Exit,
+                Kind::WallExit,
+                Kind::WallReturnEntrance,
+                Kind::Critter,
+            ]
+            .contains(&kind)
+            {
+                assert!(
+                    [EXIT, WALL_EXIT, WALL_RETURN, CRITTER].contains(&name),
+                    "{kind}"
+                );
                 assert!(!Archetypes::builtin().names().any(|n| n == name));
                 continue;
             }
@@ -793,6 +859,23 @@ mod tests {
                     assert_eq!(s.squash_frames(), 14);
                 }
                 (Kind::StiffTyre, _) => panic!("{kind} isn't a spring"),
+                (Kind::LeftLaunchBarrel, Behavior::Sling(s)) => {
+                    assert_eq!((s.hold, s.glide, s.breaks), (15, 23, false));
+                    assert_eq!(s.shot.x, -clamber_sim::Fixed::from_bits((2167 << 32) / 256));
+                }
+                (Kind::DownLaunchBarrel, Behavior::Sling(s)) => {
+                    assert_eq!((s.hold, s.glide, s.breaks), (28, 1, true));
+                    assert_eq!(
+                        s.shot,
+                        Vec2::new(
+                            clamber_sim::Fixed::ZERO,
+                            clamber_sim::Fixed::from_bits((2167 << 32) / 256)
+                        )
+                    );
+                }
+                (Kind::LeftLaunchBarrel | Kind::DownLaunchBarrel, _) => {
+                    panic!("{kind} isn't a sling")
+                }
                 (Kind::Sign, behavior) => assert_eq!(behavior, Behavior::Scenery, "{kind}"),
                 (Kind::HiddenBunch, Behavior::Hidden(h)) => {
                     assert_eq!((h.fall_height, h.becomes), (0, "cluster"))

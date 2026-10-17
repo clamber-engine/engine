@@ -7,7 +7,7 @@ use clamber_fixed::Fixed;
 use clamber_level::{Arrival, Level, Vec2};
 use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 
-use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior, Rope, Spring};
+use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior, Rope, Sling, Spring};
 use crate::carry::{self, Flight};
 use crate::collect;
 use crate::dimming::{self, Dimming};
@@ -24,6 +24,7 @@ use crate::ride;
 use crate::rope;
 use crate::script::{InputFrame, Script};
 use crate::sections::{Placed, Placing};
+use crate::sling;
 use crate::swap::{self, Move, Other, Recent, Swap};
 use crate::things;
 use crate::view::{self, View};
@@ -118,6 +119,9 @@ pub enum Phase {
     Knocked { vy: Option<Fixed> },
     /// A launcher that fired this many frames ago.
     Fired(u8),
+    /// A sling that caught the player this many frames ago (see
+    /// [`sling`](crate::sling)).
+    Caught(u8),
     /// An object in the player's hands, which move it.
     Held,
     /// An object thrown, until it breaks or is removed, or dropped, until
@@ -571,6 +575,7 @@ impl World {
                 Phase::Rope { reach, .. } => [20, reach.into()],
                 Phase::Gone => [21, 0],
                 Phase::Open => [22, 0],
+                Phase::Caught(since) => [23, since],
             });
             if let Phase::Wobbling { thrown, .. } = t.phase {
                 out.push(thrown.map_or(0, |n| n.saturating_add(1)));
@@ -977,6 +982,17 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
         p.rope_run.into(),
         p.rope_fall.into(),
     ]);
+    match p.sling {
+        Some(s) => {
+            out.push(1);
+            count(out, s.thing);
+            out.extend(s.at.0.to_le_bytes());
+            out.extend(s.at.1.to_le_bytes());
+            out.extend(s.since.to_le_bytes());
+            sling_bytes(out, &s.values);
+        }
+        None => out.push(0),
+    }
     match p.hands {
         Some(h) => {
             out.push(1);
@@ -1033,6 +1049,22 @@ fn spring_bytes(out: &mut Vec<u8>, s: &Spring) {
         s.max_fall,
     ] {
         fixed(out, v);
+    }
+}
+
+/// Appends the values of a sling that has caught the player to `out`,
+/// for [`World::state_bytes`]: those that matter after the catch.
+fn sling_bytes(out: &mut Vec<u8>, s: &Sling) {
+    out.extend([s.hold, s.glide, s.breaks.into(), s.rest]);
+    for v in [
+        s.shot.x,
+        s.shot.y,
+        s.steer,
+        s.steer_response,
+        s.gravity,
+        s.max_fall,
+    ] {
+        out.extend(v.to_bits().to_le_bytes());
     }
 }
 
@@ -1152,6 +1184,8 @@ pub fn step(world: &mut World, input: &InputFrame) {
             world.player.hit(&mut world.events);
         } else if entrance::throw(world, &input.players[0]) {
             // Thrown out of the entrance, the player moves by its rules.
+        } else if sling::fly(world, &input.players[0]) {
+            // Held or shot by a sling, the player moves by its rules.
         } else if loss::update(world) {
             // The loss moves the characters.
         } else if ride::unseat(world) {
@@ -1170,6 +1204,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
                 &mut world.events,
             );
             rope::catch(world);
+            sling::catch(world);
         }
         let hurt_now = things::update(world, previous_feet, frozen);
         flow::update(world, hurt_by.or(hurt_now), facing);

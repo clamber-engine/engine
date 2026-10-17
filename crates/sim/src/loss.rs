@@ -185,6 +185,7 @@ pub(crate) fn update(world: &mut World) -> bool {
     p.spring = None;
     p.spring_arc = None;
     p.rope = None;
+    p.sling = None;
     p.rope_fall = false;
     p.touched.clear();
     world.loss = Some(loss);
@@ -225,6 +226,7 @@ fn take_over(world: &mut World) {
     player.spring = None;
     player.spring_arc = None;
     player.rope = None;
+    player.sling = None;
     player.rope_fall = false;
     player.state = State::Swap;
     world.player = player;

@@ -794,7 +794,7 @@ fn take(world: &mut World, start: Option<View>) {
 /// The offsets `player` takes a collectible from, by what it's doing at
 /// the end of a step. Down held on the ground for `crouch_start` frames
 /// (above 0) is crouching.
-fn span(reach: &Reach, player: &Player, crouch_start: u8) -> Span {
+pub(crate) fn span(reach: &Reach, player: &Player, crouch_start: u8) -> Span {
     if let Some(age) = player.jump_age {
         if age < reach.jump_early {
             return reach.jump;

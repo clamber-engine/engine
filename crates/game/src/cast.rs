@@ -320,6 +320,7 @@ fn thing_animation(world: &World, thing: &Thing) -> Option<&'static str> {
         | Phase::Flying { .. }
         | Phase::Swaying { .. }
         | Phase::Rope { .. }
+        | Phase::Caught(_)
         | Phase::Broken
         | Phase::Item { .. }
         | Phase::Landed(_)

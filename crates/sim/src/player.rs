@@ -27,6 +27,7 @@ use crate::loss::Lost;
 use crate::pose::PoseClock;
 use crate::ride::Riding;
 use crate::rope::OnRope;
+use crate::sling::Slung;
 use crate::spring::{OnSpring, SpringArc};
 use crate::view;
 use crate::world::Event;
@@ -305,6 +306,9 @@ pub struct Player {
     /// Falling after sliding off a rope's end, until landing: facing
     /// doesn't change.
     pub rope_fall: bool,
+    /// Caught by a launch barrel, until it lands (see
+    /// [`sling`](crate::sling)).
+    pub sling: Option<Slung>,
 }
 
 impl Player {
@@ -386,6 +390,7 @@ impl Player {
             rope_dir: None,
             rope_run: false,
             rope_fall: false,
+            sling: None,
         };
         player.ground = level
             .collision
@@ -421,6 +426,7 @@ impl Player {
         self.ground = None;
         self.spring = None;
         self.spring_arc = None;
+        self.sling = None;
         self.rope = None;
         self.rope_fall = false;
         self.coyote = None;
@@ -443,6 +449,7 @@ impl Player {
         self.ground = None;
         self.spring = None;
         self.spring_arc = None;
+        self.sling = None;
         self.rope = None;
         self.rope_fall = false;
         self.coyote = None;
@@ -581,6 +588,23 @@ impl Player {
         self.clear_movement();
     }
 
+    /// Caught by a sling where the player moved to on this frame: it
+    /// stops, off the ground, facing as it is.
+    pub(crate) fn catch_in_sling(&mut self, slung: Slung, events: &mut Vec<Event>) {
+        if self.state == State::Roll {
+            events.push(Event::RollEnd);
+        }
+        self.vel = Vec2::default();
+        self.target = Fixed::ZERO;
+        self.clear_movement();
+        self.rope_run = false;
+        self.rope_fall = false;
+        self.unseated = false;
+        self.frozen = 0;
+        self.sling = Some(slung);
+        self.state = State::Fall;
+    }
+
     /// Lets go of the rope held, if any, without moving.
     pub(crate) fn let_go_of_rope(&mut self) {
         if self.rope.take().is_some() {
@@ -642,6 +666,7 @@ impl Player {
         self.vel = Vec2::default();
         self.spring = None;
         self.spring_arc = None;
+        self.sling = None;
         self.rope = None;
         self.rope_fall = false;
         self.frozen = 0;
@@ -2047,13 +2072,30 @@ impl Player {
             self.target = cap * Fixed::from_int(dir);
             self.vel.x = ease(self.vel.x, self.target, values.steer_response);
         }
+        self.move_through_air(level, physics, true, events);
+        self.facing = Facing::Right;
+        if self.grounded() {
+            self.land_from_throw(input, physics);
+        }
+        self.state = self.next_state(held(Action::Action), events);
+    }
+
+    /// Moves by the speed in the air as far as the level allows, landing
+    /// on a floor it comes down on; only across without `down`.
+    pub(crate) fn move_through_air(
+        &mut self,
+        level: &Level,
+        physics: &Physics,
+        down: bool,
+        events: &mut Vec<Event>,
+    ) {
         let slope = physics[Param::FaceSlope];
         let moved = if slope > Fixed::ZERO {
             self.move_in_air_by_columns(level, physics, events)
         } else {
             self.move_horizontally(level, HALF_WIDTH, |_| true)
         };
-        if !self.grounded() {
+        if down && !self.grounded() {
             self.move_vertically(
                 level,
                 moved,
@@ -2062,18 +2104,19 @@ impl Player {
                 events,
             );
         }
-        self.facing = Facing::Right;
-        if self.grounded() {
-            // A press on the landing frame counts as on any other.
-            let window = frames(physics[Param::JumpBuffer]).max(frames(physics[Param::JumpDelay]));
-            self.jump_buffer.set_window(window);
-            self.jump_buffer
-                .update(input.pressed.contains(Action::Jump));
-            self.jump_held_since_press = input.pressed.contains(Action::Jump);
-            self.ran = held(Action::Action) && dir != 0;
-            self.lockout = 0;
-        }
-        self.state = self.next_state(held(Action::Action), events);
+    }
+
+    /// On the frame a thrown or shot player lands: a Jump press counts as
+    /// on any other landing frame, and there's no landing lockout.
+    pub(crate) fn land_from_throw(&mut self, input: &Frame, physics: &Physics) {
+        let held = |a| input.held.contains(a);
+        let window = frames(physics[Param::JumpBuffer]).max(frames(physics[Param::JumpDelay]));
+        self.jump_buffer.set_window(window);
+        self.jump_buffer
+            .update(input.pressed.contains(Action::Jump));
+        self.jump_held_since_press = input.pressed.contains(Action::Jump);
+        self.ran = held(Action::Action) && (held(Action::Left) != held(Action::Right));
+        self.lockout = 0;
     }
 
     /// Goes on with what the hands are doing at the start of a step, and
@@ -2718,7 +2761,7 @@ impl Player {
     }
 
     /// The state after this step's movement.
-    fn next_state(&self, running: bool, events: &[Event]) -> State {
+    pub(crate) fn next_state(&self, running: bool, events: &[Event]) -> State {
         if self.swap > 0 || self.hop.is_some() {
             State::Swap
         } else if self.ground_action.is_some() {

@@ -91,6 +91,7 @@ use crate::player::{Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, frames,
 use crate::pose::{self, Stance};
 use crate::ride;
 use crate::rope;
+use crate::sling;
 use crate::spring;
 use crate::stinger;
 use crate::throwers::{self, Picture};
@@ -273,6 +274,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
     hidden::leave(world, &physics);
     spring::update(world, frozen, untouchable);
     rope::update(world);
+    sling::update(world);
     // Enemies bounced on still moved this frame, as they were.
     let freeze = frames(physics[Param::BounceFreeze]);
     let facing = world.player.facing;
@@ -364,6 +366,7 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         | Phase::Squashed { .. }
         | Phase::Wobbling { .. }
         | Phase::Rope { .. }
+        | Phase::Caught(_)
         | Phase::Gone
         | Phase::Open => return false,
         Phase::Knocked { vy } => {
@@ -458,6 +461,7 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         | Behavior::Hidden(_)
         | Behavior::Spring(_)
         | Behavior::Rope(_)
+        | Behavior::Sling(_)
         | Behavior::Scenery => {}
     }
     false
@@ -1248,6 +1252,7 @@ fn interact(
             | Behavior::Hidden(_)
             | Behavior::Spring(_)
             | Behavior::Rope(_)
+            | Behavior::Sling(_)
             | Behavior::Scenery => {}
             _ if riding => {}
             _ => {

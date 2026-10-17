@@ -1,0 +1,53 @@
+{
+  "frames": [
+    {
+      "filename": "sling whole 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 171,
+        "h": 134
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 22,
+        "y": 33,
+        "w": 171,
+        "h": 134
+      },
+      "sourceSize": {
+        "w": 220,
+        "h": 200
+      },
+      "duration": 100,
+      "ticks": 6
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "sling.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 175,
+      "h": 138
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "whole",
+        "from": 0,
+        "to": 0,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 110,
+        "y": 100
+      },
+      "scale": 5,
+      "normals": "sling-normals.png"
+    }
+  }
+}

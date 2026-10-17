@@ -231,6 +231,7 @@ fn walk(player: &mut Player, ending: &Ending, physics: &Physics, events: &mut Ve
     player.spring = None;
     player.spring_arc = None;
     player.rope = None;
+    player.sling = None;
     player.rope_fall = false;
     if ending.fade.is_none() {
         let rise = physics[Param::EndRise];

@@ -33,6 +33,9 @@
 //! A rope sways; the player catches it from a jump, climbs it, turns
 //! round it, and jumps or slides off it ([`ROPE`]).
 //!
+//! A launch barrel catches the player, holds it and shoots it out
+//! ([`SLING`]).
+//!
 //! A character missing from the level joins the player when an object
 //! holding it breaks ([`Join`]).
 //!
@@ -78,6 +81,7 @@ mod ride;
 mod rope;
 mod script;
 mod sections;
+mod sling;
 mod spring;
 mod stinger;
 mod swap;
@@ -93,7 +97,7 @@ pub use archetype::{
     Entrance, Fall, HIDDEN_ITEMS, Hidden, Hit, Holder, Hutch, KEG_PIECES, Keg, MAX_AIR_STEPS,
     MAX_ARRIVE_RULES, MAX_HOP_STEPS, MAX_LETTERS, MAX_RESPONSE_PARTS, MAX_SHAKE_STAGES,
     MAX_SPRING_RUNS, MAX_STRIKE_FRAMES, MAX_THROWS, MAX_TURN_PARTS, Offsets, Opens, Reach,
-    Response, Ride, RiderReach, Rope, Span, Spring, Stinger, Throw, WalkerContact,
+    Response, Ride, RiderReach, Rope, Sling, Span, Spring, Stinger, Throw, WalkerContact,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
@@ -123,6 +127,7 @@ pub use ride::{RidePart, Riding};
 pub use rope::{OnRope, ROPE};
 pub use script::{InputFrame, Script};
 pub use sections::{Opening, Placed, Placing, Sections, Spot, Window};
+pub use sling::{SLING, Slung};
 pub use spring::{OnSpring, SPRING, SpringArc, top as spring_top};
 pub use swap::{Move, Other, Recent, Swap};
 pub use swim::swim_depth;

@@ -143,7 +143,10 @@ pub(crate) fn update(world: &mut World, frozen: bool, untouchable: bool) {
     if frozen && world.player.state == State::Bounce {
         return;
     }
-    let untouchable = untouchable || world.player.riding.is_some() || world.swap.is_some();
+    let untouchable = untouchable
+        || world.player.riding.is_some()
+        || world.player.sling.is_some()
+        || world.swap.is_some();
     for i in 0..world.things.len() {
         let thing = &world.things[i];
         let Some(s) = spring(thing).filter(|_| thing.active) else {

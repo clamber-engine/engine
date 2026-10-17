@@ -396,6 +396,21 @@
 #   it round in `turn_frames`, facing the other way from the
 #   `turn_facing`th. Jump with Left or Right jumps off at `jump_speed` up,
 #   plus one frame's climbing toward the target without Jump.
+# - `sling`: a launch barrel, which never moves. At the end of a frame,
+#   after the player's move, it catches a player within its `reach`, a
+#   table as a collectible's (see `collect`), measured `left_shift` px
+#   right of it facing left. The player stops there, and on the next
+#   frame is moved by whole px onto the sling's position, its feet line
+#   on its y, and held, facing as it was, until `hold` frames after the
+#   catch. On the frame after those it's shot at `shot = [x, y]` (+y
+#   down), facing left if that's leftward and right otherwise, without
+#   moving yet, and the sling is gone if it `breaks`. It moves at that
+#   speed for `glide` frames, and then flies until it lands: each frame
+#   its speed across closes `steer_response` of the gap to `steer` toward
+#   the way held (to 0 with neither), rounded toward zero to 1/256 px a
+#   frame, and its speed down grows by `gravity` up to `max_fall`. Nothing
+#   held makes a difference before the flight. After a catch, the sling
+#   catches no one for `rest` frames.
 # - `scenery`: stands where it's placed and nothing touches it: it isn't
 #   in anyone's way, never hurts and is never taken. With a view, it's in
 #   the level while its position is near the view, as a thrower is, and
@@ -656,6 +671,36 @@ view_top = 41
 turn_frames = 8
 turn_facing = 5
 jump_speed = 6.125
+
+# title-1's launch barrel that shoots left (spec/behavior/launch-barrel.md).
+# The one that shoots down has its own `hold`, `shot`, `glide` and
+# `breaks`, from the importer. The size is Clamber's own: it's what's
+# drawn, and touches nothing.
+[archetypes.sling]
+behavior = "sling"
+size = [32, 32]
+offset = 0
+left_shift = -3
+hold = 15
+shot = [-8.46484375, 0]
+glide = 23
+breaks = false
+rest = 62
+steer = 3
+steer_response = 0.03125
+gravity = 0.4375
+max_fall = 8
+
+[archetypes.sling.reach]
+stand = [-24, 27, -34, 32]
+walk = [-24, 27, -34, 32]
+crouch = [-27, 18, -38, 23]
+roll = [-22, 27, -30, 30]
+jump = [-24, 27, -34, 32]
+air = [-24, 24, -13, 49]
+air_below = []
+jump_early = 6
+land_hold = 0
 
 # title-1's hidden objects (spec/behavior/hidden-objects.md). These are
 # the values of one that releases a bunch: struck by the ground action
