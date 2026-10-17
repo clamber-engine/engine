@@ -3,7 +3,7 @@
 //! data is any real game's: it's made up from the format specs,
 //! `spec/formats/level-ground.md`, `spec/formats/graphics.md`,
 //! `spec/formats/placements.md`, `spec/formats/level-start.md`,
-//! `spec/formats/sound.md` and `spec/formats/songs.md`.
+//! `spec/formats/view-limits.md`, `spec/formats/sound.md` and `spec/formats/songs.md`.
 
 use std::fs;
 use std::path::PathBuf;
@@ -14,7 +14,7 @@ use clamber_import::{
     LevelParts, LevelSong, Location, NIBBLE_HEADER, PackedGround, installed,
 };
 use clamber_input::{Action, Actions, Frame};
-use clamber_level::{Level, Vec2};
+use clamber_level::{Fixed, Level, Vec2};
 use clamber_sim::{InputFrame, World, generic_feel, step};
 
 const COLUMNS: usize = 20;
@@ -103,6 +103,16 @@ fn start_record() -> Vec<u8> {
     [24u16, 31].iter().flat_map(|w| w.to_le_bytes()).collect()
 }
 
+/// A view-limit record: the picture's left edge from 16 to 300; the
+/// view's top from 0 to 288 at the usual rates, and from x 400, from 100
+/// to 200 at the quick ones.
+fn view_limits() -> Vec<u8> {
+    [16u16, 300, 0, 0, 288, 0, 400, 100, 200, 1, 0xFFFF]
+        .iter()
+        .flat_map(|w| w.to_le_bytes())
+        .collect()
+}
+
 /// Where each part goes in the made-up image.
 fn parts() -> LevelParts {
     LevelParts {
@@ -117,6 +127,7 @@ fn parts() -> LevelParts {
         placements: Some(Location::new(BANK, 0x7000)),
         start: Some(Location::new(BANK, 0x7400)),
         restart: None,
+        view_limits: Some(Location::new(BANK, 0x7500)),
         song: Some(LevelSong {
             sample_table: Location::new(BANK, 0x8000),
             shared_samples: Location::new(BANK, 0x8010),
@@ -186,6 +197,7 @@ fn image() -> Image {
         (p.placements.unwrap(), placement_list()),
         (Location::new(BANK, 0x7208), group_members()),
         (p.start.unwrap(), start_record()),
+        (p.view_limits.unwrap(), view_limits()),
         (Location::new(BANK, SAMPLE), sample_record()),
         (Location::new(BANK, SONG), song_block()),
     ]
@@ -300,6 +312,34 @@ fn places_the_objects_in_the_placement_list() {
     );
     let member = &level.entities[1].params;
     assert_eq!(member["group"].as_integer(), Some(2));
+}
+
+/// The view-limit record gives the level-wide camera limits across, and
+/// the vertical limits by x.
+#[test]
+fn keeps_the_view_within_the_view_limit_record() {
+    let (level, _) = imported_level("view-limits");
+    let px = |n| Fixed::from_int(n);
+    let limits = level.camera.rule.limits.unwrap();
+    assert_eq!((limits.x, limits.w), (px(16), px(300 + 256 - 16)));
+    let rule = |x, y| level.camera_at(Vec2::ints(x, y));
+    for (x, top, bottom, quick) in [
+        (0, 0, 288, false),
+        (399, 0, 288, false),
+        (400, 100, 200, true),
+    ] {
+        for y in [-40, 300] {
+            let r = rule(x, y);
+            let l = r.limits.unwrap();
+            assert_eq!((l.x, l.w), (limits.x, limits.w), "at {x}, {y}");
+            assert_eq!(
+                (l.y, l.y + l.h - px(224)),
+                (px(top), px(bottom)),
+                "at {x}, {y}"
+            );
+            assert_eq!(r.quick, Some(quick), "at {x}, {y}");
+        }
+    }
 }
 
 #[test]

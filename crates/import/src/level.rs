@@ -3,7 +3,8 @@
 //! `spec/formats/graphics.md` for its layers.
 //!
 //! Its objects come from its placement list
-//! (`spec/formats/placements.md`), and its music from its song
+//! (`spec/formats/placements.md`), its camera rules from its view-limit
+//! record ([`crate::ViewLimits`]), and its music from its song
 //! ([`crate::music`]).
 //!
 //! No format spec says where a level's grid size and type count are
@@ -17,7 +18,7 @@ use clamber_level::{Area, Collision, Entity, FORMAT, Fixed, Level, Rect, Region,
 use crate::{
     BANK_SIZE, Background, COLUMN_BANDS, Decoder, GridPicture, Ground, Image, KEG, Known, LEVELS,
     Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures, Placements, StartRecord,
-    TileSet, kind_of, kind_rows, unpack, unpack_nibbles,
+    TileSet, ViewLimits, kind_of, kind_rows, unpack, unpack_nibbles,
 };
 
 /// Lines in a band.
@@ -59,6 +60,8 @@ pub struct LevelParts {
     pub start: Option<Location>,
     /// The restart record, if the level has a restart point.
     pub restart: Option<Location>,
+    /// The view-limit record, if the level has one (`view-limits.md`).
+    pub view_limits: Option<Location>,
     /// The level's song, if it has its music.
     pub song: Option<LevelSong>,
 }
@@ -200,6 +203,15 @@ impl LevelDecoder {
         // No format spec says how an image records an area that starts
         // the player riding, so none does.
         level.regions.extend(water(&ground, false));
+        if let Some(at) = p.view_limits {
+            let bytes = image
+                .at(at)
+                .ok_or_else(|| "the level's view-limit record isn't in the image".to_string())?;
+            let limits = ViewLimits::read(bytes)?;
+            let regions;
+            (level.camera.rule, regions) = limits.camera(width, height);
+            level.regions.extend(regions);
+        }
         if let Some(list) = p.placements {
             (level.entities, level.sections) = self.objects(image, list, height)?;
         }

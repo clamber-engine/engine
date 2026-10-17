@@ -40,6 +40,7 @@ mod placements;
 mod songs;
 mod sound;
 mod sprites;
+mod view_limits;
 mod voice_output;
 mod voices;
 
@@ -54,7 +55,9 @@ pub use graphics::{
 pub use ground::{Below, COLUMN_BANDS, Ground, Half, Layout, Surface, TITLE_2_ORIGIN};
 pub use image::{COPIER_HEADER, Catalog, Image, Known, MAX_IMAGE_SIZE, Outcome, Sha256Hash};
 pub use installed::{Installed, check_shareable, installed};
-pub use kinds::{END, FINGERPRINT_SIZE, KEG, Kind, KindRow, WALKER, candidate, kind_of, kind_rows};
+pub use kinds::{
+    END, EXIT, FINGERPRINT_SIZE, KEG, Kind, KindRow, WALKER, candidate, kind_of, kind_rows,
+};
 pub use level::{LevelDecoder, LevelParts, PackedGround, water};
 pub use level_map::{
     APPEARANCE_OFFSET, CORNER_SIZE, Direction, FIRST_CORNER, LAST_CORNER, LevelMap, Point,
@@ -80,6 +83,7 @@ pub use sprites::{
     SpritePalette, TABLE_ENTRY_SIZE, TableEntry, read_frames, sprite_sheet,
 };
 
+pub use view_limits::{VIEW_HEIGHT, VIEW_WIDTH, VerticalLimit, ViewLimits};
 pub use voice_output::{Mixer, VoiceOutput};
 pub use voices::{Envelope, MAX_LEVEL, Part, due, period};
 

@@ -122,6 +122,7 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
         placements: Some(at(Data::PlacementList)?),
         start: Some(at(Data::StartRecord)?),
         restart: Some(at(Data::RestartRecord)?),
+        view_limits: Some(at(Data::ViewLimits)?),
         // `sound.md`: "The first level plays song 0".
         song: Some(LevelSong {
             sample_table: at(Data::SampleTable)?,
