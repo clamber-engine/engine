@@ -254,6 +254,20 @@ params! {
     SwitchSteps => "switch_steps",
     /// As `switch_steps`, when the approach frame is a later one.
     SwitchLateSteps => "switch_late_steps",
+    /// With a stride cycle (`stride_steps`), the frames from a jump's
+    /// landing are in no gait: no turn starts, and facing follows the
+    /// input as in the air. Running starts on the switch frame (see
+    /// `switch_from`) if action and a direction are held; otherwise
+    /// walking, running or standing starts this many frames after a
+    /// switch frame later than the landing frame. Whole frames.
+    LandingModeWait => "landing_mode_wait",
+    /// As `landing_mode_wait`, the frames after the landing frame when
+    /// the switch frame is the landing frame and that is the last frame
+    /// of `switch_steps` or `switch_late_steps`. Whole frames.
+    LandingModeOnLast => "landing_mode_on_last",
+    /// As `landing_mode_on_last`, when the landing frame comes after that
+    /// last frame. Whole frames.
+    LandingModeAfterLast => "landing_mode_after_last",
     /// Above 0, a jump pressed in the air is buffered only while jump
     /// stays held: letting go before the jump is possible forgets it.
     /// 0 keeps a buffered press for all of `jump_buffer`.

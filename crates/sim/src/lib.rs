@@ -91,7 +91,7 @@ pub use keg::{Burst, Resume};
 pub use loss::{Loss, Lost};
 pub use player::{
     Act, Boost, Crouch, Facing, Gait, GroundAction, HALF_WIDTH, HEIGHT, Hands, Holds, Knockout,
-    Player, ROLL, Roll, RollSize, SWAP_FRAMES, State, Stride,
+    Landing, Player, ROLL, Roll, RollSize, SWAP_FRAMES, State, Stride,
 };
 pub use pose::{Air, Pose, PoseClock, Stance, hurt_pose, pose, stance};
 pub use record::record;

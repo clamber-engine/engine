@@ -992,8 +992,8 @@ impl Player {
         let slide = frames(physics[Param::RollStopSlide]);
         // With a stride cycle, whether a turn starts is decided once the
         // frame's speed is known.
-        let striding = physics[Param::StrideSteps] >= Fixed::ONE
-            && turn_time > 0
+        let strides = physics[Param::StrideSteps] >= Fixed::ONE && turn_time > 0;
+        let striding = strides
             && !busy.keep_facing
             && acting.is_none()
             && self.grounded()
@@ -1067,6 +1067,11 @@ impl Player {
             // ends the turn under way where it is.
             self.turn = None;
             self.facing
+        } else if striding && matches!(self.gait, Gait::Landing(_)) {
+            // On the frames after a landing, facing follows the input as
+            // in the air.
+            self.turn = None;
+            facing_toward(dir, self.facing)
         } else if turn_time > 0 && self.grounded() && !events.contains(&Event::JumpStart) {
             self.turn_on_ground(dir, turn_time, !striding)
         } else {
@@ -1169,8 +1174,9 @@ impl Player {
             None => false,
         };
         if !striding {
-            // Where the stride cycle starts after a landing, a roll or its
-            // stop isn't in the spec; the player starts out standing.
+            // In the air, rolling and in a roll's stop, the player isn't
+            // walking or running; landings and the end of a roll set the
+            // gait below.
             self.gait = Gait::Standing;
         } else if self.stride(run_dir, held(Action::Action), turn_ends, physics) {
             self.facing = facing_of(-direction(self.facing));
@@ -1403,7 +1409,12 @@ impl Player {
                     self.lone_run = false;
                 }
             }
+            let carried = self.roll.is_some_and(|r| r.carry);
             self.advance_timed_roll(held(Action::Action), physics, events);
+            if carried && events.contains(&Event::RollEnd) && strides && self.grounded() {
+                // A roll that carried on ends walking, whatever is held.
+                self.gait = Gait::Walking(Stride::START);
+            }
             if self.grounded() && !events.contains(&Event::Land) {
                 self.air_stopped = false;
             }
@@ -1437,12 +1448,31 @@ impl Player {
             );
             // A jump can start `lockout` frames after the switch frame,
             // which is otherwise the frame after landing.
-            self.lockout = match jump_age {
+            let (switch, settle) = match jump_age {
                 Some(land) if switch_from > 0 && !self.rolled_jump => {
-                    (lockout + self.switch_wait(land, physics)).saturating_sub(1)
+                    self.switch_wait(land, physics)
                 }
-                _ => lockout,
+                _ => (1, 1 + frames(physics[Param::LandingModeWait])),
             };
+            self.lockout = (lockout + switch).saturating_sub(1);
+            if jump_age.is_some()
+                && strides
+                && self.grounded()
+                && self.roll.is_none()
+                && self.state != State::Roll
+            {
+                // After a jump the player is in no gait until its switch
+                // frame or `settle`; one running on landing runs at once.
+                self.gait = if switch == 0 && held(Action::Action) && held_dir != 0 {
+                    Gait::Running(Stride::START)
+                } else {
+                    Gait::Landing(Landing {
+                        frame: 0,
+                        switch,
+                        settle,
+                    })
+                };
+            }
         }
         self.jump_age = if self.grounded() && !self.takeoff {
             None
@@ -1975,6 +2005,20 @@ impl Player {
                     Gait::Running(stride)
                 }
             }
+            Gait::Landing(mut landing) => {
+                landing.frame += 1;
+                if landing.frame == landing.switch && action && dir != 0 {
+                    Gait::Running(Stride::START)
+                } else if landing.frame < landing.settle {
+                    Gait::Landing(landing)
+                } else if dir == 0 {
+                    Gait::Standing
+                } else if action {
+                    Gait::Running(Stride::START)
+                } else {
+                    Gait::Walking(Stride::START)
+                }
+            }
             // Standing, or at the end of a turn.
             _ => {
                 if opposite {
@@ -2010,8 +2054,10 @@ impl Player {
     }
 
     /// How many frames after a jump's landing frame its switch frame is,
-    /// for a landing `land` frames after the jump started.
-    fn switch_wait(&self, land: u8, physics: &Physics) -> u8 {
+    /// and how many until walking, running or standing starts if running
+    /// doesn't start on the switch frame, for a landing `land` frames
+    /// after the jump started.
+    fn switch_wait(&self, land: u8, physics: &Physics) -> (u8, u8) {
         let from = frames(physics[Param::SwitchFrom]);
         // Landing before the approach frame, the player is on the floor
         // when the approach frame comes.
@@ -2021,10 +2067,22 @@ impl Player {
         } else {
             Param::SwitchSteps
         };
+        let stage = |step: u32| u32::from(approach) + step - 1;
         let after = clamber_pack::physics::steps(physics[set])
-            .filter(|&step| u32::from(approach) + step - 1 > u32::from(land))
+            .filter(|&step| stage(step) > u32::from(land))
             .count();
-        approach.saturating_sub(land) + after as u8
+        let switch = approach.saturating_sub(land) + after as u8;
+        let settle = if switch > 0 {
+            switch + frames(physics[Param::LandingModeWait])
+        } else if clamber_pack::physics::steps(physics[set])
+            .last()
+            .is_some_and(|step| stage(step) == u32::from(land))
+        {
+            frames(physics[Param::LandingModeOnLast])
+        } else {
+            frames(physics[Param::LandingModeAfterLast])
+        };
+        (switch, settle)
     }
 
     /// The state after this step's movement.
@@ -2684,6 +2742,22 @@ pub enum Gait {
     Standing,
     Walking(Stride),
     Running(Stride),
+    /// On the frames after a jump's landing, before any of the others
+    /// starts. No turn starts.
+    Landing(Landing),
+}
+
+/// How far into the frames after a jump's landing the player is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Landing {
+    /// Frames since the landing frame.
+    pub frame: u8,
+    /// The frame after the landing frame running can start on, with
+    /// action and a direction held.
+    pub switch: u8,
+    /// The frame after the landing frame walking, running or standing
+    /// starts on otherwise.
+    pub settle: u8,
 }
 
 /// Progress through the stride cycle while walking or running.

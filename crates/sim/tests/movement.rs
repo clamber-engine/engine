@@ -844,6 +844,225 @@ fn classic_landing_after_a_roll_jump_has_no_switch_frame() {
     assert_eq!(e, Some(l + 3));
 }
 
+/// A Classic 1 standing jump from `new`, pressed on frame 0 and held for
+/// `jump` frames, then `held(n)` on the n-th frame from the landing frame
+/// L and `air` before it. Returns L and the rows and gaits from L on.
+fn classic_after_landing(
+    new: impl Fn() -> Play,
+    jump: usize,
+    air: &[Action],
+    held: impl Fn(usize) -> Vec<Action>,
+) -> (usize, Vec<Row>, Vec<Gait>) {
+    let mut probe = new();
+    let mut steps = hold(&mut probe, &[Action::Jump], jump);
+    steps.extend(hold(&mut probe, air, 80));
+    let land = first(&steps, Event::Land).unwrap();
+
+    let mut w = new();
+    let mut rows = play(&mut w, land, |f| {
+        let mut keys = if f < jump { vec![Action::Jump] } else { vec![] };
+        // Action from take-off on, not with the press, so no roll starts.
+        keys.extend(air.iter().filter(|&&a| f > 0 || a != Action::Action));
+        keys
+    });
+    let mut gaits = Vec::new();
+    for n in 0..30 {
+        rows.extend(play(&mut w, 1, |_| held(n)));
+        gaits.push(w.player.gait);
+    }
+    assert!(rows[land].events.contains(&Event::Land));
+    (land, rows.split_off(land), gaits)
+}
+
+/// The gait as "landing", or the mode and stride counter in 1/256.
+fn mode(gait: Gait) -> (&'static str, i64) {
+    match gait {
+        Gait::Landing(_) => ("landing", 0),
+        Gait::Standing => ("standing", 0),
+        Gait::Walking(s) => ("walking", grains(s.left)),
+        Gait::Running(s) => ("running", grains(s.left)),
+    }
+}
+
+#[test]
+fn classic_after_a_landing_the_mode_waits() {
+    use Action::{Action as A, Left as L, Right as R};
+    // spec/behavior/ground-speed.md, "After a landing", the example: a
+    // standing jump facing right with Jump held 20 frames (M = L + 1).
+    // Left held from L + 2.
+    let (_, rows, gaits) =
+        classic_after_landing(classic, 20, &[], |n| if n >= 2 { vec![L] } else { vec![] });
+    let vx: Vec<_> = rows[..11].iter().map(|r| (r.vx * 256.0) as i64).collect();
+    assert_eq!(
+        vx,
+        [0, 0, -64, -120, -169, -211, -248, -281, -309, -334, -356]
+    );
+    assert_eq!(rows[1].facing, Facing::Right);
+    assert!(rows[2].events.contains(&Event::Turn));
+    assert!(rows[2..11].iter().all(|r| r.facing == Facing::Left));
+    assert_eq!(frames_with(&rows[..11], Event::Turn), [2]);
+    let modes: Vec<_> = gaits[..11].iter().map(|&g| mode(g)).collect();
+    assert!(modes[..7].iter().all(|&m| m == ("landing", 0)), "{modes:?}");
+    assert_eq!(
+        modes[7..],
+        [
+            ("walking", 256),
+            ("walking", 160),
+            ("walking", 64),
+            ("walking", 219)
+        ]
+    );
+
+    // Action held from take-off, Right added from L + 3.
+    let (_, rows, gaits) =
+        classic_after_landing(
+            classic,
+            20,
+            &[A],
+            |n| {
+                if n >= 3 { vec![A, R] } else { vec![A] }
+            },
+        );
+    let vx: Vec<_> = rows[..11].iter().map(|r| (r.vx * 256.0) as i64).collect();
+    assert_eq!(vx, [0, 0, 0, 96, 180, 253, 317, 373, 422, 465, 502]);
+    let modes: Vec<_> = gaits[..11].iter().map(|&g| mode(g)).collect();
+    assert!(modes[..7].iter().all(|&m| m == ("landing", 0)), "{modes:?}");
+    assert_eq!(
+        modes[7..],
+        [
+            ("running", 256),
+            ("running", 160),
+            ("running", 59),
+            ("running", 207)
+        ]
+    );
+
+    // With Right and Action both held from take-off, running starts on M.
+    let (_, _, gaits) = classic_after_landing(classic, 20, &[A, R], |_| vec![A, R]);
+    assert_eq!(mode(gaits[0]), ("landing", 0));
+    assert_eq!(mode(gaits[1]), ("running", 256));
+}
+
+#[test]
+fn classic_after_a_landing_on_its_switch_frame() {
+    use Action::{Action as A, Right as R};
+    // spec/behavior/ground-speed.md, "After a landing": with M = L, the
+    // mode starts on L + 9 after the seventh stage frame (Jump held 10
+    // frames) and on L + 10 on it (Jump held 14 frames); running with
+    // Action and a direction held starts on L itself.
+    for (jump, settle) in [(10, 9), (14, 10)] {
+        let (_, _, gaits) = classic_after_landing(classic, jump, &[], |_| vec![R]);
+        let first = gaits.iter().position(|&g| mode(g).0 != "landing").unwrap();
+        assert_eq!(mode(gaits[0]), ("landing", 0), "jump {jump}");
+        assert_eq!(first, settle, "jump {jump}");
+        assert_eq!(mode(gaits[first]), ("walking", 256), "jump {jump}");
+
+        let (_, _, gaits) = classic_after_landing(classic, jump, &[A, R], |_| vec![A, R]);
+        assert_eq!(mode(gaits[0]), ("running", 256), "jump {jump}");
+    }
+}
+
+#[test]
+fn classic_no_turn_starts_after_a_landing() {
+    use Action::{Left as L, Right as R};
+    // spec/behavior/ground-speed.md, "After a landing": facing follows the
+    // input on every landing frame, K = L + 7 included, so the direction
+    // held there is forward.
+    let (_, rows, gaits) = classic_after_landing(classic, 20, &[], |n| match n {
+        2 => vec![L],
+        7.. => vec![R],
+        _ => vec![],
+    });
+    assert_eq!(frames_with(&rows[..12], Event::Turn), [2, 7]);
+    assert_eq!(rows[7].facing, Facing::Right);
+    assert_eq!(mode(gaits[7]), ("walking", 256));
+
+    // Standing from K, the usual rules apply: the other way held on
+    // L + 8 starts an 8-frame turn, and facing changes 4 frames in.
+    let (_, rows, gaits) = classic_after_landing(classic, 20, &[], |n| match n {
+        2 => vec![L],
+        8.. => vec![R],
+        _ => vec![],
+    });
+    assert_eq!(mode(gaits[7]), ("standing", 0));
+    assert_eq!(frames_with(&rows[..20], Event::Turn), [2, 12]);
+}
+
+/// Plays `n` frames of `w`, holding `held(frame)` on each, and returns
+/// the rows and each frame's gait.
+fn play_gaits(
+    w: &mut Play,
+    n: usize,
+    held: impl Fn(usize) -> Vec<Action>,
+) -> (Vec<Row>, Vec<Gait>) {
+    let mut rows = Vec::new();
+    let mut gaits = Vec::new();
+    for f in 0..n {
+        rows.extend(play(w, 1, |_| held(f)));
+        gaits.push(w.player.gait);
+    }
+    (rows, gaits)
+}
+
+#[test]
+fn classic_after_a_roll_carries_on_it_walks() {
+    use Action::{Action as A, Left as L, Right as R};
+    // spec/behavior/ground-speed.md, "After a roll": a roll pressed on 0
+    // (D = 29) with Action held through D carries on, and walks from
+    // D + 3, the `roll_end` frame, whatever is held. With the opposite
+    // direction held, a turn starts at the first turn check, the end of
+    // step 1. (Steering in the carry-on isn't in the spec, so nothing is
+    // held on D + 3, and Left from D + 4.)
+    let mut w = classic();
+    let (rows, gaits) = play_gaits(&mut w, 45, |f| match f {
+        ..30 => vec![A, R],
+        30..32 => vec![R],
+        32 => vec![],
+        _ => vec![L],
+    });
+    assert_eq!(frames_with(&rows, Event::RollEnd), [32]);
+    assert_eq!(mode(gaits[31]), ("standing", 0));
+    assert_eq!(mode(gaits[32]), ("walking", 256));
+    let rate = gaits[33..]
+        .iter()
+        .position(|&g| !matches!(g, Gait::Walking(s) if s.step == 1))
+        .unwrap();
+    assert_eq!(frames_with(&rows[..34], Event::Turn), NONE);
+    let turn = frames_with(&rows, Event::Turn)[0] - 4;
+    assert_eq!(turn, 33 + rate);
+    assert_eq!(mode(gaits[turn]), ("standing", 0));
+
+    // With Action and a direction held, running starts at the end of
+    // step 2.
+    let mut w = classic();
+    let (rows, gaits) = play_gaits(&mut w, 45, |_| vec![A, R]);
+    assert_eq!(frames_with(&rows, Event::RollStart), [0]);
+    assert_eq!(mode(gaits[32]), ("walking", 256));
+    let run = gaits
+        .iter()
+        .position(|&g| matches!(g, Gait::Running(_)))
+        .unwrap();
+    assert!(matches!(gaits[run - 1], Gait::Walking(s) if s.step == 2));
+}
+
+#[test]
+fn classic_after_a_roll_stops_it_stands() {
+    use Action::{Action as A, Right as R};
+    // spec/behavior/ground-speed.md, "After a roll": a roll pressed on 0
+    // that stops (Action released, D = 29) stands on D + 17 whatever is
+    // held, and with Right held walks from D + 18.
+    let mut w = classic();
+    let (rows, gaits) = play_gaits(&mut w, 50, |f| match f {
+        0 => vec![A],
+        1..29 => vec![],
+        _ => vec![R],
+    });
+    assert_eq!(frames_with(&rows, Event::RollEnd), [29]);
+    assert_eq!(mode(gaits[29 + 17]), ("standing", 0));
+    assert_eq!(rows[29 + 17].vx, 0.0);
+    assert_eq!(mode(gaits[29 + 18]), ("walking", 256));
+}
+
 /// No `jump_start` frames.
 const NONE: [usize; 0] = [];
 

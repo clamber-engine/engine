@@ -75,6 +75,9 @@ switch_from = 0
 switch_reach = 0
 switch_steps = []
 switch_late_steps = []
+landing_mode_wait = 0
+landing_mode_on_last = 0
+landing_mode_after_last = 0
 jump_buffer_hold = 0
 jump_start_hold = 0
 takeoff_wait = 0
@@ -415,6 +418,12 @@ switch_from = 20
 switch_reach = 71
 switch_steps = [3, 7, 12, 16]
 switch_late_steps = [2, 6, 11, 15]
+# After a jump's landing, walking, running or standing starts 6 frames
+# after a later switch frame, or 10 or 9 after a landing that is itself
+# the switch frame (ground-speed.md, "After a landing").
+landing_mode_wait = 6
+landing_mode_on_last = 10
+landing_mode_after_last = 9
 jump_buffer = 12
 jump_buffer_hold = 1
 # Where the ground simply ends a press on the leave frame still jumps,
