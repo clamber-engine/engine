@@ -56,12 +56,18 @@ pub enum Outcome {
     Complete,
     /// The last life was lost. The world no longer changes.
     GameOver,
+    /// The lead left the area through the exit at this entity index. The
+    /// world no longer changes.
+    Exited(usize),
 }
 
 impl Outcome {
     /// The world no longer changes.
     pub fn is_over(self) -> bool {
-        matches!(self, Outcome::Complete | Outcome::GameOver)
+        matches!(
+            self,
+            Outcome::Complete | Outcome::GameOver | Outcome::Exited(_)
+        )
     }
 }
 
@@ -88,6 +94,8 @@ pub enum FlowEvent {
     Life,
     /// This letter joined the letters taken.
     Letter(u8),
+    /// The lead left the area through the exit at this entity index.
+    Exited(usize),
 }
 
 /// Progress through the level.

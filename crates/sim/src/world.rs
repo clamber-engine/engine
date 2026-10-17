@@ -13,6 +13,7 @@ use crate::collect;
 use crate::dimming::{self, Dimming};
 use crate::ending::{self, Ending};
 use crate::entrance::{self, Entering};
+use crate::exit::{self, Leaving};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
 use crate::follow::{self, Lead, Mode};
 use crate::join::{self, Join};
@@ -197,6 +198,9 @@ pub struct World {
     /// The walk-out after passing the level's end marker, once it has
     /// started.
     pub ending: Option<Ending>,
+    /// The walk-out after an exit took over the lead, once it has
+    /// started.
+    pub leaving: Option<Leaving>,
     /// The dimming of the level's background, once it has started.
     pub dimming: Option<Dimming>,
     /// Things appearing by sections, if the level's do and there's a
@@ -308,6 +312,7 @@ impl World {
             events: Vec::new(),
             flow: Flow::new(),
             ending: None,
+            leaving: None,
             dimming: None,
             placing,
             resume: None,
@@ -558,6 +563,10 @@ impl World {
             Outcome::Dying(left) => out.extend([1, left]),
             Outcome::Complete => out.push(2),
             Outcome::GameOver => out.push(3),
+            Outcome::Exited(i) => {
+                out.push(4);
+                count(&mut out, i);
+            }
         }
         out.push(f.lives);
         match self.ending {
@@ -566,6 +575,15 @@ impl World {
                 out.extend(e.frame.to_le_bytes());
                 out.push(e.fade.map_or(0, |n| n.saturating_add(1)));
                 out.push(e.due.into());
+            }
+            None => out.push(0),
+        }
+        match self.leaving {
+            Some(l) => {
+                out.push(1);
+                count(&mut out, l.exit);
+                out.extend(l.frame.to_le_bytes());
+                out.push(l.fade.map_or(0, |n| n.saturating_add(1)));
             }
             None => out.push(0),
         }
@@ -654,6 +672,7 @@ impl World {
                 FlowEvent::Launch(i) => (7, i),
                 FlowEvent::Life => (8, 0),
                 FlowEvent::Letter(k) => (9, usize::from(k)),
+                FlowEvent::Exited(i) => (10, i),
             };
             out.push(tag);
             count(&mut out, index);
@@ -953,6 +972,11 @@ pub fn step(world: &mut World, input: &InputFrame) {
         world.frame += 1;
         return;
     }
+    if world.leaving.is_some() {
+        exit::step(world);
+        world.frame += 1;
+        return;
+    }
     if keg::hold(world) || entrance::hold(world) {
         // Everything waits while the player is in the keg or the
         // entrance.
@@ -1014,6 +1038,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         let hurt_now = things::update(world, previous_feet, frozen);
         flow::update(world, hurt_by.or(hurt_now), facing);
         ending::pass(world, &input.players[0]);
+        exit::take_over(world);
     }
     if !frozen && follow::due(world) == Some(false) {
         follow::update(world, Lead::of(&world.player));

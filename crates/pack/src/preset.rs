@@ -578,6 +578,16 @@ mod tests {
                     | Param::EndFadeAt
                     | Param::EndFadeTime
                     | Param::EndFadeStep
+                    | Param::ExitWalkSpeed
+                    | Param::ExitReach
+                    | Param::ExitReachRoll
+                    | Param::ExitReachCrouch
+                    | Param::ExitReachRight
+                    | Param::ExitAbove
+                    | Param::ExitBelow
+                    | Param::ExitLeaveAt
+                    | Param::ExitFadeTime
+                    | Param::ExitFadeStep
                     | Param::FallOutDepth
                     | Param::FallOutTime
                     | Param::DimSteps

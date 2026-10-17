@@ -170,8 +170,8 @@ impl Kind {
             // level-start.md: where the characters start is the level's
             // start record's point, not this entry's.
             Kind::Entrance => ENTRANCE,
-            // exits.md: placed and not drawn. The simulation doesn't act
-            // on it yet.
+            // exits.md: placed and not drawn. Its values are the
+            // preset's (`exit_*`).
             Kind::Exit => EXIT,
             // animal-crate.md's values are the archetype's own.
             Kind::AnimalCrate => "hutch",

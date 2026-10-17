@@ -40,8 +40,10 @@
 //! to the letters taken ([`LetterRow`]).
 //!
 //! Walking past a level's [`END`] marker finishes it, after a walk-out
-//! and a fade if the preset has them ([`Ending`]). A [`DIM`] entity
-//! near the view starts the [`Dimming`] of the level's background.
+//! and a fade if the preset has them ([`Ending`]). An [`EXIT`] takes the
+//! lead out of the area, walking it out as the picture fades
+//! ([`Leaving`]). A [`DIM`] entity near the view starts the [`Dimming`]
+//! of the level's background.
 //!
 //! With a preset that has one, a [`View`] follows the player, and
 //! walkers and throwers are in the level only near it. Placed objects
@@ -58,6 +60,7 @@ mod columns;
 mod dimming;
 mod ending;
 mod entrance;
+mod exit;
 mod flow;
 mod follow;
 mod hidden;
@@ -94,6 +97,7 @@ pub use collect::{LetterRow, Release};
 pub use dimming::{DIM, Dimming};
 pub use ending::{END, Ending};
 pub use entrance::Entering;
+pub use exit::{EXIT, Leaving};
 pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };

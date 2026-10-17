@@ -65,7 +65,8 @@ impl World {
     /// number at full brightness: `(full, full)` outside the fade, and
     /// `(0, full)` on its last frame. After resuming in a keg, it fades
     /// in the other way (see [`keg`](crate::keg)), and so it does at the
-    /// start of a level with an entrance.
+    /// start of a level with an entrance. After an exit took over the
+    /// lead, it fades by the exit's values.
     pub fn brightness(&self) -> (u32, u32) {
         let physics = &self.feel.world;
         let step = u32::from(frames(physics[Param::EndFadeStep]).max(1));
@@ -74,6 +75,9 @@ impl World {
             return (now, full);
         }
         if let Some(fade) = self.entering_brightness() {
+            return fade;
+        }
+        if let Some(fade) = self.leaving_brightness() {
             return fade;
         }
         match self.ending.and_then(|e| e.fade) {

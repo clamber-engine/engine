@@ -118,6 +118,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
             || world.events.contains(&Event::Hurt)
             || world.losing()
             || world.ending.is_some()
+            || world.leaving.is_some()
             // Nor while a player knocked off an animal holds still.
             || (world.player.unseated && (frozen || world.player.frozen > 0))
     };

@@ -1124,6 +1124,34 @@ params! {
     /// Frames the picture stays at each brightness during the fade. Whole
     /// frames.
     EndFadeStep => "end_fade_step",
+    /// Above 0, a level's `exit` entities take the lead out of the area
+    /// (see `clamber_sim::Leaving`), and it walks out at this speed.
+    /// px/frame.
+    ExitWalkSpeed => "exit_walk_speed",
+    /// An exit takes over a lead standing, walking or running and facing
+    /// left, or on the frame it lands, with its `x` rounded down this far
+    /// right of the exit or less. Whole px.
+    ExitReach => "exit_reach",
+    /// ... a lead rolling, facing left. Whole px.
+    ExitReachRoll => "exit_reach_roll",
+    /// ... a lead crouching and still sliding, facing left. Whole px.
+    ExitReachCrouch => "exit_reach_crouch",
+    /// ... a lead standing or turning, facing right. Whole px.
+    ExitReachRight => "exit_reach_right",
+    /// An exit takes over a lead whose `y` is from this far above the
+    /// exit's... Whole px.
+    ExitAbove => "exit_above",
+    /// ... to this far below it. Whole px.
+    ExitBelow => "exit_below",
+    /// The area is left from the first frame the walking lead ends this
+    /// far left of the exit or further, `x` rounded down. Whole px.
+    ExitLeaveAt => "exit_leave_at",
+    /// Frames from that one to the area's last, on which the picture is
+    /// black. Whole frames.
+    ExitFadeTime => "exit_fade_time",
+    /// Frames the picture stays at each brightness during that fade.
+    /// Whole frames.
+    ExitFadeStep => "exit_fade_step",
     /// Above 0, a player falls out of the level on the first frame it
     /// ends with its feet more than this far below the level's bottom.
     /// 0: once the top of its body is below the bottom. px.

@@ -294,6 +294,16 @@ end_rise = 0
 end_fade_at = 0
 end_fade_time = 0
 end_fade_step = 0
+exit_walk_speed = 0
+exit_reach = 0
+exit_reach_roll = 0
+exit_reach_crouch = 0
+exit_reach_right = 0
+exit_above = 0
+exit_below = 0
+exit_leave_at = 0
+exit_fade_time = 0
+exit_fade_step = 0
 fall_out_depth = 0
 fall_out_time = 0
 dim_steps = 0
@@ -688,6 +698,21 @@ end_rise = 0.125
 end_fade_at = 240
 end_fade_time = 28
 end_fade_step = 2
+# Exits (exits.md): an exit takes over a lead on the ground, not moving
+# right, from 39 above it to 35 below it, within a reach that depends on
+# its state and facing. The lead walks left 2 px a frame; once it is 4 px
+# left of the exit the view stops and the picture fades from 15 to 0 a
+# step every 2 frames, and the area's last frame is 30 after that one.
+exit_walk_speed = 2
+exit_reach = 31
+exit_reach_roll = 29
+exit_reach_crouch = 34
+exit_reach_right = 37
+exit_above = 39
+exit_below = 35
+exit_leave_at = 4
+exit_fade_time = 30
+exit_fade_step = 2
 # Falling out of the level (falling-out.md): the life is lost once the
 # feet are more than 48 px below the level's bottom, and the level's last
 # frame is 96 frames after that one.
