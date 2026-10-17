@@ -228,6 +228,10 @@ pub struct Player {
     /// from below its underside, with the feet still between its
     /// underside and top.
     pub inside: bool,
+    /// The ground the body fell through, by columns, going under the top
+    /// of a one-way platform too high to step onto: it doesn't catch the
+    /// body until it lands.
+    pub through: Option<usize>,
     /// Colliders the body ran into or stood on during the last step:
     /// walls it was stopped by, a ceiling it hit, the ground.
     pub touched: Vec<usize>,
@@ -296,6 +300,7 @@ impl Player {
             hands: None,
             pick: None,
             inside: false,
+            through: None,
             touched: Vec::new(),
             swim_floor: false,
             riding: None,
@@ -1277,7 +1282,10 @@ impl Player {
                     None => drop,
                 };
                 self.move_vertically(level, moved, Reach::NONE, slope > Fixed::ZERO, events);
-                self.vel.y = if left {
+                self.vel.y = if left && self.through.is_some() {
+                    // Falling through the floor keeps the drop's speed.
+                    drop
+                } else if left {
                     physics[Param::LeaveFallSpeed]
                 } else {
                     // The jump rises from where the drop took it.
@@ -1981,7 +1989,9 @@ impl Player {
 
     /// Moves a grounded body sideways column by column, as far as the
     /// ground allows, and returns how far. A column it can't go into
-    /// stops it at the left edge of the column it was in. Starting on a
+    /// stops it at the left edge of the column it was in. Going under a
+    /// platform's top too high to step onto, it falls through the floor
+    /// it was on (see [`columns::falls_through`]). Starting on a
     /// steep face falling the way given, a body that isn't stopped has its
     /// speed limited by the physics given first (`face_speed_limit`,
     /// `face_min_speed`).
@@ -1997,9 +2007,17 @@ impl Player {
         let dir = if self.vel.x.is_negative() { -1 } else { 1 };
         let from = columns::column(self.pos.x);
         let to = columns::column(self.pos.x + self.vel.x);
+        // A move that ends under a platform's top too high to step onto
+        // falls through the floor, whatever it passes on the way.
+        let through = |c| columns::falls_through(level, c, self.pos.y);
+        let mut falls = through(to);
         let mut next = from;
-        while next != to {
+        while next != to && !falls {
             next += i64::from(dir);
+            falls = through(next);
+            if falls {
+                break;
+            }
             if let Some(collider) = columns::blocks(level, next, dir, self.pos.y, slope) {
                 let edge = columns::left_edge(from);
                 let moved = (self.pos.x - edge).abs();
@@ -2008,6 +2026,9 @@ impl Player {
                 self.touched.push(collider);
                 return moved;
             }
+        }
+        if falls {
+            self.through = self.ground;
         }
         if let Some((way, physics)) = face {
             self.vel.x = limit_on_face(self.vel.x, way, physics);
@@ -2060,6 +2081,7 @@ impl Player {
         let floor = (to != from)
             .then(|| columns::floor_in_air(level, to, feet))
             .flatten()
+            .filter(|f| Some(f.collider) != self.through)
             .map(|f| (rise(&f), f))
             .filter(|(rise, _)| *rise > Fixed::ZERO);
         if let Some((rise, floor)) = floor {
@@ -2145,7 +2167,11 @@ impl Player {
         events: &mut Vec<Event>,
     ) -> bool {
         let from = Vec2::new(x, self.pos.y - STEP);
-        match level.collision.cast(from, Dir::Down, STEP + below) {
+        let ground = match self.through {
+            Some(_) => None,
+            None => level.collision.cast(from, Dir::Down, STEP + below),
+        };
+        match ground {
             Some(hit) => {
                 self.pos.y = hit.point.y;
                 if !self.takeoff {
@@ -2231,7 +2257,10 @@ impl Player {
             Dir::Down,
             above + self.vel.y + reach.most(),
             (Fixed::ZERO, Fixed::ZERO),
-            |hit| !hit.one_way || (hit.point.y >= feet && !below_underside(hit)),
+            |hit| {
+                Some(hit.collider) != self.through
+                    && (!hit.one_way || (hit.point.y >= feet && !below_underside(hit)))
+            },
         );
         match ground {
             Some(hit) if reach.lands(level, self.pos.x, hit.point.y, to) => {
@@ -2268,6 +2297,7 @@ impl Player {
         self.pos.y = y;
         self.vel.y = Fixed::ZERO;
         self.ground = Some(collider);
+        self.through = None;
         self.jump_hold = false;
         self.unseated = false;
         self.touched.push(collider);

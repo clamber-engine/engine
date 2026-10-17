@@ -6,16 +6,22 @@
 //! or falls by some amount:
 //!
 //! - by `face_slope` or less, it's walkable ground: flat floor and slopes;
-//! - by more than that, up to a step ([`STEP`]), the columns are part of
-//!   a steep face, which carries a grounded body down it and stops one
-//!   going up it;
+//! - by more than that, up to a step ([`STEP`]), two or more times in a
+//!   row the same way, the columns are part of a steep face, which
+//!   carries a grounded body down it and stops one going up it; once on
+//!   its own, it's a step, walked up and down;
 //! - by more than a step, it's a wall.
+//!
+//! A grounded body walks under a one-way platform unless the platform's
+//! underside is right over its feet. Then the platform's top is the
+//! floor, and if it's more than a step up the body falls through the
+//! floor it was on.
 //!
 //! These rules don't care how the level draws its ground: a face can be a
 //! steep edge of a polygon or a staircase of small steps.
 
 use clamber_fixed::Fixed;
-use clamber_level::{Dir, Level, Span, Vec2};
+use clamber_level::{Level, Span};
 
 use crate::player::{HEIGHT, STEP};
 
@@ -42,24 +48,39 @@ pub(crate) fn middle(column: i64) -> Fixed {
     left_edge(column) + Fixed::from_ratio_pow2(1, 1)
 }
 
-/// The floor of `column` as seen by a body with its feet at `feet`: the
-/// top of the ground under the column's middle, from a body's height
-/// above the feet to two steps below them. Ground that reaches a body's
-/// height above the feet or more counts as that high. `None` if there's
-/// no ground in that range.
+/// How far above the feet a one-way platform's underside can be for a
+/// grounded body to see the platform's top as the floor: one with more
+/// room under it, the body walks under.
+const UNDERSIDE_REACH: Fixed = Fixed::ONE;
+
+/// The floor of `column` as seen by a grounded body with its feet at
+/// `feet`: the top of the ground under the column's middle, from a body's
+/// height above the feet to two steps below them. Ground that reaches a
+/// body's height above the feet or more counts as that high. One-way
+/// platforms whose underside is more than [`UNDERSIDE_REACH`] above the
+/// feet aren't there. `None` if there's no ground in that range.
 pub(crate) fn floor(level: &Level, column: i64, feet: Fixed) -> Option<Floor> {
-    let top = Vec2::new(middle(column), feet - HEIGHT);
-    if let Some(collider) = level.collision.solid_at(top) {
-        return Some(Floor { y: top.y, collider });
-    }
-    let across = (Fixed::ZERO, Fixed::ZERO);
-    level
-        .collision
-        .sweep(top, Dir::Down, HEIGHT + STEP + STEP, across, |_| true)
-        .map(|hit| Floor {
-            y: hit.point.y,
-            collider: hit.collider,
+    let head = feet - HEIGHT;
+    spans(level, column)
+        .into_iter()
+        .filter(|s| !(s.one_way && s.bottom < feet - UNDERSIDE_REACH))
+        .find(|s| s.bottom >= head && s.top <= feet + STEP + STEP)
+        .map(|s| Floor {
+            y: s.top.max(head),
+            collider: s.collider,
         })
+}
+
+/// Whether a grounded body with its feet at `feet` falls through the
+/// floor going into `column`: its floor is the top of a one-way platform
+/// right over the feet (see [`floor`]), more than a step above them.
+pub(crate) fn falls_through(level: &Level, column: i64, feet: Fixed) -> bool {
+    floor(level, column, feet).is_some_and(|f| {
+        f.y < feet - STEP
+            && spans(level, column)
+                .iter()
+                .any(|s| s.collider == f.collider && s.one_way && s.bottom < feet)
+    })
 }
 
 /// The floor of `column` as an airborne body with its feet at `feet`
@@ -122,21 +143,37 @@ fn steep(height: Option<Fixed>, slope: Fixed) -> bool {
     height.is_some_and(|h| h.abs() > slope && h.abs() <= STEP)
 }
 
+/// Whether the floor changes steeply from `from` to its neighbour `to` as
+/// part of a steep face: the change next to it on either side is steep
+/// the same way too. A single steep step between other floor isn't part
+/// of one.
+fn face_step(level: &Level, from: i64, to: i64, feet: Fixed, slope: Fixed) -> bool {
+    let way = to - from;
+    let height = rise(level, from, to, feet);
+    let same = |h: Option<Fixed>| {
+        steep(h, slope)
+            && h.zip(height)
+                .is_some_and(|(h, height)| (h > Fixed::ZERO) == (height > Fixed::ZERO))
+    };
+    steep(height, slope)
+        && (same(rise(level, to, to + way, feet)) || same(rise(level, from - way, from, feet)))
+}
+
 /// The way a steep face falls at `column`, -1 (left) or 1 (right), or
 /// `None` if the column isn't part of one. A column is part of a face if
-/// the floor changes steeply from it to either neighbour; the face falls
-/// toward a neighbour it drops steeply to, or else away from one it
-/// climbs steeply to.
+/// the floor changes steeply from it to either neighbour as part of a
+/// face; the face falls toward a neighbour it drops steeply to, or else
+/// away from one it climbs steeply to.
 pub(crate) fn face(level: &Level, column: i64, feet: Fixed, slope: Fixed) -> Option<i32> {
-    let right = rise(level, column + 1, column, feet);
-    let left = rise(level, column - 1, column, feet);
-    let falls = |h: Option<Fixed>| steep(h, slope) && h.is_some_and(|h| h > Fixed::ZERO);
-    match (
-        falls(right),
-        falls(left),
-        steep(right, slope),
-        steep(left, slope),
-    ) {
+    // How much higher `column` is than its neighbour `n`, if steeply.
+    let step = |n: i64| {
+        face_step(level, n, column, feet, slope)
+            .then(|| rise(level, n, column, feet))
+            .flatten()
+    };
+    let (right, left) = (step(column + 1), step(column - 1));
+    let falls = |h: Option<Fixed>| h.is_some_and(|h| h > Fixed::ZERO);
+    match (falls(right), falls(left), right.is_some(), left.is_some()) {
         (true, ..) => Some(1),
         (_, true, ..) => Some(-1),
         (_, _, true, _) => Some(-1),
@@ -147,8 +184,9 @@ pub(crate) fn face(level: &Level, column: i64, feet: Fixed, slope: Fixed) -> Opt
 
 /// Whether a grounded body moving `dir` (-1 or 1) is stopped going into
 /// `column`: the floor climbs into it from the column behind by more than
-/// `slope`, a wall included, or it's part of a face that climbs onward
-/// from it. Returns the collider that stops the body.
+/// a step, a wall, or it's part of a face that climbs into it or onward
+/// from it. A single step up of a step or less is walked up. Returns the
+/// collider that stops the body.
 pub(crate) fn blocks(
     level: &Level,
     column: i64,
@@ -159,8 +197,10 @@ pub(crate) fn blocks(
     let dir = i64::from(dir);
     let into = rise(level, column - dir, column, feet);
     let onward = rise(level, column, column + dir, feet);
-    let climbs = into.is_some_and(|h| h > slope)
-        || (steep(onward, slope) && onward.is_some_and(|h| h > Fixed::ZERO));
+    let rises = |h: Option<Fixed>| h.is_some_and(|h| h > Fixed::ZERO);
+    let climbs = into.is_some_and(|h| h > STEP)
+        || (rises(into) && face_step(level, column - dir, column, feet, slope))
+        || (rises(onward) && face_step(level, column, column + dir, feet, slope));
     if climbs {
         floor(level, column, feet).map(|f| f.collider)
     } else {
@@ -195,9 +235,9 @@ pub(crate) fn hits_side(
 }
 
 /// Whether the floor `ahead` columns from `column` in direction `dir` is
-/// more than a step higher than the floor of `column`.
+/// a step or more higher than the floor of `column`.
 pub(crate) fn rise_ahead(level: &Level, column: i64, dir: i32, ahead: i64, feet: Fixed) -> bool {
-    rise(level, column, column + i64::from(dir) * ahead, feet).is_some_and(|h| h > STEP)
+    rise(level, column, column + i64::from(dir) * ahead, feet).is_some_and(|h| h >= STEP)
 }
 
 #[cfg(test)]
@@ -291,13 +331,56 @@ mod tests {
                    points = [[0, 0], [10, 0], [10, 50], [0, 50]]\n";
         let level = Level::from_toml_str(src, "p").unwrap();
         let y = |feet: i32| floor_in_air(&level, 5, Fixed::from_int(feet)).map(|f| f.y);
-        assert_eq!(
-            floor(&level, 5, Fixed::ZERO).map(|f| f.y),
-            Some(Fixed::from_int(-20))
-        );
         assert_eq!(y(0), Some(Fixed::ZERO));
         assert_eq!(y(-20), Some(Fixed::from_int(-20)));
         assert_eq!(y(-25), Some(Fixed::from_int(-20)));
+    }
+
+    /// Floor at y = 0 in columns 0 to 99, and a one-way platform over
+    /// columns 20 to 39 from `top` down to `underside`.
+    fn under_platform(top: i32, underside: i32) -> Level {
+        let src = format!(
+            "format = 1\nname = \"p\"\nsize = [100, 100]\nstart = [0, 0]\n\
+             [[collision]]\nshape = \"polygon\"\n\
+             points = [[20, {top}], [40, {top}], [40, {underside}], [20, {underside}]]\n\
+             one_way = true\n\
+             [[collision]]\nshape = \"polygon\"\n\
+             points = [[0, 0], [100, 0], [100, 32], [0, 32]]\n"
+        );
+        Level::from_toml_str(&src, "p").unwrap()
+    }
+
+    #[test]
+    fn platforms_count_as_floor_only_right_over_the_feet() {
+        let y = |level: &Level| floor(level, 25, Fixed::ZERO).map(|f| f.y);
+        // With 2 px or more under it, a platform isn't there.
+        assert_eq!(y(&under_platform(-30, -2)), Some(Fixed::ZERO));
+        assert_eq!(y(&under_platform(-12, -5)), Some(Fixed::ZERO));
+        // Right over the feet, its top is the floor.
+        assert_eq!(y(&under_platform(-12, -1)), Some(Fixed::from_int(-12)));
+        assert_eq!(y(&under_platform(-4, -1)), Some(Fixed::from_int(-4)));
+        // More than a step up, it's fallen through rather than walked into.
+        let feet = Fixed::ZERO;
+        assert!(falls_through(&under_platform(-12, -1), 20, feet));
+        assert!(!falls_through(&under_platform(-8, -1), 20, feet));
+        assert!(!falls_through(&under_platform(-12, -2), 20, feet));
+        assert!(!falls_through(&under_platform(-12, -1), 19, feet));
+        // A square end a step high or less is walked up, not blocked.
+        assert_eq!(blocks(&under_platform(-8, -1), 20, 1, feet, slope()), None);
+        assert_eq!(blocks(&under_platform(-4, -1), 20, 1, feet, slope()), None);
+    }
+
+    #[test]
+    fn a_single_steep_step_isnt_a_face() {
+        let level = staircase(&[0, 0, -4, -4, -4]);
+        let feet = Fixed::ZERO;
+        assert_eq!(face(&level, 1, feet, slope()), None);
+        assert_eq!(face(&level, 2, feet, slope()), None);
+        assert_eq!(blocks(&level, 2, 1, feet, slope()), None);
+        // Two in a row are.
+        let level = staircase(&[0, 0, -4, -8, -8]);
+        assert_eq!(face(&level, 2, feet, slope()), Some(-1));
+        assert_eq!(blocks(&level, 2, 1, feet, slope()), Some(0));
     }
 
     #[test]
@@ -347,5 +430,10 @@ mod tests {
         assert_eq!(blocks(&level, 2, 1, feet, slope()), Some(0));
         assert!(rise_ahead(&level, 0, 1, 2, feet));
         assert!(!rise_ahead(&level, 0, 1, 1, feet));
+        // A rise of a step is enough to stop a start.
+        let step = staircase(&[0, 0, -8, -8]);
+        assert!(rise_ahead(&step, 0, 1, 2, feet));
+        let lower = staircase(&[0, 0, -5, -5]);
+        assert!(!rise_ahead(&lower, 0, 1, 2, feet));
     }
 }

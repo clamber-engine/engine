@@ -495,10 +495,14 @@ params! {
     /// its `x` is a point with no width, and the floor of each 1-px column
     /// is the top of the ground under the column's middle. Where the floor
     /// changes by more than this from one column to the next, but by no
-    /// more than 8 px, the ground is a steep face; more than 8 px is a
-    /// wall. A body moving into a column that climbs more than this, or
-    /// into a face that climbs onward, is stopped at the left edge of the
-    /// column it was in, with no speed. On a face no jump starts. 0: the
+    /// more than 8 px, two or more times in a row the same way, the ground
+    /// is a steep face; a single such change is a step, walked up and
+    /// down; more than 8 px is a wall. A body moving into a wall or into a
+    /// face that climbs is stopped at the left edge of the column it was
+    /// in, with no speed. One-way platforms with more than 1 px under them
+    /// aren't there for a grounded body; one right over its feet with a
+    /// top more than 8 px up makes it fall through the floor. On a face no
+    /// jump starts. 0: the
     /// body is a box that walks up slopes up to 45 degrees and is stopped
     /// by steeper ones.
     FaceSlope => "face_slope",
@@ -511,7 +515,7 @@ params! {
     /// frames. Whole frames.
     FaceExit => "face_exit",
     /// Above 0, a grounded body standing still doesn't start moving toward
-    /// ground that, this many columns ahead, is more than 8 px higher than
+    /// ground that, this many columns ahead, is 8 px or more higher than
     /// its own column. Whole columns.
     StartRiseAhead => "start_rise_ahead",
     /// Above 0, with `face_slope`, an airborne body moving into a column

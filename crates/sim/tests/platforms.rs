@@ -1,5 +1,6 @@
-//! Platforms passed up through from below on the `classic-1` preset, from
-//! the examples in `spec/behavior/platforms-from-below.md`. Heights in the
+//! Platforms passed up through from below, and walked under, on the
+//! `classic-1` preset, from the examples in
+//! `spec/behavior/platforms-from-below.md`. Heights in the
 //! spec are relative to the floor beneath; here that floor is at y = 300.
 
 use std::sync::Arc;
@@ -246,4 +247,132 @@ fn stopped_by_ground_that_isnt_passable_from_below() {
         ],
     );
     assert_eq!(land(&mut world), Fixed::ZERO);
+}
+
+/// Floor at `floor` (above the floor line) for columns 0 to 599, 32 px
+/// thick, and a one-way platform over columns 200 to 263 from `top` down
+/// to an underside at −1, as in "Walking under a platform".
+fn low_platform(floor: i32, top: i32) -> World {
+    let floor = FLOOR + floor;
+    let (y, h) = (FLOOR + top, -1 - top);
+    let src = format!(
+        "format = 1\nname = \"low\"\nsize = [600, 600]\nstart = [100, {floor}]\n\
+         [[collision]]\nshape = \"rect\"\nrect = [0, {floor}, 600, 32]\n\
+         [[collision]]\nshape = \"rect\"\nrect = [200, {y}, 64, {h}]\none_way = true\n"
+    );
+    let level = Level::from_toml_str(&src, "low").unwrap();
+    World::new(
+        Arc::new(level),
+        Arc::new(generic_feel("classic-1").unwrap()),
+    )
+}
+
+/// Puts the player walking right on the floor at `x`, `y` at 512/256.
+fn walking(world: &mut World, x: f64, y: f64) {
+    let p = &mut world.player;
+    p.pos.x = fx(x);
+    p.pos.y = fx(y) + Fixed::from_int(FLOOR);
+    p.vel.x = Fixed::from_int(2);
+    p.facing = Facing::Right;
+    assert!(p.grounded());
+}
+
+#[test]
+fn walking_under_a_low_platform_steps_onto_a_low_top() {
+    let mut world = low_platform(0, -4);
+    walking(&mut world, 195.25, 0.0);
+    check(
+        &mut world,
+        &[Action::Right],
+        &[
+            (1, 197.25, 0.0, 512, 0, true),
+            (2, 199.25, 0.0, 512, 0, true),
+            (3, 201.25, -4.0, 512, 0, true),
+            (6, 207.25, -4.0, 512, 0, true),
+        ],
+    );
+}
+
+#[test]
+fn walking_under_a_higher_top_falls_through_the_floor() {
+    let mut world = low_platform(0, -12);
+    walking(&mut world, 195.25, 0.0);
+    check(
+        &mut world,
+        &[Action::Right],
+        &[
+            (1, 197.25, 0.0, 512, 0, true),
+            (2, 199.25, 0.0, 512, 0, true),
+            (3, 201.25, 3.4375, 512, 880, false),
+            (4, 203.25, 7.3125, 512, 992, false),
+            (5, 205.25, 11.625, 512, 1104, false),
+            (6, 207.25, 16.375, 512, 1216, false),
+        ],
+    );
+    // The floor never catches the fall.
+    for _ in 0..40 {
+        hold(&mut world, &[Action::Right]);
+        assert!(!world.player.grounded());
+    }
+}
+
+#[test]
+fn the_fall_through_the_floor_starts_with_leave_ground() {
+    let mut world = low_platform(0, -12);
+    walking(&mut world, 197.25, 0.0);
+    hold(&mut world, &[Action::Right]);
+    assert!(!world.events.contains(&Event::LeaveGround));
+    hold(&mut world, &[Action::Right]);
+    assert!(world.events.contains(&Event::LeaveGround));
+}
+
+#[test]
+fn with_room_under_the_platform_it_isnt_there() {
+    for top in [-8, -12] {
+        // The floor 4 px lower: the underside is 5 px above the feet.
+        let mut world = low_platform(4, top);
+        walking(&mut world, 195.25, 4.0);
+        check(
+            &mut world,
+            &[Action::Right],
+            &[
+                (3, 201.25, 4.0, 512, 0, true),
+                (20, 235.25, 4.0, 512, 0, true),
+            ],
+        );
+    }
+}
+
+#[test]
+fn a_top_a_step_up_five_columns_ahead_stops_a_start() {
+    let mut world = low_platform(0, -8);
+    world.player.pos.x = fx(195.5);
+    hold(&mut world, &[Action::Right]);
+    assert_eq!(row(&world), (fx(195.5), fx(0.0), 0, 0, true));
+    let mut world = low_platform(0, -4);
+    world.player.pos.x = fx(195.5);
+    hold(&mut world, &[Action::Right]);
+    assert!(world.player.vel.x > Fixed::ZERO);
+}
+
+#[test]
+fn a_roll_falling_through_on_its_first_frame_hovers() {
+    let mut world = low_platform(0, -12);
+    // The roll's first frame moves 1/8 px, into column 200.
+    world.player.pos.x = fx(199.9375);
+    let press = [Action::Action].into_iter().collect::<Actions>();
+    step(
+        &mut world,
+        &InputFrame::single(Frame::after(Actions::default(), press)),
+    );
+    assert!(world.events.contains(&Event::LeaveGround));
+    let y = |w: &World| w.player.pos.y - Fixed::from_int(FLOOR);
+    assert_eq!(y(&world), fx(3.4375));
+    // S + 1 to S + 8 go down 1/256 px each, then speed builds from 1/256.
+    for n in 1..=8 {
+        hold(&mut world, &[Action::Action]);
+        assert_eq!(y(&world), fx(3.4375) + Fixed::from_bits(n << 24), "S + {n}");
+    }
+    hold(&mut world, &[Action::Action]);
+    assert_eq!(grains(world.player.vel.y), 1 + 112);
 }
