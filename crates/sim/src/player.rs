@@ -26,6 +26,7 @@ use crate::columns;
 use crate::loss::Lost;
 use crate::pose::PoseClock;
 use crate::ride::Riding;
+use crate::rope::OnRope;
 use crate::spring::{OnSpring, SpringArc};
 use crate::world::Event;
 
@@ -83,6 +84,8 @@ pub enum State {
     GroundAction,
     /// Swimming, inside a water region (see `swim`).
     Swim,
+    /// Holding a rope (see [`rope`](crate::rope)).
+    Hold,
 }
 
 impl State {
@@ -99,6 +102,10 @@ impl State {
             State::Hurt => "hurt",
             State::GroundAction => "ground_action",
             State::Swim => "swim",
+            // The trace vocabulary has no name for holding a rope yet
+            // (asked in clamber-engine/spec#39); the player is off the
+            // ground without having jumped.
+            State::Hold => "fall",
         }
     }
 }
@@ -284,6 +291,19 @@ pub struct Player {
     pub spring_arc: Option<SpringArc>,
     /// Frames Jump has been held without a break, this one included.
     pub jump_held: u8,
+    /// The rope it holds, if any (see [`rope`](crate::rope)).
+    pub rope: Option<OnRope>,
+    /// The thing of the rope it most recently held, until it's
+    /// forgotten.
+    pub rope_last: Option<usize>,
+    /// The direction held on the last frame spent holding a rope.
+    pub rope_dir: Option<Facing>,
+    /// Set by jumping off a rope until back on the ground: target speeds
+    /// in the air are Action's.
+    pub rope_run: bool,
+    /// Falling after sliding off a rope's end, until landing: facing
+    /// doesn't change.
+    pub rope_fall: bool,
 }
 
 impl Player {
@@ -360,6 +380,11 @@ impl Player {
             spring: None,
             spring_arc: None,
             jump_held: 0,
+            rope: None,
+            rope_last: None,
+            rope_dir: None,
+            rope_run: false,
+            rope_fall: false,
         };
         player.ground = level
             .collision
@@ -395,6 +420,8 @@ impl Player {
         self.ground = None;
         self.spring = None;
         self.spring_arc = None;
+        self.rope = None;
+        self.rope_fall = false;
         self.coyote = None;
         self.jump_age = None;
         self.walked_off = false;
@@ -415,6 +442,8 @@ impl Player {
         self.ground = None;
         self.spring = None;
         self.spring_arc = None;
+        self.rope = None;
+        self.rope_fall = false;
         self.coyote = None;
         self.frozen = freeze;
         self.jump_age = None;
@@ -487,6 +516,7 @@ impl Player {
             self.fall_step = false;
             self.fall_facing = 0;
             self.unseated = false;
+            self.rope_fall = false;
             self.hop = None;
             self.state = self.next_state(self.ran, &[]);
         }
@@ -525,12 +555,94 @@ impl Player {
         }
     }
 
+    /// Counts the frames Jump has been held without a break.
+    pub(crate) fn update_jump_held(&mut self, input: &Frame) {
+        self.jump_held = if input.held.contains(Action::Jump) {
+            self.jump_held.saturating_add(1)
+        } else {
+            0
+        };
+    }
+
+    /// Catches a rope where the player moved to on this frame: it stops,
+    /// and holds the rope from the next. Caught facing the direction held
+    /// on its last frame holding one, it starts a turn round it at once.
+    pub(crate) fn catch_rope(&mut self, mut on: OnRope) {
+        self.vel = Vec2::default();
+        self.target = Fixed::ZERO;
+        if self.rope_dir == Some(self.facing) {
+            on.turn = Some(1);
+        }
+        self.rope = Some(on);
+        self.rope_last = Some(on.thing);
+        self.rope_fall = false;
+        self.state = State::Hold;
+        self.clear_movement();
+    }
+
+    /// Lets go of the rope held, if any, without moving.
+    pub(crate) fn let_go_of_rope(&mut self) {
+        if self.rope.take().is_some() {
+            self.state = State::Fall;
+        }
+    }
+
+    /// Jumps off the rope held, at the speed it moved by on this frame:
+    /// from the next frame a jump that has had Jump held since its press,
+    /// with the run memory set.
+    pub(crate) fn jump_off_rope(&mut self) {
+        self.rope = None;
+        self.rope_run = true;
+        self.state = State::Jump;
+        self.jump_age = Some(0);
+        self.jump_hold = true;
+        self.jump_held_since_press = true;
+        self.approach = None;
+        self.rolled_jump = false;
+    }
+
+    /// Lets go of a rope past its end: from the next frame a fall from
+    /// the speed it moved by on this frame, facing as it is.
+    pub(crate) fn slide_off_rope(&mut self) {
+        self.rope = None;
+        self.rope_fall = true;
+        self.state = State::Fall;
+    }
+
+    /// Ends whatever the player was doing in the air or on the ground,
+    /// for holding a rope.
+    fn clear_movement(&mut self) {
+        self.ground = None;
+        self.spring = None;
+        self.spring_arc = None;
+        self.through = None;
+        self.inside = false;
+        self.coyote = None;
+        self.jump_age = None;
+        self.jump_hold = false;
+        self.face_press = false;
+        self.takeoff = false;
+        self.takeoff_wait = None;
+        self.walked_off = false;
+        self.fall_step = false;
+        self.fall_facing = 0;
+        self.hop = None;
+        self.turn = None;
+        self.gait = Gait::Standing;
+        self.end_roll();
+        self.roll_jump = false;
+        self.ground_action = None;
+        self.crouch = Crouch::default();
+    }
+
     /// Hurts the player where it is: it doesn't move on this step.
     pub fn hit(&mut self, events: &mut Vec<Event>) {
         self.touched.clear();
         self.vel = Vec2::default();
         self.spring = None;
         self.spring_arc = None;
+        self.rope = None;
+        self.rope_fall = false;
         self.frozen = 0;
         self.takeoff = false;
         self.face_press = false;
@@ -784,11 +896,7 @@ impl Player {
         events: &mut Vec<Event>,
     ) {
         self.touched.clear();
-        self.jump_held = if input.held.contains(Action::Jump) {
-            self.jump_held.saturating_add(1)
-        } else {
-            0
-        };
+        self.update_jump_held(input);
         if self.frozen > 0 {
             if self.unseated {
                 self.jump_hold &= input.held.contains(Action::Jump);
@@ -1271,6 +1379,7 @@ impl Player {
             || keep_takeoff_facing
             || keep_bounce_facing
             || self.unseated
+            || self.rope_fall
             || (keep_walk_off_facing && !air_gait)
         {
             self.turn = None;
@@ -1337,11 +1446,13 @@ impl Player {
             dir
         };
 
-        let run = if physics[Param::RunFromPreviousFrame] > Fixed::ZERO {
-            ran_before
-        } else {
-            held(Action::Action)
-        };
+        // After jumping off a rope, targets are Action's until landing.
+        let run = self.rope_run
+            || if physics[Param::RunFromPreviousFrame] > Fixed::ZERO {
+                ran_before
+            } else {
+                held(Action::Action)
+            };
         let cap = if run {
             physics[Param::TopSpeed]
         } else {
@@ -2828,6 +2939,8 @@ impl Player {
         self.ground = Some(collider);
         self.spring = None;
         self.spring_arc = None;
+        self.rope = None;
+        self.rope_fall = false;
         self.through = None;
         self.jump_hold = false;
         self.face_press = false;

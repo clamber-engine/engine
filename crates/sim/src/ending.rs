@@ -183,6 +183,8 @@ fn walk(player: &mut Player, ending: &Ending, physics: &Physics, events: &mut Ve
     player.ground = None;
     player.spring = None;
     player.spring_arc = None;
+    player.rope = None;
+    player.rope_fall = false;
     if ending.fade.is_none() {
         let rise = physics[Param::EndRise];
         player.pos.y -= rise;

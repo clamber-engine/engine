@@ -7,7 +7,7 @@ use clamber_fixed::Fixed;
 use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 
-use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior, Spring};
+use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior, Rope, Spring};
 use crate::carry::{self, Flight};
 use crate::collect;
 use crate::dimming::{self, Dimming};
@@ -19,6 +19,7 @@ use crate::keg::{self, Burst, Resume};
 use crate::loss::{self, Loss, Lost};
 use crate::player::{Act, Facing, Player, ROLL, Roll, frames};
 use crate::ride;
+use crate::rope;
 use crate::script::{InputFrame, Script};
 use crate::sections::{Placed, Placing};
 use crate::swap::{self, Move, Other, Recent, Swap};
@@ -157,6 +158,10 @@ pub enum Phase {
     /// A spring wobbling, `m` steps into the wobble, after a throw this
     /// many steps ago if it threw.
     Wobbling { m: u8, thrown: Option<u8> },
+    /// A rope that has started swaying, toward `target`. It had the
+    /// player in `reach` at the end of the last step (see
+    /// [`rope`](crate::rope)).
+    Rope { target: Fixed, reach: bool },
 }
 
 /// Everything the simulation advances.
@@ -485,6 +490,7 @@ impl World {
                 Phase::Landed(since) => [16, since],
                 Phase::Squashed { since, from_air } => [17 + u8::from(from_air), since],
                 Phase::Wobbling { m, .. } => [19, m],
+                Phase::Rope { reach, .. } => [20, reach.into()],
             });
             if let Phase::Wobbling { thrown, .. } = t.phase {
                 out.push(thrown.map_or(0, |n| n.saturating_add(1)));
@@ -496,6 +502,9 @@ impl World {
             | Phase::Item { vy, .. } = t.phase
             {
                 fixed(&mut out, vy);
+            }
+            if let Phase::Rope { target, .. } = t.phase {
+                fixed(&mut out, target);
             }
             if let Phase::Swaying { vy, tx, ty } = t.phase {
                 for v in [vy, tx, ty] {
@@ -793,6 +802,21 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
         None => out.push(0),
     }
     out.push(p.jump_held);
+    match p.rope {
+        Some(on) => {
+            out.push(1);
+            out.extend((on.thing as u64).to_le_bytes());
+            out.push(on.turn.map_or(0, |n| n.saturating_add(1)));
+            rope_bytes(out, &on.values);
+        }
+        None => out.push(0),
+    }
+    out.extend(p.rope_last.map_or(u64::MAX, |n| n as u64).to_le_bytes());
+    out.extend([
+        p.rope_dir.map_or(0, |f| 1 + u8::from(f == Facing::Right)),
+        p.rope_run.into(),
+        p.rope_fall.into(),
+    ]);
     match p.hands {
         Some(h) => {
             out.push(1);
@@ -847,6 +871,28 @@ fn spring_bytes(out: &mut Vec<u8>, s: &Spring) {
         s.jump_gravity,
         s.gravity,
         s.max_fall,
+    ] {
+        fixed(out, v);
+    }
+}
+
+/// Appends a rope's values to `out`, for [`World::state_bytes`].
+fn rope_bytes(out: &mut Vec<u8>, r: &Rope) {
+    let fixed = |out: &mut Vec<u8>, v: Fixed| out.extend(v.to_bits().to_le_bytes());
+    for n in [r.swing.0, r.swing.1, r.below, r.near, r.far, r.view_top] {
+        out.extend(n.to_le_bytes());
+    }
+    out.extend([r.turn_frames, r.turn_facing]);
+    for v in [
+        r.speed,
+        r.sway_response,
+        r.slow,
+        r.up[0],
+        r.up[1],
+        r.down[0],
+        r.down[1],
+        r.climb_response,
+        r.jump_speed,
     ] {
         fixed(out, v);
     }
@@ -930,6 +976,8 @@ pub fn step(world: &mut World, input: &InputFrame) {
             // The loss moves the characters.
         } else if ride::unseat(world) {
             // Knocked off the animal, the player doesn't move.
+        } else if rope::hold(world, &input.players[0]) {
+            // Holding a rope, the player moves by its rules.
         } else if !swap::update(world, &physics, &input.players[0]) {
             carry::before(world, &input.players[0]);
             // After a swap, the physics are the new player's.
@@ -941,6 +989,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
                 &input.players[0],
                 &mut world.events,
             );
+            rope::catch(world);
         }
         let hurt_now = things::update(world, previous_feet, frozen);
         flow::update(world, hurt_by.or(hurt_now), facing);

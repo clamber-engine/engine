@@ -89,6 +89,7 @@ fn the_cast_sheets_are_rendered_with_their_animations() {
         ("keg", &["whole"]),
         ("canister", &["whole", "break"]),
         ("spring", &["rest", "squash"]),
+        ("rope", &["hang"]),
     ] {
         let path = content_dir().join(SPRITES).join(format!("{name}.json"));
         let sprite = SpriteSheet::load(&path).unwrap();

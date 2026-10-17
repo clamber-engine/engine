@@ -1,0 +1,53 @@
+{
+  "frames": [
+    {
+      "filename": "rope hang 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 30,
+        "h": 820
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 2,
+        "w": 30,
+        "h": 820
+      },
+      "sourceSize": {
+        "w": 80,
+        "h": 840
+      },
+      "duration": 100,
+      "ticks": 6
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "rope.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 34,
+      "h": 824
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "hang",
+        "from": 0,
+        "to": 0,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 40,
+        "y": 820
+      },
+      "scale": 5,
+      "normals": "rope-normals.png"
+    }
+  }
+}

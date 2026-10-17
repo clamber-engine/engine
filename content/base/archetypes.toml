@@ -341,6 +341,21 @@
 #   `jump_wait` frames after the catch, and then only with a press made
 #   up to `jump_early` frames before the catch and held since, or a new
 #   one.
+# - `rope`: a rope hanging from out of sight down to its bottom end, its
+#   y, which the player catches from a jump and holds. It sways around
+#   where it's placed: its target speed is `speed` one way or the other,
+#   turning once its x rounded down is more than `swing = [left, right]`
+#   whole px past the place, and its speed closes `sway_response` of the
+#   gap each frame. It has a player in reach with the feet line no more
+#   than `below` px under the bottom end and the x's rounded down less
+#   than `near` px apart, or `far` with the player moving at `slow` or
+#   faster. Holding it, the player climbs toward `up` (Up, or Jump alone)
+#   or `down` (Down), each `[without Action, with Action]` px a frame,
+#   closing `climb_response` of the gap each frame, and no higher than
+#   `view_top` px under the view's top. Holding the way it faces swings
+#   it round in `turn_frames`, facing the other way from the
+#   `turn_facing`th. Jump with Left or Right jumps off at `jump_speed` up,
+#   plus one frame's climbing toward the target without Jump.
 #
 # The player defeats an enemy by landing on it, and bounces off, or by
 # rolling into it. Touching one any other way costs a life.
@@ -565,6 +580,29 @@ jump_early = 9
 jump_gravity = 0.3125
 gravity = 0.4375
 max_fall = 8
+
+# title-1's rope (spec/behavior/ropes.md). Both ropes measured have
+# these values; where a level's ropes get theirs, and which way they start
+# swinging, isn't covered. The size is Clamber's own: it's what's drawn,
+# and touches nothing.
+[archetypes.rope]
+behavior = "rope"
+size = [8, 160]
+offset = 0
+speed = 0.1875
+swing = [3, 3]
+sway_response = 0.03125
+below = 24
+near = 12
+far = 4
+slow = 0.25
+up = [1.5, 2.5]
+down = [2.5, 3.5]
+climb_response = 0.125
+view_top = 41
+turn_frames = 8
+turn_facing = 5
+jump_speed = 6.125
 
 # title-1's hidden objects (spec/behavior/hidden-objects.md). These are
 # the values of one that releases a bunch: struck by the ground action

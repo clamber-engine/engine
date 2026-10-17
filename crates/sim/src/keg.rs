@@ -233,6 +233,8 @@ pub(crate) fn hold(world: &mut World) -> bool {
         player.ground = None;
         player.spring = None;
         player.spring_arc = None;
+        player.rope = None;
+        player.rope_fall = false;
         player.state = State::Fall;
     }
     player.vel = Vec2::default();

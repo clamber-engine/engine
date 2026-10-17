@@ -132,6 +132,10 @@ pub enum Behavior {
     /// A spring the player stands on, which squashes and throws it up
     /// (see [`spring`](crate::spring)).
     Spring(Spring),
+    /// A rope that sways, which the player catches from a jump, climbs,
+    /// turns round, jumps off and slides off the end of (see
+    /// [`rope`](crate::rope)).
+    Rope(Rope),
 }
 
 /// A spring (spec/behavior/tyre.md). It never moves. Offsets from it are
@@ -227,6 +231,41 @@ fn run_at(runs: &[(i32, u8)], mut at: u32) -> Option<i32> {
         at -= u32::from(n);
     }
     None
+}
+
+/// A rope (spec/behavior/ropes.md). It hangs from out of sight down to
+/// its bottom end, its `y`, and sways around where it's placed: its
+/// target speed is `speed` one way or the other, turning once its `x`
+/// rounded down is more than `swing` whole px `(left, right)` past the
+/// place, and its speed closes `sway_response` of the gap to it each
+/// frame.
+///
+/// It has a player in reach with the feet line no more than `below` px
+/// under its bottom end and the player's `x` rounded down within `near`
+/// px of its own (less than that), or `far` with the player moving at
+/// `slow` or faster. Holding it, the player climbs toward `up` (with
+/// Up, or Jump alone) or `down` (with Down), each `[without Action,
+/// with Action]`, closing `climb_response` of the gap each frame, but
+/// not up past `view_top` px under the view's top. A turn round the rope
+/// lasts `turn_frames`, and facing changes on its `turn_facing`th. A
+/// jump off starts at `jump_speed` up, plus what one frame of climbing
+/// toward the target would add.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Rope {
+    pub speed: Fixed,
+    pub swing: (i32, i32),
+    pub sway_response: Fixed,
+    pub below: i32,
+    pub near: i32,
+    pub far: i32,
+    pub slow: Fixed,
+    pub up: [Fixed; 2],
+    pub down: [Fixed; 2],
+    pub climb_response: Fixed,
+    pub view_top: i32,
+    pub turn_frames: u8,
+    pub turn_facing: u8,
+    pub jump_speed: Fixed,
 }
 
 /// A hidden object (spec/behavior/hidden-objects.md). Offsets from it are
@@ -1156,6 +1195,22 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "gravity",
             "max_fall",
         ],
+        "rope" => &[
+            "speed",
+            "swing",
+            "sway_response",
+            "below",
+            "near",
+            "far",
+            "slow",
+            "up",
+            "down",
+            "climb_response",
+            "view_top",
+            "turn_frames",
+            "turn_facing",
+            "jump_speed",
+        ],
         "collect" => &[
             "worth",
             "release_every",
@@ -1498,6 +1553,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         "keg" => Behavior::Keg(parse_keg(table, path)?),
         "hidden" => Behavior::Hidden(parse_hidden(table, path)?),
         "spring" => Behavior::Spring(parse_spring(table, path)?),
+        "rope" => Behavior::Rope(parse_rope(table, path)?),
         _ => Behavior::Launcher {
             velocity: pair("velocity")?,
         },
@@ -1762,6 +1818,83 @@ fn parse_spring(table: &Table, path: &str) -> Result<Spring, String> {
         gravity: number("gravity")?,
         max_fall: number("max_fall")?,
     })
+}
+
+/// Reads a rope's values. Errors start with `path`.
+fn parse_rope(table: &Table, path: &str) -> Result<Rope, String> {
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let read = |v: &Value, at: &str| -> Result<Fixed, String> {
+        let v = clamber_pack::read_number(v, "", at).map_err(|e| e.message)?;
+        if v.is_negative() {
+            return Err(format!("{at}: must not be negative"));
+        }
+        Ok(v)
+    };
+    let number = |key: &str| read(get(key)?, &format!("{path}.{key}"));
+    let share = |key: &str| {
+        let v = number(key)?;
+        if v > Fixed::ONE {
+            return Err(format!("{path}.{key}: must be from 0 to 1"));
+        }
+        Ok(v)
+    };
+    let px = |key: &str| match get(key)? {
+        Value::Integer(n) if (0..=i64::from(i32::MAX)).contains(n) => Ok(*n as i32),
+        _ => Err(format!(
+            "{path}.{key}: expected a whole number of px, 0 or more"
+        )),
+    };
+    let frames = |key: &str| match get(key)? {
+        Value::Integer(n) if (1..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
+        _ => Err(format!(
+            "{path}.{key}: expected a whole number of frames, 1 to 255"
+        )),
+    };
+    let speeds = |key: &str| -> Result<[Fixed; 2], String> {
+        let at = format!("{path}.{key}");
+        match get(key)? {
+            Value::Array(items) if items.len() == 2 => Ok([
+                read(&items[0], &format!("{at}[0]"))?,
+                read(&items[1], &format!("{at}[1]"))?,
+            ]),
+            _ => Err(format!("{at}: expected [without Action, with Action]")),
+        }
+    };
+    let swing = match get("swing")? {
+        Value::Array(items) => match items.as_slice() {
+            [Value::Integer(l), Value::Integer(r)] => i32::try_from(*l)
+                .ok()
+                .zip(i32::try_from(*r).ok())
+                .filter(|&(l, r)| l >= 0 && r >= 0),
+            _ => None,
+        },
+        _ => None,
+    }
+    .ok_or_else(|| format!("{path}.swing: expected [left, right], whole px, 0 or more"))?;
+    let rope = Rope {
+        speed: number("speed")?,
+        swing,
+        sway_response: share("sway_response")?,
+        below: px("below")?,
+        near: px("near")?,
+        far: px("far")?,
+        slow: number("slow")?,
+        up: speeds("up")?,
+        down: speeds("down")?,
+        climb_response: share("climb_response")?,
+        view_top: px("view_top")?,
+        turn_frames: frames("turn_frames")?,
+        turn_facing: frames("turn_facing")?,
+        jump_speed: number("jump_speed")?,
+    };
+    if rope.turn_facing > rope.turn_frames {
+        return Err(format!("{path}.turn_facing: must be within `turn_frames`"));
+    }
+    Ok(rope)
 }
 
 /// Reads `[from, to]`, whole px. Errors start with `at`.
@@ -2572,6 +2705,14 @@ mod tests {
         check("spring", "wobble = [[12, 256]]", "wobble[0]: out of range");
         check("spring", "throw_up = [15, -54]", "it ends before it starts");
         check("spring", "jump_gravity = -1", "must not be negative");
+        check(
+            "rope",
+            "swing = [3]",
+            "params.swing: expected [left, right]",
+        );
+        check("rope", "up = [1.5, -2]", "up[1]: must not be negative");
+        check("rope", "sway_response = 2", "from 0 to 1");
+        check("rope", "turn_facing = 9", "within `turn_frames`");
         check("launcher", "velocity = [1]", "expected [x, y]");
         check("launcher", "size = [0, 4]", "must be positive");
         check("crate", "reach = -1", "entities[3].params.reach");

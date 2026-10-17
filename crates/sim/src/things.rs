@@ -44,6 +44,8 @@
 //! A spring catches the player, puts it back on its top while squashed
 //! and throws it (see [`spring`]).
 //!
+//! A rope sways, and the player catches it from a jump (see [`rope`]).
+//!
 //! A crate holding an animal breaks when the player lands on it, which
 //! bounces off it, and the player can mount the animal that comes out
 //! (see [`hutch`]).
@@ -87,6 +89,7 @@ use crate::join;
 use crate::player::{Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, frames, is_wall};
 use crate::pose::{self, Stance};
 use crate::ride;
+use crate::rope;
 use crate::spring;
 use crate::stinger;
 use crate::throwers::{self, Picture};
@@ -266,6 +269,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
     }
     hidden::leave(world, &physics);
     spring::update(world, frozen, untouchable);
+    rope::update(world);
     // Enemies bounced on still moved this frame, as they were.
     let freeze = frames(physics[Param::BounceFreeze]);
     let facing = world.player.facing;
@@ -355,7 +359,8 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         | Phase::Item { .. }
         | Phase::Landed(_)
         | Phase::Squashed { .. }
-        | Phase::Wobbling { .. } => return false,
+        | Phase::Wobbling { .. }
+        | Phase::Rope { .. } => return false,
         Phase::Knocked { vy } => {
             if let Behavior::Walker {
                 response,
@@ -438,7 +443,8 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         | Behavior::Stinger(_)
         | Behavior::Keg(_)
         | Behavior::Hidden(_)
-        | Behavior::Spring(_) => {}
+        | Behavior::Spring(_)
+        | Behavior::Rope(_) => {}
     }
     false
 }
@@ -1204,7 +1210,8 @@ fn interact(
             | Behavior::Stinger(_)
             | Behavior::Keg(_)
             | Behavior::Hidden(_)
-            | Behavior::Spring(_) => {}
+            | Behavior::Spring(_)
+            | Behavior::Rope(_) => {}
             _ if riding => {}
             _ => {
                 let middle = Fixed::from_bits((area.1.to_bits() + area.3.to_bits()) / 2);
