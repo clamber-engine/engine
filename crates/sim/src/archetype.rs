@@ -155,7 +155,7 @@ pub struct Throw {
 /// it stands there, a player that would be within `mount_across` and
 /// `mount_above` after its move, in the air moving down after a jump or
 /// a bounce and not rolling, mounts it: it's put on the animal and holds
-/// still for `mount_hold` frames, then rides it.
+/// still for `mount_hold` frames, then rides it as `ride` says.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Hutch {
     pub break_across: [(i32, i32); 2],
@@ -167,6 +167,49 @@ pub struct Hutch {
     pub mount_across: [(i32, i32); 2],
     pub mount_above: (i32, i32),
     pub mount_hold: u8,
+    pub ride: Ride,
+}
+
+/// How a player rides an animal (spec/behavior/riding.md; see
+/// [`ride`](crate::ride)). Speeds are px per frame, times whole frames.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Ride {
+    /// The target speed with Left or Right held.
+    pub speed: Fixed,
+    /// ... and with Action held too.
+    pub run_speed: Fixed,
+    /// The share of the gap to the target speed closed on a frame that
+    /// isn't steered.
+    pub response: Fixed,
+    /// ... and on a steered one.
+    pub steer_response: Fixed,
+    /// How long a turn lasts, and on which of its frames facing changes.
+    pub turn: u8,
+    pub turn_face: u8,
+    /// Crouch frames before a jump's take-off frame.
+    pub crouch: u8,
+    /// The upward speed set on the take-off frame.
+    pub jump_speed: Fixed,
+    /// How many frames before a jump can start a held press may have
+    /// been made.
+    pub jump_memory: u8,
+    /// Landing frames after a jump.
+    pub landing: u8,
+    /// The frame after a charge's start that hops, and the hop's upward
+    /// speed.
+    pub hop_at: u8,
+    pub hop_speed: Fixed,
+    /// The first frame after a charge's start that can begin its end, and
+    /// how long the end lasts.
+    pub charge: u8,
+    pub charge_end: u8,
+    /// Floor up to this far lower is followed down; lower floor, or none,
+    /// is left.
+    pub follow: Fixed,
+    /// How far down the frame that leaves the floor moves, besides the
+    /// frame's gravity, and the speed down it ends with.
+    pub leave_drop: Fixed,
+    pub leave_speed: Fixed,
 }
 
 /// The most frames an animal's hop out of its crate can have.
@@ -804,6 +847,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "mount_across",
             "mount_above",
             "mount_hold",
+            "ride",
         ],
         "stinger" => &["reach", "velocity", "contact"],
         "collect" => &[
@@ -1217,6 +1261,69 @@ fn parse_hutch(table: &Table, path: &str) -> Result<Hutch, String> {
         mount_across: ranges("mount_across")?,
         mount_above: range(get("mount_above")?, &format!("{path}.mount_above"))?,
         mount_hold: frames("mount_hold")?,
+        ride: parse_ride(get("ride")?, &format!("{path}.ride"))?,
+    })
+}
+
+/// Reads how an animal is ridden. Errors start with `path`.
+fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
+    const KEYS: [&str; 17] = [
+        "speed",
+        "run_speed",
+        "response",
+        "steer_response",
+        "turn",
+        "turn_face",
+        "crouch",
+        "jump_speed",
+        "jump_memory",
+        "landing",
+        "hop_at",
+        "hop_speed",
+        "charge",
+        "charge_end",
+        "follow",
+        "leave_drop",
+        "leave_speed",
+    ];
+    let Value::Table(table) = value else {
+        return Err(format!("{path}: expected a table"));
+    };
+    if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
+        return Err(format!("{path}.{key}: a ride has no such value"));
+    }
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let number = |key: &str| {
+        clamber_pack::read_number(get(key)?, "", &format!("{path}.{key}")).map_err(|e| e.message)
+    };
+    let frames = |key: &str| match get(key)? {
+        Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
+        _ => Err(format!(
+            "{path}.{key}: expected a whole number of frames, 0 to 255"
+        )),
+    };
+    Ok(Ride {
+        speed: number("speed")?,
+        run_speed: number("run_speed")?,
+        response: number("response")?,
+        steer_response: number("steer_response")?,
+        turn: frames("turn")?,
+        turn_face: frames("turn_face")?,
+        crouch: frames("crouch")?,
+        jump_speed: number("jump_speed")?,
+        jump_memory: frames("jump_memory")?,
+        landing: frames("landing")?,
+        hop_at: frames("hop_at")?,
+        hop_speed: number("hop_speed")?,
+        charge: frames("charge")?,
+        charge_end: frames("charge_end")?,
+        follow: number("follow")?,
+        leave_drop: number("leave_drop")?,
+        leave_speed: number("leave_speed")?,
     })
 }
 

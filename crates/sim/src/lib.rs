@@ -48,6 +48,7 @@ mod loss;
 mod player;
 mod pose;
 mod record;
+mod ride;
 mod script;
 mod stinger;
 mod swap;
@@ -60,8 +61,8 @@ mod world;
 pub use archetype::{
     AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
     Fall, Hit, Holder, Hutch, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_HOP_STEPS, MAX_LETTERS,
-    MAX_RESPONSE_PARTS, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Span, Stinger, Throw,
-    WalkerContact,
+    MAX_RESPONSE_PARTS, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Ride, Span, Stinger,
+    Throw, WalkerContact,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
@@ -80,6 +81,7 @@ pub use player::{
 };
 pub use pose::{Air, Pose, PoseClock, Stance, pose, stance};
 pub use record::record;
+pub use ride::{RidePart, Riding};
 pub use script::{InputFrame, Script};
 pub use swap::{Move, Other, Recent, Swap};
 pub use swim::swim_depth;

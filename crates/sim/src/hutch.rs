@@ -12,17 +12,16 @@
 //! bounce, moving down and not rolling, whose offsets after its move are
 //! within the mount ranges, mounts it: it's put on the animal by whole
 //! pixels, keeping its speed across, and holds still. After that it's on
-//! the ground with its feet on the animal's position, and rides it.
-//!
-//! Riding isn't in the spec yet: the player then moves as usual, and the
-//! animal goes with it. Only the character under control breaks a crate
-//! or mounts an animal.
+//! the ground with its feet on the animal's position, and rides it (see
+//! [`ride`](crate::ride)), with the animal under it. Only the character
+//! under control breaks a crate or mounts an animal.
 
 use clamber_fixed::Fixed;
 use clamber_pack::{Param, Physics};
 
 use crate::archetype::{Behavior, Hutch, within};
 use crate::player::{State, frames};
+use crate::ride::Riding;
 use crate::world::{Phase, World};
 
 /// Moves every crate and animal on a step, after the player has moved,
@@ -46,13 +45,11 @@ pub(crate) fn update(world: &mut World, physics: &Physics, frozen: bool, untouch
                 thing.phase = Phase::Opened(since);
                 thing.pos.y = origin.y - hutch.height(since);
             }
-            Phase::Mounted(since) if since >= hutch.mount_hold => {
-                // Riding starts with the feet on the animal's position.
+            Phase::Mounted(since) if since + 1 >= hutch.mount_hold => {
+                // Riding starts on the next frame, with the feet on the
+                // animal's position.
                 thing.phase = Phase::Ridden;
-                world
-                    .player
-                    .put_down(&world.level, origin.y, &mut world.events);
-                world.things[i].pos = world.player.pos;
+                world.player.riding = Some(Riding::new(hutch.ride, origin.y));
             }
             Phase::Mounted(since) => thing.phase = Phase::Mounted(since + 1),
             Phase::Ridden => thing.pos = world.player.pos,

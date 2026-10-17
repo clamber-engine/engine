@@ -24,6 +24,7 @@ use clamber_pack::{Feel, Param, Physics};
 use crate::columns;
 use crate::loss::Lost;
 use crate::pose::PoseClock;
+use crate::ride::Riding;
 use crate::world::Event;
 
 /// Half the body's width, px. The body is a box standing on its
@@ -230,6 +231,8 @@ pub struct Player {
     pub touched: Vec<usize>,
     /// Swimming, and resting on the floor at the end of the last step.
     pub swim_floor: bool,
+    /// Riding an animal, if it is (see [`crate::ride`]).
+    pub riding: Option<Riding>,
 }
 
 impl Player {
@@ -288,6 +291,7 @@ impl Player {
             inside: false,
             touched: Vec::new(),
             swim_floor: false,
+            riding: None,
         };
         player.ground = level
             .collision
@@ -661,6 +665,10 @@ impl Player {
             (false, true) => 1,
             _ => 0,
         };
+        if self.riding.is_some() {
+            self.ride(level, physics, input, held_dir, events);
+            return;
+        }
         if Player::in_water(level, self.pos) {
             self.swim(level, physics, input, held_dir, events);
             return;
@@ -1958,7 +1966,7 @@ impl Player {
     /// steep face falling the way given, a body that isn't stopped has its
     /// speed limited by the physics given first (`face_speed_limit`,
     /// `face_min_speed`).
-    fn move_by_columns(
+    pub(crate) fn move_by_columns(
         &mut self,
         level: &Level,
         slope: Fixed,
@@ -2003,7 +2011,7 @@ impl Player {
     /// or lift the body, except that rising with the feet up to
     /// [`PLATFORM_LIFT`] below the top lifts it level with the top or
     /// above by whole pixels.
-    fn move_in_air_by_columns(
+    pub(crate) fn move_in_air_by_columns(
         &mut self,
         level: &Level,
         physics: &Physics,
@@ -2143,7 +2151,7 @@ impl Player {
     /// for `reach`. `by_columns`, rising is stopped by the feet, not
     /// the head (see [`Player::rise_by_columns`]), and a fall that ends
     /// below a one-way platform's underside doesn't land on its top.
-    fn move_vertically(
+    pub(crate) fn move_vertically(
         &mut self,
         level: &Level,
         moved: Fixed,
@@ -2249,7 +2257,7 @@ impl Player {
 
 /// How near the ground a falling body lands.
 #[derive(Clone, Copy, Debug)]
-struct Reach {
+pub(crate) struct Reach {
     /// `landing_reach`.
     flat: Fixed,
     /// `slope_landing_reach`, over a column of a sloped piece.
@@ -2272,7 +2280,7 @@ impl Reach {
         still: false,
     };
 
-    fn new(physics: &Physics) -> Reach {
+    pub(crate) fn new(physics: &Physics) -> Reach {
         Reach {
             flat: physics[Param::LandingReach],
             sloped: physics[Param::SlopeLandingReach],
@@ -2698,7 +2706,7 @@ pub(crate) fn is_wall(hit: &Hit) -> bool {
 }
 
 /// -1 for left, 1 for right.
-fn direction(facing: Facing) -> i32 {
+pub(crate) fn direction(facing: Facing) -> i32 {
     match facing {
         Facing::Left => -1,
         Facing::Right => 1,
@@ -2706,7 +2714,7 @@ fn direction(facing: Facing) -> i32 {
 }
 
 /// Left for a negative `dir`, right otherwise.
-fn facing_of(dir: i32) -> Facing {
+pub(crate) fn facing_of(dir: i32) -> Facing {
     if dir < 0 { Facing::Left } else { Facing::Right }
 }
 

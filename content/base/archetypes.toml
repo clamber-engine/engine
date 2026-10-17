@@ -223,8 +223,20 @@
 #   is the crate's and its feet line is the crate's y, stops moving down,
 #   keeps its speed across, and holds still for `mount_hold` frames.
 #   Then its feet are put on the crate's y, on the ground there, and it
-#   rides the animal. Riding isn't covered yet: the player moves as
-#   usual, with the animal under it. Only the character under control
+#   rides the animal, as its `ride` table says (all speeds px/frame):
+#   the target speed is `speed` with Left or Right held, `run_speed`
+#   with Action too, and 0 with no direction; each frame closes
+#   `response` of the gap to it (`steer_response` on frames steered by a
+#   jump), in whole 1/256 px. Holding the way it doesn't face turns it in
+#   `turn` frames, facing changing on frame `turn_face`. A Jump press,
+#   or one up to `jump_memory` frames before still held, starts a jump
+#   from the floor: `crouch` frames, then `jump_speed` up, then the
+#   preset's jump gravity, and `landing` frames after landing. An Action
+#   press starts a charge: `hop_at` frames later it hops at `hop_speed`
+#   if on the floor, and from `charge` frames on, once on the floor, a
+#   `charge_end` frames long end. Floor up to `follow` lower is
+#   followed; lower floor, or none, is left by moving `leave_drop` plus
+#   the gravity down, at `leave_speed`. Only the character under control
 #   breaks a crate or mounts an animal.
 #
 # The player defeats an enemy by landing on it, and bounces off, or by
@@ -305,6 +317,28 @@ animal_hop = [1.5625, 2.6875, 3.375, 3.625]
 mount_across = [[-27, 19], [-26, 20]]
 mount_above = [5, 45]
 mount_hold = 22
+
+# Riding the animal (spec/behavior/riding.md, riding-slopes.md).
+# What the animal does to enemies, getting off it, and steep faces
+# aren't covered yet.
+[archetypes.hutch.ride]
+speed = 2
+run_speed = 3.5
+response = 0.03125
+steer_response = 0.125
+turn = 8
+turn_face = 4
+crouch = 5
+jump_speed = 7
+jump_memory = 11
+landing = 8
+hop_at = 10
+hop_speed = 4
+charge = 28
+charge_end = 12
+follow = 8
+leave_drop = 3
+leave_speed = 0.00390625
 
 # title-1's thrower and balls (spec/behavior/thrower.md). The spec
 # doesn't say how big either is; the sizes are Clamber's own and only
