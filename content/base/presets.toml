@@ -134,6 +134,7 @@ ground_attack_pause = 0
 bounce_speed = 6
 bounce_freeze = 0
 bounce_keeps_facing = 0
+bounce_landing_switch = 0
 bounce_width = 0
 bounce_offset = 0
 bounce_below = 0
@@ -463,6 +464,9 @@ leave_fall_speed = 0.00390625
 walk_off_keeps_facing = 1
 face_fall_landing = 11
 bounce_keeps_facing = 1
+# A bounce's landing has its switch frame on the landing frame, so a
+# jump can start two frames after it (jump-input.md, "After a bounce").
+bounce_landing_switch = 1
 roll_time = 29
 roll_speed = 3
 roll_slow_speed = 1

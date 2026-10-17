@@ -420,6 +420,7 @@ mod tests {
                     | Param::GroundAttackPause
                     | Param::BounceFreeze
                     | Param::BounceKeepsFacing
+                    | Param::BounceLandingSwitch
                     | Param::BounceWidth
                     | Param::BounceOffset
                     | Param::BounceBelow

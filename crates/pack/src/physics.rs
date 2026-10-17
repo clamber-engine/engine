@@ -529,6 +529,11 @@ params! {
     /// starts on the landing frame: running with action and a direction
     /// held, otherwise a turn, walking or standing by the direction held.
     BounceKeepsFacing => "bounce_keeps_facing",
+    /// Above 0, a landing that ends a bounce has its switch frame on the
+    /// landing frame: a jump can start `landing_lockout` frames after
+    /// it. 0: it counts as M on the frame after landing, as other
+    /// landings without a switch frame do (`switch_from`).
+    BounceLandingSwitch => "bounce_landing_switch",
     /// Above 0, whether the player bounces off an enemy is decided with
     /// a box on whole-pixel positions instead of by landing on it: this
     /// wide, standing on the player's position and as tall as the body.

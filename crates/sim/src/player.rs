@@ -1745,6 +1745,11 @@ impl Player {
                 Some(land) if switch_from > 0 && !self.rolled_jump => {
                     self.switch_wait(land, physics)
                 }
+                _ if self.state == State::Bounce
+                    && physics[Param::BounceLandingSwitch] > Fixed::ZERO =>
+                {
+                    (0, 1 + frames(physics[Param::LandingModeWait]))
+                }
                 _ => (1, 1 + frames(physics[Param::LandingModeWait])),
             };
             self.lockout = (lockout + switch).saturating_sub(1);

@@ -505,6 +505,85 @@ fn classic_after_a_bounce_a_mode_starts_on_landing() {
     }
 }
 
+/// The frames of a [`classic_bounce`] that the bounce lands on and that
+/// a jump starts on, if one does by 20 frames after the landing, with
+/// only Jump held, on the frames `jump` gives counted from the landing
+/// `l` of the same bounce with nothing held.
+fn classic_jump_after_bounce(jump: impl Fn(i64) -> bool) -> (i64, Option<i64>) {
+    let (mut probe, b) = classic_bounce();
+    let steps = play(&mut probe, b + 120, |_| false);
+    let l = (b + 1..steps.len())
+        .find(|&n| steps[n].2.contains(&Event::Land))
+        .expect("lands") as i64;
+    let (mut w, _) = classic_bounce();
+    let steps = play(&mut w, l as usize + 21, |n| jump(n as i64 - l));
+    let at = |e: Event| {
+        (b + 1..steps.len())
+            .find(|&n| steps[n].2.contains(&e))
+            .map(|n| n as i64 - l)
+    };
+    (at(Event::Land).expect("lands"), at(Event::JumpStart))
+}
+
+#[test]
+fn classic_a_jump_can_start_two_frames_after_a_bounce_lands() {
+    // spec/behavior/jump-input.md, "After a bounce": M = L, so E = L + 2,
+    // and the press window counts back from E.
+    for p in -10..=1 {
+        // Pressed L - 10 to L + 1, held through L + 1: jumps on L + 2.
+        assert_eq!(
+            classic_jump_after_bounce(|n| n >= p),
+            (0, Some(2)),
+            "held from L + {p}"
+        );
+        assert_eq!(
+            classic_jump_after_bounce(|n| (p..=1).contains(&n)),
+            (0, Some(2)),
+            "pressed on L + {p}, let go on L + 2"
+        );
+    }
+    for p in [-14, -12, -11] {
+        // Pressed L - 11 or earlier, held through landing: no jump.
+        assert_eq!(
+            classic_jump_after_bounce(|n| n >= p),
+            (0, None),
+            "held from L + {p}"
+        );
+    }
+    for p in [-10, -5, -1] {
+        // Pressed in the air, let go on L or earlier: no jump.
+        for end in p + 1..=0 {
+            assert_eq!(
+                classic_jump_after_bounce(|n| (p..end).contains(&n)),
+                (0, None),
+                "pressed on L + {p}, let go on L + {end}"
+            );
+        }
+    }
+    for p in 2..=4 {
+        // Pressed on L + 2 or later: jumps on the next frame.
+        assert_eq!(
+            classic_jump_after_bounce(|n| n >= p),
+            (0, Some(p + 1)),
+            "pressed on L + {p}"
+        );
+    }
+}
+
+#[test]
+fn classic_jump_held_since_the_bounce_does_not_jump_on_landing() {
+    // spec/behavior/jump-input.md, "After a bounce": held without a break
+    // since B + 3, no jump. The held bounce lands later.
+    let (_, b) = classic_bounce();
+    let (mut w, _) = classic_bounce();
+    let steps = play(&mut w, b + 140, |n| n >= b + 3);
+    let l = (b + 1..steps.len())
+        .find(|&n| steps[n].2.contains(&Event::Land))
+        .expect("lands");
+    assert!(l + 20 < steps.len());
+    assert!(steps[b..].iter().all(|s| !s.2.contains(&Event::JumpStart)));
+}
+
 /// Whether a classic-1 player facing `facing`, falling straight down
 /// `i` px from a still walker made by `walker` heading `heading`, bounces
 /// off it.
