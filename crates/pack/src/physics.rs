@@ -998,6 +998,49 @@ params! {
     /// Each letter's image is this far right of the one before. Whole
     /// px.
     LetterRowGap => "letter_row_gap",
+    /// Above 0, the world has a count display (see
+    /// `clamber_sim::World::count_display`): the number shown follows the
+    /// collectible count one step a frame, and the display is shown while
+    /// a pickup waits for its steps and up to this many frames after the
+    /// latest step. 0: no count display. Whole frames.
+    CountShowFor => "count_show_for",
+    /// The top-left corner of the count display's collectible image, px
+    /// right of the picture's left edge. Whole px.
+    CountX => "count_x",
+    /// The top of the count display's image and digits, px below the
+    /// picture's top. Whole px.
+    CountY => "count_y",
+    /// The left edge of the number's first digit, px right of the
+    /// picture's left edge. Whole px.
+    CountDigitX => "count_digit_x",
+    /// Each digit is this far right of the one before. Whole px.
+    CountDigitGap => "count_digit_gap",
+    /// With a count display, when the number shown goes from
+    /// `count_life` less one to 0 the lives display is first drawn this
+    /// many frames after that step. Whole frames.
+    LivesIn => "lives_in",
+    /// Frames the lives display slides in for, as the letter row does
+    /// with `letter_row_slide`, by `lives_y`, `lives_rise` and
+    /// `lives_speed`. Whole frames.
+    LivesSlide => "lives_slide",
+    /// From this many frames after the step, the lives display slides
+    /// back up, as the letter row does from `letter_row_out`. Whole
+    /// frames.
+    LivesOut => "lives_out",
+    /// Where the top of the lives number is while it's shown, px below
+    /// the picture's top. Whole px.
+    LivesY => "lives_y",
+    /// See `lives_slide` and `lives_out`. Whole px.
+    LivesRise => "lives_rise",
+    /// See `lives_slide` and `lives_out`. Whole px.
+    LivesSpeed => "lives_speed",
+    /// The left edge of the lives number's digit, px right of the
+    /// picture's left edge. Whole px.
+    LivesX => "lives_x",
+    /// The lives display shows the lives before the new one until this
+    /// many frames after the step, and the new number from then on. Whole
+    /// frames.
+    LivesChange => "lives_change",
     /// Above 0, the world has a view this wide that follows the player
     /// (see `clamber_sim::View`), and walkers are in the level only near
     /// it: one appears at its start, at rest, when its start comes within

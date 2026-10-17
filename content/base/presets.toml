@@ -256,6 +256,19 @@ letter_row_rise = 0
 letter_row_speed = 0
 letter_row_x = 0
 letter_row_gap = 0
+count_show_for = 0
+count_x = 0
+count_y = 0
+count_digit_x = 0
+count_digit_gap = 0
+lives_in = 0
+lives_slide = 0
+lives_out = 0
+lives_y = 0
+lives_rise = 0
+lives_speed = 0
+lives_x = 0
+lives_change = 0
 view_width = 0
 view_back = 0
 view_back_left = 0
@@ -641,6 +654,26 @@ letter_row_rise = 24
 letter_row_speed = 4
 letter_row_x = 84
 letter_row_gap = 24
+# The count display (count-display.md): shown while a pickup waits for
+# its steps and up to 59 frames after the latest one. The image's top
+# left is at (16, 8), the digits at x 32 and 40, y 8. When the count
+# reaches 100 the lives number, at x 220, is first drawn 9 frames after
+# that step at y -8, slides down 4 px a frame, is at 10 from 14 frames
+# after, and slides back up from 147 after, last drawn at -6. It shows
+# the new number from 25 frames after.
+count_show_for = 59
+count_x = 16
+count_y = 8
+count_digit_x = 32
+count_digit_gap = 8
+lives_in = 9
+lives_slide = 5
+lives_out = 147
+lives_y = 10
+lives_rise = 18
+lives_speed = 4
+lives_x = 220
+lives_change = 25
 # The view (view.md) and walkers appearing and being removed with it
 # (walker-view.md). The picture is 256 wide; the window for a walker's
 # start runs from 31 left of it to 32 right of it, and a walker is

@@ -36,8 +36,9 @@
 //! A character missing from the level joins the player when an object
 //! holding it breaks ([`Join`]).
 //!
-//! Collectibles add to the collectible count ([`Release`]), and letters
-//! to the letters taken ([`LetterRow`]).
+//! Collectibles add to the collectible count ([`Release`]), shown by
+//! the count display ([`CountDisplay`]), and letters to the letters
+//! taken ([`LetterRow`]).
 //!
 //! Walking past a level's [`END`] marker finishes it, after a walk-out
 //! and a fade if the preset has them ([`Ending`]). An [`EXIT`] takes the
@@ -93,7 +94,7 @@ pub use archetype::{
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
-pub use collect::{LetterRow, Release};
+pub use collect::{CountDisplay, LetterRow, LivesDisplay, LivesStep, Pickup, Release};
 pub use dimming::{DIM, Dimming};
 pub use ending::{END, Ending};
 pub use entrance::Entering;

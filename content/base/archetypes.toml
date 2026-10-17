@@ -218,7 +218,10 @@
 #   out: 0), it's that letter of the level's word: taken, it joins the
 #   letters taken `join_delay` frames later (left out: 0), and the
 #   letter row is shown. The preset's `letter_count` says how many
-#   letters the word has, and all of them give one more life.
+#   letters the word has, and all of them give one more life. With a
+#   preset that has a count display (`count_show_for` above 0), the
+#   display waits on what it's worth from `pickup_start` frames after
+#   it's taken (left out: 0).
 # - `hutch`: a crate holding an animal. It stands on its position and
 #   never moves; walking, running or rolling through it does nothing.
 #   Offsets from it are whole px, ends included: `across`, the player's
@@ -745,11 +748,13 @@ burst_time = 40
 # collectible (spec/behavior/collectibles.md), drawn 16 x 16 around its
 # position. `cluster`: a bunch worth ten (spec/behavior/bunches.md). The
 # spec doesn't cover a bunch taken by the second character, so it uses
-# the first's reach. The spec gives a bunch no window, and doesn't cover
-# whether a bunch appears with the view. Where the spec doesn't cover
-# what the player is doing (bouncing, falling without a jump, carried
-# down a face, landing while moving, and so on), the reach is the one
-# for the nearest pose above.
+# the first's reach. The count display waits on a single from the frame
+# after it's taken and on a bunch from the frame it's taken
+# (spec/behavior/count-display.md). The spec gives a bunch no window,
+# and doesn't cover whether a bunch appears with the view. Where the
+# spec doesn't cover what the player is doing (bouncing, falling without
+# a jump, carried down a face, landing while moving, and so on), the
+# reach is the one for the nearest pose above.
 [archetypes.spark]
 behavior = "collect"
 size = [16, 16]
@@ -757,6 +762,7 @@ offset = 0
 worth = 1
 release_every = 0
 count_delay = 33
+pickup_start = 1
 window = [-39, 263]
 arrive = [
     { x_from = 8, x_to = 255, delay = 33 },

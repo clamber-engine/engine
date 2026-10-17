@@ -540,6 +540,19 @@ mod tests {
                     | Param::LetterRowSpeed
                     | Param::LetterRowX
                     | Param::LetterRowGap
+                    | Param::CountShowFor
+                    | Param::CountX
+                    | Param::CountY
+                    | Param::CountDigitX
+                    | Param::CountDigitGap
+                    | Param::LivesIn
+                    | Param::LivesSlide
+                    | Param::LivesOut
+                    | Param::LivesY
+                    | Param::LivesRise
+                    | Param::LivesSpeed
+                    | Param::LivesX
+                    | Param::LivesChange
                     | Param::ViewWidth
                     | Param::ViewBack
                     | Param::ViewBackLeft

@@ -1,8 +1,9 @@
 //! The heads-up display: lives and pickups, from the world's level flow,
-//! and the letter row while the world shows it.
+//! and the letter row while the world shows it. A world with a count
+//! display shows the count and lives only when it says so.
 
 use clamber_pack::Param;
-use clamber_sim::{LetterRow, RELIC, World};
+use clamber_sim::{CountDisplay, LetterRow, LivesDisplay, RELIC, World};
 
 use crate::canvas::{Color, rgb};
 use crate::surface::Surface;
@@ -19,13 +20,34 @@ pub(crate) const COUNT: Color = rgb(0xf4, 0xf0, 0xe8);
 
 /// A letter's image in the letter row, px square.
 const LETTER: i32 = 16;
+/// The count display's collectible image, px square.
+const IMAGE: i32 = 16;
 const LETTER_BACK: Color = rgb(0xf0, 0xb0, 0x50);
 const LETTER_TEXT: Color = rgb(0x30, 0x20, 0x10);
 
 /// Draws the HUD along the top left of the canvas: lives, gems, and
-/// relics out of the level's total when it has any. Then the letter row,
-/// if the world shows it.
+/// relics out of the level's total when it has any. With a count
+/// display, the count display and the lives display instead, when the
+/// world shows them. Then the letter row, if the world shows it.
 pub fn draw_hud(canvas: &mut dyn Surface, world: &World) {
+    if world.feel.world[Param::CountShowFor].floor() > 0 {
+        let left = picture_left(canvas, world);
+        if let Some(count) = world.count_display() {
+            draw_count(canvas, left, &count);
+        }
+        if let Some(lives) = world.lives_display() {
+            draw_lives(canvas, left, &lives);
+        }
+    } else {
+        draw_items(canvas, world);
+    }
+    if let Some(row) = world.letter_row() {
+        draw_letter_row(canvas, world, &row);
+    }
+}
+
+/// Lives, gems and relics in a row.
+fn draw_items(canvas: &mut dyn Surface, world: &World) {
     let flow = &world.flow;
     let relics = relic_total(world);
     let mut items = vec![
@@ -43,9 +65,40 @@ pub fn draw_hud(canvas: &mut dyn Surface, world: &World) {
         draw_text(canvas, x, MARGIN, &count, COUNT);
         x += count.chars().count() as i32 * ADVANCE + GAP;
     }
-    if let Some(row) = world.letter_row() {
-        draw_letter_row(canvas, world, &row);
+}
+
+/// Where the world's picture's left edge is on the canvas: it's centred
+/// across it when the world has a view narrower than it.
+fn picture_left(canvas: &dyn Surface, world: &World) -> i32 {
+    let picture = world.feel.world[Param::ViewWidth].floor();
+    let width = i64::from(canvas.view().0);
+    if picture > 0 && picture < width {
+        ((width - picture) / 2) as i32
+    } else {
+        0
     }
+}
+
+/// Draws the count display with its picture's left edge at `left`. How
+/// the image and digits are drawn isn't in the spec: the image is the
+/// gem icon in its 16 px square, and each digit is drawn from its place.
+fn draw_count(canvas: &mut dyn Surface, left: i32, count: &CountDisplay) {
+    let (x, y) = count.image;
+    draw_text_centred(canvas, left + x + IMAGE / 2, y + 4, "◆", GEM);
+    let (x, y) = count.digits;
+    for (k, digit) in count.number.to_string().chars().enumerate() {
+        let x = left + x + count.gap * k as i32;
+        draw_text(canvas, x, y + 4, &digit.to_string(), COUNT);
+    }
+}
+
+/// Draws the lives display with its picture's left edge at `left`: the
+/// life icon to the left of the number (the spec doesn't cover the
+/// image), then its digits.
+fn draw_lives(canvas: &mut dyn Surface, left: i32, lives: &LivesDisplay) {
+    let x = left + lives.x;
+    draw_text(canvas, x - ADVANCE - 1, lives.y + 4, "♥", LIFE);
+    draw_text(canvas, x, lives.y + 4, &lives.number.to_string(), COUNT);
 }
 
 /// Draws the letters taken in their slots. The row's places are in the
@@ -53,13 +106,7 @@ pub fn draw_hud(canvas: &mut dyn Surface, world: &World) {
 /// has a view narrower than it. How the letters are drawn isn't in the
 /// spec; each is its number on a plain square.
 fn draw_letter_row(canvas: &mut dyn Surface, world: &World, row: &LetterRow) {
-    let picture = world.feel.world[Param::ViewWidth].floor();
-    let width = i64::from(canvas.view().0);
-    let left = if picture > 0 && picture < width {
-        ((width - picture) / 2) as i32
-    } else {
-        0
-    };
+    let left = picture_left(canvas, world);
     for k in 0..row.count {
         if row.letters & (1 << k) == 0 {
             continue;
@@ -166,6 +213,40 @@ mod tests {
         let mut canvas = Canvas::new(256, 64);
         draw_hud(&mut canvas, &world);
         assert!(!canvas.pixels.contains(&LETTER_BACK), "the row has gone");
+    }
+
+    #[test]
+    fn a_count_display_shows_the_count_only_when_the_world_shows_it() {
+        let src = r#"
+            format = 1
+            size = [400, 300]
+            start = [100, 200]
+            [[collision]]
+            shape = "rect"
+            rect = [0, 200, 400, 100]
+        "#;
+        let level = Level::from_toml_str(src, "test").unwrap();
+        let feel = generic_feel("classic-1").unwrap();
+        let mut world = World::new(Arc::new(level), Arc::new(feel));
+        let input = clamber_sim::InputFrame::single(Default::default());
+        clamber_sim::step(&mut world, &input);
+        let mut canvas = Canvas::new(256, 64);
+        draw_hud(&mut canvas, &world);
+        assert!(
+            canvas.pixels.iter().all(|&p| p == canvas.pixels[0]),
+            "nothing is shown when the level begins"
+        );
+
+        // The count goes up by one: the display shows the image and 1.
+        world.flow.gems = 1;
+        clamber_sim::step(&mut world, &input);
+        let mut canvas = Canvas::new(256, 64);
+        draw_hud(&mut canvas, &world);
+        assert!(canvas.pixels.contains(&GEM));
+        assert!(!canvas.pixels.contains(&LIFE), "no lives display");
+        let mut expected = Canvas::new(256, 64);
+        draw_count(&mut expected, 0, &world.count_display().unwrap());
+        assert_eq!(canvas, expected);
     }
 
     #[test]

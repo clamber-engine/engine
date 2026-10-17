@@ -98,6 +98,9 @@ pub enum Behavior {
         arrive: Arrive,
         letter: u8,
         join_delay: u8,
+        /// With a count display, the frames after it's taken that the
+        /// display starts waiting on what it's worth.
+        pickup_start: u8,
     },
     /// Sits where it's placed and throws a [`BALL`](crate::BALL) on each
     /// of its first `throw_count` `throws`, `from` its position, on that
@@ -1276,6 +1279,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "arrive_else",
             "letter",
             "join_delay",
+            "pickup_start",
         ],
         _ => return Err(format!("{path}.behavior: unknown behavior `{behavior}`")),
     };
@@ -1503,6 +1507,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 arrive: parse_arrive(table, path, count_delay)?,
                 letter,
                 join_delay: optional("join_delay", u8::MAX)?,
+                pickup_start: optional("pickup_start", u8::MAX)?,
             }
         }
         "thrower" => {

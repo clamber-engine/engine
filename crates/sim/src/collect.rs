@@ -20,6 +20,13 @@
 //! collectible's `arrive` rules, by where it is in the view on its
 //! release step (see [`Arrive`]).
 //!
+//! With a count display (`count_show_for` above 0), the number it shows
+//! follows the count one step a frame, and each taken collectible is a
+//! pickup the display waits on, from `pickup_start` steps after it's
+//! taken, until as many steps as it's worth have happened; steps go to
+//! the pickups in the order they were taken. See
+//! [`World::count_display`] and [`World::lives_display`].
+//!
 //! A collectible with a `letter` is that letter of the level's word.
 //! Taken, it joins the letters taken `join_delay` steps later, and the
 //! letter row is shown (see [`World::letter_row`]). On the step the last
@@ -29,7 +36,10 @@
 //!
 //! Engine choices where the spec says nothing: a letter taken while the
 //! row is shown for another shows it again from the start, and the row
-//! shows no sequence for the last letter, only the life.
+//! shows no sequence for the last letter, only the life. A part of what
+//! a pickup is worth that never reaches the count is no longer owed, and
+//! a step from a count with no pickup waiting (a generic gem) goes to
+//! none.
 
 use clamber_fixed::Fixed;
 use clamber_pack::Param;
@@ -50,6 +60,49 @@ pub struct Release {
     pub every: u8,
     /// Index into the world's things.
     pub thing: usize,
+}
+
+/// A taken collectible the count display waits on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Pickup {
+    /// The step it starts on.
+    pub start: u32,
+    /// Steps of the number shown still owed to it.
+    pub owed: u8,
+    /// Index into the world's things.
+    pub thing: usize,
+}
+
+/// A step of the number shown from `count_life` less one to 0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct LivesStep {
+    pub at: u32,
+    /// The lives before the one it gave, and with it.
+    pub before: u8,
+    pub after: u8,
+}
+
+/// The count display as drawn in a picture: the collectible image's
+/// top-left corner and the number's digits, px from the picture's
+/// top-left corner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct CountDisplay {
+    pub number: u32,
+    pub image: (i32, i32),
+    /// The left edge of the first digit, and the top of all of them.
+    pub digits: (i32, i32),
+    /// Each digit is this far right of the one before.
+    pub gap: i32,
+}
+
+/// The lives display as drawn in a picture: the number of lives, and
+/// the left edge and top of its digit, px from the picture's top-left
+/// corner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct LivesDisplay {
+    pub number: u8,
+    pub x: i32,
+    pub y: i32,
 }
 
 /// The letter row as drawn in a picture: where the top of its images
@@ -88,19 +141,7 @@ impl World {
             i64::from(int(Param::LetterRowRise)),
             i64::from(int(Param::LetterRowSpeed)),
         );
-        let y = if since < into {
-            return None;
-        } else if since < into + slide {
-            rest - rise + speed * (since - into)
-        } else if since < out {
-            rest
-        } else {
-            let y = rest - speed * (since - out + 1);
-            if speed == 0 || y < rest - rise {
-                return None;
-            }
-            y
-        };
+        let y = slide_y(since, (into, slide, out), (rest, rise, speed))?;
         let (left, gap) = (int(Param::LetterRowX), int(Param::LetterRowGap));
         let mut x = [0; MAX_LETTERS as usize];
         for (k, x) in x.iter_mut().enumerate() {
@@ -112,6 +153,91 @@ impl World {
             count: count as u8,
             letters: self.flow.letters,
         })
+    }
+
+    /// The count display in the picture made from the last step, if the
+    /// world has one and it's shown in it: while a pickup that has
+    /// started is still owed steps, and up to `count_show_for` frames
+    /// after the latest step.
+    pub fn count_display(&self) -> Option<CountDisplay> {
+        let physics = &self.feel.world;
+        let int = |p: Param| i32::try_from(physics[p].floor()).unwrap_or(0);
+        let show_for = whole(physics[Param::CountShowFor]);
+        let n = self.frame.checked_sub(1)?;
+        let flow = &self.flow;
+        if show_for == 0 {
+            return None;
+        }
+        let waiting = flow.pickups.iter().any(|p| p.start <= n);
+        let recent = flow
+            .last_step
+            .is_some_and(|s| u64::from(n) <= u64::from(s) + u64::from(show_for));
+        if !waiting && !recent {
+            return None;
+        }
+        Some(CountDisplay {
+            number: flow.shown,
+            image: (int(Param::CountX), int(Param::CountY)),
+            digits: (int(Param::CountDigitX), int(Param::CountY)),
+            gap: int(Param::CountDigitGap),
+        })
+    }
+
+    /// The lives display in the picture made from the last step, if it's
+    /// drawn in it: after the number shown went from `count_life` less
+    /// one to 0, sliding in and out as the letter row does.
+    pub fn lives_display(&self) -> Option<LivesDisplay> {
+        let physics = &self.feel.world;
+        let int = |p: Param| i64::from(i32::try_from(physics[p].floor()).unwrap_or(0));
+        if whole(physics[Param::CountShowFor]) == 0 {
+            return None;
+        }
+        let step = self.flow.lives_step?;
+        let since = i64::from(self.frame.checked_sub(1)?.checked_sub(step.at)?);
+        let y = slide_y(
+            since,
+            (
+                int(Param::LivesIn),
+                int(Param::LivesSlide),
+                int(Param::LivesOut),
+            ),
+            (
+                int(Param::LivesY),
+                int(Param::LivesRise),
+                int(Param::LivesSpeed),
+            ),
+        )?;
+        Some(LivesDisplay {
+            number: if since < int(Param::LivesChange) {
+                step.before
+            } else {
+                step.after
+            },
+            x: int(Param::LivesX) as i32,
+            y: i32::try_from(y).unwrap_or(i32::MAX),
+        })
+    }
+}
+
+/// Where something that slides in and out is, `since` frames after it's
+/// set off: first drawn `into` frames after, sliding down `speed` px a
+/// frame for `slide` frames from `rise` above `rest`, then at `rest`,
+/// and from `out` frames after sliding back up `speed` px a frame until
+/// it's more than `rise` above `rest`.
+fn slide_y(
+    since: i64,
+    (into, slide, out): (i64, i64, i64),
+    (rest, rise, speed): (i64, i64, i64),
+) -> Option<i64> {
+    if since < into {
+        None
+    } else if since < into + slide {
+        Some(rest - rise + speed * (since - into))
+    } else if since < out {
+        Some(rest)
+    } else {
+        let y = rest - speed * (since - out + 1);
+        (speed != 0 && y >= rest - rise).then_some(y)
     }
 }
 
@@ -154,8 +280,9 @@ pub(crate) fn update(world: &mut World, can_take: bool, start: Option<View>) {
             }
             None => Some(count_delay),
         };
-        if let Some(delay) = delay {
-            world.flow.due.push(frame + u32::from(delay));
+        match delay {
+            Some(delay) => world.flow.due.push(frame + u32::from(delay)),
+            None => forgive(&mut world.flow, i),
         }
     }
     let flow = &mut world.flow;
@@ -164,6 +291,7 @@ pub(crate) fn update(world: &mut World, can_take: bool, start: Option<View>) {
     for _ in 0..arrived {
         count(flow, life);
     }
+    step_shown(flow, frame, life);
     let word = whole(world.feel.world[Param::LetterCount]).min(u32::from(MAX_LETTERS));
     let joined: Vec<u8> = flow
         .joining
@@ -175,6 +303,38 @@ pub(crate) fn update(world: &mut World, can_take: bool, start: Option<View>) {
     for k in joined {
         join(flow, k, word);
     }
+}
+
+/// Takes the number shown one step towards the count, if it's behind,
+/// paying the first pickup still owed and noting a step to 0 from
+/// `life` less one (above 0) for the lives display.
+fn step_shown(flow: &mut Flow, frame: u32, life: u32) {
+    if flow.shown == flow.gems {
+        return;
+    }
+    let wrapped = life > 0 && flow.shown + 1 >= life;
+    flow.shown = if wrapped { 0 } else { flow.shown + 1 };
+    flow.last_step = Some(frame);
+    if let Some(p) = flow.pickups.first_mut() {
+        p.owed -= 1;
+    }
+    flow.pickups.retain(|p| p.owed > 0);
+    if wrapped {
+        flow.lives_step = Some(LivesStep {
+            at: frame,
+            before: flow.lives.saturating_sub(1),
+            after: flow.lives,
+        });
+    }
+}
+
+/// One part of what the thing at `thing` is worth will never reach the
+/// count: the first pickup of it no longer waits for that step.
+fn forgive(flow: &mut Flow, thing: usize) {
+    if let Some(p) = flow.pickups.iter_mut().find(|p| p.thing == thing) {
+        p.owed -= 1;
+    }
+    flow.pickups.retain(|p| p.owed > 0);
 }
 
 /// Adds letter `k` to the letters taken, with one more life and none
@@ -242,6 +402,7 @@ fn take(world: &mut World) {
             window,
             letter,
             join_delay,
+            pickup_start,
             ..
         }) = thing.archetype.map(|a| a.behavior)
         else {
@@ -276,6 +437,11 @@ fn take(world: &mut World) {
                 left: worth,
                 wait: 0,
                 every: release_every,
+                thing: i,
+            });
+            flow.pickups.push(Pickup {
+                start: world.frame + u32::from(pickup_start),
+                owed: worth,
                 thing: i,
             });
         }

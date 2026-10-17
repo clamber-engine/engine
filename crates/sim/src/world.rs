@@ -659,6 +659,28 @@ impl World {
             }
             None => out.push(0),
         }
+        out.extend(f.shown.to_le_bytes());
+        match f.last_step {
+            Some(at) => {
+                out.push(1);
+                out.extend(at.to_le_bytes());
+            }
+            None => out.push(0),
+        }
+        count(&mut out, f.pickups.len());
+        for p in &f.pickups {
+            out.extend(p.start.to_le_bytes());
+            out.push(p.owed);
+            count(&mut out, p.thing);
+        }
+        match f.lives_step {
+            Some(l) => {
+                out.push(1);
+                out.extend(l.at.to_le_bytes());
+                out.extend([l.before, l.after]);
+            }
+            None => out.push(0),
+        }
         count(&mut out, f.events.len());
         for e in &f.events {
             let (tag, index) = match *e {

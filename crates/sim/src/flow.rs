@@ -26,7 +26,7 @@ use clamber_level::Vec2;
 
 use clamber_pack::Param;
 
-use crate::collect::{self, Release};
+use crate::collect::{self, LivesStep, Pickup, Release};
 use crate::keg;
 use crate::loss;
 use crate::player::{Facing, Knockout, Player, State, frames};
@@ -122,6 +122,17 @@ pub struct Flow {
     /// The step the last letter was taken on, for the letter row
     /// ([`World::letter_row`](crate::World::letter_row)).
     pub letter_taken: Option<u32>,
+    /// The number the count display shows
+    /// ([`World::count_display`](crate::World::count_display)): it
+    /// follows `gems` one step a frame.
+    pub shown: u32,
+    /// The step `shown` last went up on.
+    pub last_step: Option<u32>,
+    /// Pickups still owed steps of `shown`, in the order they were taken.
+    pub pickups: Vec<Pickup>,
+    /// The step `shown` last went from `count_life` less one to 0 on,
+    /// for the lives display.
+    pub lives_step: Option<LivesStep>,
     /// Indices of the checkpoints reached, in order; the player comes
     /// back at the last.
     pub checkpoints: Vec<usize>,
