@@ -105,6 +105,8 @@ pub struct Flow {
     pub lives: u8,
     /// The collectible count: gems, and what collectibles add.
     pub gems: u32,
+    /// Relics taken, and collectibles that are a `relic` (figure.md's
+    /// figure count).
     pub relics: u32,
     /// Steps on which one more reaches the collectible count, one entry
     /// each.

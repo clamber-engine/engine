@@ -190,7 +190,8 @@
 #   for any other (left out: the first's). Each says where the player
 #   takes it from, as `[past from, to, below from, to]`, whole px, ends
 #   included: how far the player's x, rounded down, is past the
-#   collectible's the way the player faces, and how far the player's
+#   collectible's the way the player faces (facing left, from
+#   `left_shift` px right of it; left out: 0), and how far the player's
 #   feet, rounded up, are below it. Which applies depends on what the
 #   player is doing at the end of a frame: `stand`, `walk` (walking or
 #   running), `crouch` (down held on the ground), `roll`, `jump` (for the
@@ -221,7 +222,8 @@
 #   letters the word has, and all of them give one more life. With a
 #   preset that has a count display (`count_show_for` above 0), the
 #   display waits on what it's worth from `pickup_start` frames after
-#   it's taken (left out: 0).
+#   it's taken (left out: 0). With `relic = true`, taken, it adds one to
+#   the relic count.
 # - `hutch`: a crate holding an animal. It stands on its position and
 #   never moves; walking, running or rolling through it does nothing.
 #   Offsets from it are whole px, ends included: `across`, the player's
@@ -842,3 +844,33 @@ air = [-15, 18, 13, 57]
 air_below = []
 jump_early = 6
 land_hold = 4
+
+# A golden figure (spec/behavior/figure.md): taken, it adds one to the
+# relic count (the spec's figure count) and nothing to the collectible
+# count. Its ranges are figure.md's: the standing ones for the first six
+# frames of a jump, and facing left they're measured from 3 px right of
+# it. Falling without a jump, landing and the second character weren't
+# measured, so those use the jump's later row, the standing row from the
+# frame it lands, and the first character's ranges. How the taken figure
+# is shown flying away isn't drawn yet. The size is Clamber's own and
+# only draws it.
+[archetypes.idol]
+behavior = "collect"
+size = [24, 24]
+offset = 0
+worth = 0
+release_every = 0
+count_delay = 0
+relic = true
+left_shift = 3
+
+[[archetypes.idol.reach]]
+stand = [-22, 31, -27, 37]
+walk = [-22, 31, -27, 37]
+crouch = [-25, 22, -31, 28]
+roll = [-20, 31, -23, 35]
+jump = [-22, 31, -27, 37]
+air = [-22, 28, -6, 54]
+air_below = []
+jump_early = 6
+land_hold = 0

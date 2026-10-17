@@ -85,7 +85,8 @@ pub enum Behavior {
     /// `arrive` decides when each one reaches the count. A `letter`
     /// above 0 is that letter of the level's word: taken, it joins the
     /// letters taken `join_delay` frames later (see
-    /// [`Flow::letters`](crate::Flow::letters)).
+    /// [`Flow::letters`](crate::Flow::letters)). A `relic` adds one to
+    /// [`Flow::relics`](crate::Flow::relics) instead.
     Collect {
         worth: u8,
         release_every: u8,
@@ -101,6 +102,10 @@ pub enum Behavior {
         /// With a count display, the frames after it's taken that the
         /// display starts waiting on what it's worth.
         pickup_start: u8,
+        relic: bool,
+        /// Facing left, how far the player is past it is measured from
+        /// this many px right of it.
+        left_shift: i32,
     },
     /// Sits where it's placed and throws a [`BALL`](crate::BALL) on each
     /// of its first `throw_count` `throws`, `from` its position, on that
@@ -1280,6 +1285,8 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "letter",
             "join_delay",
             "pickup_start",
+            "relic",
+            "left_shift",
         ],
         _ => return Err(format!("{path}.behavior: unknown behavior `{behavior}`")),
     };
@@ -1493,11 +1500,21 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             };
             let letter = optional("letter", MAX_LETTERS)?;
             let worth = small("worth", 0)?;
-            if worth == 0 && letter == 0 {
+            let relic = match table.get("relic") {
+                None | Some(Value::Boolean(false)) => false,
+                Some(Value::Boolean(true)) => true,
+                Some(_) => return Err(format!("{path}.relic: expected true or false")),
+            };
+            if worth == 0 && letter == 0 && !relic {
                 return Err(format!(
-                    "{path}.worth: must be at least 1, unless it's a `letter`"
+                    "{path}.worth: must be at least 1, unless it's a `letter` or a `relic`"
                 ));
             }
+            let left_shift = match table.get("left_shift") {
+                None => 0,
+                Some(Value::Integer(n)) if i32::try_from(*n).is_ok() => *n as i32,
+                Some(_) => return Err(format!("{path}.left_shift: expected a whole number of px")),
+            };
             Behavior::Collect {
                 worth,
                 release_every: small("release_every", 0)?,
@@ -1508,6 +1525,8 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 letter,
                 join_delay: optional("join_delay", u8::MAX)?,
                 pickup_start: optional("pickup_start", u8::MAX)?,
+                relic,
+                left_shift,
             }
         }
         "thrower" => {

@@ -80,6 +80,7 @@ fn the_cast_sheets_are_rendered_with_their_animations() {
         ("flutter", &["fly", "defeated"]),
         ("gem", &["spin"]),
         ("relic", &["glint"]),
+        ("idol", &["shine"]),
         ("checkpoint", &["waiting", "reached"]),
         ("goal", &["glow"]),
         ("launcher", &["waiting", "fire"]),

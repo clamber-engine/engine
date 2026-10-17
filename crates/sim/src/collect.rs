@@ -34,6 +34,9 @@
 //! and the letters taken start again from none. The letters taken last
 //! for the visit to the level, losing a life included.
 //!
+//! A collectible that's a `relic` adds one to the relic count when it's
+//! taken (figure.md's figure count).
+//!
 //! Engine choices where the spec says nothing: a letter taken while the
 //! row is shown for another shows it again from the start, and the row
 //! shows no sequence for the last letter, only the life. A part of what
@@ -403,6 +406,8 @@ fn take(world: &mut World) {
             letter,
             join_delay,
             pickup_start,
+            relic,
+            left_shift,
             ..
         }) = thing.archetype.map(|a| a.behavior)
         else {
@@ -420,7 +425,7 @@ fn take(world: &mut World) {
         let reach = reach[player.character.min(1)];
         let past = match player.facing {
             Facing::Right => x - thing.pos.x.floor(),
-            Facing::Left => thing.pos.x.floor() - x,
+            Facing::Left => thing.pos.x.floor() + i64::from(left_shift) - x,
         };
         let below = feet - thing.pos.y.floor();
         let (Ok(past), Ok(below)) = (i32::try_from(past), i32::try_from(below)) else {
@@ -444,6 +449,9 @@ fn take(world: &mut World) {
                 owed: worth,
                 thing: i,
             });
+        }
+        if relic {
+            flow.relics += 1;
         }
         if letter > 0 {
             flow.joining

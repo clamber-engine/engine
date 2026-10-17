@@ -27,6 +27,8 @@ pub enum Kind {
     Bunch,
     /// The letter with this number, 1 to 4.
     Letter(u8),
+    /// A golden figure, adding to the figure count (`figure.md`).
+    Figure,
     /// An object that can be carried and holds nothing.
     Barrel,
     /// An object that can be carried and holds the missing character.
@@ -52,7 +54,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 22] = [
+    pub const ALL: [Kind; 23] = [
         Kind::SmallWalker,
         Kind::MediumWalker,
         Kind::LargeWalker,
@@ -63,6 +65,7 @@ impl Kind {
         Kind::Letter(2),
         Kind::Letter(3),
         Kind::Letter(4),
+        Kind::Figure,
         Kind::Barrel,
         Kind::Holder,
         Kind::EndMarker,
@@ -90,6 +93,7 @@ impl Kind {
             Kind::Letter(2) => "letter-2",
             Kind::Letter(3) => "letter-3",
             Kind::Letter(_) => "letter-4",
+            Kind::Figure => "figure",
             Kind::Barrel => "barrel",
             Kind::Holder => "holder",
             Kind::EndMarker => "end-marker",
@@ -161,6 +165,8 @@ impl Kind {
                 set("letter", Value::Integer(n.into()));
                 "letter"
             }
+            // figure.md's values are the archetype's own.
+            Kind::Figure => "idol",
             Kind::Barrel => "crate",
             Kind::Holder => {
                 set("holds_character", Value::Boolean(true));
@@ -383,6 +389,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::Bunch,
             ),
             (
+                "82dee59bc51d643e34964b5adebf3c9ae39a4fcb4c321a22026922108e32a052",
+                Kind::Figure,
+            ),
+            (
                 "8aad3408aa49bd9ceda4b82bd21591b32c7417dd4d4971eba27e30fd47eaf42c",
                 Kind::Entrance,
             ),
@@ -575,7 +585,7 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 40);
+        assert_eq!(want.len(), 41);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }
@@ -618,6 +628,8 @@ mod tests {
                 (Kind::Letter(n), Behavior::Collect { letter, .. }) => {
                     assert_eq!(letter, n, "{kind}")
                 }
+                (Kind::Figure, Behavior::Collect { relic, .. }) => assert!(relic),
+                (Kind::Figure, _) => panic!("{kind} isn't a collectible"),
                 (Kind::Holder, Behavior::Carry { holder, .. }) => assert!(holder.is_some()),
                 (Kind::MediumWalker, Behavior::Walker { rider, .. }) => {
                     assert_eq!(rider.attack_above, 38);
