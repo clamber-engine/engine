@@ -18,10 +18,12 @@ pub enum Data {
     PictureTable,
     FrameTable,
     PlacementList,
+    MapPoints,
+    MapCorners,
 }
 
 impl Data {
-    pub const ALL: [Data; 12] = [
+    pub const ALL: [Data; 14] = [
         Data::SampleTable,
         Data::SharedSampleList,
         Data::SampleSetTable,
@@ -34,6 +36,8 @@ impl Data {
         Data::PictureTable,
         Data::FrameTable,
         Data::PlacementList,
+        Data::MapPoints,
+        Data::MapCorners,
     ];
 
     /// The row's name in the spec's table.
@@ -51,6 +55,8 @@ impl Data {
             Data::PictureTable => "Level graphics: the first level's picture table",
             Data::FrameTable => "Sprite frames: the frame table",
             Data::PlacementList => "Placements: the first level's placement list",
+            Data::MapPoints => "Level map: point tables",
+            Data::MapCorners => "Level map: corner records",
         }
     }
 }
@@ -70,6 +76,8 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
         ("title-1", Data::PictureTable) => (0xD9, 0xA3C0),
         ("title-1", Data::FrameTable) => (0xFB, 0xCC9C),
         ("title-1", Data::PlacementList) => (0xFD, 0x95DC),
+        ("title-1", Data::MapPoints) => (0xFC, 0xF47B),
+        ("title-1", Data::MapCorners) => (0xC0, 0xD13C),
         _ => return None,
     };
     Some(Location::new(bank, address))
