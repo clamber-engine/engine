@@ -133,6 +133,11 @@ pub struct Player {
     /// The jump under way has had jump held on every frame since its
     /// press, so it uses `held_jump_gravity`.
     pub jump_hold: bool,
+    /// A press that gave no jump at a steep face still holds the fall to
+    /// `held_jump_gravity` while jump stays held (`face_press_gravity`).
+    pub face_press: bool,
+    /// The last frame started on the ground, and not on a steep face.
+    pub clear_start: bool,
     /// The jump started this frame on the ground and leaves it next frame.
     pub takeoff: bool,
     /// A jump has started and takes off this many frames from now
@@ -292,6 +297,8 @@ impl Player {
             jump_needs_hold: false,
             jump_held_since_press: false,
             jump_hold: false,
+            face_press: false,
+            clear_start: false,
             takeoff: false,
             takeoff_wait: None,
             takeoff_crouched: false,
@@ -385,6 +392,7 @@ impl Player {
         self.fall_step = false;
         self.fall_facing = 0;
         self.jump_hold = false;
+        self.face_press = false;
         self.takeoff = false;
         self.takeoff_wait = None;
         self.state = State::Fall;
@@ -427,6 +435,7 @@ impl Player {
         self.vel.y = Fixed::ZERO;
         self.frozen = hold;
         self.jump_hold = false;
+        self.face_press = false;
         self.takeoff = false;
         self.takeoff_wait = None;
         self.end_roll();
@@ -463,6 +472,7 @@ impl Player {
         if caught {
             self.coyote = None;
             self.jump_hold = false;
+            self.face_press = false;
             self.jump_age = None;
             self.walked_off = false;
             self.fall_step = false;
@@ -496,6 +506,7 @@ impl Player {
         });
         self.coyote = None;
         self.jump_hold = false;
+        self.face_press = false;
         self.takeoff = false;
         self.takeoff_wait = None;
         self.end_roll();
@@ -513,6 +524,7 @@ impl Player {
         self.spring_arc = None;
         self.frozen = 0;
         self.takeoff = false;
+        self.face_press = false;
         self.takeoff_wait = None;
         self.end_roll();
         self.ground_action = None;
@@ -624,6 +636,7 @@ impl Player {
         self.coyote = None;
         self.jump_age = None;
         self.jump_hold = false;
+        self.face_press = false;
         self.walked_off = false;
         self.fall_step = false;
         self.fall_facing = 0;
@@ -838,6 +851,7 @@ impl Player {
         self.jump_held_since_press =
             pressed(Action::Jump) || (self.jump_held_since_press && held(Action::Jump));
         self.jump_hold &= held(Action::Jump);
+        self.face_press &= held(Action::Jump);
         if self.takeoff {
             // The jump that started on the ground last frame leaves it.
             self.takeoff = false;
@@ -978,9 +992,17 @@ impl Player {
             && ready;
         if face.is_some() && ready {
             // No jump starts on a face: the press is treated as one made
-            // in the air.
+            // in the air. Made on the frame before, if that one started on
+            // the ground off the face, it still lightens the fall.
             self.jump_needs_hold = physics[Param::JumpBufferHold] > Fixed::ZERO;
+            if physics[Param::FacePressGravity] > Fixed::ZERO
+                && self.clear_start
+                && self.jump_buffer.age() == Some(delay.saturating_add(busy.jump_delay))
+            {
+                self.face_press = true;
+            }
         }
+        self.clear_start = self.grounded() && face.is_none();
         let takeoff_frame = physics[Param::GroundedTakeoff] > Fixed::ZERO;
         let mut air_takeoff = None;
         // A jump that waited to take off in a timed roll, or the stop
@@ -996,6 +1018,7 @@ impl Player {
             self.vel.y = -on.values.jump_speed;
             self.takeoff = true;
             self.jump_hold = false;
+            self.face_press = false;
             self.coyote = None;
             self.spring_arc = Some(SpringArc {
                 held: true,
@@ -1396,7 +1419,8 @@ impl Player {
             let held_gravity = physics[Param::HeldJumpGravity];
             // A jump pressed during a roll in the air falls under the
             // held gravity from its press.
-            let jump_hold = self.jump_hold || (self.roll_jump && self.jump_held_since_press);
+            let jump_hold =
+                self.jump_hold || self.face_press || (self.roll_jump && self.jump_held_since_press);
             let until_top = physics[Param::HeldGravityUntilTop] > Fixed::ZERO;
             let gravity = if let Some(gravity) = waiting_gravity {
                 gravity
@@ -1489,11 +1513,13 @@ impl Player {
             // held one.
             let graced = frames(physics[Param::CoyoteTime]) >= 1
                 && !(face.is_some() && physics[Param::NoFaceCoyote] > Fixed::ZERO);
-            let jump_gravity = if self.takeoff || (graced && self.jump_buffer.age() == Some(0)) {
-                self.waiting_gravity(false, physics)
-            } else {
-                None
-            };
+            let jump_gravity =
+                if self.takeoff || self.face_press || (graced && self.jump_buffer.age() == Some(0))
+                {
+                    self.waiting_gravity(false, physics)
+                } else {
+                    None
+                };
             let over_end = self.takeoff && physics[Param::TakeoffOverEnd] > Fixed::ZERO;
             let left = if off_spring.is_some() {
                 // However near the floor below.
@@ -1577,6 +1603,8 @@ impl Player {
             self.fall_facing = facing_wait.saturating_sub(1);
         }
 
+        // Landing, or going on along the ground past the face, ends it.
+        self.face_press &= !self.grounded() || face.is_some();
         self.coyote = if self.grounded() {
             None
         } else if crouched_fall {
@@ -2748,6 +2776,7 @@ impl Player {
         self.spring_arc = None;
         self.through = None;
         self.jump_hold = false;
+        self.face_press = false;
         self.unseated = false;
         self.touched.push(collider);
         events.push(Event::Land);

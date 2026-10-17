@@ -215,6 +215,11 @@ params! {
     /// walking off from a frame that starts on a steep face, no jump
     /// starts in the air.
     NoFaceCoyote => "no_face_coyote",
+    /// Above 0, a jump press on a frame that starts on the ground and off
+    /// a steep face, whose jump doesn't start because the next frame
+    /// starts on the face, still gives the fall `held_jump_gravity` for
+    /// as long as jump stays held, from the drop off the ledge on.
+    FacePressGravity => "face_press_gravity",
     /// Above 0, a jump leaves the ground on the frame after it starts:
     /// on the start frame the body still follows the ground, with its
     /// upward speed already set. 0 leaves on the start frame.

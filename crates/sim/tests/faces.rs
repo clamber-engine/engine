@@ -806,3 +806,181 @@ fn classic_2_facing_waits_a_frame_after_landing_on_the_face() {
     hold(&mut world, &[]);
     assert_eq!(world.player.facing, Facing::Left);
 }
+
+/// A world on [`ledge`] with the player at `x`, moving right at `vx`,
+/// as the lead character (`slot` 0) or the second one (1) under control.
+fn at_the_ledge(slot: usize, x: f64, vx: f64) -> World {
+    let mut world = ground(ledge, x);
+    if slot == 1 {
+        let mut feel = generic_feel("classic-1").unwrap();
+        feel.roster.push(clamber_pack::CharacterFeel {
+            physics: clamber_pack::Presets::builtin()
+                .slot("classic-1", 1)
+                .unwrap(),
+            abilities: Default::default(),
+        });
+        world = World::new(world.level.clone(), Arc::new(feel));
+        world.player.character = 1;
+        if let Some(other) = &mut world.other {
+            other.character = 0;
+        }
+    }
+    world.player.vel.x = fx(vx);
+    world
+}
+
+/// Goes right off [`ledge`] for 40 frames from `world`, holding `base`,
+/// and with `jump` as `(p, held)`, Jump from frame `p` (counting from 1)
+/// for `held` frames. A row for each frame: height below the starting
+/// floor, `vy`, and whether the frame started a jump.
+fn off_the_ledge(
+    world: impl Fn() -> World,
+    base: &[Action],
+    jump: Option<(usize, usize)>,
+) -> Vec<(f64, f64, bool)> {
+    let mut world = world();
+    let mut previous = base.to_vec();
+    let mut rows = Vec::new();
+    for frame in 1..=40 {
+        let mut keys = base.to_vec();
+        if jump.is_some_and(|(p, held)| (p..p + held).contains(&frame)) {
+            keys.push(Action::Jump);
+        }
+        press(&mut world, &previous, &keys);
+        previous = keys;
+        let p = &world.player;
+        rows.push((
+            (p.pos.y - Fixed::from_int(FLOOR)).to_f64(),
+            p.vel.y.to_f64(),
+            world.events.contains(&Event::JumpStart),
+        ));
+        assert!(!world.events.contains(&Event::Land));
+    }
+    rows
+}
+
+/// The leave frame of a walk off [`ledge`] without a press, counting from
+/// 1 as [`off_the_ledge`] does, and the first frame starting on the face.
+fn leave_frame(world: impl Fn() -> World, base: &[Action]) -> (usize, Option<usize>) {
+    let mut world = world();
+    let mut on_face = None;
+    for frame in 1..=40 {
+        let was = world.player.pos.x;
+        hold(&mut world, base);
+        if world.events.contains(&Event::LeaveGround) {
+            return (frame, on_face);
+        }
+        if on_face.is_none() && was >= Fixed::from_int(300) {
+            on_face = Some(frame);
+        }
+    }
+    panic!("never left the ground");
+}
+
+#[test]
+fn a_press_that_gives_no_jump_at_the_face_lightens_the_fall() {
+    // walk-off.md, "Jumping near the edge", rule 2: the press on the
+    // frame that moves onto the face counts, since that frame doesn't
+    // start on it, but gives no jump, since the next one does. While
+    // Jump stays held the fall from L uses the lighter gravity.
+    for (slot, x, vx, gravity) in [(0, 292.0, 2.0, 0.28125), (1, 292.25, 2.25, 0.3515625)] {
+        let world = || at_the_ledge(slot, x, vx);
+        let walk = [Action::Right];
+        let (l, face) = leave_frame(world, &walk);
+        let face = face.unwrap();
+        assert!(face < l, "slot {slot}: frames before L start on the face");
+        let fall = off_the_ledge(world, &walk, None);
+        let at = |rows: &[(f64, f64, bool)], n: usize| rows[l - 1 + n];
+        // Heights after L − 1, which ends on the face.
+        let before = fall[l - 2].0;
+        for held in [20, 1] {
+            let rows = off_the_ledge(world, &walk, Some((face - 1, held)));
+            assert!(rows.iter().all(|r| !r.2), "slot {slot}: no jump");
+            // With Jump let go after its press, the fall is the plain one.
+            let g = if held > 1 { gravity } else { 0.4375 };
+            assert_eq!(at(&rows, 0).0 - before, 3.0 + g, "slot {slot}, L");
+            for n in 0..=3 {
+                let vy = 0.00390625 + g * n as f64;
+                assert_eq!(at(&rows, n).1, vy, "slot {slot}, held {held}, L + {n}");
+            }
+        }
+        // Presses on frames that start on the face, or in the air, do
+        // nothing.
+        for p in face..l + 4 {
+            assert_eq!(
+                off_the_ledge(world, &walk, Some((p, 20))),
+                fall,
+                "slot {slot}, press {p}"
+            );
+        }
+        // The press before still jumps, taking off on the move onto the
+        // face.
+        let rows = off_the_ledge(world, &walk, Some((face - 2, 20)));
+        let starts: Vec<usize> = (0..rows.len()).filter(|&i| rows[i].2).collect();
+        assert_eq!(starts, [face - 2], "slot {slot}");
+    }
+}
+
+#[test]
+fn running_over_the_face_keeps_the_grace_frame() {
+    // walk-off.md, "Jumping near the edge": running, the player can pass
+    // the face without a frame starting on it, and presses on L − 1 and
+    // L still jump. The second character's heights are its running
+    // table in second-character.md, "Walking off a ledge"; the lead's
+    // are walk-off.md's "Jumping at a ledge without a face".
+    let run = [Action::Right, Action::Action];
+    for (slot, x, vx, table) in [
+        (
+            0,
+            290.0,
+            3.0,
+            [
+                [0.0, 0.0, 0.0, 0.0],
+                [3.4375, -6.71875, 3.28125, 3.28125],
+                [3.87890625, -13.15625, -3.4375, 3.56640625],
+                [4.7578125, -19.3125, -9.875, -3.15234375],
+                [6.07421875, -25.1875, -16.03125, -9.58984375],
+            ],
+        ),
+        (
+            1,
+            289.0,
+            3.375,
+            [
+                [0.0, 0.0, 0.0, 0.0],
+                [3.4375, -8.0, 3.3515625, 3.3515625],
+                [3.87890625, -15.6484375, -4.6484375, 3.70703125],
+                [4.7578125, -22.9453125, -12.296875, -4.29296875],
+                [6.07421875, -29.890625, -19.59375, -11.94140625],
+            ],
+        ),
+    ] {
+        let world = || at_the_ledge(slot, x, vx);
+        let (l, face) = leave_frame(world, &run);
+        assert_eq!(face, None, "slot {slot}: no frame starts on the face");
+        let ledge_y = |rows: &[(f64, f64, bool)]| rows[l - 3].0;
+        let columns = [None, Some(l - 2), Some(l - 1), Some(l)];
+        for (column, press) in columns.into_iter().enumerate() {
+            let rows = off_the_ledge(world, &run, press.map(|p| (p, 20)));
+            let top = ledge_y(&rows);
+            for (n, row) in table.iter().enumerate() {
+                let frame = l - 2 + n;
+                assert_eq!(
+                    rows[frame].0 - top,
+                    row[column],
+                    "slot {slot}, press {press:?}, L {:+}",
+                    n as i64 - 1
+                );
+            }
+            // T is the frame after the press.
+            if let Some(p) = press {
+                assert!(rows[p].2, "slot {slot}, press {p}");
+            }
+        }
+        // A press on L + 1 does nothing.
+        assert_eq!(
+            off_the_ledge(world, &run, Some((l + 1, 20))),
+            off_the_ledge(world, &run, None)
+        );
+    }
+}
