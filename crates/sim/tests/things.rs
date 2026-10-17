@@ -1562,6 +1562,7 @@ fn classic_roll_defeats_at(
         held: false,
         carry: false,
         still: false,
+        stopped: false,
         since_press: 0,
         air: 0,
         frame: 0,

@@ -1,6 +1,6 @@
 //! Steep faces on the `classic-1` preset, from the examples in
-//! `spec/behavior/steep-faces.md` and `walk-off.md` ("Jumping near the
-//! edge"). Heights in the spec are relative to the starting floor; here
+//! `spec/behavior/steep-faces.md`, `walk-off.md` ("Jumping near the
+//! edge") and `rolling-off-ledges.md` ("Stopping before a ledge"). Heights in the spec are relative to the starting floor; here
 //! that floor is at y = 300. The `classic_2_*` tests are on the `classic-2`
 //! preset, from the same file's "In `title-2`".
 
@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
-use clamber_sim::{Event, Facing, Fixed, Gait, InputFrame, State, World, generic_feel, step};
+use clamber_sim::{
+    Event, Facing, Fixed, Gait, InputFrame, Roll, RollSize, State, World, generic_feel, step,
+};
 
 const FLOOR: i32 = 300;
 
@@ -1200,4 +1202,294 @@ fn a_carried_press_held_through_a_fall_from_the_face_takes_off_after_landing() {
         let expected = if l + 2 <= p + 12 { vec![l + 2] } else { vec![] };
         assert_eq!(jumps, expected, "press on {p}, L {l}");
     }
+}
+
+/// A roll's `x`, `vx` in 1/256 and `y` from [`jump_rows`].
+fn roll_rows(
+    world: World,
+    frames: usize,
+    keys: impl Fn(usize) -> Vec<Action>,
+) -> Vec<(Fixed, i64, Fixed)> {
+    jump_rows(world, frames, keys)
+        .into_iter()
+        .map(|(x, y, vx, _, _)| (x, vx, y))
+        .collect()
+}
+
+/// Standing at 195 in front of [`rise`], Right and Action on S and Right
+/// held until the roll is blocked at the face's foot.
+fn rolled_into_the_rise() -> World {
+    let mut world = ground(rise, 195.0);
+    press(&mut world, &[], &[Action::Right, Action::Action]);
+    assert_eq!(world.player.state, State::Roll);
+    for _ in 0..10 {
+        if world.player.vel.x == Fixed::ZERO {
+            break;
+        }
+        hold(&mut world, &[Action::Right]);
+    }
+    assert_eq!(
+        (world.player.pos.x, world.player.vel.x),
+        (fx(199.0), Fixed::ZERO)
+    );
+    assert!(world.player.roll.unwrap().stopped);
+    world
+}
+
+/// A world with a timed roll of `size` going `dir` at `x`, already some
+/// frames in, moving at `vx`.
+fn rolling_at(
+    height: impl Fn(i32) -> Option<i32>,
+    x: f64,
+    dir: Facing,
+    size: RollSize,
+    vx: f64,
+    stopped: bool,
+) -> World {
+    let mut world = ground(height, x);
+    let speed = match size {
+        RollSize::Slow => fx(1.0),
+        RollSize::Normal => fx(3.0),
+        RollSize::Fast => fx(4.0),
+    };
+    world.player.state = State::Roll;
+    world.player.facing = dir;
+    world.player.vel.x = fx(vx);
+    world.player.roll = Some(Roll {
+        left: 20,
+        dir,
+        size,
+        speed,
+        boosts: 0,
+        defeated: false,
+        held: false,
+        carry: false,
+        still: false,
+        stopped,
+        since_press: 5,
+        air: 0,
+        frame: 5,
+    });
+    world
+}
+
+#[test]
+fn a_roll_stopped_at_the_foot_of_a_rise_rolls_away_only_the_other_way() {
+    // steep-faces.md, "Examples (rolls)", the first example: Right held
+    // on k + 1 to k + 3, Left on k + 4 to k + 6, then nothing.
+    let rows = roll_rows(rolled_into_the_rise(), 8, |f| match f {
+        0..=3 => vec![Action::Right],
+        4..=6 => vec![Action::Left],
+        _ => vec![],
+    });
+    let xs: Vec<_> = rows.iter().map(|r| (r.0 - fx(200.0), r.1)).collect();
+    assert_eq!(
+        xs,
+        [
+            (fx(-1.0), 0),
+            (fx(-1.0), 0),
+            (fx(-1.0), 0),
+            (fx(-3.0), -512),
+            (fx(-5.125), -544),
+            (fx(-7.359375), -572),
+            (fx(-9.6875), -596),
+            (fx(-12.09765625), -617),
+        ]
+    );
+    assert!(rows.iter().all(|r| r.2 == Fixed::ZERO));
+
+    // Left held only on k + 1: the roll goes on at 2.
+    let rows = roll_rows(rolled_into_the_rise(), 4, |f| match f {
+        0 => vec![Action::Right],
+        1 => vec![Action::Left],
+        _ => vec![],
+    });
+    let xs: Vec<_> = rows.iter().map(|r| (r.0, r.1)).collect();
+    assert_eq!(
+        xs,
+        [
+            (fx(197.0), -512),
+            (fx(195.0), -512),
+            (fx(193.0), -512),
+            (fx(191.0), -512)
+        ]
+    );
+
+    // With nothing held it stays where it is.
+    let rows = roll_rows(rolled_into_the_rise(), 6, |_| vec![]);
+    assert!(rows.iter().all(|r| (r.0, r.1) == (fx(199.0), 0)));
+}
+
+#[test]
+fn a_stopped_roll_on_a_face_is_carried_down_to_its_foot() {
+    // steep-faces.md, "Examples (rolls)", the second example: stopped on
+    // the face at c0 + 6, the roll pointing right, Right held throughout.
+    let world = rolling_at(rise, 206.0, Facing::Right, RollSize::Normal, 0.0, true);
+    let rows = roll_rows(world, 11, |_| vec![Action::Right]);
+    let row = |k: usize| {
+        let (x, vx, y) = rows[k - 1];
+        (x - fx(200.0), -y, vx)
+    };
+    assert_eq!(row(1), (fx(5.8125), fx(21.0), -48));
+    assert_eq!(row(2), (fx(5.4609375), fx(21.0), -90));
+    assert_eq!(row(3), (fx(4.96875), fx(17.0), -126));
+    assert_eq!(row(8), (fx(0.92578125), fx(1.0), -250));
+    assert_eq!(row(9), (fx(-0.11328125), Fixed::ZERO, -266));
+    assert_eq!(row(10), (fx(-1.0), Fixed::ZERO, 0));
+    assert_eq!(row(11), (fx(-1.0), Fixed::ZERO, 0));
+    assert_eq!(rows.len(), 11);
+}
+
+#[test]
+fn on_a_face_a_roll_going_down_it_goes_faster_and_steering_does_nothing() {
+    // steep-faces.md, "Speed on a face" and "Steering on a face": on
+    // [`rise`], which falls to the left, from a standstill.
+    let first = |dir, size, keys: Vec<Action>| {
+        // Low enough on the face for the floor 15 px downhill to count.
+        let mut world = rolling_at(rise, 205.0, dir, size, 0.0, false);
+        hold(&mut world, &keys);
+        (grains(world.player.vel.x), world.player.roll.unwrap().dir)
+    };
+    // Downhill: the roll's target plus 1.5. A slow roll with its own
+    // direction held stays slow, and the other direction doesn't turn it.
+    assert_eq!(
+        first(Facing::Left, RollSize::Slow, vec![]),
+        (-80, Facing::Left)
+    );
+    assert_eq!(
+        first(Facing::Left, RollSize::Slow, vec![Action::Left]),
+        (-80, Facing::Left)
+    );
+    assert_eq!(
+        first(Facing::Left, RollSize::Slow, vec![Action::Right]),
+        (-80, Facing::Left)
+    );
+    assert_eq!(
+        first(Facing::Left, RollSize::Normal, vec![]),
+        (-144, Facing::Left)
+    );
+    assert_eq!(
+        first(Facing::Left, RollSize::Fast, vec![]),
+        (-176, Facing::Left)
+    );
+    // Uphill: the roll's target alone.
+    assert_eq!(
+        first(Facing::Right, RollSize::Slow, vec![Action::Left]),
+        (32, Facing::Right)
+    );
+    assert_eq!(
+        first(Facing::Right, RollSize::Normal, vec![]),
+        (96, Facing::Right)
+    );
+}
+
+#[test]
+fn a_roll_up_a_face_is_blocked_by_its_next_column_then_carried_down() {
+    // steep-faces.md, "Stopped rolls": a roll pointing up a face moves up
+    // it until it enters a higher face column, then is carried down.
+    let world = rolling_at(rise, 210.5, Facing::Right, RollSize::Normal, 0.0, false);
+    let rows = roll_rows(world, 2, |_| vec![]);
+    // 210.5 + 0.375 stays in column 210; 210.875 + 0.703125 is blocked.
+    assert_eq!((rows[0].0, rows[0].1), (fx(210.875), 96));
+    assert_eq!((rows[1].0, rows[1].1), (fx(210.0), 0));
+    let world = rolling_at(rise, 210.5, Facing::Right, RollSize::Normal, 0.0, false);
+    let rows = roll_rows(world, 3, |_| vec![Action::Right]);
+    // Then carried down, Right held or not.
+    assert_eq!((rows[2].0, rows[2].1), (fx(209.8125), -48));
+}
+
+#[test]
+fn a_roll_is_blocked_by_floor_more_than_a_step_higher() {
+    // steep-faces.md, "Blocked": floor more than 8 px higher than the
+    // floor before the frame blocks a roll, even off a face.
+    let climb = |top: i32| {
+        move |c: i32| {
+            Some(match c {
+                ..200 => 0,
+                200..203 => -top * (c - 199) / 3,
+                _ => -top,
+            })
+        }
+    };
+    for (top, blocked) in [(9, true), (6, false)] {
+        let world = rolling_at(
+            climb(top),
+            199.5,
+            Facing::Right,
+            RollSize::Normal,
+            3.0,
+            false,
+        );
+        let rows = roll_rows(world, 1, |_| vec![]);
+        if blocked {
+            assert_eq!(
+                (rows[0].0, rows[0].1, rows[0].2),
+                (fx(199.0), 0, Fixed::ZERO)
+            );
+        } else {
+            assert_eq!(rows[0].0, fx(202.5));
+            assert_eq!(rows[0].2, fx(f64::from(-top)));
+        }
+    }
+}
+
+/// Flat floor to column 299, then floor `drop` px lower.
+fn drop_off(drop: i32) -> impl Fn(i32) -> Option<i32> {
+    move |c| Some(if c < 300 { 0 } else { drop })
+}
+
+#[test]
+fn floor_down_to_47_px_below_counts_for_stopping_before_a_ledge() {
+    // rolling-off-ledges.md, "Stopping before a ledge": standing 10 px
+    // from the edge facing it, Action alone.
+    let roll = |height: Box<dyn Fn(i32) -> Option<i32>>| {
+        let world = ground(height, 290.0);
+        roll_rows(
+            world,
+            3,
+            |f| if f == 1 { vec![Action::Action] } else { vec![] },
+        )
+    };
+    for (drop, stops) in [(16, false), (47, false), (49, true), (64, true)] {
+        let rows = roll(Box::new(drop_off(drop)));
+        assert_eq!(
+            rows.iter().all(|r| r.0 == fx(290.0)),
+            stops,
+            "{drop} px below"
+        );
+    }
+    // Floor higher than the feet counts, and no floor at all doesn't.
+    assert!(
+        roll(Box::new(drop_off(-64)))
+            .iter()
+            .any(|r| r.0 != fx(290.0))
+    );
+    assert!(
+        roll(Box::new(|c| (c < 300).then_some(0)))
+            .iter()
+            .all(|r| r.0 == fx(290.0))
+    );
+}
+
+#[test]
+fn a_roll_stopped_before_a_ledge_pushes_off_away_from_it() {
+    // rolling-off-ledges.md, "Pushing off": holding the direction away
+    // from the edge turns the roll and pushes off on the same frame.
+    let world = ground(|c| (c < 300).then_some(0), 290.0);
+    let rows = roll_rows(world, 5, |f| match f {
+        1 => vec![Action::Action],
+        4 | 5 => vec![Action::Left],
+        _ => vec![],
+    });
+    let xs: Vec<_> = rows.iter().map(|r| (r.0, r.1)).collect();
+    assert_eq!(
+        xs,
+        [
+            (fx(290.0), 0),
+            (fx(290.0), 0),
+            (fx(290.0), 0),
+            (fx(288.0), -512),
+            (fx(285.875), -544),
+        ]
+    );
 }

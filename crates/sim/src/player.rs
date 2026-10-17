@@ -805,7 +805,7 @@ impl Player {
         let mut moves = Vec::new();
         if self.grounded() {
             let (x, below) = if by_columns {
-                self.move_by_columns(level, slope, None);
+                self.move_by_columns(level, slope, None, None);
                 let below = match physics[Param::FollowDrop] {
                     d if d > Fixed::ZERO => d,
                     _ => STEP,
@@ -1026,13 +1026,16 @@ impl Player {
         let crouch_ends = self.crouch.held > 0 && !down;
 
         // The way the steep face the player starts the frame on falls, if
-        // any. Rolls on faces aren't in the spec yet.
+        // any. A timed roll has its own rules there, with `face_rolls`.
         let slope = physics[Param::FaceSlope];
-        let face = if slope > Fixed::ZERO && self.ground.is_some() && self.state != State::Roll {
+        let start_face = if slope > Fixed::ZERO && self.ground.is_some() {
             columns::face(level, columns::column(self.pos.x), self.pos.y, slope)
         } else {
             None
         };
+        let face = start_face.filter(|_| self.state != State::Roll);
+        let face_rolls = physics[Param::FaceRolls] > Fixed::ZERO && slope > Fixed::ZERO;
+        let roll_face = start_face.filter(|_| face_rolls && self.roll.is_some());
         // For jumps, with `face_jump_wait`, a frame that moves onto a face
         // with only its uphill direction held is followed by one that
         // doesn't count as starting on it.
@@ -1346,7 +1349,8 @@ impl Player {
             self.turn = None;
             self.facing
         } else if let Some(mut roll) = self.roll {
-            if !started {
+            // Steering does nothing on a frame that starts on a face.
+            if !started && roll_face.is_none() {
                 roll.steer(dir, boosted, physics);
             }
             self.roll = Some(roll);
@@ -1469,14 +1473,20 @@ impl Player {
             } else {
                 self.vel.x
             }
-        } else if let Some(roll) = self.roll {
-            if roll.still {
-                Fixed::ZERO
-            } else if let Some(vx) = self.roll_at_edge(level, held_dir, physics) {
+        } else if self.roll.is_some() {
+            if let Some(vx) = self.stopped_roll(level, held_dir, roll_face, physics) {
                 vx
+            } else if let Some(roll) = self.roll.filter(|r| !r.still) {
+                // Going down a face, it goes faster.
+                let down = roll_face
+                    .filter(|&way| way == direction(roll.dir))
+                    .map_or(Fixed::ZERO, |way| {
+                        physics[Param::FaceSpeed] * Fixed::from_int(way)
+                    });
+                self.target = roll.target() + down;
+                ease(self.vel.x, self.target, response)
             } else {
-                self.target = roll.target();
-                ease(self.vel.x, roll.target(), response)
+                Fixed::ZERO
             }
         } else if rolling {
             let vx = roll_speed(self.vel.x, dir, physics);
@@ -1604,7 +1614,15 @@ impl Player {
         let moved = if slope > Fixed::ZERO && airborne {
             self.move_in_air_by_columns(level, physics, events)
         } else if slope > Fixed::ZERO {
-            self.move_by_columns(level, slope, face.map(|way| (way, physics)))
+            // A roll is also stopped by floor more than a step above its
+            // own, and once blocked it's a stopped roll.
+            let before = self.vel.x;
+            let rise = (face_rolls && self.roll.is_some()).then_some(STEP);
+            let moved = self.move_by_columns(level, slope, face.map(|way| (way, physics)), rise);
+            if let Some(roll) = self.roll.as_mut().filter(|_| face_rolls) {
+                roll.stopped |= before != Fixed::ZERO && self.vel.x == Fixed::ZERO;
+            }
+            moved
         } else {
             self.move_horizontally(level, HALF_WIDTH, |_| true)
         };
@@ -1971,7 +1989,7 @@ impl Player {
         if self.grounded() {
             self.state = State::Run;
             let x = if by_columns {
-                self.move_by_columns(level, slope, None);
+                self.move_by_columns(level, slope, None, None);
                 columns::middle(columns::column(self.pos.x))
             } else {
                 self.move_horizontally(level, HALF_WIDTH, |_| true);
@@ -2198,6 +2216,7 @@ impl Player {
             held: true,
             carry: false,
             still,
+            stopped: false,
             since_press: age,
             air: 0,
             frame: 0,
@@ -2241,6 +2260,7 @@ impl Player {
             held: true,
             carry: false,
             still: false,
+            stopped: false,
             since_press: 0,
             air: 0,
             frame: 0,
@@ -2342,29 +2362,54 @@ impl Player {
         }
     }
 
-    /// The speed of a frame of a timed roll on the ground, before it
-    /// carries on, that starts slowly with no floor ahead
-    /// (`roll_edge_speed`): 0, or a push off with `dir` held the way it
-    /// goes. `None` for any other frame.
-    fn roll_at_edge(&mut self, level: &Level, dir: i32, physics: &Physics) -> Option<Fixed> {
-        let slow = physics[Param::RollEdgeSpeed];
-        if slow == Fixed::ZERO || !self.grounded() || self.vel.x.abs() > slow {
-            return None;
-        }
-        let roll = self.roll.as_mut().filter(|r| !r.carry)?;
+    /// The speed of a frame of a stopped timed roll, before it carries
+    /// on, or of one that this frame stops: on the ground, starting
+    /// slowly with no floor ahead (`roll_edge_speed`). A stopped roll
+    /// eases toward 0, or down the steep face `face` falls if it starts
+    /// on one, until it pushes off with `dir` held the way it goes, on a
+    /// frame that doesn't start on a face. `None` for any other frame.
+    fn stopped_roll(
+        &mut self,
+        level: &Level,
+        dir: i32,
+        face: Option<i32>,
+        physics: &Physics,
+    ) -> Option<Fixed> {
+        let mut roll = self.roll.filter(|r| !r.carry)?;
         let way = direction(roll.dir);
-        let ahead = physics[Param::RollEdgeAhead].floor() * i64::from(way);
-        if columns::floor(level, columns::column(self.pos.x) + ahead, self.pos.y).is_some() {
+        let slow = physics[Param::RollEdgeSpeed];
+        if !roll.stopped && slow > Fixed::ZERO && self.grounded() && self.vel.x.abs() <= slow {
+            let ahead = physics[Param::RollEdgeAhead].floor() * i64::from(way);
+            let depth = match physics[Param::RollEdgeDepth] {
+                Fixed::ZERO => STEP + STEP,
+                depth => depth,
+            };
+            let column = columns::column(self.pos.x) + ahead;
+            if !columns::ground_down_to(level, column, self.pos.y, depth) {
+                roll.stopped = true;
+                self.roll = Some(roll);
+                return Some(Fixed::ZERO);
+            }
+        }
+        if !roll.stopped {
             return None;
         }
         let push = physics[Param::RollEdgePush];
-        if push > Fixed::ZERO && self.vel.x == Fixed::ZERO && roll.frame > 0 && dir == way {
-            // It goes on as a normal roll.
-            roll.speed = physics[Param::RollSpeed];
-            Some(push * Fixed::from_int(way))
+        let vx = if push > Fixed::ZERO && face.is_none() && roll.frame > 0 && dir == way {
+            // It goes on at the push's speed until steered.
+            roll.stopped = false;
+            roll.speed = push;
+            push * Fixed::from_int(way)
+        } else if roll.still {
+            Fixed::ZERO
         } else {
-            Some(Fixed::ZERO)
-        }
+            self.target = face.map_or(Fixed::ZERO, |way| {
+                physics[Param::FaceSpeed] * Fixed::from_int(way)
+            });
+            ease(self.vel.x, self.target, physics[Param::SpeedResponse])
+        };
+        self.roll = Some(roll);
+        Some(vx)
     }
 
     /// Makes the frame after a timed roll, or its stop, ends in the air
@@ -2634,12 +2679,14 @@ impl Player {
     /// it was on (see [`columns::falls_through`]). Starting on a
     /// steep face falling the way given, a body that isn't stopped has its
     /// speed limited by the physics given first (`face_speed_limit`,
-    /// `face_min_speed`).
+    /// `face_min_speed`). With a `rise` given, a column whose floor is
+    /// more than that above the body's feet stops it too.
     pub(crate) fn move_by_columns(
         &mut self,
         level: &Level,
         slope: Fixed,
         face: Option<(i32, &Physics)>,
+        rise: Option<Fixed>,
     ) -> Fixed {
         if self.vel.x == Fixed::ZERO {
             return Fixed::ZERO;
@@ -2658,7 +2705,12 @@ impl Player {
             if falls {
                 break;
             }
-            if let Some(collider) = columns::blocks(level, next, dir, self.pos.y, slope) {
+            let high = rise
+                .and_then(|rise| {
+                    columns::floor(level, next, self.pos.y).filter(|f| self.pos.y - f.y > rise)
+                })
+                .map(|f| f.collider);
+            if let Some(collider) = columns::blocks(level, next, dir, self.pos.y, slope).or(high) {
                 let edge = columns::left_edge(from);
                 let moved = (self.pos.x - edge).abs();
                 self.pos.x = edge;
@@ -3141,6 +3193,9 @@ pub struct Roll {
     pub carry: bool,
     /// The roll doesn't move on this frame, its first.
     pub still: bool,
+    /// Stopped before a ledge (`roll_edge_speed`) or by a rise
+    /// (`face_rolls`), until it pushes off.
+    pub stopped: bool,
     /// Frames since the action press that started it.
     pub since_press: u8,
     /// Frames it has ended in the air in a row.

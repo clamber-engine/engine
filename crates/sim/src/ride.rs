@@ -278,7 +278,7 @@ impl Player {
         self.target = target + push;
         self.vel.x = ease(self.vel.x, self.target, response);
         let moved = if grounded {
-            self.move_by_columns(level, slope, None)
+            self.move_by_columns(level, slope, None, None)
         } else {
             self.move_in_air_by_columns(level, physics, events)
         };

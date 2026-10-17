@@ -373,6 +373,7 @@ mod tests {
                     | Param::NoFaceCoyote
                     | Param::FacePressGravity
                     | Param::FaceJumpWait
+                    | Param::FaceRolls
                     | Param::TakeoffOverEnd
                     | Param::RollTime
                     | Param::RollSpeed
@@ -401,6 +402,7 @@ mod tests {
                     | Param::RollFallEnd
                     | Param::RollEdgeSpeed
                     | Param::RollEdgeAhead
+                    | Param::RollEdgeDepth
                     | Param::RollEdgePush
                     | Param::RollJumpHeldGravity
                     | Param::RollAirStopWait

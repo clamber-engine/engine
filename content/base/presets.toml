@@ -68,6 +68,7 @@ coyote_time = 5
 no_face_coyote = 0
 face_press_gravity = 0
 face_jump_wait = 0
+face_rolls = 0
 grounded_takeoff = 0
 takeoff_over_end = 0
 jump_delay = 0
@@ -114,6 +115,7 @@ roll_leave_hover_time = 0
 roll_fall_end = 0
 roll_edge_speed = 0
 roll_edge_ahead = 0
+roll_edge_depth = 0
 roll_edge_push = 0
 roll_jump_held_gravity = 0
 roll_air_stop_wait = 0
@@ -444,6 +446,10 @@ face_press_gravity = 1
 # floor, if held until then and within 12 frames of the press
 # (steep-faces.md, "Jumping on or next to a face").
 face_jump_wait = 1
+# Rolls meet steep faces (steep-faces.md, "Rolling on, onto or into a
+# face"): no steering on a face, 1.5 more going down it, stopped by a rise
+# or by floor more than 8 px up until they push off.
+face_rolls = 1
 jump_speed = 7
 jump_release_speed = 7
 grounded_takeoff = 1
@@ -481,13 +487,15 @@ roll_air_buffer = 7
 # A roll off a ledge (rolling-off-ledges.md) drifts down 1/256 per frame
 # for a while if it left within 8 frames of its first; one that lands
 # exactly 30 frames after leaving ends on landing. On the ground, a frame
-# starting at 271/256 or slower with no floor 15 px ahead stands still,
-# or pushes off at 2 with only the roll's direction held.
+# starting at 271/256 or slower with no floor 15 px ahead, down to 47 px
+# below, stops the roll until it pushes off at 2 with only the roll's
+# direction held.
 roll_leave_hover = 8
 roll_leave_hover_time = 10
 roll_fall_end = 30
 roll_edge_speed = 1.05859375
 roll_edge_ahead = 15
+roll_edge_depth = 47
 roll_edge_push = 2
 roll_attack_width = 22
 roll_attack_offset = -4

@@ -3382,7 +3382,7 @@ fn classic_roll_pushes_off_toward_the_end_of_the_ground() {
 #[test]
 fn classic_pushed_roll_goes_on_as_a_normal_roll() {
     // spec/behavior/rolling-off-ledges.md, "Pushing off": a slow roll
-    // pushed off eases toward 3 from 2.
+    // pushed off eases toward 3 from 2 with its direction held.
     let mut w = classic_raised(1590);
     let rows = play(&mut w, 4, |f| match f {
         0 => vec![Action::Action],
@@ -3391,6 +3391,18 @@ fn classic_pushed_roll_goes_on_as_a_normal_roll() {
     assert_eq!(w.player.roll.unwrap().size, RollSize::Slow);
     let vx: Vec<_> = rows.iter().map(|r| r.vx).collect();
     assert_eq!(vx, [0.0, 2.0, 2.125, 2.234375]);
+
+    // With nothing held after the push it goes on at 2, whatever its size.
+    for first in [vec![Action::Action], vec![Action::Action, Action::Right]] {
+        let mut w = classic_raised(1590);
+        let rows = play(&mut w, 4, |f| match f {
+            0 => first.clone(),
+            1 => vec![Action::Right],
+            _ => vec![],
+        });
+        let vx: Vec<_> = rows.iter().map(|r| r.vx).collect();
+        assert_eq!(vx, [0.0, 2.0, 2.0, 2.0]);
+    }
 }
 
 #[test]

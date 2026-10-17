@@ -696,6 +696,7 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
                 roll.held.into(),
                 roll.carry.into(),
                 roll.still.into(),
+                roll.stopped.into(),
                 roll.since_press,
                 roll.air,
             ]);

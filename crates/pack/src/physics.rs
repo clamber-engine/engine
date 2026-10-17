@@ -227,6 +227,15 @@ params! {
     /// stopped from starting toward a rise, and has no push down a face
     /// or exit from one.
     FaceJumpWait => "face_jump_wait",
+    /// Above 0, with `face_slope`, timed rolls on the ground meet steep
+    /// faces: on a frame that starts on a face steering does nothing,
+    /// and a roll going down the face eases toward its speed plus
+    /// `face_speed`. A roll is stopped by a rise as walking is, and by
+    /// floor more than a step higher than its own; it is then stopped as
+    /// with `roll_edge_push`, carried down a face it starts a frame on at
+    /// `face_speed`, and pushes off only from a frame that doesn't start
+    /// on a face.
+    FaceRolls => "face_rolls",
     /// Above 0, a jump leaves the ground on the frame after it starts:
     /// on the start frame the body still follows the ground, with its
     /// upward speed already set. 0 leaves on the start frame.
@@ -434,10 +443,15 @@ params! {
     RollEdgeSpeed => "roll_edge_speed",
     /// How far ahead, px, `roll_edge_speed` looks for a floor.
     RollEdgeAhead => "roll_edge_ahead",
-    /// Above 0, on such a frame after the roll's first that starts at 0
-    /// with only the way the roll goes held, the roll pushes off at this
-    /// speed instead, and from the next frame eases toward `roll_speed`
-    /// whatever its size.
+    /// Above 0, floor this far below the feet or less, or higher, counts
+    /// as a floor for `roll_edge_speed`; floor further down doesn't.
+    /// 0: as far down as a grounded body sees floor (two steps).
+    RollEdgeDepth => "roll_edge_depth",
+    /// Above 0, a roll that has had such a frame is stopped: its speed
+    /// eases toward 0 until, on a frame after the roll's first, with only
+    /// the way the roll goes held (after steering), it pushes off at this
+    /// speed, which from the next frame is its size until steering makes
+    /// it a normal roll.
     RollEdgePush => "roll_edge_push",
     /// Above 0, a jump started during a timed roll waits to take off
     /// under `held_jump_gravity`, whether jump is held or not.

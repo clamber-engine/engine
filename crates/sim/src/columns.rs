@@ -145,6 +145,15 @@ pub(crate) fn floor_within(
         .is_some_and(|top| top - feet <= reach && band_of(top) - band_of(feet) <= bands)
 }
 
+/// Whether `column` has ground for a body with its feet at `feet`, from
+/// a body's height above the feet down to `depth` px below them. Ground
+/// reaching higher counts.
+pub(crate) fn ground_down_to(level: &Level, column: i64, feet: Fixed, depth: Fixed) -> bool {
+    spans(level, column)
+        .iter()
+        .any(|s| s.bottom >= feet - HEIGHT && s.top <= feet + depth)
+}
+
 /// The one-way platform in `column` whose layer holds feet at `feet`:
 /// below its top, and level with its underside or above.
 pub(crate) fn layer(level: &Level, column: i64, feet: Fixed) -> Option<Span> {
