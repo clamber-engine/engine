@@ -18,6 +18,8 @@ pub const FINGERPRINT_SIZE: usize = 64;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
     SmallWalker,
+    /// A walker 13 px taller than the small one (`riding-walkers.md`).
+    MediumWalker,
     LargeWalker,
     Thrower,
     /// A ball placed in the level, not thrown.
@@ -40,8 +42,9 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 16] = [
+    pub const ALL: [Kind; 17] = [
         Kind::SmallWalker,
+        Kind::MediumWalker,
         Kind::LargeWalker,
         Kind::Thrower,
         Kind::Ball,
@@ -63,6 +66,7 @@ impl Kind {
     pub fn name(self) -> &'static str {
         match self {
             Kind::SmallWalker => "small-walker",
+            Kind::MediumWalker => "medium-walker",
             Kind::LargeWalker => "large-walker",
             Kind::Thrower => "thrower",
             Kind::Ball => "ball",
@@ -107,13 +111,17 @@ impl Kind {
             params.insert(key.into(), value);
         };
         let kind = match self {
-            Kind::SmallWalker | Kind::LargeWalker => {
+            Kind::SmallWalker | Kind::MediumWalker | Kind::LargeWalker => {
                 // walker.md: full speed 1, closing an eighth of the gap
                 // each frame, turning 4 frames late; bounce.md's fall.
                 // The sizes are the ones the classic-1 preset's bounce
                 // and hurt boxes give walker-contact.md's ranges with.
+                // walker-contact.md doesn't cover the medium walker, so
+                // it is the small one made 13 px taller, as
+                // riding-walkers.md has it.
                 let size = match self {
                     Kind::SmallWalker => [20, 12],
+                    Kind::MediumWalker => [20, 25],
                     _ => [26, 38],
                 };
                 set("speed", Value::Integer(1));
@@ -291,7 +299,7 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             ),
             (
                 "a18b370140438f25f467370655a5c802ccd40f07be7e5296c81570fd169a9add",
-                Kind::SmallWalker,
+                Kind::MediumWalker,
             ),
             (
                 "a3917b33a073e05c714b57e8b4ca93dc514015f068d5d3ae7c8e89e64d7bcf08",
@@ -307,7 +315,7 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             ),
             (
                 "c8337d0771ac9e0feb76d90747123b32fba93ad3fe8fc5db12cd8a1a647b5910",
-                Kind::SmallWalker,
+                Kind::MediumWalker,
             ),
             (
                 "d95f1da6f034e0484756a23152ad6c3ecdc3bf418860bc083e55a33ef6cf6abc",
@@ -494,7 +502,10 @@ mod tests {
                 .resolve(&entity, "test", &format!("{kind}"))
                 .unwrap_or_else(|e| panic!("{kind}: {e}"))
                 .unwrap_or_else(|| panic!("{kind}: {name} isn't an archetype"));
-            let walker = matches!(kind, Kind::SmallWalker | Kind::LargeWalker);
+            let walker = matches!(
+                kind,
+                Kind::SmallWalker | Kind::MediumWalker | Kind::LargeWalker
+            );
             assert_eq!(archetype.behavior.is_walker(), walker, "{kind}");
             assert_eq!(name == WALKER, walker, "{kind}");
             match (kind, archetype.behavior) {
