@@ -26,6 +26,8 @@ const WATER: Color = rgb(0x3a, 0x7a, 0xd8);
 const ENTITY: Color = rgb(0xd0, 0x6a, 0xd8);
 const EYE: Color = rgb(0x10, 0x10, 0x18);
 const BLACK: Color = rgb(0, 0, 0);
+const PIECE: Color = rgb(0xb5, 0x79, 0x3f);
+const FLASH: Color = rgb(0xff, 0xf2, 0xb0);
 
 /// Size of the box marking an entity that has no sprite, px.
 const ENTITY_BOX: i32 = 12;
@@ -240,6 +242,8 @@ impl Game {
             }
         }
 
+        self.draw_kegs(canvas, &to_screen);
+
         if !behind {
             self.draw_characters(canvas, alpha, origin);
         }
@@ -249,6 +253,32 @@ impl Game {
         if now < full {
             let dark = 255 * (full - now) / full;
             canvas.shade(BLACK, dark as u8);
+        }
+    }
+
+    /// The keg the player waits in after a lost life, and the pieces and
+    /// flashes of kegs that broke. How the spec's pieces and flash look
+    /// isn't covered; they're small squares.
+    fn draw_kegs(&self, canvas: &mut dyn Surface, to_screen: &dyn Fn((f64, f64)) -> (f64, f64)) {
+        if let (Some(at), Some(resume)) = (self.world.resume_keg(), self.world.resume) {
+            let keg = &self.world.things[resume.keg];
+            let (x, y) = to_screen(point(at));
+            if self.cast.has_kind(&keg.kind) {
+                let pose = &self.poses.things[resume.keg];
+                self.cast.draw_thing(canvas, keg, pose, x as f32, y as f32);
+            } else {
+                let half = ENTITY_BOX / 2;
+                let (x, y) = (x.round() as i32, y.round() as i32);
+                canvas.stroke_rect(x - half, y - half, ENTITY_BOX, ENTITY_BOX, ENTITY);
+            }
+        }
+        for burst in &self.world.bursts {
+            for &piece in &burst.pieces {
+                let (x, y) = to_screen(point(piece));
+                canvas.fill_rect(x.round() as i32 - 2, y.round() as i32 - 2, 4, 4, PIECE);
+            }
+            let (x, y) = to_screen(point(burst.flash));
+            canvas.fill_rect(x.round() as i32 - 3, y.round() as i32 - 3, 6, 6, FLASH);
         }
     }
 
@@ -276,9 +306,10 @@ impl Game {
     }
 
     /// The other character, if there is one, as the player is drawn: in
-    /// the swap state during a swap, idle otherwise.
+    /// the swap state during a swap, idle otherwise. Not while the player
+    /// waits in a keg.
     fn draw_other(&self, canvas: &mut dyn Surface, alpha: f64, origin: (f64, f64)) {
-        let Some(other) = &self.world.other else {
+        let Some(other) = self.world.other.as_ref().filter(|_| !self.world.in_keg()) else {
             return;
         };
         let previous = self.previous_other.unwrap_or(other.pos);

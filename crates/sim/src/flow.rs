@@ -27,6 +27,7 @@ use clamber_level::Vec2;
 use clamber_pack::Param;
 
 use crate::collect::{self, Release};
+use crate::keg;
 use crate::loss;
 use crate::player::{Facing, Knockout, Player, State, frames};
 use crate::swap::Other;
@@ -187,6 +188,7 @@ pub(crate) fn dying(world: &mut World) -> bool {
 /// `hurt_by` is the enemy that hurt the player on this step, if one did;
 /// `facing` is the way the player faced before it.
 pub(crate) fn update(world: &mut World, hurt_by: Option<usize>, facing: Facing) {
+    keg::touch(world);
     let knockout = world.player_physics()[Param::KnockoutJump] > Fixed::ZERO;
     let life = u32::try_from(world.feel.world[Param::CountLife].floor()).unwrap_or(0);
     let level = &world.level;

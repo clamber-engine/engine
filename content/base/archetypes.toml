@@ -270,6 +270,27 @@
 #   those frames: at `bolt_speed` for `bolt_dash` frames, then easing
 #   toward `bolt_glide` by `bolt_response` of the gap a frame. Only the
 #   character under control breaks a crate or mounts an animal.
+# - `keg`: a restart barrel, centred on its position, which never moves.
+#   The character under control touches it by its `contact` table, as a
+#   ball's without a turn, at the end of a frame after its move; it then
+#   breaks, once, and is gone, and its position becomes where play
+#   resumes after a lost life. Touching it changes nothing about the
+#   player. It breaks into four `pieces = [[across, up], ...]`, each
+#   moving across by its `across` every frame and up by its `up` at the
+#   start, less `piece_gravity` every frame, and a flash rising
+#   `flash_rise` a frame, which last `burst_time` frames. Play resumes
+#   there inside a keg, counting frames from 0: the player is at the
+#   keg's position, with the view's left edge `view_back` px left of it;
+#   from frame 1 it's `lift` px higher and not drawn, and nothing moves
+#   or takes input until the keg bursts on frame `burst`, as when
+#   broken. From the frame after, the player is in the air and in play.
+#   The keg in the meantime shakes sideways by `shake = [[from, first,
+#   second], ...]` (up to four, in order): from frame `from`, by `first`
+#   px on the first two of every four frames and `second` on the other
+#   two (0 before the first). The picture is black up to frame
+#   `fade_from` and fades in from there, a step of brightness every
+#   `fade_step` frames. The first landing after the burst has a landing
+#   lockout of `land_lockout` frames, instead of the preset's.
 #
 # The player defeats an enemy by landing on it, and bounces off, or by
 # rolling into it. Touching one any other way costs a life.
@@ -464,6 +485,49 @@ rolling = [-19, 32, -16, 27]
 crouching = [-24, 23, -24, 20]
 fidget = [-11, 35, -19, 33]
 mirror = 5
+turn = []
+upright_jump = 5
+land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }
+roll_after = [3, 9]
+fidget_time = [239, 180, 457]
+
+# title-1's restart barrel (spec/behavior/restart-barrel.md). The player
+# touches it by the ranges for its pose, the ball's poses with the ball's
+# timings; `above` is the spec's D turned around (the player's feet line
+# less the keg's position). Touched, it breaks into four pieces and a
+# flash, and the level's restart point, its position, is reached.
+# Resuming there, the player waits in a keg `lift` px above it until it
+# bursts on frame `burst`, with the view `view_back` px left of it on
+# frame 0, and the keg shakes by `shake`: [from, first, second] stages,
+# the first offset on the first two of every four frames from `from`,
+# the second on the other two. The spec doesn't say how big the barrel
+# is, where the pieces and the flash start or how long they last, or how
+# fast the picture fades in: `size`, `burst_time` and `fade_step` are
+# Clamber's own. Jump held from the fall on jumps on the frame after
+# landing: no lockout.
+[archetypes.keg]
+behavior = "keg"
+size = [20, 18]
+offset = 0
+pieces = [[2, 4.75], [-1, 5.75], [-2, 4.75], [1, 6.25]]
+piece_gravity = 0.25
+flash_rise = 0.5
+burst_time = 40
+lift = 8.5625
+burst = 62
+view_back = 79
+shake = [[15, 1, 0], [45, -3, 1], [57, -7, 1]]
+fade_from = 4
+fade_step = 2
+land_lockout = 0
+
+[archetypes.keg.contact]
+upright = [-24, 27, -34, 38]
+airborne = [-24, 24, -13, 55]
+rolling = [-22, 27, -30, 36]
+crouching = [-27, 18, -38, 29]
+fidget = [-14, 30, -33, 42]
+mirror = -3
 turn = []
 upright_jump = 5
 land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }

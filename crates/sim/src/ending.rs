@@ -63,11 +63,15 @@ impl World {
 
     /// How bright the picture is, as a step of brightness out of the
     /// number at full brightness: `(full, full)` outside the fade, and
-    /// `(0, full)` on its last frame.
+    /// `(0, full)` on its last frame. After resuming in a keg, it fades
+    /// in the other way (see [`keg`](crate::keg)).
     pub fn brightness(&self) -> (u32, u32) {
         let physics = &self.feel.world;
         let step = u32::from(frames(physics[Param::EndFadeStep]).max(1));
         let full = u32::from(frames(physics[Param::EndFadeTime])) / step + 1;
+        if let Some(now) = self.resume_brightness(full) {
+            return (now, full);
+        }
         match self.ending.and_then(|e| e.fade) {
             Some(f) => (full - 1 - (u32::from(f) / step).min(full - 1), full),
             None => (full, full),

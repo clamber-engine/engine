@@ -121,7 +121,51 @@ pub enum Behavior {
     /// A flying enemy that sways around where it's placed and hurts on
     /// any contact (see [`stinger`](crate::stinger)).
     Stinger(Stinger),
+    /// A restart barrel: touched, it breaks and the level's restart point
+    /// is reached, and play resumes there inside one (see
+    /// [`keg`](crate::keg)).
+    Keg(Keg),
 }
+
+/// A restart barrel (spec/behavior/restart-barrel.md). The player touches
+/// it when its offsets from it at the end of a step are within `contact`'s
+/// ranges for its pose and facing. It breaks into `pieces`, each moving
+/// across by its `x` every frame and up by its `y` at the start, less
+/// `piece_gravity` a frame, and a flash rising `flash_rise` a frame, which
+/// last `burst_time` frames.
+///
+/// Resuming at the restart point, counting the frames from 0: the view's
+/// left edge starts `view_back` px left of it, the player waits in a keg
+/// `lift` px above it from frame 1 until it bursts on frame `burst`, and
+/// is in play from the one after. The keg shakes by `shake`'s stages: from
+/// each one's first frame on, by the first offset on the first two of
+/// every four frames and the second on the other two. The picture fades
+/// in from black from frame `fade_from`, a step every `fade_step` frames.
+/// The first landing after that has a landing lockout of `land_lockout`
+/// frames.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Keg {
+    pub contact: Contact,
+    pub pieces: [Vec2; KEG_PIECES],
+    pub piece_gravity: Fixed,
+    pub flash_rise: Fixed,
+    pub burst_time: u8,
+    pub lift: Fixed,
+    pub burst: u8,
+    pub view_back: Fixed,
+    pub shake: [(u8, i8, i8); MAX_SHAKE_STAGES],
+    /// Only the first `shake_stages` are used.
+    pub shake_stages: u8,
+    pub fade_from: u8,
+    pub fade_step: u8,
+    pub land_lockout: u8,
+}
+
+/// How many pieces a keg breaks into.
+pub const KEG_PIECES: usize = 4;
+
+/// The most stages a keg's shake can have.
+pub const MAX_SHAKE_STAGES: usize = 4;
 
 /// How a stinger sways (spec/behavior/stinger.md). Its turning points
 /// are `reach` whole px from its start: `(left, right, up, down)`. It
@@ -918,6 +962,20 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "ride",
         ],
         "stinger" => &["reach", "velocity", "contact"],
+        "keg" => &[
+            "contact",
+            "pieces",
+            "piece_gravity",
+            "flash_rise",
+            "burst_time",
+            "lift",
+            "burst",
+            "view_back",
+            "shake",
+            "fade_from",
+            "fade_step",
+            "land_lockout",
+        ],
         "collect" => &[
             "worth",
             "release_every",
@@ -1257,6 +1315,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 contact: parse_contact(get("contact")?, &format!("{path}.contact"))?,
             })
         }
+        "keg" => Behavior::Keg(parse_keg(table, path)?),
         _ => Behavior::Launcher {
             velocity: pair("velocity")?,
         },
@@ -1265,6 +1324,101 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         behavior,
         size,
         offset: number("offset")?,
+    })
+}
+
+/// Reads a keg's values. Errors start with `path`.
+fn parse_keg(table: &Table, path: &str) -> Result<Keg, String> {
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let number = |v: &Value, at: &str| -> Result<Fixed, String> {
+        clamber_pack::read_number(v, "", at).map_err(|e| e.message)
+    };
+    let positive = |key: &str| -> Result<Fixed, String> {
+        let at = format!("{path}.{key}");
+        let v = number(get(key)?, &at)?;
+        if v.is_negative() {
+            return Err(format!("{at}: must not be negative"));
+        }
+        Ok(v)
+    };
+    let frames = |key: &str| match get(key)? {
+        Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
+        _ => Err(format!(
+            "{path}.{key}: expected a whole number of frames, 0 to 255"
+        )),
+    };
+    let at = format!("{path}.pieces");
+    let mut pieces = [Vec2::default(); KEG_PIECES];
+    match get("pieces")? {
+        Value::Array(items) if items.len() == KEG_PIECES => {
+            for (i, item) in items.iter().enumerate() {
+                let at = format!("{at}[{i}]");
+                let Value::Array(xy) = item else {
+                    return Err(format!("{at}: expected [across, up]"));
+                };
+                let [x, y] = xy.as_slice() else {
+                    return Err(format!("{at}: expected [across, up]"));
+                };
+                pieces[i] = Vec2::new(
+                    number(x, &format!("{at}[0]"))?,
+                    number(y, &format!("{at}[1]"))?,
+                );
+            }
+        }
+        _ => {
+            return Err(format!(
+                "{at}: expected a list of {KEG_PIECES} [across, up]"
+            ));
+        }
+    }
+    let at = format!("{path}.shake");
+    let stages = match get("shake")? {
+        Value::Array(items) if items.len() <= MAX_SHAKE_STAGES => items,
+        _ => {
+            return Err(format!(
+                "{at}: expected a list of up to {MAX_SHAKE_STAGES} [from, first, second]"
+            ));
+        }
+    };
+    let mut shake = [(0, 0, 0); MAX_SHAKE_STAGES];
+    for (i, stage) in stages.iter().enumerate() {
+        let at = format!("{at}[{i}]");
+        let parts = match stage {
+            Value::Array(parts) => parts.as_slice(),
+            _ => &[],
+        };
+        let [Value::Integer(from), Value::Integer(a), Value::Integer(b)] = parts else {
+            return Err(format!(
+                "{at}: expected [from, first, second], whole numbers"
+            ));
+        };
+        let (Ok(from), Ok(a), Ok(b)) = (u8::try_from(*from), i8::try_from(*a), i8::try_from(*b))
+        else {
+            return Err(format!("{at}: out of range"));
+        };
+        if i > 0 && from <= shake[i - 1].0 {
+            return Err(format!("{at}: stages must start in order"));
+        }
+        shake[i] = (from, a, b);
+    }
+    Ok(Keg {
+        contact: parse_contact(get("contact")?, &format!("{path}.contact"))?,
+        pieces,
+        piece_gravity: positive("piece_gravity")?,
+        flash_rise: number(get("flash_rise")?, &format!("{path}.flash_rise"))?,
+        burst_time: frames("burst_time")?,
+        lift: number(get("lift")?, &format!("{path}.lift"))?,
+        burst: frames("burst")?,
+        view_back: number(get("view_back")?, &format!("{path}.view_back"))?,
+        shake,
+        shake_stages: stages.len() as u8,
+        fade_from: frames("fade_from")?,
+        fade_step: frames("fade_step")?.max(1),
+        land_lockout: frames("land_lockout")?,
     })
 }
 

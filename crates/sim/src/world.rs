@@ -15,6 +15,7 @@ use crate::ending::{self, Ending};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
 use crate::follow::{self, Lead, Mode};
 use crate::join::{self, Join};
+use crate::keg::{self, Burst, Resume};
 use crate::loss::{self, Loss, Lost};
 use crate::player::{Act, Facing, Player, ROLL, Roll, frames};
 use crate::ride;
@@ -141,6 +142,9 @@ pub enum Phase {
     /// A stinger swaying around its start, with its vertical speed and
     /// its target speeds (see [`stinger`](crate::stinger)).
     Swaying { vy: Fixed, tx: Fixed, ty: Fixed },
+    /// A keg the player broke, gone for the rest of the visit (see
+    /// [`keg`](crate::keg)).
+    Broken,
 }
 
 /// Everything the simulation advances.
@@ -180,6 +184,11 @@ pub struct World {
     /// Things appearing by sections, if the level's do and there's a
     /// view.
     pub placing: Option<Placing>,
+    /// Play resuming inside a keg, until the player is in play and the
+    /// picture has faded in.
+    pub resume: Option<Resume>,
+    /// The pieces and flashes of kegs that broke or burst.
+    pub bursts: Vec<Burst>,
     /// Frames the whole game should stand still after the last step
     /// before the next, as during a knock-out. Whatever runs the world in
     /// real time holds the screen for them; they aren't steps, and a
@@ -278,6 +287,8 @@ impl World {
             ending: None,
             dimming: None,
             placing,
+            resume: None,
+            bursts: Vec::new(),
             pause: 0,
         })
     }
@@ -457,6 +468,7 @@ impl World {
                 Phase::Ridden => [11, 0],
                 Phase::Swaying { .. } => [12, 0],
                 Phase::Bolting { .. } => [13, 0],
+                Phase::Broken => [14, 0],
             });
             if let Phase::Falling { vy, .. }
             | Phase::Knocked { vy: Some(vy) }
@@ -536,6 +548,25 @@ impl World {
                 out.extend(p.there.iter().map(|&t| u8::from(t)));
             }
             None => out.push(0),
+        }
+        match self.resume {
+            Some(r) => {
+                out.push(1);
+                count(&mut out, r.keg);
+                out.extend(r.frame.to_le_bytes());
+                vec2(&mut out, r.at);
+                out.push(r.landed.into());
+            }
+            None => out.push(0),
+        }
+        count(&mut out, self.bursts.len());
+        for b in &self.bursts {
+            count(&mut out, b.keg);
+            out.push(b.frame);
+            for v in b.pieces.iter().chain(&b.speeds) {
+                vec2(&mut out, *v);
+            }
+            vec2(&mut out, b.flash);
         }
         out.push(self.pause);
         out.extend(f.gems.to_le_bytes());
@@ -746,6 +777,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
     if world.flow.outcome.is_over() {
         return;
     }
+    keg::bursts(world);
     // The dimming starts by where the view was at the start of the step.
     dimming::start(world);
     if world.join.is_some() {
@@ -758,6 +790,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
     if flow::dying(world) {
         if world.flow.events.contains(&FlowEvent::Respawn) {
             view::restart(world);
+            keg::begin(world);
             world.dimming = None;
         } else if follow::due(world).is_some() {
             // The other character goes on following a player that fell
@@ -771,6 +804,11 @@ pub fn step(world: &mut World, input: &InputFrame) {
     }
     if world.ending.is_some() {
         ending::step(world);
+        world.frame += 1;
+        return;
+    }
+    if keg::hold(world) {
+        // Everything waits while the player is in the keg.
         world.frame += 1;
         return;
     }
@@ -835,6 +873,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
     }
     view::update(world);
     carry::after(world, &input.players[0]);
+    keg::after(world);
     collect::update(world, true, start_view);
     let landed = world.events.contains(&Event::Land);
     world.recent.note(&input.players[0], landed);

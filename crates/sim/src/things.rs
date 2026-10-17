@@ -335,7 +335,7 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
                 Phase::Fired(since + 1)
             };
         }
-        Phase::Held => return false,
+        Phase::Held | Phase::Broken => return false,
         Phase::Knocked { vy } => {
             if let Behavior::Walker {
                 response,
@@ -415,7 +415,8 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         | Behavior::Collect { .. }
         | Behavior::Thrower { .. }
         | Behavior::Hutch(_)
-        | Behavior::Stinger(_) => {}
+        | Behavior::Stinger(_)
+        | Behavior::Keg(_) => {}
     }
     false
 }

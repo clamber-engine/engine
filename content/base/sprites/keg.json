@@ -1,0 +1,53 @@
+{
+  "frames": [
+    {
+      "filename": "keg whole 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 104,
+        "h": 94
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28,
+        "y": 33,
+        "w": 104,
+        "h": 94
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 160
+      },
+      "duration": 100,
+      "ticks": 6
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "keg.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 108,
+      "h": 98
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "whole",
+        "from": 0,
+        "to": 0,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 80,
+        "y": 80
+      },
+      "scale": 5,
+      "normals": "keg-normals.png"
+    }
+  }
+}

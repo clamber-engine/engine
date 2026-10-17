@@ -165,11 +165,11 @@ impl Kind {
             // reaches and speeds, so they keep the archetype's: they stay
             // at their start. The first level has none.
             Kind::Stinger => "stinger",
-            // restart-barrel.md: touching it makes the level's restart
-            // point reached, which is what a checkpoint is. Placeholder
-            // until the barrel gets its own touch ranges, breaking and
-            // resume (#145).
-            Kind::RestartBarrel => CHECKPOINT,
+            // restart-barrel.md's values are the archetype's own. The
+            // level's restart point is the barrel's position, as in the
+            // first level; how to tell it from the level's data isn't
+            // covered.
+            Kind::RestartBarrel => "keg",
             // tyre.md's throw is 6 px per frame up. Placeholder until
             // tyres get tyre.md's catch, squash and tyre jump (#146);
             // the first level has none.
@@ -224,10 +224,6 @@ pub const WALKER: &str = "crawler";
 
 /// The kind of entity that marks the end of a level, as in `clamber-sim`.
 pub const END: &str = "end";
-
-/// The kind of entity that marks where play resumes after a lost life,
-/// as in `clamber-sim`.
-pub const CHECKPOINT: &str = "checkpoint";
 
 impl fmt::Display for Kind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -539,15 +535,10 @@ mod tests {
         use clamber_sim::{Archetypes, Behavior};
 
         assert_eq!(END, clamber_sim::END);
-        assert_eq!(CHECKPOINT, clamber_sim::CHECKPOINT);
         for kind in Kind::ALL {
             let (name, params) = kind.entity();
-            match kind {
-                Kind::EndMarker => assert_eq!(name, END),
-                Kind::RestartBarrel => assert_eq!(name, CHECKPOINT),
-                _ => {}
-            }
-            if matches!(kind, Kind::EndMarker | Kind::RestartBarrel) {
+            if kind == Kind::EndMarker {
+                assert_eq!(name, END);
                 continue;
             }
             if matches!(
@@ -595,6 +586,9 @@ mod tests {
                 }
                 (Kind::Stinger, behavior) => {
                     assert!(matches!(behavior, Behavior::Stinger(_)), "{kind}")
+                }
+                (Kind::RestartBarrel, behavior) => {
+                    assert!(matches!(behavior, Behavior::Keg(_)), "{kind}")
                 }
                 _ => {}
             }

@@ -17,6 +17,9 @@
 //! A stinger sways around where it's placed and hurts on any contact
 //! ([`Stinger`]).
 //!
+//! Touching a restart barrel breaks it and makes it where play resumes
+//! after a lost life, inside one ([`Keg`], [`Resume`]).
+//!
 //! A character missing from the level joins the player when an object
 //! holding it breaks ([`Join`]).
 //!
@@ -45,6 +48,7 @@ mod flow;
 mod follow;
 mod hutch;
 mod join;
+mod keg;
 mod loss;
 mod player;
 mod pose;
@@ -62,9 +66,9 @@ mod world;
 
 pub use archetype::{
     AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
-    Fall, Hit, Holder, Hutch, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_HOP_STEPS, MAX_LETTERS,
-    MAX_RESPONSE_PARTS, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Ride, RiderReach,
-    Span, Stinger, Throw, WalkerContact,
+    Fall, Hit, Holder, Hutch, KEG_PIECES, Keg, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_HOP_STEPS,
+    MAX_LETTERS, MAX_RESPONSE_PARTS, MAX_SHAKE_STAGES, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach,
+    Response, Ride, RiderReach, Span, Stinger, Throw, WalkerContact,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
@@ -76,6 +80,7 @@ pub use flow::{
 };
 pub use follow::{Follow, Mode, Point, point as follow_point};
 pub use join::Join;
+pub use keg::{Burst, Resume};
 pub use loss::{Loss, Lost};
 pub use player::{
     Act, Boost, Crouch, Facing, Gait, GroundAction, HALF_WIDTH, HEIGHT, Hands, Holds, Knockout,
