@@ -17,7 +17,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use clamber_sim::{CHECKPOINT, Facing, Outcome, Phase, State, Thing, World};
+use clamber_sim::{Behavior, CHECKPOINT, Facing, Outcome, Phase, State, Thing, World};
 use clamber_sprite::{Playback, SpriteSheet};
 
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
@@ -293,6 +293,14 @@ fn thing_animation(world: &World, thing: &Thing) -> Option<&'static str> {
             return Some("defeated");
         }
         Phase::Fired(_) => return Some("fire"),
+        Phase::Opened(since) => {
+            let out = thing.archetype.is_some_and(|a| match a.behavior {
+                Behavior::Hutch(hutch) => since >= hutch.animal_after,
+                _ => true,
+            });
+            return Some(if out { "animal" } else { "break" });
+        }
+        Phase::Mounted(_) | Phase::Ridden => return Some("animal"),
         Phase::Ready | Phase::Held | Phase::Thrown(_) | Phase::Placed | Phase::Flying { .. } => {}
     }
     let reached = thing.kind == CHECKPOINT && world.flow.checkpoints.contains(&thing.index);

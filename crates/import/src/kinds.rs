@@ -30,11 +30,13 @@ pub enum Kind {
     /// An object that can be carried and holds the missing character.
     Holder,
     EndMarker,
+    /// A crate holding an animal.
+    AnimalCrate,
     Stinger,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 13] = [
+    pub const ALL: [Kind; 14] = [
         Kind::SmallWalker,
         Kind::LargeWalker,
         Kind::Thrower,
@@ -47,6 +49,7 @@ impl Kind {
         Kind::Barrel,
         Kind::Holder,
         Kind::EndMarker,
+        Kind::AnimalCrate,
         Kind::Stinger,
     ];
 
@@ -65,7 +68,17 @@ impl Kind {
             Kind::Barrel => "barrel",
             Kind::Holder => "holder",
             Kind::EndMarker => "end-marker",
+            Kind::AnimalCrate => "animal-crate",
             Kind::Stinger => "stinger",
+        }
+    }
+
+    /// How far below its entry's level y an object of this kind's
+    /// position is: animal-crate.md puts a crate 1 px below.
+    pub fn below_entry(self) -> i32 {
+        match self {
+            Kind::AnimalCrate => 1,
+            _ => 0,
         }
     }
 
@@ -118,6 +131,8 @@ impl Kind {
                 "crate"
             }
             Kind::EndMarker => END,
+            // animal-crate.md's values are the archetype's own.
+            Kind::AnimalCrate => "hutch",
             // A flying enemy that hurts on any contact. Placeholder until
             // stingers get stinger.md's own behavior (#131); the
             // first level has none.
@@ -182,6 +197,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "253004ec8ef2f867d9bacc7dcc6abeb4fa4ae6dc86d98336db33c32e11196e3a",
                 Kind::Stinger,
+            ),
+            (
+                "2c3d3e307d2fe5c18345e8308e49c7922732a9ec006ad6cd67900634117da740",
+                Kind::AnimalCrate,
             ),
             (
                 "3b1534a2da04c2655ee410d9570846bf8da60ecabf7afa758b2e5cab13c547a0",
@@ -400,7 +419,7 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 29);
+        assert_eq!(want.len(), 30);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }
@@ -436,6 +455,9 @@ mod tests {
                 }
                 (Kind::Holder, Behavior::Carry { holder, .. }) => assert!(holder.is_some()),
                 (Kind::Barrel, Behavior::Carry { holder, .. }) => assert!(holder.is_none()),
+                (Kind::AnimalCrate, behavior) => {
+                    assert!(matches!(behavior, Behavior::Hutch(_)), "{kind}")
+                }
                 _ => {}
             }
         }

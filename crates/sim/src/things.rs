@@ -38,6 +38,10 @@
 //! - A launcher sends the player off at its velocity, then rests for
 //!   [`LAUNCH_REST`] frames before it can fire again.
 //!
+//! A crate holding an animal breaks when the player lands on it, which
+//! bounces off it, and the player can mount the animal that comes out
+//! (see [`hutch`]).
+//!
 //! Objects that can be carried don't act on the player; the player picks
 //! them up (see [`carry`](crate::carry)).
 //!
@@ -66,6 +70,7 @@ use crate::archetype::{Archetype, Behavior, Fall, Response};
 use crate::carry;
 use crate::columns;
 use crate::flow::{FlowEvent, overlap};
+use crate::hutch;
 use crate::join;
 use crate::player::{Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, frames, is_wall};
 use crate::pose::{self, Stance};
@@ -215,6 +220,8 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
             }
         }
     }
+    let untouchable = knocked(world);
+    hutch::update(world, &physics, frozen, untouchable);
     // Enemies bounced on still moved this frame, as they were.
     let freeze = frames(physics[Param::BounceFreeze]);
     let facing = world.player.facing;
@@ -321,6 +328,8 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
             }
             return false;
         }
+        // Crates holding an animal move in [`hutch::update`].
+        Phase::Opened(_) | Phase::Mounted(_) | Phase::Ridden => return false,
         Phase::Ready => {}
     }
     if thing.wait > 0 {
@@ -357,7 +366,8 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         Behavior::Launcher { .. }
         | Behavior::Carry { .. }
         | Behavior::Collect { .. }
-        | Behavior::Thrower { .. } => {}
+        | Behavior::Thrower { .. }
+        | Behavior::Hutch(_) => {}
     }
     false
 }

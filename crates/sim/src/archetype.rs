@@ -110,6 +110,9 @@ pub enum Behavior {
     /// A ball that flies, bounces on floors and drops through them (see
     /// [`throwers`](crate::throwers)).
     Ball(Ball),
+    /// A crate holding an animal, which the player breaks by landing on
+    /// it and then mounts (see [`hutch`](crate::hutch)).
+    Hutch(Hutch),
 }
 
 /// One of a thrower's throws: on `frame` of its period, a ball at
@@ -118,6 +121,70 @@ pub enum Behavior {
 pub struct Throw {
     pub frame: u32,
     pub velocity: Vec2,
+}
+
+/// A crate holding an animal (spec/behavior/animal-crate.md). Offsets
+/// are whole px, ends included: `across` is the player's `x` rounded
+/// down less the crate's, `above` the crate's `y` less the player's feet
+/// line (its `y` rounded up), with the player where it is after its move
+/// on a frame. Each `across` holds the range for facing right, then the
+/// one for facing left.
+///
+/// A player in the air moving down, not rolling, within `break_across`
+/// and `break_above` breaks it and bounces off it. `animal_after` frames
+/// later the animal comes out, standing `animal_hop` px above the
+/// crate's position on that frame and the ones after, then on it. Once
+/// it stands there, a player that would be within `mount_across` and
+/// `mount_above` after its move, in the air moving down after a jump or
+/// a bounce and not rolling, mounts it: it's put on the animal and holds
+/// still for `mount_hold` frames, then rides it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Hutch {
+    pub break_across: [(i32, i32); 2],
+    pub break_above: (i32, i32),
+    pub animal_after: u8,
+    /// Only the first `hop_steps` are used.
+    pub animal_hop: [Fixed; MAX_HOP_STEPS],
+    pub hop_steps: u8,
+    pub mount_across: [(i32, i32); 2],
+    pub mount_above: (i32, i32),
+    pub mount_hold: u8,
+}
+
+/// The most frames an animal's hop out of its crate can have.
+pub const MAX_HOP_STEPS: usize = 8;
+
+impl Hutch {
+    /// Frames after the crate breaks from which the animal stands on the
+    /// crate's position and can be mounted.
+    pub fn standing(&self) -> u8 {
+        self.animal_after.saturating_add(self.hop_steps)
+    }
+
+    /// How far above the crate's position the animal is `since` frames
+    /// after the crate broke, once it's out.
+    pub fn height(&self, since: u8) -> Fixed {
+        since
+            .checked_sub(self.animal_after)
+            .filter(|&i| i < self.hop_steps)
+            .map_or(Fixed::ZERO, |i| self.animal_hop[usize::from(i)])
+    }
+}
+
+/// Whether `across` and `above` are within `ranges` (the one for
+/// `facing`) and `above`, ends included.
+pub(crate) fn within(
+    ranges: [(i32, i32); 2],
+    above: (i32, i32),
+    facing: Facing,
+    (x, y): (i64, i64),
+) -> bool {
+    let (from, to) = match facing {
+        Facing::Right => ranges[0],
+        Facing::Left => ranges[1],
+    };
+    (i64::from(from)..=i64::from(to)).contains(&x)
+        && (i64::from(above.0)..=i64::from(above.1)).contains(&y)
 }
 
 /// The most throws a thrower can have.
@@ -484,8 +551,8 @@ impl Behavior {
 pub struct Archetype {
     pub behavior: Behavior,
     /// The box it touches the player with: standing on its position for
-    /// a walker or an object that can be carried, centred on it
-    /// otherwise.
+    /// a walker, an object that can be carried or a crate holding an
+    /// animal, centred on it otherwise.
     pub size: Vec2,
     /// How far the box's middle is in front of its position, the way it's
     /// going.
@@ -502,7 +569,9 @@ impl Archetype {
             Facing::Right => pos.x + self.offset,
         };
         let (top, bottom) = match self.behavior {
-            Behavior::Walker { .. } | Behavior::Carry { .. } => (pos.y - self.size.y, pos.y),
+            Behavior::Walker { .. } | Behavior::Carry { .. } | Behavior::Hutch(_) => {
+                (pos.y - self.size.y, pos.y)
+            }
             _ => {
                 let half_h = half(self.size.y);
                 (pos.y - half_h, pos.y + half_h)
@@ -705,6 +774,15 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "drop",
             "window",
             "contact",
+        ],
+        "hutch" => &[
+            "break_across",
+            "break_above",
+            "animal_after",
+            "animal_hop",
+            "mount_across",
+            "mount_above",
+            "mount_hold",
         ],
         "collect" => &[
             "worth",
@@ -1019,6 +1097,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             }
             Behavior::Ball(ball)
         }
+        "hutch" => Behavior::Hutch(parse_hutch(table, path)?),
         _ => Behavior::Launcher {
             velocity: pair("velocity")?,
         },
@@ -1027,6 +1106,71 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         behavior,
         size,
         offset: number("offset")?,
+    })
+}
+
+/// Reads a crate holding an animal's values. Errors start with `path`.
+fn parse_hutch(table: &Table, path: &str) -> Result<Hutch, String> {
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let range = |value: &Value, at: &str| match value {
+        Value::Array(items) if items.len() == 2 => {
+            let end = |i: usize| match &items[i] {
+                Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+                _ => Err(format!("{at}[{i}]: expected a whole number of px")),
+            };
+            let (from, to) = (end(0)?, end(1)?);
+            if from > to {
+                return Err(format!("{at}: it ends before it starts"));
+            }
+            Ok((from, to))
+        }
+        _ => Err(format!("{at}: expected [from, to]")),
+    };
+    let ranges = |key: &str| {
+        let at = format!("{path}.{key}");
+        match get(key)? {
+            Value::Array(items) if items.len() == 2 => Ok([
+                range(&items[0], &format!("{at}[0]"))?,
+                range(&items[1], &format!("{at}[1]"))?,
+            ]),
+            _ => Err(format!(
+                "{at}: expected [[from, to], [from, to]], right then left"
+            )),
+        }
+    };
+    let frames = |key: &str| match get(key)? {
+        Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
+        _ => Err(format!(
+            "{path}.{key}: expected a whole number of frames, 0 to 255"
+        )),
+    };
+    let at = format!("{path}.animal_hop");
+    let items = match get("animal_hop")? {
+        Value::Array(items) if items.len() <= MAX_HOP_STEPS => items,
+        _ => {
+            return Err(format!(
+                "{at}: expected a list of up to {MAX_HOP_STEPS} heights"
+            ));
+        }
+    };
+    let mut animal_hop = [Fixed::ZERO; MAX_HOP_STEPS];
+    for (i, item) in items.iter().enumerate() {
+        animal_hop[i] =
+            clamber_pack::read_number(item, "", &format!("{at}[{i}]")).map_err(|e| e.message)?;
+    }
+    Ok(Hutch {
+        break_across: ranges("break_across")?,
+        break_above: range(get("break_above")?, &format!("{path}.break_above"))?,
+        animal_after: frames("animal_after")?,
+        animal_hop,
+        hop_steps: items.len() as u8,
+        mount_across: ranges("mount_across")?,
+        mount_above: range(get("mount_above")?, &format!("{path}.mount_above"))?,
+        mount_hold: frames("mount_hold")?,
     })
 }
 

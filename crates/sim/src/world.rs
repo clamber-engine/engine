@@ -124,6 +124,13 @@ pub enum Phase {
         ignoring: Option<Fixed>,
         kept: bool,
     },
+    /// A crate holding an animal, broken this many frames ago, counting
+    /// up to when the animal stands on the crate's position.
+    Opened(u8),
+    /// An animal the player mounted this many frames ago.
+    Mounted(u8),
+    /// An animal the player rides.
+    Ridden,
 }
 
 /// Everything the simulation advances.
@@ -421,6 +428,9 @@ impl World {
                 Phase::Flying { ignoring, kept, .. } => {
                     [8, u8::from(ignoring.is_some()) | u8::from(kept) << 1]
                 }
+                Phase::Opened(since) => [9, since],
+                Phase::Mounted(since) => [10, since],
+                Phase::Ridden => [11, 0],
             });
             if let Phase::Falling { vy, .. }
             | Phase::Knocked { vy: Some(vy) }

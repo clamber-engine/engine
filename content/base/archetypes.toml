@@ -183,6 +183,28 @@
 #   letters taken `join_delay` frames later (left out: 0), and the
 #   letter row is shown. The preset's `letter_count` says how many
 #   letters the word has, and all of them give one more life.
+# - `hutch`: a crate holding an animal. It stands on its position and
+#   never moves; walking, running or rolling through it does nothing.
+#   Offsets from it are whole px, ends included: `across`, the player's
+#   x rounded down less the crate's, and `above`, the crate's y less the
+#   player's feet line (its y rounded up). Each `*_across` is
+#   `[[from, to], [from, to]]`, the range for facing right, then for
+#   facing left. A player in the air that moved down on a frame, not
+#   rolling, within `break_across` and `break_above` at the end of the
+#   frame breaks it, once, and bounces off it as off a walker (the
+#   preset's `bounce_speed` and `bounce_freeze`). `animal_after` frames
+#   later the animal comes out where it stood, `animal_hop = [px, ...]`
+#   above the crate's position on that frame and the ones after (up to
+#   eight), then on it, where it stays. From then on, a player in the air
+#   after a jump or a bounce, moving down, not rolling, that would be
+#   within `mount_across` and `mount_above` after its move on a frame
+#   mounts the animal: it's moved by whole px so that its x rounded down
+#   is the crate's and its feet line is the crate's y, stops moving down,
+#   keeps its speed across, and holds still for `mount_hold` frames.
+#   Then its feet are put on the crate's y, on the ground there, and it
+#   rides the animal. Riding isn't covered yet: the player moves as
+#   usual, with the animal under it. Only the character under control
+#   breaks a crate or mounts an animal.
 #
 # The player defeats an enemy by landing on it, and bounces off, or by
 # rolling into it. Touching one any other way costs a life.
@@ -246,6 +268,22 @@ hit_thrower = [36, 30, 23, 32]
 hit_thrower_early = [37, 55, 47, 65]
 hit_ball = [27, 21, 25, 20]
 hit_ball_early = [27, 47, 52, 50]
+
+# title-1's (spec/behavior/animal-crate.md), measured on the first
+# level's crate with the first character. The spec doesn't say how big
+# the crate or the animal is; the size is Clamber's own and only draws
+# them.
+[archetypes.hutch]
+behavior = "hutch"
+size = [32, 24]
+offset = 0
+break_across = [[-28, 40], [-42, 26]]
+break_above = [5, 36]
+animal_after = 18
+animal_hop = [1.5625, 2.6875, 3.375, 3.625]
+mount_across = [[-27, 19], [-26, 20]]
+mount_above = [5, 45]
+mount_hold = 22
 
 # title-1's thrower and balls (spec/behavior/thrower.md). The spec
 # doesn't say how big either is; the sizes are Clamber's own and only

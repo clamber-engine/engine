@@ -1,0 +1,434 @@
+{
+  "frames": [
+    {
+      "filename": "hutch whole 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 180,
+        "h": 134
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 50,
+        "y": 88,
+        "w": 180,
+        "h": 134
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 100,
+      "ticks": 6
+    },
+    {
+      "filename": "hutch break 0",
+      "frame": {
+        "x": 184,
+        "y": 2,
+        "w": 205,
+        "h": 162
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 38,
+        "y": 63,
+        "w": 205,
+        "h": 162
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "hutch break 1",
+      "frame": {
+        "x": 391,
+        "y": 2,
+        "w": 234,
+        "h": 185
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 24,
+        "y": 42,
+        "w": 234,
+        "h": 185
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "hutch break 2",
+      "frame": {
+        "x": 627,
+        "y": 2,
+        "w": 256,
+        "h": 203
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 28,
+        "w": 256,
+        "h": 203
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "hutch break 3",
+      "frame": {
+        "x": 885,
+        "y": 2,
+        "w": 272,
+        "h": 217
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 5,
+        "y": 20,
+        "w": 272,
+        "h": 217
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "hutch break 4",
+      "frame": {
+        "x": 1159,
+        "y": 2,
+        "w": 279,
+        "h": 219
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 1,
+        "y": 21,
+        "w": 279,
+        "h": 219
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "hutch break 5",
+      "frame": {
+        "x": 1440,
+        "y": 2,
+        "w": 280,
+        "h": 211
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 29,
+        "w": 280,
+        "h": 211
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "hutch break 6",
+      "frame": {
+        "x": 1722,
+        "y": 2,
+        "w": 280,
+        "h": 196
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 44,
+        "w": 280,
+        "h": 196
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "hutch break 7",
+      "frame": {
+        "x": 2,
+        "y": 223,
+        "w": 128,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 102,
+        "y": 153,
+        "w": 128,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "hutch animal 0",
+      "frame": {
+        "x": 132,
+        "y": 223,
+        "w": 191,
+        "h": 106
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 54,
+        "y": 116,
+        "w": 191,
+        "h": 106
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "hutch animal 1",
+      "frame": {
+        "x": 325,
+        "y": 223,
+        "w": 194,
+        "h": 104
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 53,
+        "y": 118,
+        "w": 194,
+        "h": 104
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "hutch animal 2",
+      "frame": {
+        "x": 521,
+        "y": 223,
+        "w": 195,
+        "h": 103
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 53,
+        "y": 119,
+        "w": 195,
+        "h": 103
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "hutch animal 3",
+      "frame": {
+        "x": 718,
+        "y": 223,
+        "w": 194,
+        "h": 104
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 53,
+        "y": 118,
+        "w": 194,
+        "h": 104
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "hutch animal 4",
+      "frame": {
+        "x": 914,
+        "y": 223,
+        "w": 191,
+        "h": 106
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 54,
+        "y": 116,
+        "w": 191,
+        "h": 106
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "hutch animal 5",
+      "frame": {
+        "x": 1107,
+        "y": 223,
+        "w": 188,
+        "h": 110
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 56,
+        "y": 113,
+        "w": 188,
+        "h": 110
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "hutch animal 6",
+      "frame": {
+        "x": 1297,
+        "y": 223,
+        "w": 187,
+        "h": 111
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 56,
+        "y": 112,
+        "w": 187,
+        "h": 111
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "hutch animal 7",
+      "frame": {
+        "x": 1486,
+        "y": 223,
+        "w": 188,
+        "h": 110
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 56,
+        "y": 113,
+        "w": 188,
+        "h": 110
+      },
+      "sourceSize": {
+        "w": 280,
+        "h": 240
+      },
+      "duration": 67,
+      "ticks": 4
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "hutch.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 2004,
+      "h": 336
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "whole",
+        "from": 0,
+        "to": 0,
+        "direction": "forward"
+      },
+      {
+        "name": "break",
+        "from": 1,
+        "to": 8,
+        "direction": "forward",
+        "repeat": "1"
+      },
+      {
+        "name": "animal",
+        "from": 9,
+        "to": 16,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 140,
+        "y": 220
+      },
+      "scale": 5,
+      "normals": "hutch-normals.png"
+    }
+  }
+}

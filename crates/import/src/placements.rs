@@ -136,7 +136,8 @@ impl Placements {
     }
 
     /// The objects as level entities, for a level whose bottom edge is at
-    /// `bottom`. Each is at its entry's position, the entity
+    /// `bottom`. Each is at its entry's position (moved down by
+    /// [`Kind::below_entry`]), the entity
     /// [`Kind::entity`] gives for the kind `kind` gives its reference, or
     /// else of kind `placed-` and its reference in hex. A group's walkers,
     /// and its members of unknown kinds, get `group`, the group entry's
@@ -147,18 +148,18 @@ impl Placements {
     /// the spec doesn't cover have no entity.
     pub fn entities(&self, bottom: i64, kind: impl Fn(u16) -> Option<Kind>) -> Vec<Entity> {
         let entity = |entry: Entry| {
-            let (kind, params) = match kind(entry.reference) {
+            let (kind, params, below) = match kind(entry.reference) {
                 Some(kind) => {
                     let (name, params) = kind.entity();
-                    (name.to_string(), params)
+                    (name.to_string(), params, kind.below_entry())
                 }
-                None => (format!("{PLACED}{:04x}", entry.reference), Table::new()),
+                None => (format!("{PLACED}{:04x}", entry.reference), Table::new(), 0),
             };
             Entity {
                 kind,
                 id: None,
                 // A u16 x and a bottom edge inside a level fit an i32.
-                at: Vec2::ints(i32::from(entry.x), entry.level_y(bottom) as i32),
+                at: Vec2::ints(i32::from(entry.x), entry.level_y(bottom) as i32 + below),
                 params,
             }
         };
@@ -366,6 +367,15 @@ mod tests {
                 one("placed-ffff", 65000, 505),
             ]
         );
+    }
+
+    /// animal-crate.md: a crate's position is its entry's level y plus 1.
+    #[test]
+    fn an_animal_crate_is_1_px_below_its_entry() {
+        let kind = |r| (r == 0x2000).then_some(Kind::AnimalCrate);
+        let entities = read(&fragment()).unwrap().entities(BOTTOM, kind);
+        let crate_ = entities.iter().find(|e| e.kind == "hutch").unwrap();
+        assert_eq!(crate_.at, Vec2::ints(40, 313));
     }
 
     #[test]

@@ -346,6 +346,39 @@ impl Player {
         self.state = State::Bounce;
     }
 
+    /// Puts the player on an animal at `(x, feet)`, whole px: moved by
+    /// whole px so that its `x` rounded down is `x` and its feet line (its
+    /// `y` rounded up) is `feet`, keeping the fractions, with no speed
+    /// down. It then holds still for `hold` frames.
+    pub(crate) fn mount(&mut self, x: i64, feet: i64, hold: u8) {
+        let whole = |n: i64| Fixed::from_int(n as i32);
+        self.pos.x += whole(x - self.pos.x.floor());
+        self.pos.y += whole(feet + (-self.pos.y).floor());
+        self.vel.y = Fixed::ZERO;
+        self.frozen = hold;
+        self.jump_hold = false;
+        self.takeoff = false;
+        self.takeoff_wait = None;
+        self.end_roll();
+        self.ground_action = None;
+        // Not a bounce's frozen frames, which can hold walkers.
+        self.state = State::Fall;
+    }
+
+    /// Puts the feet at `y`, with no speed down, on the ground if there's
+    /// ground right under them.
+    pub(crate) fn put_down(&mut self, level: &Level, y: Fixed, events: &mut Vec<Event>) {
+        self.pos.y = y;
+        self.vel.y = Fixed::ZERO;
+        if self.grounded() {
+            return;
+        }
+        if let Some(hit) = level.collision.cast(self.pos, Dir::Down, Fixed::ZERO) {
+            self.land(y, hit.collider, events);
+            self.state = self.next_state(self.ran, events);
+        }
+    }
+
     /// Hurts the player where it is: it doesn't move on this step.
     pub fn hit(&mut self, events: &mut Vec<Event>) {
         self.touched.clear();

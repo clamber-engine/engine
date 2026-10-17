@@ -11,6 +11,9 @@
 //!
 //! Rendering and audio read a world; they never change it.
 //!
+//! An animal comes out of a crate the player breaks, and the player can
+//! mount it ([`Hutch`]).
+//!
 //! A character missing from the level joins the player when an object
 //! holding it breaks ([`Join`]).
 //!
@@ -36,6 +39,7 @@ mod dimming;
 mod ending;
 mod flow;
 mod follow;
+mod hutch;
 mod join;
 mod loss;
 mod player;
@@ -50,8 +54,9 @@ mod world;
 
 pub use archetype::{
     AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
-    Fall, Hit, Holder, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_LETTERS, MAX_RESPONSE_PARTS,
-    MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Span, Throw, WalkerContact,
+    Fall, Hit, Holder, Hutch, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_HOP_STEPS, MAX_LETTERS,
+    MAX_RESPONSE_PARTS, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Span, Throw,
+    WalkerContact,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
