@@ -34,6 +34,8 @@ pub enum Kind {
     EndMarker,
     /// The place the characters come out of when the level begins.
     Entrance,
+    /// An exit that takes the lead out of the area (`exits.md`).
+    Exit,
     /// A crate holding an animal.
     AnimalCrate,
     /// The restart barrel, which marks the level's restart point.
@@ -50,7 +52,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 21] = [
+    pub const ALL: [Kind; 22] = [
         Kind::SmallWalker,
         Kind::MediumWalker,
         Kind::LargeWalker,
@@ -65,6 +67,7 @@ impl Kind {
         Kind::Holder,
         Kind::EndMarker,
         Kind::Entrance,
+        Kind::Exit,
         Kind::AnimalCrate,
         Kind::RestartBarrel,
         Kind::Stinger,
@@ -91,6 +94,7 @@ impl Kind {
             Kind::Holder => "holder",
             Kind::EndMarker => "end-marker",
             Kind::Entrance => "entrance",
+            Kind::Exit => "exit",
             Kind::AnimalCrate => "animal-crate",
             Kind::RestartBarrel => "restart-barrel",
             Kind::Stinger => "stinger",
@@ -166,6 +170,9 @@ impl Kind {
             // level-start.md: where the characters start is the level's
             // start record's point, not this entry's.
             Kind::Entrance => ENTRANCE,
+            // exits.md: placed and not drawn. The simulation doesn't act
+            // on it yet.
+            Kind::Exit => EXIT,
             // animal-crate.md's values are the archetype's own.
             Kind::AnimalCrate => "hutch",
             // stinger.md doesn't cover how a level's stingers get their
@@ -248,6 +255,9 @@ pub const END: &str = "end";
 /// The archetype a level's entrance is.
 pub const ENTRANCE: &str = "entrance";
 
+/// The kind of entity an exit is.
+pub const EXIT: &str = "exit";
+
 /// The archetype restart barrels are.
 pub const KEG: &str = "keg";
 
@@ -275,6 +285,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "064bbe75bd3abfab4b38a24ad7b839fc30bdfc417023fd381ada77694e617ded",
                 Kind::Stinger,
+            ),
+            (
+                "0d36c9a5953a166b2bbfafe60fc65cbe1abd9b66392a33c650daaeb3db1b9fe8",
+                Kind::Exit,
             ),
             (
                 "0e1f45ccf4bc6e7a48005c73ce0003f0a0d0205fbb063ade26b4f1fe83877da0",
@@ -399,6 +413,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "c8337d0771ac9e0feb76d90747123b32fba93ad3fe8fc5db12cd8a1a647b5910",
                 Kind::MediumWalker,
+            ),
+            (
+                "ca241289eec0b66d060f41c4a59b57f87638faf55b0b2b7aa6082d5dafed37af",
+                Kind::Exit,
             ),
             (
                 "cc9382a3b49fbd2580834652575cf6c0fb7129761622b5cf7261081c549f25e6",
@@ -557,7 +575,7 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 38);
+        assert_eq!(want.len(), 40);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }
@@ -573,6 +591,11 @@ mod tests {
             let (name, params) = kind.entity();
             if kind == Kind::EndMarker {
                 assert_eq!(name, END);
+                continue;
+            }
+            if kind == Kind::Exit {
+                assert_eq!(name, EXIT);
+                assert!(!Archetypes::builtin().names().any(|n| n == name));
                 continue;
             }
             let entity = Entity {
