@@ -8,7 +8,7 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
 use clamber_pack::{CharacterFeel, Fixed, Presets};
-use clamber_sim::{Event, InputFrame, World, generic_feel, step};
+use clamber_sim::{Event, Facing, InputFrame, ROLL, RollSize, State, World, generic_feel, step};
 
 /// Flat ground at y = 400 from x = 0 to 4096.
 const FLAT: &str = r#"
@@ -22,8 +22,8 @@ const FLAT: &str = r#"
     rect = [0, 400, 4096, 200]
 "#;
 
-/// A world on `FLAT` with Classic 1's two roster slots, the second under
-/// control, and what was held on its last step.
+/// A world on `FLAT` with Classic 1's two roster slots, both able to
+/// roll, the second under control, and what was held on its last step.
 struct Play {
     world: World,
     held: Actions,
@@ -33,7 +33,7 @@ fn second() -> Play {
     let mut feel = generic_feel("classic-1").unwrap();
     feel.roster.push(CharacterFeel {
         physics: Presets::builtin().slot("classic-1", 1).unwrap(),
-        abilities: BTreeMap::new(),
+        abilities: BTreeMap::from([(ROLL.to_string(), BTreeMap::new())]),
     });
     let level = Arc::new(Level::from_toml_str(FLAT, "flat").unwrap());
     let mut world = World::new(level, Arc::new(feel));
@@ -330,5 +330,344 @@ fn jump_distances() {
         assert_eq!(rows.len(), 1 + 47, "{case}");
         assert_eq!(rows[47].2 - rows[1].2, distance, "{case}");
         assert_eq!(w.world.player.vel.x, f(landing_vx), "{case}");
+    }
+}
+
+const DOWN: Action = Action::Down;
+
+/// One step of `steps`.
+struct Row {
+    x: Fixed,
+    vx: Fixed,
+    vy: Fixed,
+    facing: Facing,
+    state: State,
+    events: Vec<Event>,
+}
+
+/// Plays `n` steps holding `keys(step)` on each; a key held after a step
+/// without it is a press.
+fn steps(play: &mut Play, n: usize, keys: impl Fn(usize) -> Vec<Action>) -> Vec<Row> {
+    (0..n)
+        .map(|i| {
+            let held: Actions = keys(i).into_iter().collect();
+            let input = InputFrame::single(Frame::after(play.held, held));
+            play.held = held;
+            step(&mut play.world, &input);
+            let p = &play.world.player;
+            Row {
+                x: p.pos.x,
+                vx: p.vel.x,
+                vy: p.vel.y,
+                facing: p.facing,
+                state: p.state,
+                events: play.world.events.clone(),
+            }
+        })
+        .collect()
+}
+
+fn frames_with(rows: &[Row], event: Event) -> Vec<usize> {
+    (0..rows.len())
+        .filter(|&i| rows[i].events.contains(&event))
+        .collect()
+}
+
+/// D, the frame after a roll started on step 0.
+const D: usize = 24;
+
+#[test]
+fn roll_worked_values() {
+    // "Rolls", worked values: `on_s` held on S, `then` after.
+    let walking = || {
+        let mut w = second();
+        hold(&mut w, &[R], 60);
+        w
+    };
+    let running = || {
+        let mut w = second();
+        hold(&mut w, &[R, A], 60);
+        hold(&mut w, &[R], 1);
+        assert_eq!(w.world.player.vel.x, f(3.234375));
+        w
+    };
+    for (mut w, on_s, then, size, first, on_d, to_d, to_stop) in [
+        (
+            second(),
+            &[A][..],
+            &[][..],
+            RollSize::Slow,
+            [0.140625, 0.26171875, 0.3671875],
+            1.0703125,
+            20.28125,
+            22.7578125,
+        ),
+        (
+            second(),
+            &[A, R],
+            &[R],
+            RollSize::Normal,
+            [0.421875, 0.7890625, 1.109375],
+            3.2421875,
+            61.31640625,
+            68.82421875,
+        ),
+        (
+            walking(),
+            &[A, R],
+            &[R],
+            RollSize::Normal,
+            [2.390625, 2.51171875, 2.6171875],
+            3.3203125,
+            76.53125,
+            84.20703125,
+        ),
+        (
+            running(),
+            &[A, R],
+            &[R],
+            RollSize::Fast,
+            [3.390625, 3.52734375, 3.6484375],
+            4.44140625,
+            103.703125,
+            113.97265625,
+        ),
+    ] {
+        let case = format!("{on_s:?} at {}", w.world.player.vel.x);
+        let x0 = w.world.player.pos.x;
+        let rows = steps(&mut w, D + 4, |i| if i == 0 { on_s } else { then }.to_vec());
+        assert_eq!(rows[0].events, [Event::RollStart], "{case}");
+        assert_eq!(w.world.player.stopped.unwrap().size, size, "{case}");
+        let vx: Vec<_> = rows[..3].iter().map(|r| r.vx).collect();
+        assert_eq!(vx, first.map(f), "{case}");
+        assert!(rows[..D].iter().all(|r| r.state == State::Roll), "{case}");
+        assert_eq!(frames_with(&rows, Event::RollEnd), [D], "{case}");
+        assert_eq!(rows[D].vx, f(on_d), "{case}");
+        assert_eq!(rows[D].x - x0, f(to_d), "{case}");
+        assert_eq!(rows[D + 3].x - x0, f(to_stop), "{case}");
+        assert_eq!(rows[D + 3].vx, Fixed::ZERO, "{case}");
+    }
+}
+
+#[test]
+fn roll_reversing_and_steering() {
+    // "Rolls": reversing a normal roll from walking speed.
+    let mut w = second();
+    hold(&mut w, &[R], 60);
+    let x0 = w.world.player.pos.x;
+    let rows = steps(&mut w, D + 1, |i| if i == 0 { vec![A, R] } else { vec![L] });
+    let vx: Vec<_> = rows[..5].iter().map(|r| r.vx).collect();
+    assert_eq!(
+        vx,
+        [2.390625, 1.671875, 1.04296875, 0.4921875, 0.01171875].map(f)
+    );
+    assert_eq!(rows[5].vx, f(-0.41015625));
+    assert_eq!(rows[D].vx, f(-3.12890625));
+    assert_eq!(rows[D].x - x0, f(-39.625));
+
+    // A slow roll steered its way from S + 10 goes toward 3, not 3.375.
+    let mut w = second();
+    let rows = steps(&mut w, D + 1, |i| match i {
+        0 => vec![A],
+        1..10 => vec![],
+        _ => vec![R],
+    });
+    assert_eq!(rows[9].vx, f(0.8203125));
+    assert_eq!(rows[10].vx, f(1.08984375));
+    assert_eq!(rows[D].vx, f(2.6953125));
+}
+
+/// From standing, pressing Action alone on `presses` and holding Right
+/// from `right`.
+fn presses(presses: &[usize], right: usize, n: usize) -> Vec<Row> {
+    let mut w = second();
+    steps(&mut w, n, |i| {
+        let mut keys = Vec::new();
+        if presses.contains(&i) {
+            keys.push(A);
+        }
+        if i >= right {
+            keys.push(R);
+        }
+        keys
+    })
+}
+
+#[test]
+fn roll_lasts_24_frames_and_the_stop_after_it() {
+    // "Rolls": a roll lasts 24 frames, then the stop of roll-speed.md.
+    let rows = presses(&[0], 30, 50);
+    assert_eq!(frames_with(&rows, Event::RollStart), [0]);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [D]);
+    assert!(rows[D + 3..D + 18].iter().all(|r| r.vx == Fixed::ZERO));
+    assert_ne!(rows[D + 2].x, rows[D + 3].x);
+    assert!(rows[D + 4..D + 18].iter().all(|r| r.x == rows[D + 3].x));
+    assert_eq!(rows[D + 18].vx, f(0.28125));
+}
+
+#[test]
+fn next_roll_after_a_stop() {
+    // "Rolls", length: a press from D - 2 to D + 16 is remembered to
+    // D + 17, and a roll starting on D + 17 lasts 25 frames and doesn't
+    // move on its first, whether its press was remembered or new.
+    for p in D - 2..=D + 17 {
+        let rows = presses(&[0, p], usize::MAX, 80);
+        assert_eq!(frames_with(&rows, Event::RollStart), [0, D + 17], "{p}");
+        assert_eq!(frames_with(&rows, Event::RollEnd), [D, D + 42], "{p}");
+        assert_eq!(rows[D + 17].vx, Fixed::ZERO, "{p}");
+        assert_eq!(rows[D + 17].x, rows[D + 16].x, "{p}");
+        assert!(rows[D + 18].vx > Fixed::ZERO, "{p}");
+    }
+    // Earlier presses are ignored.
+    let rows = presses(&[0, D - 3], usize::MAX, 80);
+    assert_eq!(frames_with(&rows, Event::RollStart), [0]);
+    // A press on D + 18 or later starts a 24-frame roll.
+    for p in [D + 18, D + 21] {
+        let rows = presses(&[0, p], usize::MAX, 80);
+        assert_eq!(frames_with(&rows, Event::RollStart), [0, p], "{p}");
+        assert_eq!(frames_with(&rows, Event::RollEnd), [D, p + D], "{p}");
+    }
+}
+
+#[test]
+fn roll_carries_on_to_d_plus_6() {
+    // "Rolls", carrying on: Action alone held through a slow roll.
+    let mut w = second();
+    let rows = steps(&mut w, D + 9, |_| vec![A]);
+    assert_eq!(frames_with(&rows, Event::RollStart), [0]);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [D + 6]);
+    assert!(rows[..D + 6].iter().all(|r| r.state == State::Roll));
+    assert_eq!(rows[D + 6].vx, f(1.09375));
+    assert_eq!(rows[D + 7].vx, f(0.95703125));
+
+    // The next roll after carrying on: Action released on D + 1 and
+    // pressed on P >= D + 2 starts it on max(P, D + 7).
+    for p in D + 2..=D + 11 {
+        let mut w = second();
+        let rows = steps(&mut w, D + 14, |i| {
+            if i == D + 1 || (D + 1..p).contains(&i) {
+                vec![R]
+            } else {
+                vec![A, R]
+            }
+        });
+        let start = p.max(D + 7);
+        assert_eq!(frames_with(&rows, Event::RollStart), [0, start], "{p}");
+        assert_eq!(frames_with(&rows, Event::RollEnd), [D + 6], "{p}");
+    }
+}
+
+#[test]
+fn down_and_action_roll() {
+    // "Rolls": Down held on the press frame makes no difference.
+    let mut w = second();
+    let rows = steps(&mut w, 3, |_| vec![DOWN, A]);
+    assert_eq!(rows[0].events, [Event::RollStart]);
+    assert_eq!(rows[1].state, State::Roll);
+}
+
+/// Standing still with Action held and no roll after landing, one or
+/// more running frames from standing (`run`), then `between` (never with
+/// Action) and a press with `on_s`. Returns the roll's size.
+fn size_after_run(run: usize, between: &[&[Action]], on_s: &[Action]) -> RollSize {
+    let mut w = second();
+    hold(&mut w, &[J], 1);
+    hold(&mut w, &[], 2);
+    // Pressed too long before landing to roll on it.
+    let landing = hold(&mut w, &[A], 60);
+    assert!(landing.iter().any(|e| e.contains(&Event::Land)));
+    assert!(!landing.iter().any(|e| e.contains(&Event::RollStart)));
+    assert_eq!(w.world.player.vel.x, Fixed::ZERO);
+    hold(&mut w, &[A, R], run);
+    for keys in between {
+        let held: Actions = keys.iter().copied().collect();
+        let input = InputFrame::single(Frame::after(w.held, held));
+        w.held = held;
+        step(&mut w.world, &input);
+    }
+    let rows = steps(&mut w, 1, |_| on_s.to_vec());
+    assert_eq!(rows[0].events, [Event::RollStart]);
+    w.world.player.roll.unwrap().size
+}
+
+#[test]
+fn a_single_run_from_standing_and_a_neutral_press_roll_slowly() {
+    // "Rolls", running recently: a single running frame from standing
+    // still, and neither Left nor Right on S: slow at every gap, even
+    // with a direction held in between.
+    let none: &[Action] = &[];
+    let right: &[Action] = &[R];
+    for gap in 2..=14 {
+        let between = vec![none; gap - 1];
+        assert_eq!(size_after_run(1, &between, &[A]), RollSize::Slow, "{gap}");
+        // With Right held on S it is fast within the window.
+        let size = size_after_run(1, &between, &[A, R]);
+        assert_eq!(size, RollSize::Fast, "{gap}");
+    }
+    for gap in [3, 10] {
+        let mut before_s = vec![none; gap - 2];
+        before_s.push(right);
+        let size = size_after_run(1, &before_s, &[A]);
+        assert_eq!(size, RollSize::Slow, "{gap}, Right before S");
+        let size = size_after_run(1, &vec![right; gap - 1], &[A]);
+        assert_eq!(size, RollSize::Slow, "{gap}, Right throughout");
+    }
+    // Two running frames in a row follow the window rule.
+    assert_eq!(size_after_run(2, &[none; 5], &[A]), RollSize::Fast);
+}
+
+#[test]
+fn facing_in_the_stop() {
+    // "Rolls", facing in the stop: a direction pressed on D + 1 to D + 17
+    // turns the player on that frame, and the stop's speeds don't change.
+    let plain = presses(&[0], usize::MAX, D + 19);
+    for k in [1, 3, 6, 14, 16, 17] {
+        let mut w = second();
+        let rows = steps(&mut w, D + 18, |i| {
+            let mut keys = if i == 0 { vec![A] } else { vec![] };
+            if i >= D + k {
+                keys.push(L);
+            }
+            keys
+        });
+        assert_eq!(rows[D + k - 1].facing, Facing::Right, "D + {k}");
+        assert_eq!(rows[D + k].facing, Facing::Left, "D + {k}");
+        for i in 0..D + 18 {
+            assert_eq!(rows[i].vx, plain[i].vx, "D + {k}, step {i}");
+            assert_eq!(rows[i].x, plain[i].x, "D + {k}, step {i}");
+        }
+    }
+    // Pressed on D + 18, it starts a normal ground turn.
+    let mut w = second();
+    let rows = steps(&mut w, D + 24, |i| match i {
+        0 => vec![A],
+        i if i >= D + 18 => vec![L],
+        _ => vec![],
+    });
+    assert_eq!(rows[D + 21].facing, Facing::Right);
+    assert_eq!(rows[D + 22].facing, Facing::Left);
+}
+
+#[test]
+fn jumping_out_of_a_roll() {
+    // "Rolls", jumping out: from T = P + 1 the targets are this
+    // character's, with its own jump.
+    for p in [1, 5, 12, 22, 23, D] {
+        let mut w = second();
+        let rows = steps(&mut w, p + 3, |i| match i {
+            0 => vec![A, R],
+            i if i == p => vec![R, J],
+            _ => vec![R],
+        });
+        assert_eq!(frames_with(&rows, Event::RollEnd), [p], "{p}");
+        assert_eq!(frames_with(&rows, Event::JumpStart), [p + 1], "{p}");
+        assert_eq!(rows[p + 1].vy, f(-8.3515625), "{p}");
+        for t in p + 1..p + 3 {
+            // the speed rule toward 2.25, in 1/256 units
+            let before = (rows[t - 1].vx.to_f64() * 256.0) as i64;
+            let step = (576 - before) / 8;
+            let expect = if step == 0 { 576 } else { before + step };
+            assert_eq!(rows[t].vx, f(expect as f64 / 256.0), "{p}, step {t}");
+        }
     }
 }

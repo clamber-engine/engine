@@ -82,13 +82,17 @@ roll_fast_speed = 0
 roll_fast_window = 0
 roll_fast_window_neutral = 0
 roll_fast_hold = 0
+roll_lone_run_any_dir = 0
 roll_keeps_size = 0
+roll_steer_speed = 0
 roll_not_on_down = 0
 roll_carry_time = 0
 roll_stop_time = 0
 roll_after_stop = 0
 roll_stop_slide = 0
+roll_slide_turns = 0
 roll_buffer = 0
+roll_stop_press_lengthens = 0
 roll_buffer_hold = 0
 roll_air_buffer = 0
 roll_air_lengthen = 0
@@ -579,6 +583,13 @@ dim_delay = 4
 # Swapping with it as the player (swap.md) waits less, the first
 # character follows a frame behind, a jump press just before doesn't
 # shorten the wait, and the crouch windows differ.
+# Its rolls (second-character.md, "Rolls") are shorter, with larger
+# sizes, but a slow roll steered its way goes toward the first
+# character's 3. Carrying on lasts to D + 6. A single running frame from
+# standing doesn't make a neutral roll fast even with a direction held
+# after it; a new press on the stop's last frame lengthens that roll as a
+# remembered one does; and facing turns at once all through the stop.
+# Down + Action rolls, as `ground_action_time` is 0.
 [presets.classic-1.roster.1]
 walk_speed = 2.25
 top_speed = 3.375
@@ -591,6 +602,15 @@ swap_jump_wait = 0
 swap_lag = 1
 swap_crouch_wait = 21
 swap_rise_wait = 12
+roll_time = 24
+roll_slow_speed = 1.125
+roll_speed = 3.375
+roll_fast_speed = 4.5
+roll_steer_speed = 3
+roll_carry_time = 6
+roll_lone_run_any_dir = 1
+roll_stop_press_lengthens = 1
+roll_slide_turns = 1
 # The second character follows by where the first is now.
 follow_lag = 0
 # The second character being hit isn't specified yet, so it's a hit with

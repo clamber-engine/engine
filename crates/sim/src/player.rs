@@ -970,9 +970,12 @@ impl Player {
         } else if busy.keep_facing {
             self.turn = None;
             self.facing
-        } else if self.roll_stop > slide {
-            // Standing still in the stop after a roll, the player turns
-            // at once, or not until it's over.
+        } else if self.roll_stop > slide
+            || (self.roll_stop > 0 && physics[Param::RollSlideTurns] > Fixed::ZERO)
+        {
+            // Standing still in the stop after a roll, or sliding with
+            // `roll_slide_turns`, the player turns at once, or not until
+            // it's over.
             self.turn = None;
             if physics[Param::RollAfterStop] > Fixed::ZERO {
                 self.facing
@@ -1317,7 +1320,9 @@ impl Player {
                 if held(Action::Action) && run_dir != 0 {
                     self.lone_run = self.since_run != Some(1) && start_vx == Fixed::ZERO;
                     self.since_run = Some(0);
-                } else if held(Action::Left) || held(Action::Right) {
+                } else if (held(Action::Left) || held(Action::Right))
+                    && physics[Param::RollLoneRunAnyDir] == Fixed::ZERO
+                {
                     self.lone_run = false;
                 }
             }
@@ -1594,9 +1599,11 @@ impl Player {
             RollSize::Slow
         };
         // A roll starting on the stop's last frame stands still on it, and
-        // lasts a frame longer if its press was made earlier.
+        // lasts a frame longer if its press was made earlier, or always
+        // with `roll_stop_press_lengthens`.
         let still = self.roll_stop > 0;
-        let length = frames(physics[Param::RollTime]).saturating_add(u8::from(still && age > 0));
+        let longer = age > 0 || physics[Param::RollStopPressLengthens] > Fixed::ZERO;
+        let length = frames(physics[Param::RollTime]).saturating_add(u8::from(still && longer));
         self.roll = Some(Roll {
             left: length,
             dir: self.facing,
@@ -2463,11 +2470,15 @@ impl RollSize {
 }
 
 impl Roll {
-    /// Holding the way the roll goes makes a slower roll normal, except
-    /// on the frame it's boosted; holding the other way turns it around.
+    /// Holding the way the roll goes makes a slower roll normal, or
+    /// `roll_steer_speed`, except on the frame it's boosted; holding the
+    /// other way turns it around.
     fn steer(&mut self, dir: i32, boosted: bool, physics: &Physics) {
         let along = direction(self.dir);
-        let normal = physics[Param::RollSpeed];
+        let normal = match physics[Param::RollSteerSpeed] {
+            Fixed::ZERO => physics[Param::RollSpeed],
+            steer => steer,
+        };
         let keeps = physics[Param::RollKeepsSize] > Fixed::ZERO;
         if dir == along && !boosted && !keeps && self.speed < normal {
             self.speed = normal;

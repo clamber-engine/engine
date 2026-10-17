@@ -369,7 +369,11 @@ mod tests {
                     | Param::RollFastWindow
                     | Param::RollFastWindowNeutral
                     | Param::RollFastHold
+                    | Param::RollLoneRunAnyDir
                     | Param::RollKeepsSize
+                    | Param::RollSteerSpeed
+                    | Param::RollSlideTurns
+                    | Param::RollStopPressLengthens
                     | Param::RollNotOnDown
                     | Param::RollCarryTime
                     | Param::RollStopTime

@@ -270,6 +270,10 @@ params! {
     RollFastWindow => "roll_fast_window",
     /// The same with no direction held as it starts. Whole frames.
     RollFastWindowNeutral => "roll_fast_window_neutral",
+    /// Above 0, a timed roll whose only running frame before it was a
+    /// single one from standing still is slow with no direction held as
+    /// it starts, even if a direction was held in between.
+    RollLoneRunAnyDir => "roll_lone_run_any_dir",
     /// Above 0, a timed roll's size comes from action's last hold
     /// instead: with Left or Right alone held as it starts, the roll is
     /// fast if action's last hold before the press that starts it lasted
@@ -279,6 +283,9 @@ params! {
     /// Above 0, a direction held the way a timed roll goes doesn't make
     /// a slower roll normal.
     RollKeepsSize => "roll_keeps_size",
+    /// Above 0, the speed a slower timed roll eases toward once the way
+    /// it goes is held, instead of `roll_speed`.
+    RollSteerSpeed => "roll_steer_speed",
     /// Above 0, an action press on the ground with down held doesn't
     /// start a timed roll.
     RollNotOnDown => "roll_not_on_down",
@@ -300,11 +307,17 @@ params! {
     /// 0: the roll's `roll_end` frame still moves, but ends standing.
     /// Whole frames.
     RollStopSlide => "roll_stop_slide",
+    /// Above 0, facing turns at once while the player still slides in
+    /// the stop, as it does once they stand.
+    RollSlideTurns => "roll_slide_turns",
     /// An action press during a timed roll or its stop starts the next
     /// roll as soon as one can start, up to this many frames after the
     /// press. A roll from a press remembered to the stop's last frame
     /// lasts one frame longer. Whole frames.
     RollBuffer => "roll_buffer",
+    /// Above 0, a roll from a new press on the stop's last frame lasts
+    /// one frame longer too.
+    RollStopPressLengthens => "roll_stop_press_lengthens",
     /// Above 0, such a press is only remembered while action stays held,
     /// as in the air.
     RollBufferHold => "roll_buffer_hold",
