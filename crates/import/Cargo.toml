@@ -2,6 +2,7 @@
 name = "clamber-import"
 version = "0.1.0"
 edition.workspace = true
+license.workspace = true
 publish = false
 description = "The importer: turns a player's own game image into a personal content pack"
 

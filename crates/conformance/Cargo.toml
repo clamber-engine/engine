@@ -2,6 +2,7 @@
 name = "clamber-conformance"
 version = "0.1.0"
 edition.workspace = true
+license.workspace = true
 publish = false
 description = "Engine traces against goldens and the spec: the clamber-trace CLI, golden and conformance tests"
 

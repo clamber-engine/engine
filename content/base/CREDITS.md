@@ -1,7 +1,9 @@
 # Credits
 
-Third-party content bundled with Clamber's base game. Everything else in
-`content/base/` is original to this project.
+Third-party content bundled with Clamber's base game, under its own
+licence. Everything else in `content/` is original to this project and
+licensed under [CC BY 4.0](../../LICENSE-CC-BY-4.0.txt): credit it as
+"Clamber Engine contributors".
 
 ## Music
 

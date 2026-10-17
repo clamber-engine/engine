@@ -30,6 +30,10 @@ you've read counts, ask before contributing.
 
 - Sign off your commits (`git commit -s`). Your sign-off includes the
   clean-room declaration in the pull request template.
+- By contributing, you agree to license your code under the MIT License and
+  your original content (in `content/`) under CC BY 4.0, as described in
+  the README. Third-party content needs a compatible licence and an entry in
+  `content/base/CREDITS.md`.
 - CI rejects ROM images and flags code that looks like it was derived from
   the original program (console memory addresses, 65816 assembly).
   Flagged lines get human review; a flag is not an accusation.

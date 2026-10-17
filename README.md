@@ -35,4 +35,16 @@ before contributing; this project follows a clean-room process.
 
 ## License
 
-TBD.
+- **Code** (everything outside `content/`, including the art scripts in
+  `art/` and the tools) is under the [MIT License](LICENSE).
+- **Original content** (the art, levels, sounds and other files in
+  `content/`) is under [CC BY 4.0](LICENSE-CC-BY-4.0.txt). Credit it as
+  "Clamber Engine contributors".
+- **Third-party content** keeps its own licence, listed in
+  [`content/base/CREDITS.md`](content/base/CREDITS.md) (for example, the
+  music is CC BY 3.0 by CodeManu).
+- The [spec](https://github.com/clamber-engine/spec) is CC0.
+
+Clamber contains no content from any original game. Content you import
+from your own game stays on your computer and is not covered by these
+licences.
