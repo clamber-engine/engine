@@ -7,7 +7,7 @@ use clamber_game::{
     Cast, Cue, DEFAULT_LEVEL, DEFAULT_SOUNDS, Game, LayerArt, SPRITES, SoundList, content_dir,
 };
 use clamber_level::{LayerContent, Level};
-use clamber_sim::{Archetypes, InputFrame, World, generic_feel};
+use clamber_sim::{Archetypes, HIDDEN, InputFrame, World, generic_feel};
 use clamber_sprite::{SpriteSheet, decode_png};
 
 #[test]
@@ -47,7 +47,9 @@ fn every_cue_has_a_sound_that_decodes() {
 #[test]
 fn every_archetype_has_a_sprite_sheet() {
     let cast = Cast::load(&content_dir().join(SPRITES)).unwrap();
-    for name in Archetypes::builtin().names() {
+    // Hidden objects aren't drawn; their items are drawn as what they
+    // become.
+    for name in Archetypes::builtin().names().filter(|&n| n != HIDDEN) {
         assert!(cast.has_kind(name), "{name}");
     }
 }
@@ -85,6 +87,7 @@ fn the_cast_sheets_are_rendered_with_their_animations() {
         ("hutch", &["whole", "break", "animal"]),
         ("stinger", &["fly"]),
         ("keg", &["whole"]),
+        ("canister", &["whole", "break"]),
     ] {
         let path = content_dir().join(SPRITES).join(format!("{name}.json"));
         let sprite = SpriteSheet::load(&path).unwrap();

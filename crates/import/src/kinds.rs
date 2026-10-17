@@ -180,11 +180,31 @@ impl Kind {
                 );
                 "launcher"
             }
-            // hidden-objects.md: not drawn, never in the way and never
-            // hurting. Placeholder until they are set off and release
-            // their items (#153): no archetype has the kind's name, so
-            // the object does nothing.
-            Kind::HiddenBunch | Kind::HiddenBarrel | Kind::HiddenMetalBarrel => self.name(),
+            // hidden-objects.md: a hidden bunch's values are the
+            // archetype's own.
+            Kind::HiddenBunch => HIDDEN,
+            // A long fall of 160 px sets these off, by their own ranges,
+            // and the item stands where it becomes a barrel: one that
+            // goes left, or a metal one that goes right.
+            Kind::HiddenBarrel | Kind::HiddenMetalBarrel => {
+                let (becomes, across) = match self {
+                    Kind::HiddenBarrel => ("crate", -1),
+                    _ => ("canister", 1),
+                };
+                let ints =
+                    |ns: &[i64]| Value::Array(ns.iter().map(|&n| Value::Integer(n)).collect());
+                set("strike_frames", ints(&[]));
+                set("fall_height", Value::Integer(160));
+                set(
+                    "across",
+                    Value::Array(vec![ints(&[-28, 42]), ints(&[-42, 28])]),
+                );
+                set("above", ints(&[-27, 20]));
+                set("becomes", Value::String(becomes.into()));
+                set("becomes_at", ints(&[0, 0]));
+                set("item_speed", ints(&[across, -6]));
+                HIDDEN
+            }
         };
         (kind, params)
     }
@@ -224,6 +244,9 @@ pub const WALKER: &str = "crawler";
 
 /// The kind of entity that marks the end of a level, as in `clamber-sim`.
 pub const END: &str = "end";
+
+/// The archetype hidden objects are, as in `clamber-sim`.
+pub const HIDDEN: &str = "hidden";
 
 impl fmt::Display for Kind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -535,24 +558,11 @@ mod tests {
         use clamber_sim::{Archetypes, Behavior};
 
         assert_eq!(END, clamber_sim::END);
+        assert_eq!(HIDDEN, clamber_sim::HIDDEN);
         for kind in Kind::ALL {
             let (name, params) = kind.entity();
             if kind == Kind::EndMarker {
                 assert_eq!(name, END);
-                continue;
-            }
-            if matches!(
-                kind,
-                Kind::HiddenBunch | Kind::HiddenBarrel | Kind::HiddenMetalBarrel
-            ) {
-                let entity = Entity {
-                    kind: name.to_string(),
-                    id: None,
-                    at: Vec2::ints(0, 0),
-                    params,
-                };
-                let resolved = Archetypes::builtin().resolve(&entity, "test", "e");
-                assert!(matches!(resolved, Ok(None)), "{kind}");
                 continue;
             }
             let entity = Entity {
@@ -589,6 +599,20 @@ mod tests {
                 }
                 (Kind::RestartBarrel, behavior) => {
                     assert!(matches!(behavior, Behavior::Keg(_)), "{kind}")
+                }
+                (Kind::HiddenBunch, Behavior::Hidden(h)) => {
+                    assert_eq!((h.fall_height, h.becomes), (0, "cluster"))
+                }
+                (Kind::HiddenBarrel, Behavior::Hidden(h)) => {
+                    assert_eq!((h.fall_height, h.becomes), (160, "crate"));
+                    assert_eq!(h.item_speed.x, clamber_sim::Fixed::from_int(-1));
+                }
+                (Kind::HiddenMetalBarrel, Behavior::Hidden(h)) => {
+                    assert_eq!((h.fall_height, h.becomes), (160, "canister"));
+                    assert_eq!(h.across, [(-28, 42), (-42, 28)]);
+                }
+                (Kind::HiddenBunch | Kind::HiddenBarrel | Kind::HiddenMetalBarrel, _) => {
+                    panic!("{kind} isn't hidden")
                 }
                 _ => {}
             }

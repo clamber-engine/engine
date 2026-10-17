@@ -5,7 +5,7 @@ use std::sync::Arc;
 use clamber_level::{Area, Depth, Layer, Shape, Vec2};
 use clamber_pack::Feel;
 use clamber_sim::{
-    DIM, END, Facing, FlowEvent, HALF_WIDTH, HEIGHT, InputFrame, State, World, step,
+    DIM, END, Facing, FlowEvent, HALF_WIDTH, HEIGHT, HIDDEN, InputFrame, State, World, step,
 };
 
 use crate::camera::{Camera, VIEW, point};
@@ -225,8 +225,9 @@ impl Game {
         }
 
         for (thing, pose) in self.world.things.iter().zip(&self.poses.things) {
-            // The end marker and the dimming's entity aren't drawn.
-            if !thing.active || ([END, DIM].contains(&thing.kind.as_str()) && !self.debug) {
+            // The end marker, the dimming's entity and hidden objects
+            // aren't drawn.
+            if !thing.active || ([END, DIM, HIDDEN].contains(&thing.kind.as_str()) && !self.debug) {
                 continue;
             }
             let (x, y) = to_screen(point(thing.pos));

@@ -243,6 +243,10 @@ pub struct Player {
     /// change, and Jump must stay held on the frames it holds still for
     /// the held gravity.
     pub unseated: bool,
+    /// The smallest feet line it has had at the end of a step since it
+    /// last stood on a floor, while in the air (see
+    /// [`hidden`](crate::hidden)).
+    pub fall_top: Option<i64>,
 }
 
 impl Player {
@@ -305,6 +309,7 @@ impl Player {
             swim_floor: false,
             riding: None,
             unseated: false,
+            fall_top: None,
         };
         player.ground = level
             .collision

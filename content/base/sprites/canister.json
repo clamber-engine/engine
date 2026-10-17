@@ -1,0 +1,244 @@
+{
+  "frames": [
+    {
+      "filename": "canister whole 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 114,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 63,
+        "y": 54,
+        "w": 114,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 100,
+      "ticks": 6
+    },
+    {
+      "filename": "canister break 0",
+      "frame": {
+        "x": 118,
+        "y": 2,
+        "w": 120,
+        "h": 147
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 60,
+        "y": 36,
+        "w": 120,
+        "h": 147
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "canister break 1",
+      "frame": {
+        "x": 240,
+        "y": 2,
+        "w": 121,
+        "h": 164
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 60,
+        "y": 22,
+        "w": 121,
+        "h": 164
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "canister break 2",
+      "frame": {
+        "x": 363,
+        "y": 2,
+        "w": 117,
+        "h": 174
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 62,
+        "y": 16,
+        "w": 117,
+        "h": 174
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "canister break 3",
+      "frame": {
+        "x": 482,
+        "y": 2,
+        "w": 113,
+        "h": 181
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 63,
+        "y": 16,
+        "w": 113,
+        "h": 181
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "canister break 4",
+      "frame": {
+        "x": 597,
+        "y": 2,
+        "w": 106,
+        "h": 176
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 66,
+        "y": 24,
+        "w": 106,
+        "h": 176
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "canister break 5",
+      "frame": {
+        "x": 705,
+        "y": 2,
+        "w": 98,
+        "h": 161
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 69,
+        "y": 39,
+        "w": 98,
+        "h": 161
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "canister break 6",
+      "frame": {
+        "x": 805,
+        "y": 2,
+        "w": 84,
+        "h": 141
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 79,
+        "y": 59,
+        "w": 84,
+        "h": 141
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "canister break 7",
+      "frame": {
+        "x": 891,
+        "y": 2,
+        "w": 1,
+        "h": 1
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 1,
+        "h": 1
+      },
+      "sourceSize": {
+        "w": 240,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "canister.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 894,
+      "h": 185
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "whole",
+        "from": 0,
+        "to": 0,
+        "direction": "forward"
+      },
+      {
+        "name": "break",
+        "from": 1,
+        "to": 8,
+        "direction": "forward",
+        "repeat": "1"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 120,
+        "y": 180
+      },
+      "scale": 5,
+      "normals": "canister-normals.png"
+    }
+  }
+}

@@ -20,6 +20,10 @@
 //! Touching a restart barrel breaks it and makes it where play resumes
 //! after a lost life, inside one ([`Keg`], [`Resume`]).
 //!
+//! A hidden object isn't drawn and does nothing until the ground action
+//! strikes it or the player lands on it after a long fall; it then
+//! releases an item that becomes a bunch or a barrel ([`HIDDEN`]).
+//!
 //! A character missing from the level joins the player when an object
 //! holding it breaks ([`Join`]).
 //!
@@ -46,6 +50,7 @@ mod dimming;
 mod ending;
 mod flow;
 mod follow;
+mod hidden;
 mod hutch;
 mod join;
 mod keg;
@@ -66,9 +71,10 @@ mod world;
 
 pub use archetype::{
     AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
-    Fall, Hit, Holder, Hutch, KEG_PIECES, Keg, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_HOP_STEPS,
-    MAX_LETTERS, MAX_RESPONSE_PARTS, MAX_SHAKE_STAGES, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach,
-    Response, Ride, RiderReach, Span, Stinger, Throw, WalkerContact,
+    Fall, HIDDEN_ITEMS, Hidden, Hit, Holder, Hutch, KEG_PIECES, Keg, MAX_AIR_STEPS,
+    MAX_ARRIVE_RULES, MAX_HOP_STEPS, MAX_LETTERS, MAX_RESPONSE_PARTS, MAX_SHAKE_STAGES,
+    MAX_STRIKE_FRAMES, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Ride, RiderReach,
+    Span, Stinger, Throw, WalkerContact,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
@@ -79,6 +85,7 @@ pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };
 pub use follow::{Follow, Mode, Point, point as follow_point};
+pub use hidden::HIDDEN;
 pub use join::Join;
 pub use keg::{Burst, Resume};
 pub use loss::{Loss, Lost};

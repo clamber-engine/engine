@@ -145,6 +145,12 @@ pub enum Phase {
     /// A keg the player broke, gone for the rest of the visit (see
     /// [`keg`](crate::keg)).
     Broken,
+    /// A hidden object's item in the air, moving at `vy` down and its
+    /// `vx` across, after `wait` more steps (see
+    /// [`hidden`](crate::hidden)).
+    Item { vy: Fixed, wait: u8 },
+    /// A hidden object's item on the floor, this many steps after landing.
+    Landed(u8),
 }
 
 /// Everything the simulation advances.
@@ -469,11 +475,14 @@ impl World {
                 Phase::Swaying { .. } => [12, 0],
                 Phase::Bolting { .. } => [13, 0],
                 Phase::Broken => [14, 0],
+                Phase::Item { wait, .. } => [15, wait],
+                Phase::Landed(since) => [16, since],
             });
             if let Phase::Falling { vy, .. }
             | Phase::Knocked { vy: Some(vy) }
             | Phase::Flying { vy, .. }
-            | Phase::Bolting { vx: vy } = t.phase
+            | Phase::Bolting { vx: vy }
+            | Phase::Item { vy, .. } = t.phase
             {
                 fixed(&mut out, vy);
             }
@@ -744,6 +753,13 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     }
     out.push(p.hop.map_or(0, |n| n.saturating_add(1)));
     out.push(p.unseated.into());
+    match p.fall_top {
+        Some(feet) => {
+            out.push(1);
+            out.extend(feet.to_le_bytes());
+        }
+        None => out.push(0),
+    }
     match p.hands {
         Some(h) => {
             out.push(1);

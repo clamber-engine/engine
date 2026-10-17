@@ -48,7 +48,7 @@ impl Window {
         view_left.max(1 - self.across.start())
     }
 
-    fn holds_x(&self, x: i64, view_left: i64) -> bool {
+    pub(crate) fn holds_x(&self, x: i64, view_left: i64) -> bool {
         self.across.contains(&(x - self.left(view_left)))
     }
 

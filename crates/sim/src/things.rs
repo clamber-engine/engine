@@ -78,6 +78,7 @@ use crate::archetype::{Archetype, Behavior, Fall, Response};
 use crate::carry;
 use crate::columns;
 use crate::flow::{FlowEvent, overlap};
+use crate::hidden;
 use crate::hutch;
 use crate::join;
 use crate::player::{Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, frames, is_wall};
@@ -170,14 +171,19 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
     } else {
         Vec::new()
     };
-    let struck = if !frozen && !knocked(world) {
-        ground_attacks(world, &physics)
-    } else {
-        Vec::new()
-    };
     // Walkers and throwers, knocked out or not, hold still on the ground
-    // action's pause frames.
+    // action's pause frames, and so do hidden objects' items.
     let paused = frozen && world.player.ground_action.is_some();
+    hidden::note_fall(world);
+    hidden::items(world, paused);
+    let (struck, struck_hidden) = if !frozen && !knocked(world) {
+        (
+            ground_attacks(world, &physics),
+            hidden::strike(world, &physics),
+        )
+    } else {
+        (Vec::new(), false)
+    };
     // With `bounce_holds_walkers`, so do walkers on a bounce's frozen
     // frames.
     let held_by_bounce = holds_walkers && frozen && world.player.state == State::Bounce;
@@ -251,6 +257,10 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
     }
     let untouchable = knocked(world);
     hutch::update(world, &physics, frozen, untouchable);
+    if !frozen && !untouchable && world.swap.is_none() {
+        hidden::land(world, &physics);
+    }
+    hidden::leave(world, &physics);
     // Enemies bounced on still moved this frame, as they were.
     let freeze = frames(physics[Param::BounceFreeze]);
     let facing = world.player.facing;
@@ -271,7 +281,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
         defeat(&mut world.things[index], 0);
     }
     let pause = frames(physics[Param::GroundAttackPause]);
-    if !struck.is_empty() {
+    if !struck.is_empty() || struck_hidden {
         world.player.frozen = pause;
     }
     if knocked(world) {
@@ -335,7 +345,7 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
                 Phase::Fired(since + 1)
             };
         }
-        Phase::Held | Phase::Broken => return false,
+        Phase::Held | Phase::Broken | Phase::Item { .. } | Phase::Landed(_) => return false,
         Phase::Knocked { vy } => {
             if let Behavior::Walker {
                 response,
@@ -416,7 +426,8 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         | Behavior::Thrower { .. }
         | Behavior::Hutch(_)
         | Behavior::Stinger(_)
-        | Behavior::Keg(_) => {}
+        | Behavior::Keg(_)
+        | Behavior::Hidden(_) => {}
     }
     false
 }
@@ -1179,7 +1190,9 @@ fn interact(
             | Behavior::Collect { .. }
             | Behavior::Thrower { .. }
             | Behavior::Ball(_)
-            | Behavior::Stinger(_) => {}
+            | Behavior::Stinger(_)
+            | Behavior::Keg(_)
+            | Behavior::Hidden(_) => {}
             _ if riding => {}
             _ => {
                 let middle = Fixed::from_bits((area.1.to_bits() + area.3.to_bits()) / 2);

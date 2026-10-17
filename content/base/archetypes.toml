@@ -291,6 +291,30 @@
 #   `fade_from` and fades in from there, a step of brightness every
 #   `fade_step` frames. The first landing after the burst has a landing
 #   lockout of `land_lockout` frames, instead of the preset's.
+# - `hidden`: a hidden object, which never moves, isn't drawn, isn't in
+#   the way and never hurts. Offsets from it are whole px, ends
+#   included: `across`, the player's x rounded down less its own, as
+#   `[[from, to], [from, to]]` for the player facing right, then left;
+#   and `above`, its y less the player's feet line (the player's y
+#   rounded up), `[from, to]`. It's set off at the end of a frame, after
+#   the player's move, with the offsets within those ranges. With
+#   `fall_height = 0`, the ground action sets it off on its attack frames
+#   that are in `strike_frames`, and pauses as when it knocks out a
+#   walker. Otherwise a player in the air, not landing and not rolling,
+#   sets it off if its feet line has been `fall_height` px or more above
+#   the object's y at the end of a frame since it last stood on a floor,
+#   and bounces off it as off a walker. Set off, it's gone for good and
+#   its item is where it was, drawn as what it becomes, moving at
+#   `item_speed = [across, down]`. It stays put for `item_wait` frames,
+#   then each frame its speed down grows by `item_gravity`, up to
+#   `item_max_fall`, and it moves; moving down to less than `item_touch`
+#   above the floor under it, it's put on that floor. On the frame after
+#   it moves across once more, and on the next it becomes a `becomes`
+#   (`"cluster"`, `"crate"` or `"canister"`), `becomes_at = [x, y]` from
+#   where it stands. In the air it holds still on the ground action's
+#   pause frames. An item, or what it became while standing (not in the
+#   hands or thrown), is removed for good outside the window placed
+#   objects appear in.
 #
 # The player defeats an enemy by landing on it, and bounces off, or by
 # rolling into it. Touching one any other way costs a life.
@@ -490,6 +514,49 @@ upright_jump = 5
 land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }
 roll_after = [3, 9]
 fidget_time = [239, 180, 457]
+
+# title-1's hidden objects (spec/behavior/hidden-objects.md). These are
+# the values of one that releases a bunch: struck by the ground action
+# from 53 px in front of the player up to its x, 52 px above its feet to
+# 8 below, on attack frames 25 and 31, releasing a bunch that moves 1 px
+# right a frame and starts at 6 px a frame up. The bunch is 1 px left of
+# where the item stands. The ones a long fall sets off have their own
+# `fall_height`, ranges and items, from the importer. The size is
+# Clamber's own and touches nothing.
+[archetypes.hidden]
+behavior = "hidden"
+size = [16, 16]
+offset = 0
+across = [[-53, 0], [0, 53]]
+above = [-52, 8]
+strike_frames = [25, 31]
+fall_height = 0
+becomes = "cluster"
+becomes_at = [-1, 0]
+item_speed = [1, -6]
+item_wait = 2
+item_gravity = 0.25
+item_max_fall = 6
+item_touch = 5
+
+# A metal barrel: what a hidden metal barrel's item becomes. The spec
+# covers picking it up and carrying it as a barrel (carrying.md), not
+# how it moves when thrown or what it meets; until it does, it's the
+# crate's values throughout.
+[archetypes.canister]
+behavior = "carry"
+size = [32, 24]
+offset = 0
+reach = 24
+hit = [18, 13, 13, 18]
+hit_early = [19, 38, 13, 51]
+hit_early_time = 16
+holds_character = false
+holder_window = [31, 32, 31, 32]
+hit_thrower = [36, 30, 23, 32]
+hit_thrower_early = [37, 55, 47, 65]
+hit_ball = [27, 21, 25, 20]
+hit_ball_early = [27, 47, 52, 50]
 
 # title-1's restart barrel (spec/behavior/restart-barrel.md). The player
 # touches it by the ranges for its pose, the ball's poses with the ball's

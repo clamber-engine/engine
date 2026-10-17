@@ -125,7 +125,56 @@ pub enum Behavior {
     /// is reached, and play resumes there inside one (see
     /// [`keg`](crate::keg)).
     Keg(Keg),
+    /// A hidden object: not drawn, never in the way and never hurting,
+    /// until it's set off and releases its item (see
+    /// [`hidden`](crate::hidden)).
+    Hidden(Hidden),
 }
+
+/// A hidden object (spec/behavior/hidden-objects.md). Offsets from it are
+/// whole px: `across`, the player's `x` rounded down less its own, and
+/// `above`, its `y` less the player's feet line. It's set off at the end
+/// of a frame with the offsets within `across` (the range for the
+/// player's facing) and `above`:
+///
+/// - with `fall_height` 0, by the ground action, on the attack frames
+///   among the first `strike_count` of `strike_frames`; that counts as a
+///   frame on which something is knocked out;
+/// - otherwise, by a player in the air, not landing and not rolling,
+///   whose feet line has been `fall_height` or more above its `y` at the
+///   end of a frame since it last stood on a floor. The player bounces
+///   off it as off a walker.
+///
+/// Set off, it's gone and its item is where it was, moving at
+/// `item_speed`. It stays put for `item_wait` frames, then on each frame
+/// outside the ground action's pause its speed down grows by
+/// `item_gravity`, up to `item_max_fall`, and it moves. Moving down to
+/// less than `item_touch` above the floor under it, it's put on that
+/// floor; on the frame after it moves across once more, and on the one
+/// after that it becomes a thing of kind `becomes`, `becomes_at` from
+/// where it stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Hidden {
+    pub across: [(i32, i32); 2],
+    pub above: (i32, i32),
+    pub strike_frames: [u8; MAX_STRIKE_FRAMES],
+    /// Only the first `strike_count` are used.
+    pub strike_count: u8,
+    pub fall_height: i32,
+    pub becomes: &'static str,
+    pub becomes_at: Vec2,
+    pub item_speed: Vec2,
+    pub item_wait: u8,
+    pub item_gravity: Fixed,
+    pub item_max_fall: Fixed,
+    pub item_touch: Fixed,
+}
+
+/// The most attack frames a hidden object can be struck on.
+pub const MAX_STRIKE_FRAMES: usize = 4;
+
+/// The archetypes a hidden object's item can become.
+pub const HIDDEN_ITEMS: [&str; 3] = ["cluster", "crate", "canister"];
 
 /// A restart barrel (spec/behavior/restart-barrel.md). The player touches
 /// it when its offsets from it at the end of a step are within `contact`'s
@@ -976,6 +1025,19 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "fade_step",
             "land_lockout",
         ],
+        "hidden" => &[
+            "across",
+            "above",
+            "strike_frames",
+            "fall_height",
+            "becomes",
+            "becomes_at",
+            "item_speed",
+            "item_wait",
+            "item_gravity",
+            "item_max_fall",
+            "item_touch",
+        ],
         "collect" => &[
             "worth",
             "release_every",
@@ -1316,6 +1378,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             })
         }
         "keg" => Behavior::Keg(parse_keg(table, path)?),
+        "hidden" => Behavior::Hidden(parse_hidden(table, path)?),
         _ => Behavior::Launcher {
             velocity: pair("velocity")?,
         },
@@ -1419,6 +1482,89 @@ fn parse_keg(table: &Table, path: &str) -> Result<Keg, String> {
         fade_from: frames("fade_from")?,
         fade_step: frames("fade_step")?.max(1),
         land_lockout: frames("land_lockout")?,
+    })
+}
+
+/// Reads a hidden object's values. Errors start with `path`.
+fn parse_hidden(table: &Table, path: &str) -> Result<Hidden, String> {
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let number = |key: &str| -> Result<Fixed, String> {
+        clamber_pack::read_number(get(key)?, "", &format!("{path}.{key}")).map_err(|e| e.message)
+    };
+    let positive = |key: &str| -> Result<Fixed, String> {
+        let v = number(key)?;
+        if v <= Fixed::ZERO {
+            return Err(format!("{path}.{key}: must be positive"));
+        }
+        Ok(v)
+    };
+    let pair = |key: &str| -> Result<Vec2, String> {
+        let at = format!("{path}.{key}");
+        match get(key)? {
+            Value::Array(items) if items.len() == 2 => {
+                let n = |i: usize| {
+                    clamber_pack::read_number(&items[i], "", &format!("{at}[{i}]"))
+                        .map_err(|e| e.message)
+                };
+                Ok(Vec2::new(n(0)?, n(1)?))
+            }
+            _ => Err(format!("{at}: expected [x, y]")),
+        }
+    };
+    let at = format!("{path}.strike_frames");
+    let items = match get("strike_frames")? {
+        Value::Array(items) if items.len() <= MAX_STRIKE_FRAMES => items,
+        _ => {
+            return Err(format!(
+                "{at}: expected a list of up to {MAX_STRIKE_FRAMES} frames"
+            ));
+        }
+    };
+    let mut strike_frames = [0; MAX_STRIKE_FRAMES];
+    for (i, item) in items.iter().enumerate() {
+        strike_frames[i] = match item {
+            Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => *n as u8,
+            _ => return Err(format!("{at}[{i}]: expected a frame, 0 to 255")),
+        };
+    }
+    let fall_height = match get("fall_height")? {
+        Value::Integer(n) if (0..=i64::from(i32::MAX)).contains(n) => *n as i32,
+        _ => {
+            return Err(format!(
+                "{path}.fall_height: expected a whole number of px, 0 or more"
+            ));
+        }
+    };
+    let becomes = match get("becomes")? {
+        Value::String(s) => HIDDEN_ITEMS.into_iter().find(|&k| k == s),
+        _ => None,
+    }
+    .ok_or_else(|| format!("{path}.becomes: expected one of {HIDDEN_ITEMS:?}"))?;
+    let item_wait = match get("item_wait")? {
+        Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => *n as u8,
+        _ => {
+            return Err(format!(
+                "{path}.item_wait: expected a whole number of frames, 0 to 255"
+            ));
+        }
+    };
+    Ok(Hidden {
+        across: parse_ranges(get("across")?, &format!("{path}.across"), "right then left")?,
+        above: parse_range(get("above")?, &format!("{path}.above"))?,
+        strike_frames,
+        strike_count: items.len() as u8,
+        fall_height,
+        becomes,
+        becomes_at: pair("becomes_at")?,
+        item_speed: pair("item_speed")?,
+        item_wait,
+        item_gravity: positive("item_gravity")?,
+        item_max_fall: positive("item_max_fall")?,
+        item_touch: number("item_touch")?,
     })
 }
 
