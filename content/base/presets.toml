@@ -78,6 +78,7 @@ switch_late_steps = []
 landing_mode_wait = 0
 landing_mode_on_last = 0
 landing_mode_after_last = 0
+face_fall_landing = 0
 jump_buffer_hold = 0
 jump_start_hold = 0
 takeoff_wait = 0
@@ -130,6 +131,7 @@ ground_attack_frames = []
 ground_attack_pause = 0
 bounce_speed = 6
 bounce_freeze = 0
+bounce_keeps_facing = 0
 bounce_width = 0
 bounce_offset = 0
 bounce_below = 0
@@ -443,9 +445,14 @@ landing_reach = 5
 leave_drop = 3.4375
 leave_fall_speed = 0.00390625
 # Facing during a jump follows the input at once, with no turn
-# (air-control.md, "Facing"); falling after walking off a ledge, it
-# doesn't change.
+# (air-control.md, "Facing"); falling after walking off a ledge with a
+# steep face, it doesn't change. Off a ledge without one, the mode goes
+# on through the fall, turns included (ground-speed.md, "After a fall or
+# a bounce"); off one with a face, G to G + 10 are landing frames. After
+# a bounce facing doesn't change up to G, where a mode starts.
 walk_off_keeps_facing = 1
+face_fall_landing = 11
+bounce_keeps_facing = 1
 roll_time = 29
 roll_speed = 3
 roll_slow_speed = 1

@@ -81,7 +81,10 @@ params! {
     LeaveFallSpeed => "leave_fall_speed",
     /// Above 0, a player falling after walking off the ground keeps
     /// facing the way they walked off until they land, whatever is held.
-    /// 0: facing follows the direction held, as in a jump.
+    /// With a stride cycle (`stride_steps`) only a walk-off down a steep
+    /// face does: after one where the ground simply ends, the gait goes
+    /// on through the fall as on the ground. 0: facing follows the
+    /// direction held, as in a jump.
     WalkOffKeepsFacing => "walk_off_keeps_facing",
     /// Above 0, on the frame after a body walks off the ground its
     /// downward speed becomes this, instead of growing by gravity. Not
@@ -268,6 +271,12 @@ params! {
     /// As `landing_mode_on_last`, when the landing frame comes after that
     /// last frame. Whole frames.
     LandingModeAfterLast => "landing_mode_after_last",
+    /// With a stride cycle (`stride_steps`), after a fall off a steep
+    /// face (`walk_off_keeps_facing`) the landing frame and this many
+    /// frames less one after it are in no gait: no turn starts and facing
+    /// doesn't change. Then a gait starts as at the end of a turn. 0: the
+    /// gait goes on as before the landing. Whole frames.
+    FaceFallLanding => "face_fall_landing",
     /// Above 0, a jump pressed in the air is buffered only while jump
     /// stays held: letting go before the jump is possible forgets it.
     /// 0 keeps a buffered press for all of `jump_buffer`.
@@ -503,6 +512,11 @@ params! {
     /// `held_jump_gravity` only if it's held from the frame after these
     /// on. Whole frames.
     BounceFreeze => "bounce_freeze",
+    /// Above 0, facing doesn't change from a bounce to its landing,
+    /// whatever is held. With a stride cycle (`stride_steps`) a gait
+    /// starts on the landing frame: running with action and a direction
+    /// held, otherwise a turn, walking or standing by the direction held.
+    BounceKeepsFacing => "bounce_keeps_facing",
     /// Above 0, whether the player bounces off an enemy is decided with
     /// a box on whole-pixel positions instead of by landing on it: this
     /// wide, standing on the player's position and as tall as the body.

@@ -5,8 +5,8 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_sim::{
-    Air, Event, Facing, Fixed, FlowEvent, InputFrame, LAUNCH_REST, Outcome, Phase, Roll, RollSize,
-    START_LIVES, State, World, generic_feel, step,
+    Air, Event, Facing, Fixed, FlowEvent, Gait, InputFrame, LAUNCH_REST, Outcome, Phase, Roll,
+    RollSize, START_LIVES, State, World, generic_feel, step,
 };
 
 /// Ground at y = 400 from x = 0 to 600, with a wall from x = 100 to 120
@@ -408,6 +408,100 @@ fn classic_bounce_arc_follows_the_formula() {
             fx(-7.125 * n + g * n * (n + 1.0) / 2.0),
             "n = {n}"
         );
+    }
+}
+
+/// One frame after a bounce: `vx` (1/256), facing, gait, and whether a
+/// turn is under way.
+type BounceRow = (i64, Facing, Gait, bool);
+
+/// A [`classic_bounce`] with nothing held up to B + 2, `air` from B + 3
+/// and `on_g` from the landing frame G on, and `vx` set to `before_g` (if
+/// given) at the end of G - 1. The rows from G - 1 to G + 20.
+fn classic_bounce_landing(air: Actions, on_g: Actions, before_g: Option<Fixed>) -> Vec<BounceRow> {
+    let (mut probe, b) = classic_bounce();
+    let input = |n: usize, g: usize| match n {
+        _ if n >= g => on_g,
+        _ if n >= b + 3 => air,
+        _ => Actions::NONE,
+    };
+    let mut previous = Actions::NONE;
+    let mut g = usize::MAX;
+    for n in 0.. {
+        let held = input(n, g);
+        step(
+            &mut probe,
+            &InputFrame::single(Frame::after(previous, held)),
+        );
+        previous = held;
+        if n > b && probe.events.contains(&Event::Land) {
+            g = n;
+            break;
+        }
+    }
+    let (mut w, _) = classic_bounce();
+    let mut previous = Actions::NONE;
+    let mut rows: Vec<BounceRow> = Vec::new();
+    for n in 0..=g + 20 {
+        if n == g
+            && let Some(vx) = before_g
+        {
+            w.player.vel.x = vx;
+            rows.last_mut().unwrap().0 = grains(vx);
+        }
+        let held = input(n, g);
+        step(&mut w, &InputFrame::single(Frame::after(previous, held)));
+        previous = held;
+        assert_eq!(w.events.contains(&Event::Land), n == g, "frame {n}");
+        let p = &w.player;
+        rows.push((grains(p.vel.x), p.facing, p.gait, p.turn.is_some()));
+        if n > b && n < g {
+            assert_eq!(p.facing, Facing::Right, "B + {}", n - b);
+        }
+    }
+    rows.split_off(g - 1)
+}
+
+/// 1/256 px per frame.
+fn grains(v: Fixed) -> i64 {
+    v.to_bits() >> 24
+}
+
+#[test]
+fn classic_after_a_bounce_a_mode_starts_on_landing() {
+    use Action::{Action as A, Left as L, Right as R};
+    let keys = |a: &[Action]| a.iter().copied().collect::<Actions>();
+    let walking = |g: Gait| matches!(g, Gait::Walking(s) if s.step == 1);
+    let running = |g: Gait| matches!(g, Gait::Running(s) if s.step == 1);
+    // spec/behavior/ground-speed.md, "After a fall or a bounce", the
+    // example: Right and Action held in the air, then Left and Action
+    // from G. Rows are from G - 1.
+    let rows = classic_bounce_landing(keys(&[A, R]), keys(&[A, L]), Some(Fixed::from_int(3)));
+    assert_eq!((rows[0].0, rows[0].1), (768, Facing::Right));
+    let vx: Vec<_> = [1, 2, 3, 4, 8, 12, 16].iter().map(|&i| rows[i].0).collect();
+    assert_eq!(vx, [576, 408, 261, 133, -238, -456, -584]);
+    assert!(running(rows[1].2) && !rows[1].3, "running starts on G");
+    assert!(rows[2..4].iter().all(|r| r.1 == Facing::Right && !r.3));
+    assert!(rows[4].3, "the turn starts on G + 3");
+    assert_eq!((rows[7].1, rows[8].1), (Facing::Right, Facing::Left));
+    assert!(!rows[12].3 && walking(rows[12].2), "walking on G + 11");
+    assert!(matches!(rows[15].2, Gait::Walking(s) if s.step == 2));
+    assert!(running(rows[16].2), "running on G + 15");
+
+    // Facing doesn't change from the bounce to G. On G: the other way
+    // held starts a turn, forward starts walking, nothing standing, and
+    // Action with a direction running.
+    for air in [&[][..], &[L], &[A, L], &[R]] {
+        let rows = classic_bounce_landing(keys(air), keys(&[L]), None);
+        assert_eq!(
+            (rows[1].1, rows[1].2, rows[1].3),
+            (Facing::Right, Gait::Standing, true)
+        );
+        assert_eq!((rows[4].1, rows[5].1), (Facing::Right, Facing::Left));
+        let rows = classic_bounce_landing(keys(air), keys(&[R]), None);
+        assert!(walking(rows[1].2) && !rows[1].3, "{air:?}");
+        let rows = classic_bounce_landing(keys(air), Actions::NONE, None);
+        assert_eq!((rows[1].2, rows[1].3), (Gait::Standing, false));
     }
 }
 

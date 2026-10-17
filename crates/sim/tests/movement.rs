@@ -2597,32 +2597,152 @@ fn classic_facing_in_a_jump_follows_the_input() {
 }
 
 #[test]
-fn classic_facing_doesnt_change_in_a_walk_off_fall() {
-    // spec/behavior/air-control.md, "Facing": falling after walking off
-    // a ledge, facing stays the way the player walked off; the speed
-    // still follows the rule from L + 1 on.
-    let mut w = classic();
-    w.player.pos.x = Fixed::from_int(1500);
-    let mut steps = Vec::new();
-    while first(&steps, Event::LeaveGround).is_none() {
-        steps.extend(hold(&mut w, &[Action::Right], 1));
+fn classic_the_mode_goes_on_off_a_ledge_without_a_face() {
+    use Action::{Action as A, Left as L, Right as R};
+    // spec/behavior/ground-speed.md, "After a fall or a bounce": walking
+    // or running off a ledge without a face changes nothing at the edge,
+    // in the air or on landing. The stride cycle goes on, turns start in
+    // the air and facing changes 4 frames in, a turn under way at the
+    // edge goes on, running starts and the player comes to stand in the
+    // air, and there are no landing frames. So each frame's facing, turn
+    // and mode are as on ground that goes on.
+    type Inputs = Box<dyn Fn(usize) -> Vec<Action>>;
+    // As `RAISED_176`, but the raised ground is a one-way ledge, so that
+    // coming back under it meets no wall.
+    let toml = RAISED_176.replace(
+        "shape = \"rect\"\n    rect = [800, 400, 800, 176]",
+        "shape = \"segment\"\n    from = [800, 400]\n    to = [1600, 400]\n    one_way = true",
+    );
+    assert_ne!(toml, RAISED_176);
+    let level = Arc::new(Level::from_toml_str(&toml, "ledge").unwrap());
+    let ledge = || {
+        let mut w = Play::on(level.clone(), generic_feel("classic-1").unwrap());
+        w.player.pos.x = Fixed::from_int(1300);
+        w
+    };
+    let leave = |run: bool| {
+        let held = move |_| if run { vec![A, R] } else { vec![R] };
+        frames_with(&play(&mut ledge(), 300, held), Event::LeaveGround)[0]
+    };
+    let (walk, run) = (leave(false), leave(true));
+    let then = |l: usize, before: Vec<Action>, from: isize, after: Vec<Action>| -> Inputs {
+        Box::new(move |f| {
+            if f as isize >= l as isize + from {
+                after.clone()
+            } else {
+                before.clone()
+            }
+        })
+    };
+    // Segments of 1 to 20 frames of Right, Left or nothing from L + 1,
+    // with Action held throughout or never: a press of it on the ground
+    // would start a roll.
+    let random = |l: usize, run: bool, seed: u64| -> Inputs {
+        Box::new(move |f| {
+            if f <= l {
+                return if run { vec![A, R] } else { vec![R] };
+            }
+            let mut n = seed;
+            let mut end = l + 1;
+            loop {
+                n = n
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                end += 1 + (n >> 33) as usize % 20;
+                if f < end {
+                    break;
+                }
+            }
+            let mut keys = match (n >> 40) % 3 {
+                0 => vec![R],
+                1 => vec![L],
+                _ => vec![],
+            };
+            if run {
+                keys.push(A);
+            }
+            keys
+        })
+    };
+    // Left from a frame that has a turn under way on the leave frame.
+    let at_edge = (1..20)
+        .find(|&before| {
+            let mut w = ledge();
+            let held = then(run, vec![A, R], -before, vec![A, L]);
+            (0..run + 20).any(|f| {
+                let row = play(&mut w, 1, |_| held(f)).pop().unwrap();
+                row.events.contains(&Event::LeaveGround) && w.player.turn.is_some()
+            })
+        })
+        .expect("a turn under way at the edge");
+    let mut cases: Vec<(String, usize, Inputs)> = vec![
+        (
+            "run, turn at the edge".into(),
+            run,
+            then(run, vec![A, R], -at_edge, vec![A, L]),
+        ),
+        (
+            "walk, turn in the air".into(),
+            walk,
+            then(walk, vec![R], 2, vec![L]),
+        ),
+        (
+            "walk, stand in the air".into(),
+            walk,
+            then(walk, vec![R], 1, vec![]),
+        ),
+        (
+            "run, turn in the air".into(),
+            run,
+            then(run, vec![A, R], 5, vec![A, L]),
+        ),
+    ];
+    for seed in 0..12 {
+        let run_off = seed % 2 == 1;
+        let l = if run_off { run } else { walk };
+        cases.push((format!("random {seed}"), l, random(l, run_off, seed)));
     }
-    let mut prev = grains(w.player.vel.x);
-    // 10 frames: before landing, and before holding Left takes the
-    // player back into the wall below the ledge.
-    let rows = play(&mut w, 10, |_| vec![Action::Left]);
-    for (k, row) in rows.iter().enumerate() {
-        let n = k + 1;
-        assert!(!row.grounded, "L + {n}");
-        assert_eq!(row.facing, Facing::Right, "L + {n}");
-        assert!(!row.events.contains(&Event::Turn), "L + {n}");
-        let step = (-512 - prev) / 8;
-        let expected = if step == 0 { -512 } else { prev + step };
-        let got = grains(Fixed::from_f64(row.vx).unwrap());
-        assert_eq!(got, expected, "L + {n}");
-        prev = got;
+    let mut air_turns = 0;
+    for (name, l, held) in &cases {
+        let mut off = ledge();
+        let mut flat = classic_unended(1300);
+        let (mut left, mut landed) = (false, false);
+        for f in 0..l + 80 {
+            let a = play(&mut off, 1, |_| held(f)).pop().unwrap();
+            let b = play(&mut flat, 1, |_| held(f)).pop().unwrap();
+            let what = format!("{name}: frame {f}");
+            left |= a.events.contains(&Event::LeaveGround);
+            landed |= a.events.contains(&Event::Land);
+            assert_eq!(a.grounded, !left || landed, "{what}");
+            assert_eq!((a.x, a.vx, a.facing), (b.x, b.vx, b.facing), "{what}");
+            assert_eq!(off.player.turn, flat.player.turn, "{what}");
+            assert_eq!(off.player.gait, flat.player.gait, "{what}");
+            assert!(!matches!(off.player.gait, Gait::Landing(_)), "{what}");
+            let turned = a.events.contains(&Event::Turn);
+            assert_eq!(turned, b.events.contains(&Event::Turn), "{what}");
+            if turned && !a.grounded {
+                air_turns += 1;
+            }
+        }
+        assert!(left && landed, "{name}");
     }
-    assert!(prev < 0);
+    assert!(air_turns >= 5, "{air_turns}");
+
+    // Action pressed in the air: running starts at a run check there.
+    let mut w = ledge();
+    let held = then(walk, vec![R], 1, vec![A, R]);
+    let mut gaits = Vec::new();
+    for f in 0..walk + 80 {
+        let row = play(&mut w, 1, |_| held(f)).pop().unwrap();
+        assert!(!row.events.contains(&Event::RollStart), "frame {f}");
+        gaits.push((row.grounded, w.player.gait));
+    }
+    let start = gaits
+        .iter()
+        .position(|&(_, g)| matches!(g, Gait::Running(_)))
+        .unwrap();
+    assert!(start > walk && !gaits[start].0, "{start}");
+    assert!(matches!(gaits[start - 1].1, Gait::Walking(_)));
 }
 
 /// One frame of play and where it left the player.

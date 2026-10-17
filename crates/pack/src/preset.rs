@@ -356,6 +356,7 @@ mod tests {
                     | Param::LandingModeWait
                     | Param::LandingModeOnLast
                     | Param::LandingModeAfterLast
+                    | Param::FaceFallLanding
                     | Param::JumpStartHold
                     | Param::TakeoffWait
                     | Param::JumpBufferHold
@@ -416,6 +417,7 @@ mod tests {
                     | Param::GroundAttackFrames
                     | Param::GroundAttackPause
                     | Param::BounceFreeze
+                    | Param::BounceKeepsFacing
                     | Param::BounceWidth
                     | Param::BounceOffset
                     | Param::BounceBelow

@@ -211,6 +211,8 @@ pub struct Player {
     pub walked_off: bool,
     /// The last walk-off started from a frame on a steep face.
     pub walked_off_face: bool,
+    /// The last walk-off was a roll's.
+    pub rolled_off: bool,
     /// Action was held with Left or Right alone on the last frame
     /// (`run_from_previous_frame`).
     pub ran: bool,
@@ -321,6 +323,7 @@ impl Player {
             rolled_jump: false,
             walked_off: false,
             walked_off_face: false,
+            rolled_off: false,
             ran: false,
             fall_step: false,
             fall_facing: 0,
@@ -1143,10 +1146,15 @@ impl Player {
         // With a stride cycle, whether a turn starts is decided once the
         // frame's speed is known.
         let strides = physics[Param::StrideSteps] >= Fixed::ONE && turn_time > 0;
+        // Facing stays as it is in a fall off a steep face; off a ledge
+        // where the ground simply ends, the gait goes on as on the ground.
+        let keep_walk_off_facing =
+            self.walked_off && physics[Param::WalkOffKeepsFacing] > Fixed::ZERO;
+        let air_gait = strides && keep_walk_off_facing && !self.walked_off_face && !self.rolled_off;
         let striding = strides
             && !busy.keep_facing
             && acting.is_none()
-            && self.grounded()
+            && (self.grounded() || air_gait)
             && self.roll.is_none()
             && !rolling
             && self.roll_stop == 0
@@ -1159,6 +1167,8 @@ impl Player {
             facing_wait > 0 && !self.grounded() && (self.fall_facing > 0 || crouching || waits);
         // Nor does it change while a jump waits on the ground.
         let keep_takeoff_facing = waits && self.grounded();
+        let keep_bounce_facing =
+            self.state == State::Bounce && physics[Param::BounceKeepsFacing] > Fixed::ZERO;
         self.fall_facing = self.fall_facing.saturating_sub(1);
         let facing = if acting.is_some() {
             self.turn = None;
@@ -1195,8 +1205,9 @@ impl Player {
             }
         } else if keep_fall_facing
             || keep_takeoff_facing
+            || keep_bounce_facing
             || self.unseated
-            || (self.walked_off && physics[Param::WalkOffKeepsFacing] > Fixed::ZERO)
+            || (keep_walk_off_facing && !air_gait)
         {
             self.turn = None;
             self.facing
@@ -1217,12 +1228,19 @@ impl Player {
             // ends the turn under way where it is.
             self.turn = None;
             self.facing
-        } else if striding && matches!(self.gait, Gait::Landing(_)) {
-            // On the frames after a landing, facing follows the input as
-            // in the air.
+        } else if striding && let Gait::Landing(landing) = self.gait {
+            // On the frames after a jump's landing, facing follows the
+            // input as in the air; after a fall's, it stays as it is.
             self.turn = None;
-            facing_toward(dir, self.facing)
-        } else if turn_time > 0 && self.grounded() && !events.contains(&Event::JumpStart) {
+            if landing.fixed {
+                self.facing
+            } else {
+                facing_toward(dir, self.facing)
+            }
+        } else if turn_time > 0
+            && (self.grounded() || air_gait)
+            && !events.contains(&Event::JumpStart)
+        {
             self.turn_on_ground(dir, turn_time, !striding)
         } else {
             // In the air, and on the take-off frame, facing follows the
@@ -1668,7 +1686,39 @@ impl Player {
                         frame: 0,
                         switch,
                         settle,
+                        fixed: false,
                     })
+                };
+            }
+            let landed = strides && self.grounded() && self.roll.is_none();
+            let fall_landing = frames(physics[Param::FaceFallLanding]);
+            if landed && self.walked_off && self.walked_off_face && !self.rolled_off {
+                if fall_landing > 0 {
+                    // After a fall off a steep face the player is in no
+                    // gait for a while, then starts one as at the end of
+                    // a turn.
+                    self.gait = Gait::Landing(Landing {
+                        frame: 0,
+                        switch: u8::MAX,
+                        settle: fall_landing,
+                        fixed: true,
+                    });
+                }
+            } else if landed
+                && self.state == State::Bounce
+                && physics[Param::BounceKeepsFacing] > Fixed::ZERO
+            {
+                // After a bounce a gait starts on the landing frame.
+                let forward = direction(self.facing);
+                self.gait = if held(Action::Action) && held_dir != 0 {
+                    Gait::Running(Stride::START)
+                } else if held_dir == -forward {
+                    self.turn = Some(0);
+                    Gait::Standing
+                } else if held_dir == forward {
+                    Gait::Walking(Stride::START)
+                } else {
+                    Gait::Standing
                 };
             }
         }
@@ -1682,6 +1732,7 @@ impl Player {
         };
         if leaving {
             self.walked_off_face = face.is_some();
+            self.rolled_off = self.roll.is_some() || rolling;
         }
         self.walked_off = if events.contains(&Event::JumpStart) || self.grounded() {
             false
@@ -2168,6 +2219,8 @@ impl Player {
         let has =
             |set: Param, step: u32| clamber_pack::physics::steps(physics[set]).any(|n| n == step);
         let mut turn = false;
+        // A fall's landing frames end as a turn does.
+        let ends_as_turn = turn_ends || matches!(self.gait, Gait::Landing(l) if l.fixed);
         self.gait = match self.gait {
             Gait::Walking(mut stride) if !turn_ends => {
                 let rate =
@@ -2206,7 +2259,11 @@ impl Player {
                     Gait::Running(stride)
                 }
             }
-            Gait::Landing(mut landing) => {
+            Gait::Landing(mut landing) if landing.fixed && landing.frame + 1 < landing.settle => {
+                landing.frame += 1;
+                Gait::Landing(landing)
+            }
+            Gait::Landing(mut landing) if !landing.fixed => {
                 landing.frame += 1;
                 if landing.frame == landing.switch && action && dir != 0 {
                     Gait::Running(Stride::START)
@@ -2220,14 +2277,15 @@ impl Player {
                     Gait::Walking(Stride::START)
                 }
             }
-            // Standing, or at the end of a turn.
+            // Standing, at the end of a turn, or at the end of a fall's
+            // landing frames.
             _ => {
                 if opposite {
                     turn = true;
                     Gait::Standing
                 } else if dir == 0 {
                     Gait::Standing
-                } else if turn_ends && action && v >= physics[Param::TurnRunSpeed] {
+                } else if ends_as_turn && action && v >= physics[Param::TurnRunSpeed] {
                     Gait::Running(Stride::START)
                 } else {
                     Gait::Walking(Stride::START)
@@ -3010,8 +3068,8 @@ pub enum Gait {
     Standing,
     Walking(Stride),
     Running(Stride),
-    /// On the frames after a jump's landing, before any of the others
-    /// starts. No turn starts.
+    /// On the frames after a jump's landing, or a fall's off a steep
+    /// face, before any of the others starts. No turn starts.
     Landing(Landing),
 }
 
@@ -3066,6 +3124,9 @@ pub struct Landing {
     /// The frame after the landing frame walking, running or standing
     /// starts on otherwise.
     pub settle: u8,
+    /// After a fall rather than a jump: facing doesn't change, and the
+    /// gait starts on `settle` as at the end of a turn.
+    pub fixed: bool,
 }
 
 /// Progress through the stride cycle while walking or running.

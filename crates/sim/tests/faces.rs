@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
-use clamber_sim::{Event, Facing, Fixed, InputFrame, State, World, generic_feel, step};
+use clamber_sim::{Event, Facing, Fixed, Gait, InputFrame, State, World, generic_feel, step};
 
 const FLOOR: i32 = 300;
 
@@ -496,6 +496,109 @@ fn a_slide_landing_waits_until_a_rise_stops_the_player() {
             (24, r, 111.4609375, 36.0, -90, 0, true),
         ],
     );
+}
+
+/// [`ledge`], with flat floor `drop` px below the starting floor beyond
+/// the face.
+fn faced_ledge(drop: i32) -> impl Fn(i32) -> Option<i32> {
+    move |c| ledge(c).or(Some(drop))
+}
+
+/// One frame from a landing: `vx` (1/256), facing, gait, whether a turn
+/// is under way, whether the frame turned, and whether a roll started.
+type FallRow = (i64, Facing, Gait, bool, bool, bool);
+
+/// Runs right off [`faced_ledge`] at full speed from x = 250, Right and
+/// Action held up to the frame that leaves the face, then `air` until
+/// the landing frame G, then `held(n)` on G + n. The rows from G to
+/// G + 20, if it lands within a second.
+fn fall_from_face(
+    drop: i32,
+    air: &[Action],
+    held: impl Fn(usize) -> Vec<Action>,
+) -> Option<Vec<FallRow>> {
+    let mut world = ground(faced_ledge(drop), 250.0);
+    world.player.vel.x = Fixed::from_int(3);
+    let mut previous = vec![Action::Right, Action::Action];
+    let mut step_with = |world: &mut World, keys: Vec<Action>| {
+        press(world, &previous, &keys);
+        previous = keys;
+        let p = &world.player;
+        (
+            grains(p.vel.x),
+            p.facing,
+            p.gait,
+            p.turn.is_some(),
+            world.events.contains(&Event::Turn),
+            world.events.contains(&Event::RollStart),
+        )
+    };
+    while !world.events.contains(&Event::LeaveGround) {
+        step_with(&mut world, vec![Action::Right, Action::Action]);
+        assert!(world.player.pos.x < Fixed::from_int(310));
+    }
+    assert!(world.player.walked_off_face);
+    for _ in 0..60 {
+        let row = step_with(&mut world, air.to_vec());
+        assert_eq!(row.1, Facing::Right, "facing in the fall");
+        if world.events.contains(&Event::Land) {
+            let mut rows = vec![row];
+            for n in 1..=20 {
+                rows.push(step_with(&mut world, held(n)));
+            }
+            return Some(rows);
+        }
+    }
+    None
+}
+
+#[test]
+fn after_a_fall_from_a_face_the_mode_waits_11_frames() {
+    use Action::{Action as A, Left as L, Right as R};
+    // spec/behavior/ground-speed.md, "After a fall or a bounce", the
+    // example: Action alone through the fall and the first landing
+    // frames, and Right added from G + 4 or G + 5. The fall's height
+    // isn't given; this one gives the example's `vx` on G.
+    let run_from = |from: usize| move |n: usize| if n >= from { vec![A, R] } else { vec![A] };
+    let drop = (20..270)
+        .find(|&d| fall_from_face(d, &[A], run_from(4)).is_some_and(|r| r[0].0 == 113))
+        .expect("a fall landing at 113");
+    for (from, g10, g11, mode) in [(4, 495, 529, "running"), (5, 452, 491, "walking")] {
+        let rows = fall_from_face(drop, &[A], run_from(from)).unwrap();
+        assert_eq!((rows[0].0, rows[3].0), (113, 77), "from G + {from}");
+        assert_eq!(rows[4].0, if from == 4 { 163 } else { 68 });
+        assert_eq!((rows[10].0, rows[11].0), (g10, g11), "from G + {from}");
+        assert!(rows[..11].iter().all(|r| matches!(r.2, Gait::Landing(_))));
+        let started = match rows[11].2 {
+            Gait::Running(s) if s.step == 1 => "running",
+            Gait::Walking(s) if s.step == 1 => "walking",
+            _ => "other",
+        };
+        assert_eq!(started, mode, "from G + {from}");
+    }
+
+    // However long the fall: facing stays as it is on the landing frames
+    // whatever is held, no turn starts on them, and on G + 11 the other
+    // way held starts a turn, which changes facing on G + 15.
+    for drop in [40, 100, 176, 260] {
+        for air in [&[][..], &[L], &[A, L]] {
+            let rows = fall_from_face(drop, air, |_| vec![L]).unwrap();
+            for (n, row) in rows[..11].iter().enumerate() {
+                assert!(matches!(row.2, Gait::Landing(_)), "{drop} G + {n}");
+                assert_eq!((row.1, row.3, row.4), (Facing::Right, false, false));
+            }
+            assert!(rows[11].3, "{drop}: a turn on G + 11");
+            assert_eq!(rows[14].1, Facing::Right);
+            assert_eq!((rows[15].1, rows[15].4), (Facing::Left, true));
+        }
+        // Nothing held on G + 11: standing.
+        let rows = fall_from_face(drop, &[], |_| vec![]).unwrap();
+        assert!(matches!(rows[10].2, Gait::Landing(_)));
+        assert_eq!(rows[11].2, Gait::Standing);
+        // An Action press on a landing frame starts a roll on it.
+        let rows = fall_from_face(drop, &[], |n| if n >= 3 { vec![A] } else { vec![] }).unwrap();
+        assert!(rows[3].5 && !rows[2].5, "{drop}");
+    }
 }
 
 /// The `title-2` examples' floor: flat, a face rising to the right over
