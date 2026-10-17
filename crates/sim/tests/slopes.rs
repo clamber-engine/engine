@@ -154,6 +154,51 @@ fn a_jump_from_the_slope_starts_from_the_new_column() {
     );
 }
 
+/// Walks left up the slope at 2 px per frame from `x`, with jump pressed
+/// on frame 3, so T is frame 4. Gives the rows of T and T + 1.
+fn jump_walking_up(x: f64) -> [(Fixed, Fixed, i64, i64, bool); 2] {
+    let mut world = slope(x);
+    world.player.vel.x = Fixed::from_int(-2);
+    world.player.facing = Facing::Left;
+    let l = [Action::Left];
+    let lj = [Action::Left, Action::Jump];
+    let mut rows = Vec::new();
+    for frame in 1..=5 {
+        match frame {
+            ..3 => press(&mut world, &l, &l),
+            3 => press(&mut world, &l, &lj),
+            _ => press(&mut world, &lj, &lj),
+        }
+        assert_eq!(world.events.contains(&Event::JumpStart), frame == 4);
+        rows.push(row(&world));
+    }
+    [rows[3], rows[4]]
+}
+
+#[test]
+fn a_jump_up_the_slope_starts_from_the_higher_column() {
+    // "Jumping from a slope": going uphill, T + 1 starts from the floor of
+    // the column under its new `x` when that is higher than `y` on T.
+    let y = Fixed::from_int;
+    // T + 1 reaches a higher column (floor 2 under 106.5): 1 px higher
+    // than on flat floor.
+    assert_eq!(
+        jump_walking_up(116.5),
+        [
+            (fx(108.5), y(3), -512, -1792, true),
+            (fx(106.5), fx(-4.71875), -512, -1720, false),
+        ]
+    );
+    // T + 1 stays at T's height (floor 3 under 108.5): from `y` on T.
+    assert_eq!(
+        jump_walking_up(118.5),
+        [
+            (fx(110.5), y(3), -512, -1792, true),
+            (fx(108.5), fx(-3.71875), -512, -1720, false),
+        ]
+    );
+}
+
 #[test]
 fn landing_across_a_step_lands_on_the_new_column() {
     // "Landing across a step": falling from `x` = 115.5 (floor 4) to
