@@ -1,7 +1,8 @@
 //! A level's background pictures (`spec/formats/graphics.md`): colours
 //! and palette rows, tiles, packed tile data, tile entries, each ground
 //! type's cell picture, and the grid picture made of them, turned into
-//! Clamber level layers drawn from a tileset image.
+//! Clamber level layers drawn from a tileset image; and screen pictures,
+//! drawn as one image.
 //!
 //! The grid is the ground grid of `ground.rs`, 16 bands tall, column by
 //! column: a cell's picture comes from the same cell word as its ground.
@@ -26,6 +27,9 @@ const COLUMN_SQUARES: usize = CELL_SQUARES * COLUMN_BANDS as usize;
 /// Grid columns, and bands, that the far layer is made of.
 const FAR_COLUMNS: usize = 16;
 const FAR_BANDS: usize = 8;
+
+/// Tile entries in a screen map, either way.
+const SCREEN_SQUARES: usize = 32;
 
 /// Tiles across a tileset image that [`Background::new`] writes.
 const TILESET_COLUMNS: u32 = 32;
@@ -307,6 +311,40 @@ impl GridPicture {
     }
 }
 
+/// A screen map: the 32 × 32 tile entries of a 256 × 256 px screen
+/// picture, square (0, 0) at its top left.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScreenMap {
+    /// Row of squares by row of squares.
+    entries: Vec<TileEntry>,
+}
+
+impl ScreenMap {
+    /// Bytes in a screen map.
+    pub const BYTES: usize = 2 * SCREEN_SQUARES * SCREEN_SQUARES;
+
+    pub fn new(bytes: &[u8]) -> Result<ScreenMap, String> {
+        if bytes.len() != ScreenMap::BYTES {
+            return Err(format!(
+                "a screen map is {} bytes, not {}",
+                ScreenMap::BYTES,
+                bytes.len()
+            ));
+        }
+        let entries = words(bytes).into_iter().map(TileEntry).collect();
+        Ok(ScreenMap { entries })
+    }
+
+    /// The entry for the square at square column `sx`, row `sy`.
+    pub fn entry(&self, sx: usize, sy: usize) -> TileEntry {
+        assert!(
+            sx < SCREEN_SQUARES && sy < SCREEN_SQUARES,
+            "square out of bounds"
+        );
+        self.entries[sy * SCREEN_SQUARES + sx]
+    }
+}
+
 /// The pixel that `entry` shows at column `x`, row `y` of its square.
 fn shown(tiles: &TileSet, palettes: &PaletteSet, entry: TileEntry, x: u32, y: u32) -> Rgba {
     let x = if entry.flip_lr() { TILE - 1 - x } else { x };
@@ -493,6 +531,72 @@ impl Background {
             layers: back,
             images,
         })
+    }
+
+    /// The layers of a screen picture, their images named starting
+    /// `prefix` ("Screen pictures"): the picture fixed to level
+    /// coordinates, with the backdrop (colour 0 of palette row 0) where
+    /// it's transparent, then its raised tiles if it has any.
+    pub fn screen(
+        map: &ScreenMap,
+        tiles: &TileSet,
+        palettes: &PaletteSet,
+        prefix: &str,
+    ) -> Result<Background, String> {
+        let squares =
+            || (0..SCREEN_SQUARES).flat_map(|sy| (0..SCREEN_SQUARES).map(move |sx| (sx, sy)));
+        if let Some(entry) = squares()
+            .map(|(sx, sy)| map.entry(sx, sy))
+            .find(|e| usize::from(e.tile()) >= tiles.len())
+        {
+            return Err(format!(
+                "the screen map shows tile {}, past the {} tiles",
+                entry.tile(),
+                tiles.len()
+            ));
+        }
+        let [r, g, b] = rgb(palettes.colour(0, 0));
+        let backdrop = [r, g, b, 255];
+        let side = SCREEN_SQUARES as u32 * TILE;
+        let mut images = BTreeMap::new();
+        let mut layers = Vec::new();
+        for raised in [false, true] {
+            let any = squares().any(|(sx, sy)| map.entry(sx, sy).raised());
+            if raised && !any {
+                continue;
+            }
+            let mut image = RgbaImage::new(side, side);
+            for (sx, sy) in squares() {
+                let entry = map.entry(sx, sy);
+                for y in 0..TILE {
+                    for x in 0..TILE {
+                        let mut p = match entry.raised() == raised {
+                            true => shown(tiles, palettes, entry, x, y),
+                            false => [0; 4],
+                        };
+                        if !raised && p[3] == 0 {
+                            p = backdrop;
+                        }
+                        image.set(sx as u32 * TILE + x, sy as u32 * TILE + y, p);
+                    }
+                }
+            }
+            let name = if raised { "screen-raised" } else { "screen" };
+            let path = format!("{prefix}{name}.png");
+            images.insert(path.clone(), encode_png(&image));
+            layers.push(layer(
+                name,
+                Vec2::ints(1, 1),
+                Vec2::default(),
+                LayerContent::Image {
+                    path,
+                    normals: None,
+                    repeat_x: false,
+                    repeat_y: false,
+                },
+            ));
+        }
+        Ok(Background { layers, images })
     }
 }
 
@@ -819,6 +923,104 @@ mod tests {
             }
         }
         assert!(Background::new(&sample(15).0, &tiles, &palettes, "").is_err());
+    }
+
+    #[test]
+    fn screen_maps_match_the_spec_vectors() {
+        let map = ScreenMap::new(&hex("screen.hex")).unwrap();
+        let rows = rows("screen.tsv");
+        assert_eq!(rows.len(), 1024);
+        for row in rows {
+            let (sx, sy): (usize, usize) = (num(&row[0]), num(&row[1]));
+            assert_eq!(
+                (num::<usize>(&row[2]), num::<usize>(&row[3])),
+                (8 * sx, 8 * sy)
+            );
+            let want = TileEntry(u16::from_str_radix(&row[4], 16).unwrap());
+            assert_eq!(map.entry(sx, sy), want, "square {sx},{sy}");
+        }
+        assert!(ScreenMap::new(&[0; 2047]).is_err());
+    }
+
+    /// The screen layers, the raised one over the other, show the vector
+    /// pixels, and the backdrop where they're transparent.
+    #[test]
+    fn the_screen_layers_draw_the_screen_picture() {
+        let map = ScreenMap::new(&hex("screen.hex")).unwrap();
+        let tiles = TileSet::new(&hex("tiles.hex")[..4 * 32]).unwrap();
+        let palettes = PaletteSet::new(&hex("palette.hex")).unwrap();
+        let background = Background::screen(&map, &tiles, &palettes, "room-").unwrap();
+        let names: Vec<&str> = background.layers.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, ["screen", "screen-raised"]);
+        let images: Vec<RgbaImage> = background
+            .layers
+            .iter()
+            .map(|l| {
+                assert_eq!(l.depth, Depth::Back);
+                assert_eq!((l.parallax, l.offset), (Vec2::ints(1, 1), Vec2::default()));
+                let LayerContent::Image {
+                    path,
+                    repeat_x: false,
+                    repeat_y: false,
+                    ..
+                } = &l.content
+                else {
+                    panic!("{} isn't one image", l.name);
+                };
+                assert_eq!(path, &format!("room-{}.png", l.name));
+                let image = rgba(&background.images[path]);
+                assert_eq!((image.width, image.height), (256, 256));
+                image
+            })
+            .collect();
+        let [r, g, b] = rgb(palettes.colour(0, 0));
+        let rows = rows("screen-pixels.tsv");
+        assert!(rows.len() >= 256);
+        for row in rows {
+            let (x, y): (u32, u32) = (num(&row[0]), num(&row[1]));
+            let want = match row[5].as_str() {
+                "transparent" => [r, g, b, 255],
+                hex => {
+                    let [r, g, b] = rgb(u16::from_str_radix(hex, 16).unwrap());
+                    [r, g, b, 255]
+                }
+            };
+            let (screen, raised) = (images[0].get(x, y), images[1].get(x, y));
+            assert_eq!(screen[3], 255, "{x},{y}");
+            let got = if raised[3] == 0 { screen } else { raised };
+            assert_eq!(got, want, "{x},{y}");
+        }
+    }
+
+    /// Raised tiles go on a layer of their own, in front; under them the
+    /// screen layer shows the backdrop.
+    #[test]
+    fn a_screen_picture_s_raised_tiles_are_in_front() {
+        let mut bytes = hex("screen.hex");
+        // Square 1 (tile 0, palette row 1) raised, square 2 past the tiles.
+        bytes[3] |= 0x20;
+        let tiles = TileSet::new(&hex("tiles.hex")[..4 * 32]).unwrap();
+        let palettes = PaletteSet::new(&hex("palette.hex")).unwrap();
+        let map = ScreenMap::new(&bytes).unwrap();
+        let background = Background::screen(&map, &tiles, &palettes, "").unwrap();
+        let names: Vec<&str> = background.layers.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, ["screen", "screen-raised"]);
+        let screen = rgba(&background.images["screen.png"]);
+        let raised = rgba(&background.images["screen-raised.png"]);
+        let [r, g, b] = rgb(palettes.colour(0, 0));
+        let entry = map.entry(1, 0);
+        for y in 0..8 {
+            for x in 0..8 {
+                assert_eq!(screen.get(8 + x, y), [r, g, b, 255]);
+                assert_eq!(raised.get(8 + x, y), shown(&tiles, &palettes, entry, x, y));
+            }
+        }
+        assert_eq!(raised.get(16, 0), [0; 4]);
+
+        bytes[4..6].copy_from_slice(&4u16.to_le_bytes());
+        let map = ScreenMap::new(&bytes).unwrap();
+        let err = Background::screen(&map, &tiles, &palettes, "").unwrap_err();
+        assert!(err.contains("tile 4"), "{err}");
     }
 
     #[test]

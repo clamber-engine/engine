@@ -19,8 +19,9 @@ use clamber_level::{
 
 use crate::{
     BANK_SIZE, Background, COLUMN_BANDS, Decoder, EXIT, GridPicture, Ground, Image, KEG, Known,
-    LEVELS, Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures, Placements, StartRecord,
-    TileSet, ViewLimits, kind_of, kind_rows, unpack, unpack_nibbles,
+    LEVELS, Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures, Placements, ScreenMap,
+    StartRecord, TileSet, VIEW_HEIGHT, VIEW_WIDTH, ViewLimits, kind_of, kind_rows, unpack,
+    unpack_nibbles,
 };
 
 /// Lines in a band.
@@ -32,6 +33,9 @@ const COLUMN_BYTES: usize = 2 * COLUMN_BANDS as usize;
 /// Bytes in a palette set, and in a cell picture.
 const PALETTE_SET_BYTES: usize = 256;
 const PICTURE_BYTES: usize = 32;
+
+/// Bytes in a tile stored as it is.
+const TILE_BYTES: usize = 32;
 
 /// The surface type of an imported level's ground.
 const SURFACE: &str = "normal";
@@ -50,16 +54,16 @@ pub struct LevelParts {
     /// The type table, for types 0 to `types` − 1.
     pub type_table: Location,
     pub types: usize,
-    /// The packed tile data; its end command ends it.
-    pub tiles: Location,
-    pub palettes: Location,
-    /// The picture table, for types 0 to `pictures` − 1.
-    pub picture_table: Location,
-    pub pictures: usize,
+    /// Its background pictures.
+    pub scenery: Scenery,
     /// The placement list, if the level has its objects.
     pub placements: Option<Location>,
     /// The start record, if the level has one (`level-start.md`).
     pub start: Option<Location>,
+    /// The way the characters walk in to the start record's point when
+    /// play comes into the level from another one, at the arrival
+    /// [`FROM_LEVEL`], if it does.
+    pub walk_in: Option<Dir>,
     /// The restart record, if the level has a restart point.
     pub restart: Option<Location>,
     /// The scene-return record, if play comes back to the level after
@@ -73,6 +77,34 @@ pub struct LevelParts {
     /// The level's song, if it has its music.
     pub song: Option<LevelSong>,
 }
+
+/// Where a level's background pictures are in an image
+/// (`spec/formats/graphics.md`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scenery {
+    /// Layers made from the grid's cells ("The layers"): the packed tile
+    /// data, which its end command ends, the palette set, and the
+    /// picture table for types 0 to `pictures` − 1.
+    Grid {
+        tiles: Location,
+        palettes: Location,
+        picture_table: Location,
+        pictures: usize,
+    },
+    /// One screen picture ("Screen pictures"): its 1 024 tiles, stored
+    /// as they are, the first `split` at `tiles` and the others at
+    /// `rest`; its screen map; and its palette set.
+    Screen {
+        tiles: Location,
+        split: usize,
+        rest: Location,
+        map: Location,
+        palettes: Location,
+    },
+}
+
+/// Tiles in a screen picture's tile set.
+const SCREEN_TILES: usize = 1024;
 
 /// The water over a whole area with `ground`, if the player swims there:
 /// `spec/behavior/swimming.md`, "Where the player swims". An area swims
@@ -107,6 +139,10 @@ pub const SCENE_RETURN: &str = "from-scene";
 /// The arrival play comes back to the first level at after the room its
 /// upper exit leads to.
 pub const ROOM_RETURN: &str = "from-room";
+
+/// The arrival play comes into an area at from the level it was entered
+/// from, as into the first level's room.
+pub const FROM_LEVEL: &str = "from-level";
 
 /// Gives each exit in `entities` the arrival play comes back at, with
 /// `scene` and `room` the arrivals there are of [`SCENE_RETURN`] and
@@ -208,18 +244,43 @@ impl LevelDecoder {
             grid,
             read("type table", p.type_table, 2 * p.types)?,
         )?;
-        let packed = image
-            .at(p.tiles)
-            .ok_or_else(|| "the level's packed tile data isn't in the image".to_string())?;
-        let tiles = TileSet::new(&unpack(packed)?)?;
-        let palettes = PaletteSet::new(read("palette set", p.palettes, PALETTE_SET_BYTES)?)?;
-        let pictures = Pictures::new(read(
-            "picture table",
-            p.picture_table,
-            p.pictures * PICTURE_BYTES,
-        )?)?;
-        let picture = GridPicture::new(grid, &pictures)?;
-        let background = Background::new(&picture, &tiles, &palettes, &format!("{}-", self.file))?;
+        let prefix = format!("{}-", self.file);
+        let background = match p.scenery {
+            Scenery::Grid {
+                tiles,
+                palettes,
+                picture_table,
+                pictures,
+            } => {
+                let packed = image
+                    .at(tiles)
+                    .ok_or_else(|| "the level's packed tile data isn't in the image".to_string())?;
+                let tiles = TileSet::new(&unpack(packed)?)?;
+                let palettes = PaletteSet::new(read("palette set", palettes, PALETTE_SET_BYTES)?)?;
+                let pictures = Pictures::new(read(
+                    "picture table",
+                    picture_table,
+                    pictures * PICTURE_BYTES,
+                )?)?;
+                let picture = GridPicture::new(grid, &pictures)?;
+                Background::new(&picture, &tiles, &palettes, &prefix)?
+            }
+            Scenery::Screen {
+                tiles,
+                split,
+                rest,
+                map,
+                palettes,
+            } => {
+                let split = split.min(SCREEN_TILES);
+                let mut bytes = read("tile set", tiles, split * TILE_BYTES)?.to_vec();
+                bytes.extend(read("tile set", rest, (SCREEN_TILES - split) * TILE_BYTES)?);
+                let tiles = TileSet::new(&bytes)?;
+                let palettes = PaletteSet::new(read("palette set", palettes, PALETTE_SET_BYTES)?)?;
+                let map = ScreenMap::new(read("screen map", map, ScreenMap::BYTES)?)?;
+                Background::screen(&map, &tiles, &palettes, &prefix)?
+            }
+        };
         let mut files = background.images;
 
         let width = ground.width();
@@ -260,11 +321,29 @@ impl LevelDecoder {
             (level.camera.rule, regions) = limits.camera(width, height);
             level.regions.extend(regions);
         }
+        if let Scenery::Screen { .. } = p.scenery {
+            // A screen picture doesn't move: the view always shows its
+            // top left.
+            let px = |n: i64| Fixed::from_int(i32::try_from(n).expect("a view fits in i32"));
+            level.camera.rule.limits = Some(Rect {
+                x: Fixed::ZERO,
+                y: Fixed::ZERO,
+                w: px(VIEW_WIDTH),
+                h: px(VIEW_HEIGHT),
+            });
+        }
         if let Some(list) = p.placements {
             (level.entities, level.sections) = self.objects(image, list, height)?;
         }
         if let Some(at) = p.restart {
             restart_at(&mut level.entities, record("restart", at)?);
+        }
+        if let Some(walk) = p.walk_in {
+            level.arrivals.push(Arrival {
+                name: FROM_LEVEL.into(),
+                at: level.start,
+                walk: Some(walk),
+            });
         }
         let returns = [
             (

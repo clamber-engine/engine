@@ -50,7 +50,8 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 pub use graphics::{
-    Background, GridPicture, PaletteSet, Pictures, TILE, TileEntry, TileSet, channels, rgb, unpack,
+    Background, GridPicture, PaletteSet, Pictures, ScreenMap, TILE, TileEntry, TileSet, channels,
+    rgb, unpack,
 };
 pub use ground::{Below, COLUMN_BANDS, Ground, Half, Layout, Surface, TITLE_2_ORIGIN};
 pub use image::{COPIER_HEADER, Catalog, Image, Known, MAX_IMAGE_SIZE, Outcome, Sha256Hash};
@@ -59,14 +60,16 @@ pub use kinds::{
     CRITTER, END, EXIT, FINGERPRINT_SIZE, KEG, Kind, KindRow, WALKER, WALL_EXIT, candidate,
     kind_of, kind_rows,
 };
-pub use level::{LevelDecoder, LevelParts, PackedGround, ROOM_RETURN, SCENE_RETURN, water};
+pub use level::{
+    FROM_LEVEL, LevelDecoder, LevelParts, PackedGround, ROOM_RETURN, SCENE_RETURN, Scenery, water,
+};
 pub use level_map::{
     APPEARANCE_OFFSET, CORNER_SIZE, Direction, FIRST_CORNER, LAST_CORNER, LevelMap, Point,
     TABLE_SIZE, corner_count, is_corner,
 };
 pub use level_start::{START_RECORD_SIZE, StartRecord};
 pub use location::{BANK_SIZE, Location};
-pub use locators::{Data, first_level, first_level_ground, locate};
+pub use locators::{Data, first_level, first_level_ground, first_room, locate};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
 pub use music::{LevelSong, Music, RATE, render};
 pub use nibbles::{NIBBLE_HEADER, unpack_nibbles};
@@ -93,6 +96,11 @@ pub const LEVELS: &str = "levels";
 
 /// The file name, without `.level`, of an imported title's first level.
 pub const FIRST_LEVEL: &str = "level-1";
+
+/// The file name, without `.level`, of the room the first level's upper
+/// exit leads to. It sorts after [`FIRST_LEVEL`], so the first level is
+/// still a pack's first.
+pub const FIRST_ROOM: &str = "room-1";
 
 /// The folder in a pack that holds its sprite sheets.
 pub const SPRITES: &str = "sprites";
@@ -201,18 +209,25 @@ pub struct Importer {
 
 impl Importer {
     /// The images and decoders this build supports: each supported
-    /// title's first level, where the spec says where its parts are.
+    /// title's first level, and the room its upper exit leads to, where
+    /// the spec says where their parts are.
     pub fn builtin() -> Importer {
         let catalog = Catalog::builtin();
         let mut decoders: Vec<Box<dyn Decoder>> = Vec::new();
         for known in &catalog.known {
-            if let Some(parts) = first_level(&known.title) {
-                decoders.push(Box::new(LevelDecoder {
-                    title: known.title.clone(),
-                    file: FIRST_LEVEL.to_string(),
-                    name: "First level".to_string(),
-                    parts,
-                }));
+            let areas = [
+                (FIRST_LEVEL, "First level", first_level(&known.title)),
+                (FIRST_ROOM, "First level's room", first_room(&known.title)),
+            ];
+            for (file, name, parts) in areas {
+                if let Some(parts) = parts {
+                    decoders.push(Box::new(LevelDecoder {
+                        title: known.title.clone(),
+                        file: file.to_string(),
+                        name: name.to_string(),
+                        parts,
+                    }));
+                }
             }
         }
         Importer { catalog, decoders }

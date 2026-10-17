@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use clamber_import::{
     BANK_SIZE, Below, Catalog, Ground, Image, ImportError, Importer, Known, Layout, LevelDecoder,
-    LevelParts, LevelSong, Location, NIBBLE_HEADER, PackedGround, installed,
+    LevelParts, LevelSong, Location, NIBBLE_HEADER, PackedGround, Scenery, installed,
 };
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Fixed, Level, Vec2};
@@ -120,12 +120,15 @@ fn parts() -> LevelParts {
         columns: COLUMNS,
         type_table: Location::new(BANK, 0x3000),
         types: types().len() / 2,
-        tiles: Location::new(BANK, 0x4000),
-        palettes: Location::new(BANK, 0x5000),
-        picture_table: Location::new(BANK, 0x6000),
-        pictures: 5,
+        scenery: Scenery::Grid {
+            tiles: Location::new(BANK, 0x4000),
+            palettes: Location::new(BANK, 0x5000),
+            picture_table: Location::new(BANK, 0x6000),
+            pictures: 5,
+        },
         placements: Some(Location::new(BANK, 0x7000)),
         start: Some(Location::new(BANK, 0x7400)),
+        walk_in: None,
         restart: None,
         scene_return: None,
         room_return: None,
@@ -190,12 +193,21 @@ fn song_block() -> Vec<u8> {
 fn image() -> Image {
     let mut bytes: Vec<u8> = (0..=250u8).cycle().take(2 * BANK_SIZE).collect();
     let p = parts();
+    let Scenery::Grid {
+        tiles,
+        palettes: palette_set,
+        picture_table,
+        ..
+    } = p.scenery
+    else {
+        unreachable!()
+    };
     for (at, data) in [
         (p.grid, grid()),
         (p.type_table, types()),
-        (p.tiles, packed_tiles()),
-        (p.palettes, palettes()),
-        (p.picture_table, pictures()),
+        (tiles, packed_tiles()),
+        (palette_set, palettes()),
+        (picture_table, pictures()),
         (p.placements.unwrap(), placement_list()),
         (Location::new(BANK, 0x7208), group_members()),
         (p.start.unwrap(), start_record()),

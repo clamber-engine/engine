@@ -1,7 +1,9 @@
 //! Where each kind of data starts in a supported image
 //! (`spec/formats/locators.md`), and the parts of the levels they give.
 
-use crate::{LevelParts, LevelSong, Location, PackedGround};
+use clamber_level::Dir;
+
+use crate::{LevelParts, LevelSong, Location, PackedGround, Scenery};
 
 /// The data a locator row finds. The level parts are the first level's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -197,12 +199,15 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
         columns,
         type_table: at(Data::TypeTable)?,
         types,
-        tiles: at(Data::PackedTiles)?,
-        palettes: at(Data::PaletteSet)?,
-        picture_table: at(Data::PictureTable)?,
-        pictures,
+        scenery: Scenery::Grid {
+            tiles: at(Data::PackedTiles)?,
+            palettes: at(Data::PaletteSet)?,
+            picture_table: at(Data::PictureTable)?,
+            pictures,
+        },
         placements: Some(at(Data::PlacementList)?),
         start: Some(at(Data::StartRecord)?),
+        walk_in: None,
         restart: Some(at(Data::RestartRecord)?),
         scene_return: Some(at(Data::SceneReturnRecord)?),
         room_return: Some(at(Data::RoomReturnRecord)?),
@@ -215,6 +220,41 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
             song_table: at(Data::SongTable)?,
             song: 0,
         }),
+    })
+}
+
+/// The parts of the room the first level's upper exit leads to, where
+/// the spec gives all of them: the locations from [`locate`], the grid's
+/// 16 columns and `N` = 17 from `level-ground.md`, and the tile set's
+/// first 987 tiles in one part from `graphics.md` ("The first level's
+/// room"). The characters walk in leftward (`exits.md`, "Walking in"),
+/// and it has no restart, view-limit record or music.
+pub fn first_room(title: &str) -> Option<LevelParts> {
+    let at = |data| locate(title, data);
+    let (columns, types, split) = match title {
+        "title-1" => (16, 17, 987),
+        _ => return None,
+    };
+    Some(LevelParts {
+        grid: at(Data::RoomGrid)?,
+        columns,
+        type_table: at(Data::RoomTypeTable)?,
+        types,
+        scenery: Scenery::Screen {
+            tiles: at(Data::RoomTiles)?,
+            split,
+            rest: at(Data::RoomTilesRest)?,
+            map: at(Data::RoomScreenMap)?,
+            palettes: at(Data::RoomPaletteSet)?,
+        },
+        placements: Some(at(Data::RoomPlacementList)?),
+        start: Some(at(Data::RoomStartRecord)?),
+        walk_in: Some(Dir::Left),
+        restart: None,
+        scene_return: None,
+        room_return: None,
+        view_limits: None,
+        song: None,
     })
 }
 
@@ -316,7 +356,7 @@ mod tests {
             .filter(|d| d.applies_to(title_1))
             .map(|d| d.name())
             .collect();
-        assert_eq!(names, ["First level"]);
+        assert_eq!(names, ["First level", "First level's room"]);
     }
 
     #[test]
@@ -324,8 +364,43 @@ mod tests {
         let parts = first_level("title-1").unwrap();
         let end = |at: Location, len: usize| usize::from(at.address) + len;
         // 32 bytes a column, 2 a type, 32 a picture.
-        assert!(end(parts.grid, 32 * parts.columns) <= usize::from(parts.picture_table.address));
-        assert!(end(parts.picture_table, 32 * parts.pictures) <= 0x1_0000);
+        let Scenery::Grid {
+            picture_table,
+            pictures,
+            ..
+        } = parts.scenery
+        else {
+            panic!("the first level's layers are made from its grid");
+        };
+        assert!(end(parts.grid, 32 * parts.columns) <= usize::from(picture_table.address));
+        assert!(end(picture_table, 32 * pictures) <= 0x1_0000);
         assert!(end(parts.type_table, 2 * parts.types) <= 0x1_0000);
+    }
+
+    #[test]
+    fn the_first_level_s_room_is_found_for_title_1_only() {
+        let parts = first_room("title-1").unwrap();
+        assert_eq!(parts.grid, Location::new(0xE3, 0));
+        assert_eq!((parts.columns, parts.types), (16, 17));
+        assert_eq!(parts.start, Some(Location::new(0xFC, 0xC090)));
+        assert_eq!(parts.walk_in, Some(Dir::Left));
+        assert_eq!(parts.view_limits, None);
+        let Scenery::Screen {
+            tiles,
+            split,
+            rest,
+            map,
+            ..
+        } = parts.scenery
+        else {
+            panic!("the room has a screen picture");
+        };
+        // graphics.md: 31 584 and 1 184 bytes, 32 a tile.
+        assert_eq!(32 * split, 31_584);
+        assert_eq!(32 * (1024 - split), 1_184);
+        let end = |at: Location, len: usize| usize::from(at.address) + len;
+        assert!(end(tiles, 32 * split) <= 0x1_0000);
+        assert!(end(rest, 32 * (1024 - split)) <= usize::from(map.address));
+        assert!(first_room("title-2").is_none());
     }
 }
