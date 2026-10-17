@@ -328,6 +328,37 @@ params! {
     /// the action press that started the roll: it doesn't move up or
     /// down, and falls from rest after that. Whole frames.
     RollHover => "roll_hover",
+    /// Above 0, a timed roll that leaves the ground on its first frame,
+    /// or up to this many frames after it, drifts down at
+    /// `leave_fall_speed` for a while, ending each frame with that speed,
+    /// and falls from it after that. Leaving on its first frame, it
+    /// drifts from the frame after leaving to `roll_leave_hover_time` - 2
+    /// frames after it; leaving on a later frame before this one, from
+    /// the leave frame to `roll_leave_hover_time` - 1 frames after;
+    /// leaving this many frames after its first, on the leave frame only.
+    /// Whole frames.
+    RollLeaveHover => "roll_leave_hover",
+    /// How many frames a roll that leaves the ground under
+    /// `roll_leave_hover` drifts down for, counting the leave frame.
+    /// Whole frames.
+    RollLeaveHoverTime => "roll_leave_hover_time",
+    /// Above 0, without `roll_air_lengthen`, a timed roll that lands
+    /// exactly this many frames after leaving the ground ends on the
+    /// landing frame, as if its last frame had been the one before.
+    /// Whole frames.
+    RollFallEnd => "roll_fall_end",
+    /// Above 0, a frame of a timed roll on the ground that starts at
+    /// this speed or slower, with no floor in the column
+    /// `roll_edge_ahead` px ahead of the player's, doesn't move: the
+    /// speed becomes 0.
+    RollEdgeSpeed => "roll_edge_speed",
+    /// How far ahead, px, `roll_edge_speed` looks for a floor.
+    RollEdgeAhead => "roll_edge_ahead",
+    /// Above 0, on such a frame after the roll's first that starts at 0
+    /// with only the way the roll goes held, the roll pushes off at this
+    /// speed instead, and from the next frame eases toward `roll_speed`
+    /// whatever its size.
+    RollEdgePush => "roll_edge_push",
     /// Above 0, a jump started during a timed roll waits to take off
     /// under `held_jump_gravity`, whether jump is held or not.
     RollJumpHeldGravity => "roll_jump_held_gravity",

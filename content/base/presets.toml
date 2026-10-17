@@ -93,6 +93,12 @@ roll_buffer_hold = 0
 roll_air_buffer = 0
 roll_air_lengthen = 0
 roll_hover = 0
+roll_leave_hover = 0
+roll_leave_hover_time = 0
+roll_fall_end = 0
+roll_edge_speed = 0
+roll_edge_ahead = 0
+roll_edge_push = 0
 roll_jump_held_gravity = 0
 roll_air_stop_wait = 0
 roll_attack_width = 0
@@ -380,6 +386,17 @@ roll_stop_time = 17
 roll_stop_slide = 3
 roll_buffer = 19
 roll_air_buffer = 7
+# A roll off a ledge (rolling-off-ledges.md) drifts down 1/256 per frame
+# for a while if it left within 8 frames of its first; one that lands
+# exactly 30 frames after leaving ends on landing. On the ground, a frame
+# starting at 271/256 or slower with no floor 15 px ahead stands still,
+# or pushes off at 2 with only the roll's direction held.
+roll_leave_hover = 8
+roll_leave_hover_time = 10
+roll_fall_end = 30
+roll_edge_speed = 1.05859375
+roll_edge_ahead = 15
+roll_edge_push = 2
 roll_attack_width = 22
 roll_attack_offset = -4
 roll_attack_stop = 8

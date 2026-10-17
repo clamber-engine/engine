@@ -2745,6 +2745,290 @@ fn classic_jumping_out_of_a_fast_roll() {
     assert_eq!(vx, [955, 900, 852]);
 }
 
+/// A raised stretch of ground at y = 400 over x = 800..1600, 176 px above
+/// flat floor at y = 576, with nothing at its ends.
+const RAISED_176: &str = r#"
+    format = 1
+    name = "raised"
+    size = [4096, 600]
+    start = [1200, 400]
+
+    [[collision]]
+    shape = "rect"
+    rect = [0, 576, 4096, 24]
+
+    [[collision]]
+    shape = "rect"
+    rect = [800, 400, 800, 176]
+"#;
+
+/// The first column past the right end of `RAISED_176`'s raised ground.
+const RAISED_END: f64 = 1600.0;
+
+/// Classic 1 on `RAISED_176`, standing at `x`.
+fn classic_raised(x: i32) -> Play {
+    let level = Arc::new(Level::from_toml_str(RAISED_176, "raised").unwrap());
+    let mut w = Play::on(level, generic_feel("classic-1").unwrap());
+    w.player.pos.x = Fixed::from_int(x);
+    w
+}
+
+/// Classic 1 on `RAISED_176` walking right at +2 from x = 1300, then
+/// Action and Right on frame S and Right alone after it, with S chosen
+/// so that the roll leaves the ground on S + `lead`. The rows from S on,
+/// `n` of them, with `adjust(frame, world)` called before each frame.
+fn classic_roll_off_raised(lead: usize, n: usize, adjust: impl Fn(usize, &mut Play)) -> Vec<Row> {
+    let held = |f: usize, s: usize| match f.cmp(&s) {
+        std::cmp::Ordering::Equal => vec![Action::Action, Action::Right],
+        _ => vec![Action::Right],
+    };
+    for s in 1..200 {
+        let rows = play(&mut classic_raised(1300), s + lead + 1, |f| held(f, s));
+        if frames_with(&rows, Event::LeaveGround).first() == Some(&(s + lead)) {
+            assert_eq!(rows[s - 1].vx, 2.0, "walking at +2 before S");
+            assert_eq!(frames_with(&rows, Event::RollStart), [s]);
+            let mut w = classic_raised(1300);
+            play(&mut w, s, |f| held(f, s));
+            return (0..n)
+                .map(|f| {
+                    adjust(f, &mut w);
+                    play(&mut w, 1, |_| held(s + f, s)).pop().unwrap()
+                })
+                .collect();
+        }
+    }
+    panic!("no roll leaves the ground on S + {lead}");
+}
+
+#[test]
+fn classic_roll_hovers_by_when_it_leaves_the_ground() {
+    // spec/behavior/rolling-off-ledges.md, "The fall": which frames after
+    // L hover depends only on L - S. A hover frame moves down 1/256 and
+    // ends with `vy` 1/256; the fall goes on from there.
+    let drop = 3.4375;
+    let hover = 0.00390625;
+    for lead in 0..=12 {
+        let hovers = |after: usize| match lead {
+            0 => (1..=8).contains(&after),
+            1..=7 => after <= 9,
+            8 => after == 0,
+            _ => false,
+        };
+        let rows = classic_roll_off_raised(lead, lead + 16, |_, _| {});
+        let mut vy = hover;
+        for after in 0..16 {
+            let moved = if hovers(after) {
+                vy = hover;
+                hover
+            } else if after == 0 {
+                vy = hover;
+                drop
+            } else {
+                vy += 0.4375;
+                vy
+            };
+            let f = lead + after;
+            assert_eq!(rows[f].state, State::Roll, "lead {lead}, L + {after}");
+            let before = if f == 0 { 400.0 } else { rows[f - 1].y };
+            assert_eq!(
+                (rows[f].y - before, rows[f].vy),
+                (moved, vy),
+                "lead {lead}, L + {after}"
+            );
+        }
+    }
+}
+
+#[test]
+fn classic_roll_hover_worked_example() {
+    // spec/behavior/rolling-off-ledges.md, "Example of a hover": L = S + 7.
+    let rows = classic_roll_off_raised(7, 60, |_, _| {});
+    let below = |f: usize| rows[f].y - 400.0;
+    for (after, fallen, vy) in [
+        (0, 0.00390625, 0.00390625),
+        (9, 0.0390625, 0.00390625),
+        (10, 0.48046875, 0.44140625),
+        (11, 1.359375, 0.87890625),
+    ] {
+        assert_eq!((below(7 + after), rows[7 + after].vy), (fallen, vy));
+    }
+}
+
+#[test]
+fn classic_roll_speed_off_the_end_of_the_ground() {
+    // spec/behavior/rolling-off-ledges.md, "The fall": where the ground
+    // simply ends, `vx` follows the roll's speed rule on L and after, as
+    // the same roll does on the ground.
+    let rows = classic_roll_off_raised(12, 50, |_, _| {});
+    let land = frames_with(&rows, Event::Land)[0];
+    let mut w = classic_clear();
+    let flat = play(&mut w, 60, |_| vec![Action::Right]);
+    assert_eq!(flat[59].vx, 2.0);
+    let flat = play(&mut w, land, |f| match f {
+        0 => vec![Action::Action, Action::Right],
+        _ => vec![Action::Right],
+    });
+    // The flat roll's last frame is S + 28.
+    let vx = |rows: &[Row]| rows[..29].iter().map(|r| r.vx).collect::<Vec<_>>();
+    assert!(land > 29);
+    assert_eq!(vx(&rows), vx(&flat));
+}
+
+#[test]
+fn classic_roll_ends_on_landing_after_a_30_frame_fall() {
+    // spec/behavior/rolling-off-ledges.md, "When the roll ends": landing
+    // exactly 30 frames after leaving the ground makes the landing frame D;
+    // a fall one frame shorter or longer, or one with a hover, ends at
+    // G + 30.
+    let ends = |lead: usize, nudge: f64| {
+        let rows = classic_roll_off_raised(lead, 100, |f, w| {
+            if f == lead + 5 {
+                w.player.pos.y += Fixed::from_f64(nudge).unwrap();
+            }
+        });
+        let leave = frames_with(&rows, Event::LeaveGround)[0];
+        let land = frames_with(&rows, Event::Land)[0];
+        assert!(rows[..land].iter().all(|r| r.state == State::Roll));
+        let end = frames_with(&rows, Event::RollEnd)[0];
+        (land - leave, end - land)
+    };
+    assert_eq!(ends(12, 0.0), (30, 0));
+    assert_eq!(ends(20, 0.0), (30, 0));
+    assert_eq!(ends(3, 0.0), (40, 30));
+    // Moved down or up partway through the fall, by whole pixels.
+    for (way, fall) in [(1.0, 29), (-1.0, 31)] {
+        let nudged = (1..=16).map(|px| ends(12, way * f64::from(px)));
+        assert_eq!(nudged.clone().find(|&(f, _)| f == fall), Some((fall, 30)));
+        assert!(nudged.filter(|&(f, _)| f != 30).all(|(_, end)| end == 30));
+    }
+}
+
+#[test]
+fn classic_roll_off_the_end_of_the_ground_worked_example() {
+    // spec/behavior/rolling-off-ledges.md, "When the roll ends", the
+    // example where the ground simply ends: standing 56 px from the edge,
+    // Right held and Action tapped on S = 0. L = 25, G = 55, and the stop
+    // starts on the landing frame.
+    let mut w = classic_raised(1600 - 56);
+    let rows = play(&mut w, 70, |f| match f {
+        0 => vec![Action::Action, Action::Right],
+        _ => vec![Action::Right],
+    });
+    assert_eq!(frames_with(&rows, Event::LeaveGround), [25]);
+    assert_eq!(frames_with(&rows, Event::Land), [55]);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [55]);
+    assert!(rows[..55].iter().all(|r| r.state == State::Roll));
+    assert!(rows[56..58].iter().all(|r| r.state != State::Roll));
+}
+
+#[test]
+fn classic_roll_stands_still_before_the_end_of_the_ground() {
+    // spec/behavior/rolling-off-ledges.md, "Stopping before a ledge":
+    // standing with floor(x) = E - 10, Action alone on S.
+    let mut w = classic_raised(1590);
+    let rows = play(&mut w, 32, |f| match f {
+        0 => vec![Action::Action],
+        _ => vec![],
+    });
+    assert!(rows[..29].iter().all(|r| r.state == State::Roll));
+    assert!(
+        rows.iter()
+            .all(|r| r.x == 1590.0 && r.vx == 0.0 && r.grounded)
+    );
+    assert_eq!(frames_with(&rows, Event::RollEnd), [29]);
+
+    // Going left toward the other end, mirrored.
+    let mut w = classic_raised(809);
+    w.player.facing = Facing::Left;
+    let rows = play(&mut w, 32, |f| match f {
+        0 => vec![Action::Action],
+        _ => vec![],
+    });
+    assert!(
+        rows.iter()
+            .all(|r| r.x == 809.0 && r.vx == 0.0 && r.grounded)
+    );
+    assert_eq!(frames_with(&rows, Event::RollEnd), [29]);
+}
+
+#[test]
+fn classic_roll_pushes_off_toward_the_end_of_the_ground() {
+    // spec/behavior/rolling-off-ledges.md, "Stopping before a ledge": the
+    // same place, Right and Action on S and Right held after.
+    let mut w = classic_raised(1590);
+    let rows = play(&mut w, 8, |f| match f {
+        0 => vec![Action::Action, Action::Right],
+        _ => vec![Action::Right],
+    });
+    assert_eq!((rows[0].x, rows[0].vx), (1590.0, 0.0));
+    assert_eq!((rows[1].x, rows[1].vx), (1592.0, 2.0));
+    let vx: Vec<_> = rows[2..5].iter().map(|r| r.vx).collect();
+    assert_eq!(vx, [2.125, 2.234375, 2.328125]);
+    assert_eq!(frames_with(&rows, Event::LeaveGround), [5]);
+
+    // Without a direction held it stays put.
+    let mut w = classic_raised(1590);
+    let rows = play(&mut w, 8, |f| match f {
+        0 => vec![Action::Action, Action::Right],
+        _ => vec![],
+    });
+    assert!(rows.iter().all(|r| r.x == 1590.0));
+}
+
+#[test]
+fn classic_pushed_roll_goes_on_as_a_normal_roll() {
+    // spec/behavior/rolling-off-ledges.md, "Pushing off": a slow roll
+    // pushed off eases toward 3 from 2.
+    let mut w = classic_raised(1590);
+    let rows = play(&mut w, 4, |f| match f {
+        0 => vec![Action::Action],
+        _ => vec![Action::Right],
+    });
+    assert_eq!(w.player.roll.unwrap().size, RollSize::Slow);
+    let vx: Vec<_> = rows.iter().map(|r| r.vx).collect();
+    assert_eq!(vx, [0.0, 2.0, 2.125, 2.234375]);
+}
+
+#[test]
+fn classic_slow_roll_stops_within_15_px_of_the_end_of_the_ground() {
+    // spec/behavior/rolling-off-ledges.md, "Stopping before a ledge":
+    // walking right, then Right released and Action alone, `vx`
+    // 1.51953125 on S. The spec doesn't say how the walk slowed before S,
+    // so the speed at the start of S is set to the one the speed rule
+    // takes to 1.51953125 (1.59375). The slow roll's first frame to start
+    // with floor(x) = E - 15 is S + 24, and it stays there to D.
+    let walked = |x: i32| {
+        let mut w = classic_raised(1300);
+        play(&mut w, 60, |_| vec![Action::Right]);
+        w.player.pos.x = Fixed::from_int(x);
+        w.player.vel.x = Fixed::from_f64(1.59375).unwrap();
+        let rows = play(&mut w, 32, |f| match f {
+            0 => vec![Action::Action],
+            _ => vec![],
+        });
+        assert_eq!(rows[0].vx, 1.51953125);
+        rows
+    };
+    let mut found = false;
+    for x in 1500..1570 {
+        let rows = walked(x);
+        let stop = (1..29).find(|&f| rows[f].x == rows[f - 1].x);
+        let Some(stop) = stop else { continue };
+        // It starts with no ground 15 px ahead, and the frame before it
+        // didn't, or started faster than 271/256.
+        let column = |f: usize| rows[f].x.floor();
+        assert!(column(stop - 1) >= RAISED_END - 15.0, "from {x}");
+        assert!(stop < 2 || column(stop - 2) < RAISED_END - 15.0 || rows[stop - 2].vx > 1.05859375);
+        assert!(rows[stop..29].iter().all(|r| r.vx == 0.0));
+        assert!(rows.iter().all(|r| r.grounded));
+        if stop == 24 {
+            assert_eq!(rows[23].vx, 1.0390625);
+            found = true;
+        }
+    }
+    assert!(found);
+}
+
 /// Classic 2 standing at x = 500, playing `held(frame)` for `n` frames.
 fn classic_2_rolls(n: usize, held: impl Fn(usize) -> Vec<Action>) -> Vec<Row> {
     let mut w = classic_2_clear();

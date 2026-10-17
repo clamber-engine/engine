@@ -1056,6 +1056,8 @@ impl Player {
         } else if let Some(roll) = self.roll {
             if roll.still {
                 Fixed::ZERO
+            } else if let Some(vx) = self.roll_at_edge(level, held_dir, physics) {
+                vx
             } else {
                 self.target = roll.target();
                 ease(self.vel.x, roll.target(), response)
@@ -1119,6 +1121,11 @@ impl Player {
             && self
                 .roll
                 .is_some_and(|r| r.air >= 2 && r.since_press <= hover);
+        // One that left soon enough after its first frame drifts down.
+        let drifting = airborne
+            && self
+                .roll
+                .is_some_and(|r| r.leave_hovers(r.frame.saturating_sub(r.air), physics));
         // The gravity of a jump waiting to take off, if it's the held one.
         let waiting_gravity = if waits || cancelled {
             self.waiting_gravity(cancelled, physics)
@@ -1155,6 +1162,8 @@ impl Player {
             };
             self.vel.y = if hovering {
                 Fixed::ZERO
+            } else if drifting {
+                physics[Param::LeaveFallSpeed]
             } else if fall_step && !waits {
                 physics[Param::LeaveStepSpeed]
             } else {
@@ -1184,6 +1193,8 @@ impl Player {
         if !airborne {
             let drop = if face_leave {
                 physics[Param::FaceLeaveDrop]
+            } else if self.roll.is_some_and(|r| r.leave_hovers(r.frame, physics)) {
+                physics[Param::LeaveFallSpeed]
             } else {
                 physics[Param::LeaveDrop]
             };
@@ -1598,6 +1609,7 @@ impl Player {
             still,
             since_press: age,
             air: 0,
+            frame: 0,
         });
         self.roll_press = None;
         self.roll_stop = 0;
@@ -1640,6 +1652,7 @@ impl Player {
             still: false,
             since_press: 0,
             air: 0,
+            frame: 0,
         });
         self.roll_stop = 0;
         self.stopped = None;
@@ -1674,6 +1687,8 @@ impl Player {
         roll.held &= action;
         roll.still = false;
         roll.since_press = roll.since_press.saturating_add(1);
+        roll.frame = roll.frame.saturating_add(1);
+        let fell = roll.air;
         roll.air = if airborne {
             roll.air.saturating_add(1)
         } else {
@@ -1681,12 +1696,19 @@ impl Player {
         };
         let carry_time = frames(physics[Param::RollCarryTime]);
         let carries = roll.defeated || (roll.held && roll.size != RollSize::Fast);
+        let landed = lengthen == 0 && events.contains(&Event::Land);
+        let fall_end = frames(physics[Param::RollFallEnd]);
+        let ends_on_landing = landed && fall_end > 0 && fell == fall_end;
+        if ends_on_landing {
+            // The landing frame is the first after the roll.
+            roll.left = 0;
+        }
         let end = if waiting {
             roll.left = roll.left.saturating_sub(1);
             false
         } else if self.roll_jump {
             true
-        } else if lengthen == 0 && events.contains(&Event::Land) {
+        } else if landed && !ends_on_landing {
             // A roll off a ledge ends as if it started just after landing.
             roll.left = frames(physics[Param::RollTime]);
             false
@@ -1726,6 +1748,31 @@ impl Player {
             events.push(Event::RollEnd);
         } else {
             self.roll = Some(roll);
+        }
+    }
+
+    /// The speed of a frame of a timed roll on the ground, before it
+    /// carries on, that starts slowly with no floor ahead
+    /// (`roll_edge_speed`): 0, or a push off with `dir` held the way it
+    /// goes. `None` for any other frame.
+    fn roll_at_edge(&mut self, level: &Level, dir: i32, physics: &Physics) -> Option<Fixed> {
+        let slow = physics[Param::RollEdgeSpeed];
+        if slow == Fixed::ZERO || !self.grounded() || self.vel.x.abs() > slow {
+            return None;
+        }
+        let roll = self.roll.as_mut().filter(|r| !r.carry)?;
+        let way = direction(roll.dir);
+        let ahead = physics[Param::RollEdgeAhead].floor() * i64::from(way);
+        if columns::floor(level, columns::column(self.pos.x) + ahead, self.pos.y).is_some() {
+            return None;
+        }
+        let push = physics[Param::RollEdgePush];
+        if push > Fixed::ZERO && self.vel.x == Fixed::ZERO && roll.frame > 0 && dir == way {
+            // It goes on as a normal roll.
+            roll.speed = physics[Param::RollSpeed];
+            Some(push * Fixed::from_int(way))
+        } else {
+            Some(Fixed::ZERO)
         }
     }
 
@@ -2348,6 +2395,8 @@ pub struct Roll {
     pub since_press: u8,
     /// Frames it has ended in the air in a row.
     pub air: u8,
+    /// Frames since its first, 0 on it.
+    pub frame: u8,
 }
 
 /// Which roll speed a timed roll eases toward.
@@ -2425,6 +2474,21 @@ impl Roll {
         } else if dir == -along {
             self.dir = facing_toward(dir, self.dir);
         }
+    }
+
+    /// Whether this frame of the roll drifts down in the air if it left
+    /// the ground on its frame `leave` (`roll_leave_hover`).
+    fn leave_hovers(&self, leave: u8, physics: &Physics) -> bool {
+        let last = frames(physics[Param::RollLeaveHover]);
+        let time = frames(physics[Param::RollLeaveHoverTime]);
+        let after = self.frame.saturating_sub(leave);
+        last > 0
+            && match leave {
+                0 => after >= 1 && after + 2 <= time,
+                l if l < last => after < time,
+                l if l == last => after == 0,
+                _ => false,
+            }
     }
 
     /// The speed the roll eases toward, signed.
