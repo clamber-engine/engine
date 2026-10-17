@@ -245,8 +245,7 @@ pub const WALKER: &str = "crawler";
 /// The kind of entity that marks the end of a level, as in `clamber-sim`.
 pub const END: &str = "end";
 
-/// The kind of entity that marks the level's entrance. The simulation
-/// doesn't act on it yet.
+/// The archetype a level's entrance is.
 pub const ENTRANCE: &str = "entrance";
 
 /// The archetype restart barrels are.
@@ -576,10 +575,6 @@ mod tests {
                 assert_eq!(name, END);
                 continue;
             }
-            if kind == Kind::Entrance {
-                assert_eq!(name, ENTRANCE);
-                continue;
-            }
             let entity = Entity {
                 kind: name.to_string(),
                 id: None,
@@ -614,6 +609,9 @@ mod tests {
                 }
                 (Kind::RestartBarrel, behavior) => {
                     assert!(matches!(behavior, Behavior::Keg(_)), "{kind}")
+                }
+                (Kind::Entrance, behavior) => {
+                    assert!(matches!(behavior, Behavior::Entrance(_)), "{kind}")
                 }
                 (Kind::Tyre, behavior) => {
                     assert!(matches!(behavior, Behavior::Spring(_)), "{kind}")

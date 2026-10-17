@@ -21,7 +21,7 @@ use clamber_level::{Dir, Hit, Level, Shape, Vec2};
 use clamber_pack::physics::MAX_STEP;
 use clamber_pack::{Feel, Param, Physics};
 
-use crate::archetype::Spring;
+use crate::archetype::{Entrance, Spring};
 use crate::columns;
 use crate::loss::Lost;
 use crate::pose::PoseClock;
@@ -2004,6 +2004,71 @@ impl Player {
         if self.grounded() && lost.landed.is_none() {
             lost.landed = Some(0);
         }
+    }
+
+    /// One frame of being thrown out of a level's entrance, `since`
+    /// frames after the throw, until the landing (see
+    /// [`entrance`](crate::entrance)). Nothing held changes the motion
+    /// until `steer_from` frames after the throw; from then the speed
+    /// across eases toward the air's target speed. The player faces right
+    /// throughout. From the frame after the landing, the usual rules
+    /// apply, with no landing lockout.
+    pub(crate) fn thrown_out(
+        &mut self,
+        level: &Level,
+        physics: &Physics,
+        input: &Frame,
+        values: &Entrance,
+        since: u16,
+        events: &mut Vec<Event>,
+    ) {
+        self.touched.clear();
+        self.update_jump_held(input);
+        let held = |a| input.held.contains(a);
+        let dir = match (held(Action::Left), held(Action::Right)) {
+            (true, false) => -1,
+            (false, true) => 1,
+            _ => 0,
+        };
+        if since > u16::from(values.rise) {
+            self.vel.y = (self.vel.y + values.gravity).min(values.max_fall);
+        }
+        if since >= u16::from(values.steer_from) {
+            let cap = if held(Action::Action) {
+                physics[Param::TopSpeed]
+            } else {
+                physics[Param::WalkSpeed]
+            };
+            self.target = cap * Fixed::from_int(dir);
+            self.vel.x = ease(self.vel.x, self.target, values.steer_response);
+        }
+        let slope = physics[Param::FaceSlope];
+        let moved = if slope > Fixed::ZERO {
+            self.move_in_air_by_columns(level, physics, events)
+        } else {
+            self.move_horizontally(level, HALF_WIDTH, |_| true)
+        };
+        if !self.grounded() {
+            self.move_vertically(
+                level,
+                moved,
+                Reach::new(physics),
+                slope > Fixed::ZERO,
+                events,
+            );
+        }
+        self.facing = Facing::Right;
+        if self.grounded() {
+            // A press on the landing frame counts as on any other.
+            let window = frames(physics[Param::JumpBuffer]).max(frames(physics[Param::JumpDelay]));
+            self.jump_buffer.set_window(window);
+            self.jump_buffer
+                .update(input.pressed.contains(Action::Jump));
+            self.jump_held_since_press = input.pressed.contains(Action::Jump);
+            self.ran = held(Action::Action) && dir != 0;
+            self.lockout = 0;
+        }
+        self.state = self.next_state(held(Action::Action), events);
     }
 
     /// Goes on with what the hands are doing at the start of a step, and

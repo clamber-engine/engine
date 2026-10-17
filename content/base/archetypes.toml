@@ -291,6 +291,26 @@
 #   `fade_from` and fades in from there, a step of brightness every
 #   `fade_step` frames. The first landing after the burst has a landing
 #   lockout of `land_lockout` frames, instead of the preset's.
+# - `entrance`: where the characters come out when the level begins,
+#   centred on its position, which never moves; only a level's first one
+#   counts. Counting the level's frames from 0, the characters wait at
+#   the level's start, hidden, and nothing moves or takes input up to
+#   and including frame `throw`. On frame `burst` it bursts as a keg
+#   does, by its own `pieces`, `piece_gravity`, `flash_rise` and
+#   `burst_time`. On frame `throw` it's gone, and the lead is drawn and
+#   thrown out at `throw_speed = [across, up]` without moving yet. It
+#   moves by that speed for `rise` frames, then its speed down first
+#   grows by `gravity` each frame, up to `max_fall`, facing right and
+#   taking no input. From `steer_from` frames after the throw up to and
+#   including the landing, its speed across eases toward the air's
+#   target speed (`walk_speed`, or `top_speed` with Action) by
+#   `steer_response` of the gap, rounded as `speed_response` is. From the
+#   frame after the landing it plays as usual, with no landing lockout.
+#   The other character waits there until the frame after the throw;
+#   until the lead lands, it's then where the lead was on the frame
+#   before, rounded down to whole px, and follows it after that. The
+#   picture fades in from black: after frame `f` the brightness is
+#   `f` / `fade_step` steps, rounded down, out of `fade_steps`.
 # - `hidden`: a hidden object, which never moves, isn't drawn, isn't in
 #   the way and never hurts. Offsets from it are whole px, ends
 #   included: `across`, the player's x rounded down less its own, as
@@ -691,6 +711,35 @@ upright_jump = 5
 land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }
 roll_after = [3, 9]
 fidget_time = [239, 180, 457]
+
+# title-1's entrance (spec/behavior/level-start.md). A level with one
+# begins with the characters hidden at its start point; the entrance
+# bursts on frame `burst` and on frame `throw` the lead is thrown out at
+# `throw_speed` ([across, up]), moving by it for `rise` frames, then
+# falling under `gravity` up to `max_fall`. From `steer_from` frames after
+# the throw until the landing, the speed across eases toward the air's
+# target by `steer_response` of the gap. The picture fades in from black
+# in `fade_steps` steps `fade_step` frames apart. The spec doesn't say
+# how big the entrance is or how its pieces and flash move: `size` and
+# the pieces' values are Clamber's own, a keg's.
+[archetypes.entrance]
+behavior = "entrance"
+size = [24, 24]
+offset = 0
+burst = 41
+throw = 51
+throw_speed = [2.375, 2.375]
+rise = 14
+gravity = 0.4375
+max_fall = 8
+steer_from = 39
+steer_response = 0.03125
+fade_step = 3
+fade_steps = 15
+pieces = [[2, 4.75], [-1, 5.75], [-2, 4.75], [1, 6.25]]
+piece_gravity = 0.25
+flash_rise = 0.5
+burst_time = 40
 
 # Collectibles with title-1's measured values. `spark`: a single
 # collectible (spec/behavior/collectibles.md), drawn 16 x 16 around its

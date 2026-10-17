@@ -442,6 +442,7 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         | Behavior::Hutch(_)
         | Behavior::Stinger(_)
         | Behavior::Keg(_)
+        | Behavior::Entrance(_)
         | Behavior::Hidden(_)
         | Behavior::Spring(_)
         | Behavior::Rope(_) => {}
@@ -1209,6 +1210,7 @@ fn interact(
             | Behavior::Ball(_)
             | Behavior::Stinger(_)
             | Behavior::Keg(_)
+            | Behavior::Entrance(_)
             | Behavior::Hidden(_)
             | Behavior::Spring(_)
             | Behavior::Rope(_) => {}

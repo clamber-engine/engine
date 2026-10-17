@@ -249,7 +249,7 @@ impl World {
     /// Whether the player is drawn on this frame: not on the frames it
     /// flashes off.
     pub fn player_drawn(&self) -> bool {
-        if self.in_keg() {
+        if self.in_keg() || self.in_entrance() {
             return false;
         }
         let Some(loss) = self.loss else {

@@ -87,6 +87,7 @@ fn the_cast_sheets_are_rendered_with_their_animations() {
         ("hutch", &["whole", "break", "animal"]),
         ("stinger", &["fly"]),
         ("keg", &["whole"]),
+        ("entrance", &["whole"]),
         ("canister", &["whole", "break"]),
         ("spring", &["rest", "squash"]),
         ("rope", &["hang"]),

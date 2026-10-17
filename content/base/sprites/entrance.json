@@ -1,0 +1,53 @@
+{
+  "frames": [
+    {
+      "filename": "entrance whole 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 130,
+        "h": 120
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 30,
+        "w": 130,
+        "h": 120
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 180
+      },
+      "duration": 100,
+      "ticks": 6
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "entrance.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 134,
+      "h": 124
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "whole",
+        "from": 0,
+        "to": 0,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 90,
+        "y": 90
+      },
+      "scale": 5,
+      "normals": "entrance-normals.png"
+    }
+  }
+}

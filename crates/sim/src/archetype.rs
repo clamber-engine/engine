@@ -125,6 +125,9 @@ pub enum Behavior {
     /// is reached, and play resumes there inside one (see
     /// [`keg`](crate::keg)).
     Keg(Keg),
+    /// The place the characters come out of when the level begins (see
+    /// [`entrance`](crate::entrance)).
+    Entrance(Entrance),
     /// A hidden object: not drawn, never in the way and never hurting,
     /// until it's set off and releases its item (see
     /// [`hidden`](crate::hidden)).
@@ -349,6 +352,36 @@ pub struct Keg {
     pub fade_step: u8,
     pub land_lockout: u8,
     pub restart: Vec2,
+}
+
+/// A level's entrance (spec/behavior/level-start.md). Counting the
+/// level's frames from 0, the characters wait hidden at the start point
+/// until frame `throw`, and the entrance bursts on frame `burst` as a keg
+/// does, with `pieces`, `piece_gravity`, `flash_rise` and `burst_time`.
+/// On frame `throw` it's gone, and the lead is thrown out at
+/// `throw_speed`, `[across, up]`, without moving yet. It then moves by
+/// that speed for `rise` frames, and after that its speed down first
+/// grows by `gravity` each frame, up to `max_fall`. From `steer_from`
+/// frames after the throw until it lands, its speed across eases toward
+/// the air's target speed by `steer_response` of the gap. The picture
+/// fades in from black over the level's first frames, a step every
+/// `fade_step` frames up to `fade_steps`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Entrance {
+    pub burst: u8,
+    pub throw: u8,
+    pub throw_speed: Vec2,
+    pub rise: u8,
+    pub gravity: Fixed,
+    pub max_fall: Fixed,
+    pub steer_from: u8,
+    pub steer_response: Fixed,
+    pub fade_step: u8,
+    pub fade_steps: u8,
+    pub pieces: [Vec2; KEG_PIECES],
+    pub piece_gravity: Fixed,
+    pub flash_rise: Fixed,
+    pub burst_time: u8,
 }
 
 /// How many pieces a keg breaks into.
@@ -1167,6 +1200,22 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "land_lockout",
             "restart",
         ],
+        "entrance" => &[
+            "burst",
+            "throw",
+            "throw_speed",
+            "rise",
+            "gravity",
+            "max_fall",
+            "steer_from",
+            "steer_response",
+            "fade_step",
+            "fade_steps",
+            "pieces",
+            "piece_gravity",
+            "flash_rise",
+            "burst_time",
+        ],
         "hidden" => &[
             "across",
             "above",
@@ -1556,6 +1605,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             })
         }
         "keg" => Behavior::Keg(parse_keg(table, path)?),
+        "entrance" => Behavior::Entrance(parse_entrance(table, path)?),
         "hidden" => Behavior::Hidden(parse_hidden(table, path)?),
         "spring" => Behavior::Spring(parse_spring(table, path)?),
         "rope" => Behavior::Rope(parse_rope(table, path)?),
@@ -1594,30 +1644,7 @@ fn parse_keg(table: &Table, path: &str) -> Result<Keg, String> {
             "{path}.{key}: expected a whole number of frames, 0 to 255"
         )),
     };
-    let at = format!("{path}.pieces");
-    let mut pieces = [Vec2::default(); KEG_PIECES];
-    match get("pieces")? {
-        Value::Array(items) if items.len() == KEG_PIECES => {
-            for (i, item) in items.iter().enumerate() {
-                let at = format!("{at}[{i}]");
-                let Value::Array(xy) = item else {
-                    return Err(format!("{at}: expected [across, up]"));
-                };
-                let [x, y] = xy.as_slice() else {
-                    return Err(format!("{at}: expected [across, up]"));
-                };
-                pieces[i] = Vec2::new(
-                    number(x, &format!("{at}[0]"))?,
-                    number(y, &format!("{at}[1]"))?,
-                );
-            }
-        }
-        _ => {
-            return Err(format!(
-                "{at}: expected a list of {KEG_PIECES} [across, up]"
-            ));
-        }
-    }
+    let pieces = parse_pieces(get("pieces")?, &format!("{path}.pieces"))?;
     let at = format!("{path}.shake");
     let stages = match get("shake")? {
         Value::Array(items) if items.len() <= MAX_SHAKE_STAGES => items,
@@ -1675,6 +1702,96 @@ fn parse_keg(table: &Table, path: &str) -> Result<Keg, String> {
         land_lockout: frames("land_lockout")?,
         restart,
     })
+}
+
+/// Reads an entrance's values. Errors start with `path`.
+fn parse_entrance(table: &Table, path: &str) -> Result<Entrance, String> {
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let number = |key: &str| -> Result<Fixed, String> {
+        clamber_pack::read_number(get(key)?, "", &format!("{path}.{key}")).map_err(|e| e.message)
+    };
+    let positive = |key: &str| -> Result<Fixed, String> {
+        let v = number(key)?;
+        if v <= Fixed::ZERO {
+            return Err(format!("{path}.{key}: must be positive"));
+        }
+        Ok(v)
+    };
+    let frames = |key: &str| match get(key)? {
+        Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
+        _ => Err(format!(
+            "{path}.{key}: expected a whole number of frames, 0 to 255"
+        )),
+    };
+    let at = format!("{path}.throw_speed");
+    let throw_speed = match get("throw_speed")? {
+        Value::Array(xy) if xy.len() == 2 => {
+            let n = |i: usize| {
+                clamber_pack::read_number(&xy[i], "", &format!("{at}[{i}]")).map_err(|e| e.message)
+            };
+            Vec2::new(n(0)?, n(1)?)
+        }
+        _ => return Err(format!("{at}: expected [across, up]")),
+    };
+    let entrance = Entrance {
+        burst: frames("burst")?,
+        throw: frames("throw")?,
+        throw_speed,
+        rise: frames("rise")?,
+        gravity: positive("gravity")?,
+        max_fall: positive("max_fall")?,
+        steer_from: frames("steer_from")?,
+        steer_response: positive("steer_response")?,
+        fade_step: frames("fade_step")?.max(1),
+        fade_steps: frames("fade_steps")?,
+        pieces: parse_pieces(get("pieces")?, &format!("{path}.pieces"))?,
+        piece_gravity: positive("piece_gravity")?,
+        flash_rise: number("flash_rise")?,
+        burst_time: frames("burst_time")?,
+    };
+    if entrance.burst > entrance.throw {
+        return Err(format!("{path}: `burst` can't be after `throw`"));
+    }
+    if entrance.steer_response > Fixed::ONE {
+        return Err(format!("{path}.steer_response: must be at most 1"));
+    }
+    Ok(entrance)
+}
+
+/// Reads the pieces a keg or an entrance bursts into, each
+/// `[across, up]`. Errors start with `at`.
+fn parse_pieces(value: &Value, at: &str) -> Result<[Vec2; KEG_PIECES], String> {
+    let number = |v: &Value, at: &str| -> Result<Fixed, String> {
+        clamber_pack::read_number(v, "", at).map_err(|e| e.message)
+    };
+    let mut pieces = [Vec2::default(); KEG_PIECES];
+    match value {
+        Value::Array(items) if items.len() == KEG_PIECES => {
+            for (i, item) in items.iter().enumerate() {
+                let at = format!("{at}[{i}]");
+                let Value::Array(xy) = item else {
+                    return Err(format!("{at}: expected [across, up]"));
+                };
+                let [x, y] = xy.as_slice() else {
+                    return Err(format!("{at}: expected [across, up]"));
+                };
+                pieces[i] = Vec2::new(
+                    number(x, &format!("{at}[0]"))?,
+                    number(y, &format!("{at}[1]"))?,
+                );
+            }
+        }
+        _ => {
+            return Err(format!(
+                "{at}: expected a list of {KEG_PIECES} [across, up]"
+            ));
+        }
+    }
+    Ok(pieces)
 }
 
 /// Reads a hidden object's values. Errors start with `path`.

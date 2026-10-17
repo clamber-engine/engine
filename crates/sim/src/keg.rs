@@ -41,17 +41,24 @@ use crate::player::{State, ceil};
 use crate::pose;
 use crate::world::{Event, Phase, World};
 
-/// The pieces and the flash left where a keg broke or burst.
+/// The pieces and the flash left where a keg broke or burst, or where
+/// an entrance burst.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Burst {
-    /// The keg's thing, whose values it moves by.
-    pub keg: usize,
+    /// The thing that burst.
+    pub thing: usize,
     /// Frames since it broke, from 0 on the frame it did.
     pub frame: u8,
     pub pieces: [Vec2; KEG_PIECES],
     /// Each piece's speed, px per frame, +y down.
     pub speeds: [Vec2; KEG_PIECES],
     pub flash: Vec2,
+    /// What the pieces' speed down grows by each frame.
+    pub gravity: Fixed,
+    /// How far the flash rises each frame.
+    pub rise: Fixed,
+    /// How many frames it lasts.
+    pub time: u8,
 }
 
 /// Play resuming at a keg's restart point, from the step the player comes
@@ -78,12 +85,31 @@ fn keg(world: &World, index: usize) -> Option<Keg> {
 
 impl Burst {
     fn new(keg: usize, at: Vec2, values: &Keg) -> Burst {
-        Burst {
+        Burst::of(
             keg,
+            at,
+            values.pieces,
+            (values.piece_gravity, values.flash_rise, values.burst_time),
+        )
+    }
+
+    /// A burst of `thing` at `at` into `pieces`, each `[across, up]`,
+    /// that moves by `(gravity, rise, time)`.
+    pub(crate) fn of(
+        thing: usize,
+        at: Vec2,
+        pieces: [Vec2; KEG_PIECES],
+        (gravity, rise, time): (Fixed, Fixed, u8),
+    ) -> Burst {
+        Burst {
+            thing,
             frame: 0,
             pieces: [at; KEG_PIECES],
-            speeds: values.pieces.map(|p| Vec2::new(p.x, -p.y)),
+            speeds: pieces.map(|p| Vec2::new(p.x, -p.y)),
             flash: at,
+            gravity,
+            rise,
+            time,
         }
     }
 }
@@ -183,21 +209,16 @@ pub(crate) fn touch(world: &mut World) {
 
 /// Moves the bursts on a step, and forgets the ones whose time is up.
 pub(crate) fn bursts(world: &mut World) {
-    let mut bursts = std::mem::take(&mut world.bursts);
-    bursts.retain_mut(|b| {
-        let Some(keg) = keg(world, b.keg) else {
-            return false;
-        };
+    world.bursts.retain_mut(|b| {
         b.frame = b.frame.saturating_add(1);
         for (piece, speed) in b.pieces.iter_mut().zip(&mut b.speeds) {
             piece.x += speed.x;
             piece.y += speed.y;
-            speed.y += keg.piece_gravity;
+            speed.y += b.gravity;
         }
-        b.flash.y -= keg.flash_rise;
-        b.frame < keg.burst_time
+        b.flash.y -= b.rise;
+        b.frame < b.time
     });
-    world.bursts = bursts;
 }
 
 /// On the step the player comes back after a lost life: if the restart

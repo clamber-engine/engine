@@ -12,6 +12,7 @@ use crate::carry::{self, Flight};
 use crate::collect;
 use crate::dimming::{self, Dimming};
 use crate::ending::{self, Ending};
+use crate::entrance::{self, Entering};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
 use crate::follow::{self, Lead, Mode};
 use crate::join::{self, Join};
@@ -204,8 +205,12 @@ pub struct World {
     /// Play resuming inside a keg, until the player is in play and the
     /// picture has faded in.
     pub resume: Option<Resume>,
-    /// The pieces and flashes of kegs that broke or burst.
+    /// The pieces and flashes of kegs that broke or burst, and of the
+    /// entrance.
     pub bursts: Vec<Burst>,
+    /// The characters entering the level, if it has an entrance, until
+    /// they're in play and the picture has faded in.
+    pub entering: Option<Entering>,
     /// Frames the whole game should stand still after the last step
     /// before the next, as during a knock-out. Whatever runs the world in
     /// real time holds the screen for them; they aren't steps, and a
@@ -286,6 +291,7 @@ impl World {
                 thing.active &= spot.is_none();
             }
         }
+        let entering = entrance::begin(&things);
         Ok(World {
             level,
             feel,
@@ -306,6 +312,7 @@ impl World {
             placing,
             resume: None,
             bursts: Vec::new(),
+            entering,
             pause: 0,
         })
     }
@@ -590,12 +597,20 @@ impl World {
         }
         count(&mut out, self.bursts.len());
         for b in &self.bursts {
-            count(&mut out, b.keg);
+            count(&mut out, b.thing);
             out.push(b.frame);
             for v in b.pieces.iter().chain(&b.speeds) {
                 vec2(&mut out, *v);
             }
             vec2(&mut out, b.flash);
+        }
+        match self.entering {
+            Some(e) => {
+                out.push(1);
+                count(&mut out, e.entrance);
+                out.push(e.landed.into());
+            }
+            None => out.push(0),
         }
         out.push(self.pause);
         out.extend(f.gems.to_le_bytes());
@@ -938,8 +953,9 @@ pub fn step(world: &mut World, input: &InputFrame) {
         world.frame += 1;
         return;
     }
-    if keg::hold(world) {
-        // Everything waits while the player is in the keg.
+    if keg::hold(world) || entrance::hold(world) {
+        // Everything waits while the player is in the keg or the
+        // entrance.
         world.frame += 1;
         return;
     }
@@ -951,7 +967,8 @@ pub fn step(world: &mut World, input: &InputFrame) {
         view::walkers(world, at, true);
     }
     let physics = world.player_physics();
-    let previous_feet = world.player.pos.y;
+    let start_pos = world.player.pos;
+    let previous_feet = start_pos.y;
     let frozen = world.player.frozen > 0;
     // Nothing follows on the frames the player is held still.
     if !frozen && follow::due(world) == Some(true) {
@@ -973,6 +990,8 @@ pub fn step(world: &mut World, input: &InputFrame) {
             .filter(|_| world.swap.is_none() && !world.protected() && !world.losing());
         if hurt_by.is_some() {
             world.player.hit(&mut world.events);
+        } else if entrance::throw(world, &input.players[0]) {
+            // Thrown out of the entrance, the player moves by its rules.
         } else if loss::update(world) {
             // The loss moves the characters.
         } else if ride::unseat(world) {
@@ -1002,6 +1021,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
     if !frozen && follow::due(world).is_some() {
         follow::note(world);
     }
+    entrance::after(world, start_pos);
     if let Some(at) = view_at {
         view::walkers(world, at, false);
     }

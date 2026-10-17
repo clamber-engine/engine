@@ -308,9 +308,14 @@ impl Game {
 
     /// The other character, if there is one, as the player is drawn: in
     /// the swap state during a swap, idle otherwise. Not while the player
-    /// waits in a keg.
+    /// waits in a keg, or it waits in the entrance.
     fn draw_other(&self, canvas: &mut dyn Surface, alpha: f64, origin: (f64, f64)) {
-        let Some(other) = self.world.other.as_ref().filter(|_| !self.world.in_keg()) else {
+        let Some(other) = self
+            .world
+            .other
+            .as_ref()
+            .filter(|_| !self.world.in_keg() && !self.world.other_in_entrance())
+        else {
             return;
         };
         let previous = self.previous_other.unwrap_or(other.pos);

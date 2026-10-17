@@ -20,6 +20,9 @@
 //! Touching a restart barrel breaks it and makes it where play resumes
 //! after a lost life, inside one ([`Keg`], [`Resume`]).
 //!
+//! When a level with an entrance begins, the characters wait hidden in
+//! it until it bursts and throws them out ([`Entering`]).
+//!
 //! A hidden object isn't drawn and does nothing until the ground action
 //! strikes it or the player lands on it after a long fall; it then
 //! releases an item that becomes a bunch or a barrel ([`HIDDEN`]).
@@ -54,6 +57,7 @@ mod collect;
 mod columns;
 mod dimming;
 mod ending;
+mod entrance;
 mod flow;
 mod follow;
 mod hidden;
@@ -79,7 +83,7 @@ mod world;
 
 pub use archetype::{
     AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
-    Fall, HIDDEN_ITEMS, Hidden, Hit, Holder, Hutch, KEG_PIECES, Keg, MAX_AIR_STEPS,
+    Entrance, Fall, HIDDEN_ITEMS, Hidden, Hit, Holder, Hutch, KEG_PIECES, Keg, MAX_AIR_STEPS,
     MAX_ARRIVE_RULES, MAX_HOP_STEPS, MAX_LETTERS, MAX_RESPONSE_PARTS, MAX_SHAKE_STAGES,
     MAX_SPRING_RUNS, MAX_STRIKE_FRAMES, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Ride,
     RiderReach, Rope, Span, Spring, Stinger, Throw, WalkerContact,
@@ -89,6 +93,7 @@ pub use clamber_fixed::Fixed;
 pub use collect::{LetterRow, Release};
 pub use dimming::{DIM, Dimming};
 pub use ending::{END, Ending};
+pub use entrance::Entering;
 pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };
