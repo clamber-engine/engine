@@ -245,7 +245,6 @@ impl World {
             .then(|| Other::new(1, player.pos, player.facing, player.pos));
         let archetypes = Archetypes::builtin();
         let physics = feel.roster[0].physics;
-        let view = view::enabled(&physics).then(|| View::settled(&player, &level, &physics));
         let mut things: Vec<Thing> = level
             .entities
             .iter()
@@ -277,6 +276,13 @@ impl World {
                 })
             })
             .collect::<Result<_, _>>()?;
+        // A level with an entrance begins as an area does (view.md, "When
+        // an area begins"); the view starts settled on the lead otherwise.
+        let entering = entrance::begin(&things);
+        let view = view::enabled(&physics).then(|| match entering {
+            Some(_) => View::begun(&player, &level, &physics),
+            None => View::settled(&player, &level, &physics),
+        });
         // With a view, walkers whose start is near it are in the level as
         // placed, and the others appear later. Things in sections appear
         // from the first step.
@@ -295,7 +301,6 @@ impl World {
                 thing.active &= spot.is_none();
             }
         }
-        let entering = entrance::begin(&things);
         Ok(World {
             level,
             feel,
@@ -1018,9 +1023,15 @@ pub fn step(world: &mut World, input: &InputFrame) {
         world.frame += 1;
         return;
     }
+    let begin = entrance::view_begin(world);
     if keg::hold(world) || entrance::hold(world) {
         // Everything waits while the player is in the keg or the
-        // entrance.
+        // entrance, but the view from frame 1 when it begins as an area
+        // does.
+        let physics = world.player_physics();
+        if world.frame > 0 && physics[Param::ViewBeginBack] > Fixed::ZERO {
+            view::update(world, begin);
+        }
         world.frame += 1;
         return;
     }
@@ -1091,7 +1102,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
     if let Some(at) = view_at {
         view::walkers(world, at, false);
     }
-    view::update(world);
+    view::update(world, begin);
     carry::after(world, &input.players[0]);
     keg::after(world);
     collect::update(world, true, start_view);

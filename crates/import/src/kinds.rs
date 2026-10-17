@@ -47,6 +47,9 @@ pub enum Kind {
     Tyre,
     /// A sign: scenery that nothing touches (`signs.md`).
     Sign,
+    /// A small flying creature: scenery that nothing touches
+    /// (`critter.md`).
+    Critter,
     /// A hidden object the ground action strikes, releasing a bunch.
     HiddenBunch,
     /// A hidden object a long fall sets off, releasing a barrel.
@@ -56,7 +59,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 24] = [
+    pub const ALL: [Kind; 25] = [
         Kind::SmallWalker,
         Kind::MediumWalker,
         Kind::LargeWalker,
@@ -78,6 +81,7 @@ impl Kind {
         Kind::Stinger,
         Kind::Tyre,
         Kind::Sign,
+        Kind::Critter,
         Kind::HiddenBunch,
         Kind::HiddenBarrel,
         Kind::HiddenMetalBarrel,
@@ -107,6 +111,7 @@ impl Kind {
             Kind::Stinger => "stinger",
             Kind::Tyre => "tyre",
             Kind::Sign => "sign",
+            Kind::Critter => "critter",
             Kind::HiddenBunch => "hidden-bunch",
             Kind::HiddenBarrel => "hidden-barrel",
             Kind::HiddenMetalBarrel => "hidden-metal-barrel",
@@ -200,6 +205,10 @@ impl Kind {
             // signs.md: it has no values of its own. How it's drawn isn't
             // covered, so both of the first level's signs look the same.
             Kind::Sign => "signpost",
+            // critter.md: it does nothing to play, and how it flies and
+            // where it appears aren't covered, so it's placed as an
+            // entity that nothing acts on and that isn't drawn.
+            Kind::Critter => CRITTER,
             // hidden-objects.md: a hidden bunch's values are the
             // archetype's own.
             Kind::HiddenBunch => HIDDEN,
@@ -271,6 +280,9 @@ pub const ENTRANCE: &str = "entrance";
 /// The kind of entity an exit is.
 pub const EXIT: &str = "exit";
 
+/// The kind of entity a critter is: no archetype's.
+pub const CRITTER: &str = "critter";
+
 /// The archetype restart barrels are.
 pub const KEG: &str = "keg";
 
@@ -334,6 +346,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "253004ec8ef2f867d9bacc7dcc6abeb4fa4ae6dc86d98336db33c32e11196e3a",
                 Kind::Stinger,
+            ),
+            (
+                "26aa21923dc163f0796ba72d954e879c23f92cf083e3cb766cb697fa3a8ada1e",
+                Kind::Critter,
             ),
             (
                 "2c3d3e307d2fe5c18345e8308e49c7922732a9ec006ad6cd67900634117da740",
@@ -604,7 +620,7 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 44);
+        assert_eq!(want.len(), 45);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }
@@ -622,8 +638,8 @@ mod tests {
                 assert_eq!(name, END);
                 continue;
             }
-            if kind == Kind::Exit {
-                assert_eq!(name, EXIT);
+            if kind == Kind::Exit || kind == Kind::Critter {
+                assert!([EXIT, CRITTER].contains(&name), "{kind}");
                 assert!(!Archetypes::builtin().names().any(|n| n == name));
                 continue;
             }

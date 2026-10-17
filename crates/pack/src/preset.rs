@@ -579,6 +579,11 @@ mod tests {
                     | Param::ViewShare
                     | Param::ViewSpeedShare
                     | Param::ViewHold
+                    | Param::ViewNearLeft
+                    | Param::ViewBeginBack
+                    | Param::ViewBeginBackFar
+                    | Param::ViewBeginFar
+                    | Param::ViewFastSpeedShare
                     | Param::EndStop
                     | Param::ViewHeight
                     | Param::ViewFeet

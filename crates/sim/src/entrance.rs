@@ -20,7 +20,11 @@
 //! - Only a level's first entrance acts; a level without one begins
 //!   with the characters in play at the start point.
 //! - Up to and including the throw's frame, everything else waits too,
-//!   as while the player is in a keg. The view doesn't move.
+//!   as while the player is in a keg, but the view.
+//!
+//! With `view_begin_back` above 0 the view starts and follows as when an
+//! area begins ([`view_begin`]); otherwise it starts settled on the lead
+//! and doesn't move up to the throw's frame.
 //! - The other character is drawn from the frame after the throw's.
 //! - The burst's pieces and flash move as a keg's do, by the entrance's
 //!   own values.
@@ -35,11 +39,13 @@ use std::collections::VecDeque;
 use clamber_fixed::Fixed;
 use clamber_input::Frame;
 use clamber_level::Vec2;
+use clamber_pack::Param;
 
 use crate::archetype::{Behavior, Entrance};
 use crate::follow::{Follow, point};
 use crate::keg::Burst;
-use crate::player::{Facing, State};
+use crate::player::{Facing, State, frames};
+use crate::view::Begin;
 use crate::world::{Phase, Thing, World};
 
 /// The characters entering the level, from its first frame until the
@@ -97,6 +103,38 @@ impl World {
             .checked_sub(1)
             .map_or(0, |f| f / u32::from(v.fade_step));
         (now < full).then_some((now, full))
+    }
+}
+
+/// How the view follows on this frame while the characters enter, with
+/// `view_begin_back` above 0 (view.md, "When an area begins"): up to the
+/// throw's frame with `view_begin_back` in place of the back and facing
+/// parts, and from the frame after until the lead lands with
+/// `view_begin_back_far`, quickly from `view_begin_far` frames after the
+/// throw's. To be taken before the frame's step changes the entering.
+pub(crate) fn view_begin(world: &World) -> Begin {
+    let Some((e, v)) = entering(world) else {
+        return Begin::default();
+    };
+    let physics = world.player_physics();
+    let back = physics[Param::ViewBeginBack];
+    if e.landed || back <= Fixed::ZERO {
+        return Begin::default();
+    }
+    let Some(since) = world
+        .frame
+        .checked_sub(u32::from(v.throw))
+        .filter(|&n| n > 0)
+    else {
+        return Begin {
+            back: Some(back),
+            fast: 0,
+        };
+    };
+    let far = u32::from(frames(physics[Param::ViewBeginFar]));
+    Begin {
+        back: Some(physics[Param::ViewBeginBackFar]),
+        fast: since.saturating_sub(far),
     }
 }
 

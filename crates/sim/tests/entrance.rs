@@ -235,3 +235,34 @@ fn without_an_entrance_play_starts_at_once() {
     step(&mut w, &InputFrame::single(Frame::default()));
     assert!(w.player.pos.y > Fixed::from_int(300));
 }
+
+/// view.md, "When an area begins", example (c): the view through the
+/// level's start, with nothing held.
+#[test]
+fn the_view_follows_the_entrance_as_the_example() {
+    let mut play = Play::new(1);
+    let rows: [(u32, f64, i32); 16] = [
+        (0, 20.5, 0),
+        (1, 20.5, -16),
+        (2, 20.5, -30),
+        (50, 20.13671875, -50),
+        (51, 20.35546875, 1807),
+        (52, 20.59375, 1965),
+        (56, 21.84375, 3019),
+        (57, 22.375, 4377),
+        (58, 23.01953125, 5292),
+        (60, 24.5390625, 6522),
+        (61, 26.24609375, 7000),
+        (66, 35.65625, 8039),
+        (67, 39.63671875, 8159),
+        (70, 50.953125, 7430),
+        (71, 57.8984375, 7113),
+        (80, 92.01953125, 2489),
+    ];
+    for (frame, v, s) in rows {
+        play.until(frame, &[]);
+        let view = play.world.view.unwrap();
+        assert_eq!(view.left.to_f64(), v, "frame {frame}");
+        assert_eq!(view.speed.to_f64() * 8192.0, f64::from(s), "frame {frame}");
+    }
+}

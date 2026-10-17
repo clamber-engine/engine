@@ -11,8 +11,10 @@
 //!
 //! After a lost life with a keg's restart point reached, play resumes
 //! there inside one ([`Resume`]): the step the player comes back on is
-//! frame 0, with the player at the restart point and the view's left edge
-//! the keg's `view_back` left of it. From frame 1 the player is `lift`
+//! frame 0, with the player at the restart point and the view where it
+//! starts when an area begins (or the keg's `view_back` left of it).
+//! With `view_begin_back` above 0 the view follows as usual from frame
+//! 1, also while the player is in the keg. From frame 1 the player is `lift`
 //! higher, inside the keg, and not drawn. The keg shakes, and bursts on
 //! frame `burst` as when broken; from the frame after, the player is in
 //! the air and in play, falling as any fall does, except that a jump can
@@ -39,6 +41,7 @@ use crate::archetype::{Behavior, KEG_PIECES, Keg};
 use crate::flow::{FlowEvent, Outcome};
 use crate::player::{State, ceil};
 use crate::pose;
+use crate::view;
 use crate::world::{Event, Phase, World};
 
 /// The pieces and the flash left where a keg broke or burst, or where
@@ -223,7 +226,10 @@ pub(crate) fn bursts(world: &mut World) {
 
 /// On the step the player comes back after a lost life: if the restart
 /// point reached is a keg's, play resumes inside one, with the view
-/// `view_back` left of it.
+/// where it starts when an area begins ([`View::begun`]), or without
+/// `view_begin_back` the keg's `view_back` left of it.
+///
+/// [`View::begun`]: crate::View::begun
 pub(crate) fn begin(world: &mut World) {
     let Some(&index) = world.flow.checkpoints.last() else {
         return;
@@ -238,8 +244,9 @@ pub(crate) fn begin(world: &mut World) {
         at,
         landed: false,
     });
+    let physics = world.player_physics();
     if let Some(view) = &mut world.view {
-        view.left = at.x - keg.view_back;
+        view.left = view::begin_left(at.x, &world.level, &physics).unwrap_or(at.x - keg.view_back);
     }
 }
 

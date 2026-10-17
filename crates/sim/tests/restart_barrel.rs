@@ -169,7 +169,8 @@ fn play_resumes_inside_a_keg_at_the_restart_point() {
     play.touch_and_fall_out();
     let w = &play.world;
     assert_eq!(w.player.pos, Vec2::ints(1000, 400));
-    assert_eq!(w.view.unwrap().x(), 921);
+    // view.md, "When an area begins": `V` = 921.5 on frame 0.
+    assert_eq!(w.view.unwrap().left, f(921.5));
     assert_eq!(w.brightness().0, 0);
     assert!(w.resume_keg().is_none());
 
@@ -179,7 +180,12 @@ fn play_resumes_inside_a_keg_at_the_restart_point() {
         assert_eq!(play.y(), 391.4375, "frame {frame}");
         assert_eq!(w.player.pos.x, f(1000.0));
         assert!(!w.player_drawn() && w.in_keg(), "frame {frame}");
-        assert_eq!(w.view.unwrap().x(), 921);
+        if frame == 1 {
+            // The usual rules from frame 1, inside the keg too: the
+            // target 929 is 7.5 px ahead, so `S` = 240/8192 and `V`
+            // moves by 7/256.
+            assert_eq!(w.view.unwrap().left, f(921.5 + 7.0 / 256.0));
+        }
         assert_eq!(w.resume_keg().is_some(), frame < 62, "frame {frame}");
         assert_eq!(!w.bursts.is_empty(), frame == 62, "frame {frame}");
         let dark = w.brightness().0 == 0;

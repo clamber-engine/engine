@@ -18,6 +18,19 @@
 //! - On a step on which the player defeats an enemy by bouncing or
 //!   rolling, and for `view_hold` steps in all counting that one, the
 //!   view doesn't move.
+//! - With `view_near_left` above 0, while the player's `x` rounded down
+//!   is less than it less the speed part, the target is 1 px further
+//!   left.
+//!
+//! With `view_begin_back` above 0, the view starts when an area begins
+//! on the target of a lead standing still with `view_begin_back` in
+//! place of `view_back` (whatever the facing), kept inside the picture's
+//! ends, plus 1/2 px ([`View::begun`]): at the level's start, on
+//! resuming in a keg and on walking in. While the characters are in the
+//! level's entrance, the target has `view_begin_back` in place of the
+//! back and facing parts, and from the throw until the lead lands
+//! `view_begin_back_far`; from `view_begin_far` frames after the throw
+//! until the landing the view follows quickly ([`Begin`]).
 //!
 //! With `view_height` above 0, the view's top also follows the player,
 //! after it has moved:
@@ -45,8 +58,8 @@
 //!   `view_shake_size` down and halving after each pair. The smoothed gap
 //!   isn't changed by them.
 //!
-//! The view starts, and starts again when the player comes back after
-//! losing a life, on its target for a player standing still. It isn't
+//! Otherwise the view starts, and starts again when the player comes
+//! back after losing a life, on its target for a player standing still. It isn't
 //! kept inside the level horizontally, but with `end_stop` above 0 the
 //! picture is (level-ends.md): its left edge, [`View::x`], is the view's
 //! rounded down and kept between the level-wide camera limits' left and
@@ -81,6 +94,23 @@ pub const Y_GRAIN: Fixed = Fixed::from_ratio_pow2(1, 8);
 /// How far below its aim, kept inside the limits, the view's top aims.
 const AIM_BELOW: Fixed = Fixed::from_ratio_pow2(1, 1);
 
+/// How fast frames multiply the view's speed: on the `k`-th fast frame in
+/// a row, by `m` while `k` is at most `upto`, and by [`FAST_LAST`] after
+/// these.
+const FAST_TIMES: [(u32, i64); 3] = [(4, 1), (10, 2), (14, 4)];
+const FAST_LAST: i64 = 8;
+
+/// How the view follows on one frame: as usual, or as when an area
+/// begins (view.md, "When an area begins").
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Begin {
+    /// What the target has in place of the back and the facing parts,
+    /// whatever the facing, if anything.
+    pub back: Option<Fixed>,
+    /// The `k`-th fast frame in a row, or 0 on a frame that isn't fast.
+    pub fast: u32,
+}
+
 /// The view's state.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct View {
@@ -103,6 +133,18 @@ pub struct View {
 }
 
 impl View {
+    /// The view on an area's first frame with `player` the lead: with
+    /// `view_begin_back` above 0, on the target for it standing still
+    /// with that in place of the back and facing parts, kept inside the
+    /// picture's ends, plus 1/2 px; otherwise [`View::settled`].
+    pub fn begun(player: &Player, level: &Level, physics: &Physics) -> View {
+        let mut view = View::settled(player, level, physics);
+        if let Some(left) = begin_left(player.pos.x, level, physics) {
+            view.left = left;
+        }
+        view
+    }
+
     /// A view settled on `player`, as if it were standing still on the
     /// ground.
     pub fn settled(player: &Player, level: &Level, physics: &Physics) -> View {
@@ -116,7 +158,7 @@ impl View {
             Fixed::ZERO
         };
         View {
-            left: target(&still, physics),
+            left: target(&still, physics, None),
             speed: Fixed::ZERO,
             hold: 0,
             top,
@@ -141,9 +183,16 @@ impl View {
         self.top.floor()
     }
 
-    /// One step of following `player`. `defeated` says the player
-    /// defeated an enemy by bouncing or rolling on this step.
-    fn follow(&mut self, player: &Player, level: &Level, physics: &Physics, defeated: bool) {
+    /// One step of following `player`, as `begin` says. `defeated` says
+    /// the player defeated an enemy by bouncing or rolling on this step.
+    fn follow(
+        &mut self,
+        player: &Player,
+        level: &Level,
+        physics: &Physics,
+        defeated: bool,
+        begin: Begin,
+    ) {
         self.shake = if player.ground_action.is_some_and(|a| a.frame == 0) {
             Some(0)
         } else {
@@ -167,12 +216,16 @@ impl View {
         if vertical(physics) {
             self.follow_y(player, level, physics);
         }
-        let gap = target(player, physics) - self.left;
+        let gap = target(player, physics, begin.back) - self.left;
         let aim = div_floor(gap, whole(physics[Param::ViewShare]));
-        let step = div_floor(aim - self.speed, whole(physics[Param::ViewSpeedShare]));
+        let (share, times) = match begin.fast {
+            0 => (Param::ViewSpeedShare, 1),
+            k => (Param::ViewFastSpeedShare, fast_times(k)),
+        };
+        let step = div_floor(aim - self.speed, whole(physics[share]));
         self.speed = round_down(self.speed + step, SPEED_GRAIN);
         let grain = POS_GRAIN.to_bits();
-        let moved = self.speed.to_bits() / grain * grain;
+        let moved = self.speed.to_bits() * times / grain * grain;
         self.left += Fixed::from_bits(moved);
     }
 
@@ -275,16 +328,48 @@ fn limit(aim: i64, player: &Player, level: &Level, physics: &Physics) -> (Fixed,
     (aim + AIM_BELOW, rule.quick == Some(true))
 }
 
-/// Where the view's left edge aims for `player`.
-fn target(player: &Player, physics: &Physics) -> Fixed {
+/// Where the view's left edge aims for `player`, with `back` in place of
+/// the back and facing parts if it's given.
+fn target(player: &Player, physics: &Physics, back: Option<Fixed>) -> Fixed {
     let vx = player.vel.x;
     let facing = shares(vx.abs(), physics[Param::ViewLeadFacing], false);
-    let (back, facing) = match player.facing {
-        Facing::Right => (physics[Param::ViewBack], facing),
-        Facing::Left => (physics[Param::ViewBackLeft], -facing),
+    let (back, facing) = match (back, player.facing) {
+        (Some(back), _) => (back, 0),
+        (None, Facing::Right) => (physics[Param::ViewBack], facing),
+        (None, Facing::Left) => (physics[Param::ViewBackLeft], -facing),
     };
     let speed = shares(vx, physics[Param::ViewLeadSpeed], true);
-    player.pos.x - back + Fixed::from_int((facing + speed) as i32)
+    let near = physics[Param::ViewNearLeft].floor();
+    let near_left = i64::from(near > 0 && player.pos.x.floor() < near - speed);
+    player.pos.x - back + Fixed::from_int((facing + speed - near_left) as i32)
+}
+
+/// Where the view's left edge starts on an area's first frame with the
+/// lead at `x`, with `view_begin_back` above 0: `view_begin_back` left of
+/// `x` rounded down, 1 px further left from 0 to `view_near_left` less 1,
+/// kept inside the picture's ends, plus 1/2 px.
+pub(crate) fn begin_left(x: Fixed, level: &Level, physics: &Physics) -> Option<Fixed> {
+    let back = physics[Param::ViewBeginBack].floor();
+    if back <= 0 {
+        return None;
+    }
+    let w = x.floor();
+    let near = physics[Param::ViewNearLeft].floor();
+    let mut t = w - back - i64::from((0..near).contains(&w));
+    if let Some((left, right)) = ends(level, physics) {
+        t = t.clamp(left, right);
+    }
+    let t = Fixed::from_int(i32::try_from(t).unwrap_or(i32::MAX));
+    Some(t + Fixed::from_ratio_pow2(1, 1))
+}
+
+/// What the view's speed is multiplied by on the `k`-th fast frame in a
+/// row.
+fn fast_times(k: u32) -> i64 {
+    FAST_TIMES
+        .iter()
+        .find(|&&(upto, _)| k <= upto)
+        .map_or(FAST_LAST, |&(_, m)| m)
 }
 
 /// `v` times `factor` in whole px, each binary digit of `factor` taking
@@ -351,8 +436,9 @@ pub(crate) fn enabled(physics: &Physics) -> bool {
     physics[Param::ViewWidth] > Fixed::ZERO
 }
 
-/// Moves the view after the player has, if there is one.
-pub(crate) fn update(world: &mut World) {
+/// Moves the view after the player has, if there is one, as `begin`
+/// says.
+pub(crate) fn update(world: &mut World, begin: Begin) {
     let physics = world.player_physics();
     let defeated = world
         .flow
@@ -360,7 +446,7 @@ pub(crate) fn update(world: &mut World) {
         .iter()
         .any(|e| matches!(e, FlowEvent::Defeat(_)));
     if let Some(view) = &mut world.view {
-        view.follow(&world.player, &world.level, &physics, defeated);
+        view.follow(&world.player, &world.level, &physics, defeated, begin);
     }
 }
 
@@ -639,8 +725,9 @@ mod tests {
     fn leads_by_facing_and_speed() {
         // spec/behavior/view.md, "The target": lead for some speeds.
         let physics = physics();
-        let lead =
-            |vx: f64, facing| (target(&player(1000.0, vx, facing), &physics) - fx(1000.0)).floor();
+        let lead = |vx: f64, facing| {
+            (target(&player(1000.0, vx, facing), &physics, None) - fx(1000.0)).floor()
+        };
         let right = [
             (0.0, -71),
             (0.0625, -69),
@@ -663,6 +750,40 @@ mod tests {
         }
     }
 
+    #[test]
+    fn leads_1_px_less_near_the_left_end() {
+        // view.md, "Near the left end": standing still below 128, and
+        // running right at 3 px per frame (speed part 72) below 56.
+        let physics = physics();
+        let lead = |x: f64, vx: f64| {
+            (target(&player(x, vx, Facing::Right), &physics, None) - fx(x)).floor()
+        };
+        assert_eq!(lead(127.75, 0.0), -72);
+        assert_eq!(lead(128.0, 0.0), -71);
+        assert_eq!(lead(55.5, 3.0), 19 - 1);
+        assert_eq!(lead(56.0, 3.0), 19);
+        // In place of the back and facing parts, as when an area begins.
+        let begin = |x: f64| target(&player(x, 0.0, Facing::Left), &physics, Some(fx(79.0)));
+        assert_eq!(begin(100.0), fx(20.0));
+        assert_eq!(begin(1000.0), fx(921.0));
+    }
+
+    #[test]
+    fn begins_79_left_of_the_lead_plus_a_half() {
+        // view.md, "When an area begins", frame 0.
+        let physics = physics();
+        let left = |x: f64| begin_left(fx(x), &level(), &physics).unwrap();
+        assert_eq!(left(1000.75), fx(921.5));
+        assert_eq!(left(128.0), fx(49.5));
+        assert_eq!(left(127.5), fx(47.5));
+        // Kept inside the picture's ends: `A` = 0 here.
+        assert_eq!(left(24.0), fx(0.5));
+        assert_eq!(fast_times(1), 1);
+        assert_eq!(fast_times(5), 2);
+        assert_eq!(fast_times(14), 4);
+        assert_eq!(fast_times(15), 8);
+    }
+
     /// Steps a view settled on a player standing at 1000 facing right
     /// with the player moved by `at` before each step, checking the
     /// view's left edge and speed (in 1/8192 px per frame) after the
@@ -675,7 +796,7 @@ mod tests {
         let mut rows = expected.iter();
         let mut next = rows.next();
         for frame in 1..=last {
-            view.follow(&at(frame), &level(), &physics, false);
+            view.follow(&at(frame), &level(), &physics, false, Begin::default());
             if let Some(&(f, left, speed)) = next
                 && f == frame
             {
@@ -734,10 +855,10 @@ mod tests {
         let moved = player(1100.0, 0.0, Facing::Right);
         let mut moved_down = moved.clone();
         moved_down.pos.y = fx(300.0);
-        view.follow(&moved_down, &level, &physics, true);
-        view.follow(&moved_down, &level, &physics, false);
+        view.follow(&moved_down, &level, &physics, true, Begin::default());
+        view.follow(&moved_down, &level, &physics, false, Begin::default());
         assert_eq!((view.left, view.top), (fx(929.0), top));
-        view.follow(&moved_down, &level, &physics, false);
+        view.follow(&moved_down, &level, &physics, false, Begin::default());
         assert!(view.left > fx(929.0));
         assert!(view.top > top);
     }
@@ -768,7 +889,7 @@ mod tests {
         let mut rows = expected.iter();
         let mut next = rows.next();
         for frame in 1..=last {
-            view.follow(&at(frame), level, &physics, false);
+            view.follow(&at(frame), level, &physics, false, Begin::default());
             if let Some(&(f, top, gap)) = next
                 && f == frame
             {
@@ -880,7 +1001,13 @@ mod tests {
         let settled = View::settled(&at_feet(400, 0, true), &level, &physics);
         let gap = |feet| {
             let mut view = settled;
-            view.follow(&at_feet(feet, 0, true), &level, &physics, false);
+            view.follow(
+                &at_feet(feet, 0, true),
+                &level,
+                &physics,
+                false,
+                Begin::default(),
+            );
             view.gap.to_bits() >> (FRAC_BITS - 8)
         };
         assert_eq!(gap(240 + 47), -160 * 256 / 16);
@@ -903,7 +1030,13 @@ mod tests {
         assert_eq!(settled(150, &ground("")), fx(0.5), "kept inside the level");
         // From 240.5, the aim is 176.5: 64 px up, at the quick rates.
         let mut view = View::settled(&at_feet(400, 0, true), &ground(""), &physics);
-        view.follow(&at_feet(368, 0, true), &level, &physics, false);
+        view.follow(
+            &at_feet(368, 0, true),
+            &level,
+            &physics,
+            false,
+            Begin::default(),
+        );
         assert_eq!(view.gap.to_bits() >> (FRAC_BITS - 8), -64 * 256 / 8);
     }
 

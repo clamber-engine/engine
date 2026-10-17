@@ -47,7 +47,7 @@ use crate::follow::{self, Lead};
 use crate::loss;
 use crate::player::{Crouch, Facing, Player, State, frames};
 use crate::things;
-use crate::view;
+use crate::view::{self, Begin};
 use crate::world::{Event, World};
 
 /// The kind of entity that takes the lead out of the area.
@@ -185,7 +185,7 @@ pub(crate) fn step(world: &mut World) {
         view::walkers(world, at, false);
     }
     if leaving.fade.is_none() {
-        view::update(world);
+        view::update(world, Begin::default());
     }
     carry::after(world, &none);
     collect::update(world, false, start_view);

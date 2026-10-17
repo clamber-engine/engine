@@ -1133,6 +1133,29 @@ params! {
     /// Frames the view holds still, counting the frame, when the player
     /// defeats an enemy by bouncing or rolling. Whole frames.
     ViewHold => "view_hold",
+    /// Above 0, the view aims 1 px further left while the player's `x`
+    /// rounded down is less than this less the speed part of its aim
+    /// (`view_lead_speed`). Whole px.
+    ViewNearLeft => "view_near_left",
+    /// Above 0, the view starts this far left of the lead when an area
+    /// begins, as it aims for a lead standing still with this in place
+    /// of `view_back` (see `clamber_sim::View`), kept inside the
+    /// picture's ends, plus 1/2 px. While the characters are in the
+    /// level's entrance it aims with this in place of `view_back` and
+    /// the facing part, whatever the facing. Whole px.
+    ViewBeginBack => "view_begin_back",
+    /// After the lead is thrown out of the entrance, the view aims with
+    /// this in place of `view_back` and the facing part until it lands.
+    /// Whole px.
+    ViewBeginBackFar => "view_begin_back_far",
+    /// From this many frames after the throw's until the lead lands, the
+    /// view follows quickly: its speed closes the gap divided by
+    /// `view_fast_speed_share` instead, and it moves by a growing
+    /// multiple of its speed. Whole frames.
+    ViewBeginFar => "view_begin_far",
+    /// What the view's speed closes the gap to its aim by on those
+    /// frames. Whole frames.
+    ViewFastSpeedShare => "view_fast_speed_share",
     /// Above 0, with a view, the picture is kept inside the level's
     /// camera limits across, and the player is stopped this far inside
     /// the range it can show at the level's left and right ends: a move
