@@ -5,7 +5,7 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_sim::{
-    Event, Facing, Fixed, FlowEvent, InputFrame, LAUNCH_REST, Outcome, Phase, Roll, RollSize,
+    Air, Event, Facing, Fixed, FlowEvent, InputFrame, LAUNCH_REST, Outcome, Phase, Roll, RollSize,
     START_LIVES, State, World, generic_feel, step,
 };
 
@@ -697,15 +697,14 @@ fn large_walker(x: &str, speed: &str, facing: &str) -> String {
 }
 
 /// A walker as in walker-contact.md's medium walker, with the size and
-/// offset the classic-1 bounce and hurt boxes go with, and the lift late
-/// in a jump that keeps it from hurting from U = 0 up.
+/// offset the classic-1 bounce and hurt boxes go with.
 fn medium_walker(x: &str, speed: &str, facing: &str) -> String {
     format!(
         r#"
         [[entities]]
         type = "crawler"
         at = [{x}, 400]
-        params = {{ speed = {speed}, facing = "{facing}", size = [25, 25], offset = 5, hurt_jump_lift = 25, {CLASSIC_WALKER} }}
+        params = {{ speed = {speed}, facing = "{facing}", size = [25, 25], offset = 5, {CLASSIC_WALKER} }}
         "#
     )
 }
@@ -792,10 +791,12 @@ fn classic_hurt_reach_early_and_later_in_a_jump() {
 
 #[test]
 fn classic_medium_walker_hurt_reach_early_and_later_in_a_jump() {
-    // Up to T + 5: at most 24 px above; from T + 6 not at all from U = 0.
+    // Up to T + 5: at most 24 px above; from T + 6, in the airborne
+    // pose, at most 3.
     assert!(classic_hurt_in_the_air(medium_walker, 24, 5));
     assert!(!classic_hurt_in_the_air(medium_walker, 25, 5));
-    for u in [0, 3, 4, 16, 24] {
+    assert!(classic_hurt_in_the_air(medium_walker, 3, 6));
+    for u in [4, 16, 24] {
         assert!(!classic_hurt_in_the_air(medium_walker, u, 6), "U = {u}");
     }
 }
@@ -906,6 +907,231 @@ fn classic_medium_walker_from_behind_follows_the_worked_example() {
         );
         assert_eq!(hurt, Some(hurt_on), "fidget {fidget}");
     }
+}
+
+/// Sets a classic-1 player on the ground up to land on the next step
+/// after going into the air by `air`, with Jump held for `held` frames.
+fn about_to_land(w: &mut World, air: Air, held: u8) {
+    w.player.pose.since_land = None;
+    w.player.pose.air = air;
+    w.player.pose.jump_held = held;
+}
+
+/// Whether a classic-1 player standing `i` px from a still walker, made
+/// by `walker`, `n` frames after landing from a jump at the end of the
+/// frame, is about to be hurt.
+fn classic_landed_hurt_at(
+    walker: fn(&str, &str, &str) -> String,
+    i: i32,
+    facing: Facing,
+    heading: &str,
+    n: u8,
+) -> bool {
+    let mut w = world_on("classic-1", [300 + i, 400], &walker("300", "0", heading));
+    w.player.facing = facing;
+    about_to_land(&mut w, Air::Moving, 1);
+    w.player.pose.since_land = n.checked_sub(1);
+    step(&mut w, &InputFrame::default());
+    assert_eq!(w.player.pose.since_land, Some(n));
+    w.player.hurt_ahead.is_some()
+}
+
+#[test]
+fn classic_airborne_pose_moves_the_end_behind_the_player_in() {
+    // walker-contact.md: facing right the high end is 3 px lower, facing
+    // left the low end 3 px higher. On L + 1 to L + 3 after a jump the
+    // player shows the landing pictures, airborne and not lifted.
+    type Walker = fn(&str, &str, &str) -> String;
+    let table: [(Walker, Facing, &str, i32, i32); 12] = [
+        (small_walker, Facing::Right, "left", -19, 21),
+        (small_walker, Facing::Right, "right", -18, 22),
+        (small_walker, Facing::Left, "left", -22, 18),
+        (small_walker, Facing::Left, "right", -21, 19),
+        (medium_walker, Facing::Right, "left", -26, 19),
+        (medium_walker, Facing::Right, "right", -16, 29),
+        (medium_walker, Facing::Left, "left", -29, 16),
+        (medium_walker, Facing::Left, "right", -19, 26),
+        (large_walker, Facing::Right, "left", -22, 24),
+        (large_walker, Facing::Right, "right", -21, 25),
+        (large_walker, Facing::Left, "left", -25, 21),
+        (large_walker, Facing::Left, "right", -24, 22),
+    ];
+    for (n, (walker, facing, heading, low, high)) in table.into_iter().enumerate() {
+        for (i, hurt) in [
+            (low - 1, false),
+            (low, true),
+            (high, true),
+            (high + 1, false),
+        ] {
+            for landed in 1..=3 {
+                assert_eq!(
+                    classic_landed_hurt_at(walker, i, facing, heading, landed),
+                    hurt,
+                    "row {n}: I = {i}, facing {facing:?}, heading {heading}, L + {landed}"
+                );
+            }
+        }
+        // Upright again from L + 4.
+        let back = if facing == Facing::Right {
+            high + 1
+        } else {
+            low - 1
+        };
+        assert!(
+            classic_landed_hurt_at(walker, back, facing, heading, 4),
+            "row {n}"
+        );
+    }
+}
+
+/// Whether a classic-1 player rising fast right over a still large walker,
+/// `i` px from it and 10 px above its floor, 6 frames into a jump, is
+/// about to be hurt.
+fn classic_airborne_hurt_at(i: i32, facing: Facing, heading: &str) -> bool {
+    let mut w = world_on(
+        "classic-1",
+        [300 + i, 0],
+        &large_walker("300", "0", heading),
+    );
+    w.player.facing = facing;
+    w.player.pos.y = Fixed::from_int(392);
+    w.player.vel.y = fx(-2.0 - 0.4375);
+    w.player.jump_age = Some(5);
+    w.player.state = State::Jump;
+    step(&mut w, &InputFrame::default());
+    assert_eq!(w.player.jump_age, Some(6));
+    w.player.hurt_ahead.is_some()
+}
+
+#[test]
+fn classic_airborne_pose_ranges_in_the_air() {
+    // walker-contact.md's example: facing right, a large walker heading
+    // right hurts from I −21 to 25.
+    for (facing, heading, low, high) in [
+        (Facing::Right, "right", -21, 25),
+        (Facing::Right, "left", -22, 24),
+        (Facing::Left, "left", -25, 21),
+        (Facing::Left, "right", -24, 22),
+    ] {
+        for (i, hurt) in [
+            (low - 1, false),
+            (low, true),
+            (high, true),
+            (high + 1, false),
+        ] {
+            assert_eq!(
+                classic_airborne_hurt_at(i, facing, heading),
+                hurt,
+                "I = {i}, facing {facing:?}, heading {heading}"
+            );
+        }
+    }
+}
+
+#[test]
+fn classic_small_walker_misses_the_closing_pictures() {
+    // A small walker at I = −10, heading left, to a player facing right
+    // that lands on the first step (L). After most jumps L still shows a
+    // closing picture and L + 1 a landing one: hurt on L + 2. After a
+    // jump with Jump held 8 to 15 frames the landing pictures show from
+    // L: hurt on L + 1. After a fall from a ledge with a face, closing
+    // pictures show on L to L + 5: hurt on L + 7.
+    for (air, held, hurt_on) in [
+        (Air::Moving, 1, 2),
+        (Air::Still, 40, 2),
+        (Air::Moving, 8, 1),
+        (Air::Still, 15, 1),
+        (Air::Moving, 16, 2),
+        (Air::Fall, 0, 7),
+    ] {
+        let mut w = world_on("classic-1", [290, 400], &small_walker("300", "0", "left"));
+        w.player.facing = Facing::Right;
+        about_to_land(&mut w, air, held);
+        let mut hurt = None;
+        for frame in 0..12 {
+            step(&mut w, &InputFrame::default());
+            if w.events.contains(&Event::Hurt) {
+                hurt = Some(frame);
+                break;
+            }
+        }
+        assert_eq!(hurt, Some(hurt_on), "{air:?}, Jump held {held}");
+    }
+}
+
+#[test]
+fn classic_fall_from_a_face_keeps_the_airborne_pose_to_l_plus_8() {
+    // Upright from L + 9: I = 25 is in the large walker's upright range
+    // facing right, heading left (−22 to 27), but not the airborne one.
+    for (n, hurt) in [(8, false), (9, true)] {
+        let mut w = world_on("classic-1", [325, 400], &large_walker("300", "0", "left"));
+        w.player.facing = Facing::Right;
+        about_to_land(&mut w, Air::Fall, 0);
+        w.player.pose.since_land = Some(n - 1);
+        step(&mut w, &InputFrame::default());
+        assert_eq!(w.player.hurt_ahead.is_some(), hurt, "L + {n}");
+    }
+}
+
+#[test]
+fn classic_medium_walker_after_a_landing_follows_the_worked_example() {
+    // walker-contact.md: a player facing right at x 120.25 just after
+    // landing, airborne up to L + 3, and a medium walker heading right
+    // at 89.5 at the end of L + 2; here 200 px further right. Not hurt
+    // at I = 31 or 30 in the airborne pose, but at 29 upright on L + 4,
+    // so hurt on L + 5.
+    let mut w = world_on(
+        "classic-1",
+        [320, 400],
+        &medium_walker("288.5", "1", "right"),
+    );
+    w.player.pos.x = fx(320.25);
+    w.player.facing = Facing::Right;
+    w.player.pose.since_land = Some(1);
+    w.player.pose.air = Air::Moving;
+    w.player.pose.jump_held = 1;
+    let mut rows = Vec::new();
+    for _ in 0..4 {
+        step(&mut w, &InputFrame::default());
+        rows.push((
+            w.player.pose.since_land,
+            w.things[0].pos.x,
+            w.events.contains(&Event::Hurt),
+        ));
+    }
+    assert_eq!(
+        rows,
+        [
+            (Some(2), fx(289.5), false),
+            (Some(3), fx(290.5), false),
+            (Some(4), fx(291.5), false),
+            (Some(5), fx(292.5), true),
+        ]
+    );
+}
+
+/// Whether a classic-1 player that walked off a ledge, from a steep face
+/// if `face`, rising fast right over a still large walker 30 px above
+/// its floor, is about to be hurt.
+fn classic_walk_off_hurt_at(face: bool) -> bool {
+    let mut w = world_on("classic-1", [300, 0], &large_walker("300", "0", "left"));
+    w.player.pos.y = Fixed::from_int(372);
+    w.player.vel.y = fx(-2.0 - 0.4375);
+    w.player.walked_off = true;
+    w.player.walked_off_face = face;
+    w.player.state = State::Fall;
+    step(&mut w, &InputFrame::default());
+    assert_eq!(w.player.pos.y, Fixed::from_int(370));
+    w.player.hurt_ahead.is_some()
+}
+
+#[test]
+fn classic_walk_off_without_a_face_keeps_the_upright_reach() {
+    // walker-contact.md, "Falls without a jump": off a ledge without a
+    // face the upright reach (37 for a large walker) applies in the air;
+    // off one with a face the airborne one (16).
+    assert!(classic_walk_off_hurt_at(false));
+    assert!(!classic_walk_off_hurt_at(true));
 }
 
 #[test]

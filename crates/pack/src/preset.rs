@@ -438,6 +438,15 @@ mod tests {
                     | Param::HurtJumpLift
                     | Param::HurtFidgetWidth
                     | Param::HurtFidgetOffset
+                    | Param::HurtAirWidth
+                    | Param::HurtAirOffset
+                    | Param::HurtLandHold
+                    | Param::HurtLandLift
+                    | Param::HurtLongJump
+                    | Param::HurtLongJumpEnd
+                    | Param::HurtLongLandHold
+                    | Param::HurtFallHold
+                    | Param::HurtFallLift
                     | Param::FidgetStart
                     | Param::FidgetLength
                     | Param::FidgetEvery

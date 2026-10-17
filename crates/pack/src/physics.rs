@@ -566,13 +566,44 @@ params! {
     /// How far the middle of the hurt box is in front of the player's
     /// position, px. Negative is behind.
     HurtOffset => "hurt_offset",
-    /// From this many frames after a jump starts, until it lands, the
-    /// bottom of the hurt box is `hurt_jump_lift` above the feet. Whole
-    /// frames.
+    /// A jump has the airborne pose for the hurt box from this many
+    /// frames after it starts. Whole frames.
     HurtJumpTime => "hurt_jump_time",
-    /// How far the bottom of the hurt box rises late in a jump, px. A
-    /// walker with its own `hurt_jump_lift` uses that instead.
+    /// How far the bottom of the hurt box rises in the airborne pose, in
+    /// the air and on the frames after landing that are lifted
+    /// (`hurt_land_lift`, `hurt_fall_lift`), px. A walker with its own
+    /// `hurt_jump_lift` uses that instead.
     HurtJumpLift => "hurt_jump_lift",
+    /// Above 0, in the airborne pose the hurt box is this wide instead of
+    /// `hurt_width`, its middle `hurt_air_offset` in front of the
+    /// player's position. 0: the airborne pose has the usual hurt box.
+    HurtAirWidth => "hurt_air_width",
+    /// How far the middle of the airborne pose's hurt box is in front of
+    /// the player's position, px. Negative is behind.
+    HurtAirOffset => "hurt_air_offset",
+    /// After a jump lands, the airborne pose goes on up to this many
+    /// frames after the landing frame. Whole frames.
+    HurtLandHold => "hurt_land_hold",
+    /// Of those frames, the first this many, from the landing frame, keep
+    /// the box lifted. Whole frames.
+    HurtLandLift => "hurt_land_lift",
+    /// A jump with Jump held for from this many frames up to
+    /// `hurt_long_jump_end`, from the frame it starts on, keeps the
+    /// airborne pose `hurt_long_land_hold` frames after landing instead,
+    /// none of them lifted. 0: no jump does. Whole frames.
+    HurtLongJump => "hurt_long_jump",
+    /// The most frames of Jump held for `hurt_long_jump`. Whole frames.
+    HurtLongJumpEnd => "hurt_long_jump_end",
+    /// How long such a jump's airborne pose goes on after landing. Whole
+    /// frames.
+    HurtLongLandHold => "hurt_long_land_hold",
+    /// After a fall without a jump in the airborne pose lands, the pose
+    /// goes on up to this many frames after the landing frame, the first
+    /// `hurt_fall_lift` of them lifted. Whole frames.
+    HurtFallHold => "hurt_fall_hold",
+    /// How many frames from the landing frame of that fall keep the box
+    /// lifted. Whole frames.
+    HurtFallLift => "hurt_fall_lift",
     /// Above 0, in the fidget pose the hurt box is this wide instead of
     /// `hurt_width`, its middle `hurt_fidget_offset` in front of the
     /// player's position. 0: the fidget pose has the usual hurt box.
@@ -1053,6 +1084,7 @@ impl Param {
                 | Param::BounceOffset
                 | Param::HurtOffset
                 | Param::HurtFidgetOffset
+                | Param::HurtAirOffset
                 | Param::RollAttackOffset
                 | Param::GroundAttackOffset
         )

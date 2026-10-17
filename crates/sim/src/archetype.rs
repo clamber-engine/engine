@@ -41,8 +41,8 @@ pub enum Behavior {
     /// same `group` above 0 appear and are removed with the view together.
     /// With a `contact`, it hurts the player or is bounced on as that
     /// says, instead of by the preset's boxes. With a `hurt_jump_lift`,
-    /// the preset's hurt box rises that far late in a jump against it,
-    /// instead of the preset's `hurt_jump_lift`. A player riding an
+    /// the preset's hurt box rises that far against it when the
+    /// airborne pose lifts it, instead of the preset's `hurt_jump_lift`. A player riding an
     /// animal meets it as `rider` says instead (see [`ride`](crate::ride)).
     Walker {
         speed: Fixed,

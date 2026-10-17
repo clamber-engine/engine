@@ -217,6 +217,46 @@ fn a_jump_is_upright_then_airborne_until_after_landing() {
     assert_eq!(poses[l + 7], Pose::Upright);
 }
 
+/// ball-contact.md, "Which pose the player has": a fall after walking off
+/// a ledge without a face stays upright through the fall and the
+/// landing.
+#[test]
+fn a_walk_off_without_a_face_stays_upright() {
+    let src = r#"
+        format = 1
+        name = "ledge"
+        size = [3000, 600]
+        start = [400, 300]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 300, 450, 100]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 500, 3000, 100]
+    "#;
+    let level = Arc::new(Level::from_toml_str(src, "ledge").unwrap());
+    let mut play = Play::new();
+    play.world = World::new(level, Arc::new(generic_feel("classic-1").unwrap()));
+    let mut left = false;
+    let mut landed = None;
+    for n in 0..120 {
+        play.step(&[Action::Right]);
+        left |= play.world.events.contains(&Event::LeaveGround);
+        if left && play.world.events.contains(&Event::Land) {
+            landed = Some(n);
+        }
+        if left {
+            assert_eq!(play.pose(), Pose::Upright, "step {n}");
+        }
+        if landed.is_some_and(|l| n > l + 10) {
+            break;
+        }
+    }
+    assert!(landed.is_some());
+}
+
 /// ball-contact.md, "Which pose the player has": standing still, the
 /// fidget pose is on frames 239 to 418 and 696 to 875 of the standing
 /// pose; Down held on the ground is crouching.

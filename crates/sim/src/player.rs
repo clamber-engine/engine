@@ -194,6 +194,8 @@ pub struct Player {
     pub jump_age: Option<u8>,
     /// Falling after walking off the ground, until landing.
     pub walked_off: bool,
+    /// The last walk-off started from a frame on a steep face.
+    pub walked_off_face: bool,
     /// Action was held with Left or Right alone on the last frame
     /// (`run_from_previous_frame`).
     pub ran: bool,
@@ -282,6 +284,7 @@ impl Player {
             after_face: None,
             jump_age: None,
             walked_off: false,
+            walked_off_face: false,
             ran: false,
             fall_step: false,
             fall_facing: 0,
@@ -1404,6 +1407,9 @@ impl Player {
         } else {
             self.jump_age.map(|n| n.saturating_add(1))
         };
+        if leaving {
+            self.walked_off_face = face.is_some();
+        }
         self.walked_off = if events.contains(&Event::JumpStart) || self.grounded() {
             false
         } else {

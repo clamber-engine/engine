@@ -7,8 +7,10 @@
 //!
 //! Engine choices where the spec says nothing:
 //!
-//! - A walk-off fall is airborne from the frame the player leaves the
-//!   ground, not the frames before it.
+//! - A walk-off fall from a ledge with a face (a frame started on a
+//!   steep face) is airborne from the frame the player leaves the ground,
+//!   not the frames before it. One from a ledge without a face stays
+//!   upright through the fall and its landing.
 //! - A jump let go of before it lands counts as a hop, and a running
 //!   jump as a walking one. Any other time in the air (a bounce, a fall
 //!   without a jump) counts as a walk-off fall.
@@ -112,6 +114,12 @@ pub struct PoseClock {
     pub landed_running: bool,
     /// Running, for the [`Stance`].
     pub running: bool,
+    /// The fall under way, or the last one landed, walked off a ledge
+    /// without a face, so it keeps the upright pose.
+    pub upright_fall: bool,
+    /// Frames Jump was held in the last jump, from the one it started
+    /// on, while it went on in the air.
+    pub jump_held: u8,
 }
 
 impl Default for PoseClock {
@@ -125,6 +133,8 @@ impl Default for PoseClock {
             rolling: false,
             landed_running: false,
             running: false,
+            upright_fall: false,
+            jump_held: 0,
         }
     }
 }
@@ -148,16 +158,23 @@ pub(crate) fn note(player: &mut Player, events: &[Event], physics: &Physics) {
             Air::Still
         };
         clock.since_land = None;
+        clock.upright_fall = false;
+        clock.jump_held = 0;
     } else if !grounded {
         if clock.since_land.is_some() {
             clock.air = Air::Fall;
             clock.since_land = None;
         }
+        // A bounce ends the walk-off.
+        clock.upright_fall = player.walked_off && !player.walked_off_face && !rolling(player);
     } else {
         if clock.since_land.is_none() {
             clock.landed_running = player.ran;
         }
         clock.since_land = Some(clock.since_land.map_or(0, |n| n.saturating_add(1)));
+    }
+    if clock.since_land.is_none() && clock.air != Air::Fall && player.jump_hold {
+        clock.jump_held = clock.jump_held.saturating_add(1);
     }
     if clock.air == Air::Still && !player.jump_hold && clock.since_land.is_none() {
         clock.air = Air::Hop;
@@ -244,13 +261,13 @@ pub fn pose(player: &Player, contact: &Contact) -> Pose {
             Pose::Airborne
         };
     }
-    if !player.grounded() {
-        return Pose::Airborne;
-    }
-    if clock
+    // A walk-off without a face stays upright through the fall and its
+    // landing.
+    let upright = clock.upright_fall && clock.air == Air::Fall;
+    let held = clock
         .since_land
-        .is_some_and(|n| n <= contact.land_hold[clock.air.index()])
-    {
+        .is_some_and(|n| n <= contact.land_hold[clock.air.index()]);
+    if !upright && (!player.grounded() || held) {
         return Pose::Airborne;
     }
     let (on, stopped) = contact.roll_after;
@@ -267,6 +284,42 @@ pub fn pose(player: &Player, contact: &Contact) -> Pose {
         return Pose::Fidget;
     }
     Pose::Upright
+}
+
+/// The pose the preset's hurt box reads, by the preset's timings
+/// (spec/behavior/walker-contact.md, "Poses"): whether the player has
+/// the airborne pose at the end of the last step, and whether it shows
+/// the pictures of the rise and fall or the closing ones, which lift the
+/// box. A walk-off from a ledge without a face stays upright. Engine
+/// choices: a walk-off from a ledge with a face is airborne from the
+/// frame it leaves the ground, not the frames before; a fall other than
+/// a walk-off (after a bounce) lands as one from a ledge with a face; and
+/// Jump counts as held from the frame the jump starts on.
+pub fn hurt_pose(player: &Player, physics: &Physics) -> (bool, bool) {
+    let clock = player.pose;
+    let frames = |p: Param| crate::player::frames(physics[p]);
+    if let Some(age) = player.jump_age {
+        let airborne = age >= frames(Param::HurtJumpTime);
+        return (airborne, airborne);
+    }
+    if clock.upright_fall && clock.air == Air::Fall {
+        return (false, false);
+    }
+    if !player.grounded() {
+        return (true, true);
+    }
+    let Some(n) = clock.since_land else {
+        return (false, false);
+    };
+    let long = frames(Param::HurtLongJump);
+    let (hold, lifted) = if clock.air == Air::Fall {
+        (frames(Param::HurtFallHold), frames(Param::HurtFallLift))
+    } else if long > 0 && (long..=frames(Param::HurtLongJumpEnd)).contains(&clock.jump_held) {
+        (frames(Param::HurtLongLandHold), 0)
+    } else {
+        (frames(Param::HurtLandHold), frames(Param::HurtLandLift))
+    };
+    (n <= hold, n < lifted)
 }
 
 /// Whether a player with `clock` is in the fidget pose at the end of the

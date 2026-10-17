@@ -1054,11 +1054,12 @@ fn strike(
 /// The enemy that hurts the player on the next step, if any: one its
 /// hurt box touches now, on whole pixels. The box is `hurt_width` wide,
 /// centred `hurt_offset` in front of the player, or `hurt_fidget_width`
-/// and `hurt_fidget_offset` in the fidget pose, and reaches from the top
-/// of the body to the feet, or to `hurt_jump_lift` (or the walker's own)
-/// above them from `hurt_jump_time` frames into a jump. A rolling player
-/// isn't hurt, nor one in the first `roll_stop_guard` frames of the stop
-/// after a roll.
+/// and `hurt_fidget_offset` in the fidget pose, or `hurt_air_width` and
+/// `hurt_air_offset` in the airborne pose ([`pose::hurt_pose`]), and
+/// reaches from the top of the body to the feet, or to `hurt_jump_lift`
+/// (or the walker's own) above them while the airborne pose lifts it. A
+/// rolling player isn't hurt, nor one in the first `roll_stop_guard`
+/// frames of the stop after a roll.
 fn hurt_ahead(world: &World, physics: &Physics) -> Option<usize> {
     let player = &world.player;
     let guarded = player.roll_stop > 0 && player.roll_stop <= frames(physics[Param::RollStopGuard]);
@@ -1074,7 +1075,10 @@ fn hurt_ahead(world: &World, physics: &Physics) -> Option<usize> {
     );
     let fidget =
         physics[Param::HurtFidgetWidth] > Fixed::ZERO && pose::fidgeting(&player.pose, fidget_time);
-    let (width, offset) = if fidget {
+    let (airborne, lifted) = pose::hurt_pose(player, physics);
+    let (width, offset) = if airborne && physics[Param::HurtAirWidth] > Fixed::ZERO {
+        (physics[Param::HurtAirWidth], physics[Param::HurtAirOffset])
+    } else if fidget {
         (
             physics[Param::HurtFidgetWidth],
             physics[Param::HurtFidgetOffset],
@@ -1087,12 +1091,9 @@ fn hurt_ahead(world: &World, physics: &Physics) -> Option<usize> {
         Facing::Right => at.x + offset,
     };
     let half_width = Fixed::from_bits(width.to_bits() / 2);
-    let late = player
-        .jump_age
-        .is_some_and(|age| age >= frames(physics[Param::HurtJumpTime]));
     let reach = |archetype: &Archetype| {
         let lift = match archetype.behavior {
-            _ if !late => Fixed::ZERO,
+            _ if !lifted => Fixed::ZERO,
             Behavior::Walker {
                 hurt_jump_lift: Some(lift),
                 ..

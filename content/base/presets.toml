@@ -150,6 +150,15 @@ hurt_jump_time = 0
 hurt_jump_lift = 0
 hurt_fidget_width = 0
 hurt_fidget_offset = 0
+hurt_air_width = 0
+hurt_air_offset = 0
+hurt_land_hold = 0
+hurt_land_lift = 0
+hurt_long_jump = 0
+hurt_long_jump_end = 0
+hurt_long_land_hold = 0
+hurt_fall_hold = 0
+hurt_fall_lift = 0
 fidget_start = 0
 fidget_length = 0
 fidget_every = 0
@@ -346,9 +355,15 @@ air_acceleration = 0.09375
 # a walker with `size = [20, 12]` and `offset = 0.5` (the small walker),
 # `size = [25, 25]` and `offset = 5` (the medium one) or `size = [26, 38]`
 # and `offset = 0.5` (the large one). The hurt box (24 wide, 3 behind)
-# splits walker-contact.md's hurt ranges the same way; lifting its bottom
-# 21 px from 6 frames into a jump gives the vertical reach there (the
-# medium walker lifts it 25 px, its own `hurt_jump_lift`). In the fidget
+# splits walker-contact.md's hurt ranges the same way. In the airborne
+# pose (walker-contact.md, "Poses": a jump from 6 frames after it starts,
+# and a fall off a ledge with a face) the box is 21 wide, 1.5 behind,
+# which moves the end of each range behind the player 3 px in, and
+# lifting its bottom 21 px gives the vertical reach in the air. After
+# landing the pose goes on to L + 3, lifted on L (the last closing
+# picture), or to L + 6 with none lifted when Jump was held 8 to 15
+# frames; after a fall, to L + 8, lifted on L to L + 5. A lifted box on
+# the ground misses the small walker and still meets the others. In the fidget
 # pose (frames 239 to 418 of standing, and every 457 frames again, as in
 # ball-contact.md) the hurt box is 17 wide, 9.5 behind, which gives that
 # pose's hurt ranges for all three walkers. The roll's attack box (22
@@ -460,6 +475,15 @@ hurt_jump_time = 6
 hurt_jump_lift = 21
 hurt_fidget_width = 17
 hurt_fidget_offset = -9.5
+hurt_air_width = 21
+hurt_air_offset = -1.5
+hurt_land_hold = 3
+hurt_land_lift = 1
+hurt_long_jump = 8
+hurt_long_jump_end = 15
+hurt_long_land_hold = 6
+hurt_fall_hold = 8
+hurt_fall_lift = 6
 fidget_start = 239
 fidget_length = 180
 fidget_every = 457

@@ -79,7 +79,7 @@ pub use player::{
     Act, Boost, Crouch, Facing, Gait, GroundAction, HALF_WIDTH, HEIGHT, Hands, Holds, Knockout,
     Player, ROLL, Roll, RollSize, SWAP_FRAMES, State, Stride,
 };
-pub use pose::{Air, Pose, PoseClock, Stance, pose, stance};
+pub use pose::{Air, Pose, PoseClock, Stance, hurt_pose, pose, stance};
 pub use record::record;
 pub use ride::{RidePart, Riding};
 pub use script::{InputFrame, Script};

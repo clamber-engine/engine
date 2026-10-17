@@ -129,18 +129,12 @@ impl Kind {
                 // The sizes and offsets are the ones the classic-1
                 // preset's bounce and hurt boxes give walker-contact.md's
                 // ranges with. The medium walker's ranges move 10 px
-                // with its heading, and late in a jump it doesn't hurt
-                // from U = 0 up, which the preset's lift of 21 px would
-                // leave it doing up to U = 3; 25 px is the least that
-                // doesn't (lower U wasn't measured).
+                // with its heading.
                 let (size, offset) = match self {
                     Kind::SmallWalker => ([20, 12], 0.5),
                     Kind::MediumWalker => ([25, 25], 5.0),
                     _ => ([26, 38], 0.5),
                 };
-                if self == Kind::MediumWalker {
-                    set("hurt_jump_lift", Value::Integer(25));
-                }
                 set("rider", self.rider());
                 set("speed", Value::Integer(1));
                 set("response", Value::Float(0.125));
