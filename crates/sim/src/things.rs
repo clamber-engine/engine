@@ -38,6 +38,9 @@
 //! - A launcher sends the player off at its velocity, then rests for
 //!   [`LAUNCH_REST`] frames before it can fire again.
 //!
+//! A stinger sways around its start and hurts the player on any contact
+//! (see [`stinger`]).
+//!
 //! A crate holding an animal breaks when the player lands on it, which
 //! bounces off it, and the player can mount the animal that comes out
 //! (see [`hutch`]).
@@ -74,6 +77,7 @@ use crate::hutch;
 use crate::join;
 use crate::player::{Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, frames, is_wall};
 use crate::pose::{self, Stance};
+use crate::stinger;
 use crate::throwers::{self, Picture};
 use crate::view;
 use crate::world::{Event, Phase, Thing, World};
@@ -189,6 +193,13 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
         if held.is_some_and(|by| enemy && by != Some(thing.index)) || (waiting && enemy) {
             continue;
         }
+        // Stingers hold still with them, the one that hurt it too.
+        let stinger = thing
+            .archetype
+            .is_some_and(|a| matches!(a.behavior, Behavior::Stinger(_)));
+        if stinger && held.is_some() {
+            continue;
+        }
         if paused && thing.archetype.is_some_and(|a| a.behavior.fall().is_some()) {
             continue;
         }
@@ -268,7 +279,9 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
         } else {
             None
         };
-        world.player.hurt_ahead = walker.or_else(|| throwers::hurt_ahead(world));
+        world.player.hurt_ahead = walker
+            .or_else(|| throwers::hurt_ahead(world))
+            .or_else(|| stinger::hurt_ahead(world));
     }
     hurt_by
 }
@@ -330,7 +343,18 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         }
         // Crates holding an animal move in [`hutch::update`].
         Phase::Opened(_) | Phase::Mounted(_) | Phase::Ridden => return false,
-        Phase::Ready => {}
+        Phase::Swaying { .. } => {
+            if let Behavior::Stinger(stinger) = archetype.behavior {
+                stinger::sway(thing, level.entities[thing.index].at, &stinger);
+            }
+            return false;
+        }
+        Phase::Ready => {
+            if let Behavior::Stinger(stinger) = archetype.behavior {
+                stinger::start(thing, level.entities[thing.index].at, &stinger);
+                return false;
+            }
+        }
     }
     if thing.wait > 0 {
         thing.wait -= 1;
@@ -367,7 +391,8 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         | Behavior::Carry { .. }
         | Behavior::Collect { .. }
         | Behavior::Thrower { .. }
-        | Behavior::Hutch(_) => {}
+        | Behavior::Hutch(_)
+        | Behavior::Stinger(_) => {}
     }
     false
 }
@@ -1105,7 +1130,8 @@ fn interact(
             Behavior::Carry { .. }
             | Behavior::Collect { .. }
             | Behavior::Thrower { .. }
-            | Behavior::Ball(_) => {}
+            | Behavior::Ball(_)
+            | Behavior::Stinger(_) => {}
             _ => {
                 let middle = Fixed::from_bits((area.1.to_bits() + area.3.to_bits()) / 2);
                 let landed = !boxes && previous_feet <= middle && player.pos.y >= previous_feet;

@@ -83,6 +83,7 @@ fn the_cast_sheets_are_rendered_with_their_animations() {
         ("launcher", &["waiting", "fire"]),
         ("crate", &["whole", "break"]),
         ("hutch", &["whole", "break", "animal"]),
+        ("stinger", &["fly"]),
     ] {
         let path = content_dir().join(SPRITES).join(format!("{name}.json"));
         let sprite = SpriteSheet::load(&path).unwrap();

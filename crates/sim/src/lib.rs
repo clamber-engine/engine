@@ -14,6 +14,9 @@
 //! An animal comes out of a crate the player breaks, and the player can
 //! mount it ([`Hutch`]).
 //!
+//! A stinger sways around where it's placed and hurts on any contact
+//! ([`Stinger`]).
+//!
 //! A character missing from the level joins the player when an object
 //! holding it breaks ([`Join`]).
 //!
@@ -46,6 +49,7 @@ mod player;
 mod pose;
 mod record;
 mod script;
+mod stinger;
 mod swap;
 mod things;
 mod throwers;
@@ -55,7 +59,7 @@ mod world;
 pub use archetype::{
     AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
     Fall, Hit, Holder, Hutch, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_HOP_STEPS, MAX_LETTERS,
-    MAX_RESPONSE_PARTS, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Span, Throw,
+    MAX_RESPONSE_PARTS, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Span, Stinger, Throw,
     WalkerContact,
 };
 pub use carry::Flight;

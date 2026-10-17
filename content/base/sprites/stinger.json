@@ -1,0 +1,165 @@
+{
+  "frames": [
+    {
+      "filename": "stinger fly 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 93,
+        "h": 99
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 10,
+        "w": 93,
+        "h": 99
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 160
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "stinger fly 1",
+      "frame": {
+        "x": 97,
+        "y": 2,
+        "w": 90,
+        "h": 75
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 34,
+        "y": 38,
+        "w": 90,
+        "h": 75
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 160
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "stinger fly 2",
+      "frame": {
+        "x": 189,
+        "y": 2,
+        "w": 93,
+        "h": 67
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 42,
+        "w": 93,
+        "h": 67
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 160
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "stinger fly 3",
+      "frame": {
+        "x": 284,
+        "y": 2,
+        "w": 95,
+        "h": 71
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 35,
+        "w": 95,
+        "h": 71
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 160
+      },
+      "duration": 17,
+      "ticks": 1
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "stinger.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 381,
+      "h": 103
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "fly",
+        "from": 0,
+        "to": 3,
+        "direction": "forward"
+      }
+    ],
+    "slices": [
+      {
+        "name": "hurtbox",
+        "keys": [
+          {
+            "frame": 0,
+            "bounds": {
+              "x": 39,
+              "y": 58,
+              "w": 77,
+              "h": 49
+            }
+          },
+          {
+            "frame": 1,
+            "bounds": {
+              "x": 40,
+              "y": 59,
+              "w": 76,
+              "h": 50
+            }
+          },
+          {
+            "frame": 2,
+            "bounds": {
+              "x": 39,
+              "y": 58,
+              "w": 77,
+              "h": 49
+            }
+          },
+          {
+            "frame": 3,
+            "bounds": {
+              "x": 39,
+              "y": 57,
+              "w": 77,
+              "h": 47
+            }
+          }
+        ]
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 80,
+        "y": 80
+      },
+      "scale": 5,
+      "normals": "stinger-normals.png"
+    }
+  }
+}

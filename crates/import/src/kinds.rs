@@ -133,10 +133,10 @@ impl Kind {
             Kind::EndMarker => END,
             // animal-crate.md's values are the archetype's own.
             Kind::AnimalCrate => "hutch",
-            // A flying enemy that hurts on any contact. Placeholder until
-            // stingers get stinger.md's own behavior (#131); the
-            // first level has none.
-            Kind::Stinger => "flutter",
+            // stinger.md doesn't cover how a level's stingers get their
+            // reaches and speeds, so they keep the archetype's: they stay
+            // at their start. The first level has none.
+            Kind::Stinger => "stinger",
         };
         (kind, params)
     }
@@ -457,6 +457,9 @@ mod tests {
                 (Kind::Barrel, Behavior::Carry { holder, .. }) => assert!(holder.is_none()),
                 (Kind::AnimalCrate, behavior) => {
                     assert!(matches!(behavior, Behavior::Hutch(_)), "{kind}")
+                }
+                (Kind::Stinger, behavior) => {
+                    assert!(matches!(behavior, Behavior::Stinger(_)), "{kind}")
                 }
                 _ => {}
             }

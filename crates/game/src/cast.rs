@@ -301,7 +301,12 @@ fn thing_animation(world: &World, thing: &Thing) -> Option<&'static str> {
             return Some(if out { "animal" } else { "break" });
         }
         Phase::Mounted(_) | Phase::Ridden => return Some("animal"),
-        Phase::Ready | Phase::Held | Phase::Thrown(_) | Phase::Placed | Phase::Flying { .. } => {}
+        Phase::Ready
+        | Phase::Held
+        | Phase::Thrown(_)
+        | Phase::Placed
+        | Phase::Flying { .. }
+        | Phase::Swaying { .. } => {}
     }
     let reached = thing.kind == CHECKPOINT && world.flow.checkpoints.contains(&thing.index);
     reached.then_some("reached")

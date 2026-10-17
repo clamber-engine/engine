@@ -113,6 +113,21 @@ pub enum Behavior {
     /// A crate holding an animal, which the player breaks by landing on
     /// it and then mounts (see [`hutch`](crate::hutch)).
     Hutch(Hutch),
+    /// A flying enemy that sways around where it's placed and hurts on
+    /// any contact (see [`stinger`](crate::stinger)).
+    Stinger(Stinger),
+}
+
+/// How a stinger sways (spec/behavior/stinger.md). Its turning points
+/// are `reach` whole px from its start: `(left, right, up, down)`. It
+/// starts at `velocity`, and its target speeds keep that size, changing
+/// sign at the turning points. It hurts the player as `contact` says,
+/// whose ranges don't move with a turn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Stinger {
+    pub reach: (i32, i32, i32, i32),
+    pub velocity: Vec2,
+    pub contact: Contact,
 }
 
 /// One of a thrower's throws: on `frame` of its period, a ball at
@@ -224,6 +239,9 @@ pub struct Contact {
     pub rolling: Offsets,
     pub crouching: Offsets,
     pub fidget: Offsets,
+    /// Facing left, `across` is turned around: from `mirror` less its
+    /// high end to `mirror` less its low end.
+    pub mirror: i32,
     /// The parts of the ball's turn, in order: how many steps each
     /// lasts, and how far it moves both ends of `across` and of `above`.
     /// Only the first `turn_parts` are used.
@@ -275,8 +293,7 @@ impl Contact {
         let (from, to) = base.across;
         let across = match facing {
             Facing::Right => (from, to),
-            // Turned around the player's middle, 2 px left of its x.
-            Facing::Left => (-to - 2, -from - 2),
+            Facing::Left => (self.mirror - to, self.mirror - from),
         };
         let parts = &self.turn[..usize::from(self.turn_parts)];
         let cycle: u32 = parts.iter().map(|p| p.0).sum();
@@ -784,6 +801,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "mount_above",
             "mount_hold",
         ],
+        "stinger" => &["reach", "velocity", "contact"],
         "collect" => &[
             "worth",
             "release_every",
@@ -1098,6 +1116,19 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             Behavior::Ball(ball)
         }
         "hutch" => Behavior::Hutch(parse_hutch(table, path)?),
+        "stinger" => {
+            let at = format!("{path}.reach");
+            let reach = edges(get("reach")?, &at)?;
+            let (l, r, u, d) = reach;
+            if [l, r, u, d].iter().any(|n| !(0..=255).contains(n)) {
+                return Err(format!("{at}: each must be 0 to 255"));
+            }
+            Behavior::Stinger(Stinger {
+                reach,
+                velocity: pair("velocity")?,
+                contact: parse_contact(get("contact")?, &format!("{path}.contact"))?,
+            })
+        }
         _ => Behavior::Launcher {
             velocity: pair("velocity")?,
         },
@@ -1372,6 +1403,7 @@ fn parse_contact(value: &Value, path: &str) -> Result<Contact, String> {
         "rolling",
         "crouching",
         "fidget",
+        "mirror",
         "turn",
         "upright_jump",
         "land_hold",
@@ -1469,6 +1501,7 @@ fn parse_contact(value: &Value, path: &str) -> Result<Contact, String> {
         rolling: offsets("rolling")?,
         crouching: offsets("crouching")?,
         fidget: offsets("fidget")?,
+        mirror: whole(get("mirror")?, &format!("{path}.mirror"))?,
         turn,
         turn_parts: parts.len() as u8,
         upright_jump: frames(get("upright_jump")?, &format!("{path}.upright_jump"))?,
@@ -1772,6 +1805,12 @@ mod tests {
         check("thrower", "period = 0", "entities[3].params.period");
         check("thrower", "defeat_max_fall = 0", "must be positive");
         check("ball", "window = [1, 2, 3]", "entities[3].params.window");
+        check(
+            "stinger",
+            "reach = [0, 0, 0, 256]",
+            "entities[3].params.reach",
+        );
+        check("stinger", "velocity = 1", "entities[3].params.velocity");
         check("ball", "gravity = 0", "must be positive");
         check(
             "ball",

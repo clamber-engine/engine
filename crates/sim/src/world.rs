@@ -131,6 +131,9 @@ pub enum Phase {
     Mounted(u8),
     /// An animal the player rides.
     Ridden,
+    /// A stinger swaying around its start, with its vertical speed and
+    /// its target speeds (see [`stinger`](crate::stinger)).
+    Swaying { vy: Fixed, tx: Fixed, ty: Fixed },
 }
 
 /// Everything the simulation advances.
@@ -431,12 +434,18 @@ impl World {
                 Phase::Opened(since) => [9, since],
                 Phase::Mounted(since) => [10, since],
                 Phase::Ridden => [11, 0],
+                Phase::Swaying { .. } => [12, 0],
             });
             if let Phase::Falling { vy, .. }
             | Phase::Knocked { vy: Some(vy) }
             | Phase::Flying { vy, .. } = t.phase
             {
                 fixed(&mut out, vy);
+            }
+            if let Phase::Swaying { vy, tx, ty } = t.phase {
+                for v in [vy, tx, ty] {
+                    fixed(&mut out, v);
+                }
             }
             if let Phase::Flying {
                 ignoring: Some(floor),

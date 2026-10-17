@@ -125,8 +125,8 @@
 #   to]`, whole px, ends included, where `across` is the player's x less
 #   the ball's, both rounded down, and `above` the player's y less the
 #   ball's, both rounded up. The ranges are for facing right; facing
-#   left, `across` turns around to from -(to) - 2 to -(from) - 2. The
-#   poses: `upright` (standing, walking, running, turning, the ground
+#   left, `across` turns around to from `mirror` - (to) to `mirror` -
+#   (from). The poses: `upright` (standing, walking, running, turning, the ground
 #   action, and a jump up to `upright_jump` frames after the one it
 #   starts on), `airborne` (the rest of a jump, other times in the air,
 #   and after landing up to `land_hold` frames after the landing frame,
@@ -146,6 +146,25 @@
 #   floors. A ball hurts on no frame on which it bounced or stopped
 #   passing through floors. Nothing changes the ball. Without
 #   `contact`, it doesn't touch the player.
+# - `stinger`: an enemy that sways around its start, horizontally and
+#   vertically, passing through floors and walls. Its turning points are
+#   `reach = [left, right, up, down]` whole px (0 to 255) from its start.
+#   It starts at `velocity = [x, y]`; its target speed keeps that size,
+#   heading left while negative (otherwise right) and down while positive
+#   (otherwise up). Each frame: past the turning point it heads for (x
+#   rounded down), it's put 1/2 px on its near side of it and its target
+#   across changes sign; its speed across eases 1/32 of the way to the
+#   target, rounded toward zero to 1/256 px (or reaches it, if that
+#   rounds to 0); it moves across; past its vertical turning point (y
+#   rounded up), it's put 1/2 px beyond it and its target up and down
+#   changes sign; it moves by its vertical speed from before the frame,
+#   which then eases as the speed across does. With a view, it appears
+#   and is removed as a walker on its own does, coming back afresh: at
+#   its start, at `velocity`, not moving on the frame it appears. It
+#   hurts the player by its `contact` table, as a ball's, without a turn
+#   (`turn = []`). Nothing defeats it and it's never bounced on. While
+#   the player is knocked out, it holds still with the other enemies,
+#   also when it's the one that hurt the player.
 # - `collect`: a collectible the player takes by reaching it. It's then
 #   gone, and adds `worth` to the collectible count, one at a time: the
 #   first as it's taken, then one every `release_every` frames, each
@@ -328,7 +347,33 @@ airborne = [-15, 16, 18, 54]
 rolling = [-13, 19, 1, 35]
 crouching = [-18, 10, -3, 28]
 fidget = [-5, 22, -3, 41]
+mirror = -2
 turn = [[9, 0, 0], [6, 0, 2], [6, 2, 2], [3, 2, 0]]
+upright_jump = 5
+land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }
+roll_after = [3, 9]
+fidget_time = [239, 180, 457]
+
+# title-1's (spec/behavior/stinger.md). The spec doesn't say how big a
+# stinger is; the size is Clamber's own and only draws it. It doesn't say
+# how a level's stingers get their reaches and speeds either: left out,
+# they stay at their start. Its poses are the ball's, with the same
+# timings.
+[archetypes.stinger]
+behavior = "stinger"
+size = [16, 16]
+offset = 0
+reach = [0, 0, 0, 0]
+velocity = [0, 0]
+
+[archetypes.stinger.contact]
+upright = [-21, 32, -20, 29]
+airborne = [-21, 29, 1, 46]
+rolling = [-19, 32, -16, 27]
+crouching = [-24, 23, -24, 20]
+fidget = [-11, 35, -19, 33]
+mirror = 5
+turn = []
 upright_jump = 5
 land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }
 roll_after = [3, 9]
