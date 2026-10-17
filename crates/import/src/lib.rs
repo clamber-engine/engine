@@ -54,8 +54,8 @@ pub use locators::{Data, first_level, locate};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements};
 pub use songs::{
-    CHANNELS, GAIN, HEADER_SIZE, OUTPUTS_PER_PERIOD, Player, START_PERIOD, Settings, SettingsSet,
-    Step, UNIT_PITCH, Voice, VoiceStep,
+    CHANNELS, Effects, GAIN, HEADER_SIZE, OUTPUTS_PER_PERIOD, Player, START_PERIOD, Settings,
+    SettingsSet, Step, UNIT_PITCH, Voice, VoiceStep, read_effects,
 };
 pub use sound::{
     BLOCK_SIZE, BlockHeader, END_OF_LIST, Loop, Passes, Read, STEPS, Sample, SampleAudio, Song,

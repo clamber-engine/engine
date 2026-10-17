@@ -1,11 +1,14 @@
 //! Songs (`spec/formats/songs.md`): plays a [`Song`]'s eight tracks step
 //! by step and gives what each voice is handed (notes, releases, pitch
-//! and volume changes) and the song-wide settings, on every step.
+//! and volume changes) and the song-wide settings, on every step. Sound
+//! effects (`spec/formats/sound-effects.md`) play in the same player, each
+//! taking a voice from the song while it plays.
 //!
 //! How a voice turns those settings into sound isn't in the spec yet, so
 //! this stops at the settings; making audio from them is for later.
 
-use crate::sound::Song;
+use crate::Location;
+use crate::sound::{Read, Song};
 
 /// Channels in a song, each playing its track on the voice of the same
 /// number.
@@ -29,6 +32,52 @@ pub const UNIT_PITCH: u16 = 4096;
 
 /// Calls inside calls the spec covers.
 const MAX_CALLS: usize = 8;
+
+/// The player's tracks: the song's channels, then an effect slot for each
+/// voice (slot `v` is track [`CHANNELS`] + `v`).
+const TRACKS: usize = 2 * CHANNELS;
+
+/// The effect block (`sound-effects.md`): laid out like a song block, its
+/// data starting with the effect table.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Effects {
+    /// The effect data, at its base address.
+    pub block: Song,
+    /// Where each effect's track starts in the data.
+    pub tracks: Vec<usize>,
+}
+
+impl Effects {
+    /// Reads the block that starts at `bytes`.
+    pub fn read(bytes: &[u8]) -> Result<Effects, String> {
+        let block = Song::read(bytes).map_err(|e| format!("the effect block: {e}"))?;
+        // The table runs up to the first track, the lowest address in it.
+        let mut tracks = Vec::new();
+        let mut first = block.data.len();
+        while 2 * tracks.len() < first {
+            let at = 2 * tracks.len();
+            let address = block
+                .data
+                .get(at..at + 2)
+                .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                .ok_or("the effect table runs past the end of the effect data")?;
+            let track = offset(&block, address)?;
+            first = first.min(track);
+            tracks.push(track);
+        }
+        if 2 * tracks.len() != first {
+            return Err("an effect's track starts inside the effect table".into());
+        }
+        Ok(Effects { block, tracks })
+    }
+}
+
+/// Reads the effect block at `at` (`locators.md`, "Sound: sound-effect
+/// block").
+pub fn read_effects<'a>(read: impl Read<'a>, at: Location) -> Result<Effects, String> {
+    let bytes = read(at).ok_or("the effect block isn't in the image")?;
+    Effects::read(bytes)
+}
 
 /// A byte count where 0 means 256.
 fn count(n: u8) -> u16 {
@@ -111,8 +160,10 @@ pub struct SettingsSet {
 /// One step of a song.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Step {
-    /// Whether the tracks moved on.
+    /// Whether the song's tracks moved on.
     pub beat: bool,
+    /// Whether the effects' tracks moved on.
+    pub effect_beat: bool,
     pub voices: [VoiceStep; CHANNELS],
     /// As they are at the end of the step; the period sets the gap after
     /// it.
@@ -278,6 +329,8 @@ struct Channel {
     slide: Slide,
     vibrato: Swing,
     sweep: Swing,
+    /// Set by commands 22 and 23.
+    echo: bool,
 }
 
 /// Song-wide state beyond [`Settings`].
@@ -285,6 +338,8 @@ struct Channel {
 struct Wide {
     tempo: u8,
     tempo_sum: u16,
+    effect_tempo: u8,
+    effect_sum: u16,
     main_base: [u8; 2],
     echo_base: [u8; 2],
     fade: u8,
@@ -295,11 +350,17 @@ struct Wide {
     presets: [[u8; 4]; 5],
 }
 
-/// Plays a song: see [`Player::step`].
+/// Plays a song, and effects over it: see [`Player::step`] and
+/// [`Player::start_effect`].
 #[derive(Clone)]
 pub struct Player<'a> {
     song: &'a Song,
-    channels: [Channel; CHANNELS],
+    effects: Option<&'a Effects>,
+    channels: [Channel; TRACKS],
+    /// The voices an effect slot plays on.
+    taken: [bool; CHANNELS],
+    /// Whether an effect was started since the last step.
+    started: bool,
     voices: [VoiceStep; CHANNELS],
     settings: Settings,
     wide: Wide,
@@ -311,32 +372,106 @@ impl<'a> Player<'a> {
     /// by whatever played before in the game; the engine starts them at
     /// 0.
     pub fn new(song: &'a Song) -> Result<Player<'a>, String> {
+        Player::with_effects(song, None)
+    }
+
+    /// Starts `song` as [`Player::new`] does, with `effects` to start
+    /// effects from.
+    pub fn with_effects(
+        song: &'a Song,
+        effects: Option<&'a Effects>,
+    ) -> Result<Player<'a>, String> {
         let header = song
             .data
             .get(..HEADER_SIZE)
             .ok_or("a song is shorter than its header")?;
-        let mut channels: [Channel; CHANNELS] = Default::default();
-        for (i, channel) in channels.iter_mut().enumerate() {
+        let mut channels: [Channel; TRACKS] = Default::default();
+        for (i, channel) in channels[..CHANNELS].iter_mut().enumerate() {
             let address = u16::from_le_bytes([header[2 * i], header[2 * i + 1]]);
             channel.at = offset(song, address)?;
             channel.wait = 1;
         }
         Ok(Player {
             song,
+            effects,
             channels,
+            taken: [false; CHANNELS],
+            started: false,
             voices: Default::default(),
             settings: Settings::default(),
             wide: Wide {
                 tempo: header[16],
+                effect_tempo: header[17],
                 main_base: [127, 127],
                 ..Wide::default()
             },
         })
     }
 
-    /// Whether every track has ended.
+    /// Starts `song` in place of the one playing. No voice is taken
+    /// afterwards; the effect slots and the channels' echo flags are kept,
+    /// and so is what the voices were handed.
+    pub fn start_song(&mut self, song: &'a Song) -> Result<(), String> {
+        let mut next = Player::with_effects(song, self.effects)?;
+        next.channels[CHANNELS..].clone_from_slice(&self.channels[CHANNELS..]);
+        for (channel, old) in next.channels.iter_mut().zip(&self.channels[..CHANNELS]) {
+            channel.echo = old.echo;
+        }
+        next.voices = self.voices;
+        *self = next;
+        Ok(())
+    }
+
+    /// Whether every one of the song's tracks has ended.
     pub fn ended(&self) -> bool {
-        self.channels.iter().all(|c| c.ended)
+        self.channels[..CHANNELS].iter().all(|c| c.ended)
+    }
+
+    /// Starts effect `effect` on voice `voice`, between the last step and
+    /// the next. At most one effect starts between two steps.
+    pub fn start_effect(&mut self, effect: u8, voice: usize) -> Result<(), String> {
+        let effects = self
+            .effects
+            .ok_or("there is no effect block to start effects from")?;
+        let at = *effects
+            .tracks
+            .get(usize::from(effect))
+            .ok_or_else(|| format!("effect {effect} isn't in the effect table"))?;
+        if voice >= CHANNELS {
+            return Err(format!("there is no voice {voice}"));
+        }
+        if self.started {
+            return Err("only one effect can start between two steps".into());
+        }
+        self.started = true;
+        self.taken[voice] = true;
+        self.voices[voice].noise = false;
+        self.voices[voice].echo = false;
+        // The sample, the current pitch and the effects' settings and
+        // counters are kept from whatever last played in the slot.
+        let slot = &mut self.channels[CHANNELS + voice];
+        *slot = Channel {
+            at,
+            wait: 2,
+            pitch: slot.pitch,
+            sample: slot.sample,
+            volume: [127, 127],
+            saved_volume: [127, 127],
+            slide: Slide {
+                on: false,
+                ..slot.slide
+            },
+            vibrato: Swing {
+                on: false,
+                ..slot.vibrato
+            },
+            sweep: Swing {
+                on: false,
+                ..slot.sweep
+            },
+            ..Channel::default()
+        };
+        Ok(())
     }
 
     /// Plays the next step.
@@ -349,6 +484,7 @@ impl<'a> Player<'a> {
                 ..VoiceStep::default()
             };
         }
+        self.started = false;
         let mut set = SettingsSet::default();
 
         self.wide.tempo_sum += u16::from(self.wide.tempo);
@@ -357,30 +493,73 @@ impl<'a> Player<'a> {
             self.wide.tempo_sum -= 256;
             self.fade(&mut set);
         }
+        self.wide.effect_sum += u16::from(self.wide.effect_tempo);
+        let effect_beat = self.wide.effect_sum >= 256;
+        if effect_beat {
+            self.wide.effect_sum -= 256;
+        }
 
         for i in 0..CHANNELS {
-            if beat && !self.channels[i].ended {
-                let channel = &mut self.channels[i];
-                channel.wait -= 1;
-                match channel.wait {
-                    1 => self.voices[i].released = true,
-                    0 => self.read(i, &mut set)?,
-                    _ => {}
-                }
-            }
-            // An ended track's effects only run on steps that aren't
-            // beats; it can only end on a beat.
-            if !(beat && self.channels[i].ended) {
-                self.effects(i);
+            self.run(i, beat, &mut set)?;
+            if self.taken[i] {
+                self.run(CHANNELS + i, effect_beat, &mut set)?;
             }
         }
 
         Ok(Step {
             beat,
+            effect_beat,
             voices: self.voices,
             settings: self.settings,
             set,
         })
+    }
+
+    /// Runs track `i` for a step; `beat` is whether its tracks move on.
+    fn run(&mut self, i: usize, beat: bool, set: &mut SettingsSet) -> Result<(), String> {
+        if beat && !self.channels[i].ended {
+            let channel = &mut self.channels[i];
+            channel.wait -= 1;
+            match channel.wait {
+                1 => {
+                    if self.hands(i) {
+                        self.voices[i % CHANNELS].released = true;
+                    }
+                }
+                0 => self.read(i, set)?,
+                _ => {}
+            }
+        }
+        // An ended track's effects only run on steps that aren't beats;
+        // it can only end on a beat.
+        if !(beat && self.channels[i].ended) {
+            self.effects(i);
+        }
+        Ok(())
+    }
+
+    /// Whether track `i` hands its voice what it plays: a song's channel
+    /// doesn't while an effect has taken its voice.
+    fn hands(&self, i: usize) -> bool {
+        i >= CHANNELS || !self.taken[i]
+    }
+
+    /// Where track `i` reads from.
+    fn source(&self, i: usize) -> &'a Song {
+        match self.effects {
+            Some(effects) if i >= CHANNELS => &effects.block,
+            _ => self.song,
+        }
+    }
+
+    /// Effect slot `v` has read its track's end.
+    fn end_effect(&mut self, v: usize) {
+        self.taken[v] = false;
+        let voice = &mut self.voices[v];
+        voice.noise = false;
+        voice.noise_set = true;
+        voice.echo = self.channels[v].echo;
+        voice.echo_set = true;
     }
 
     fn fade(&mut self, set: &mut SettingsSet) {
@@ -397,36 +576,43 @@ impl<'a> Player<'a> {
     }
 
     fn effects(&mut self, i: usize) {
+        let hands = self.hands(i);
         let channel = &mut self.channels[i];
-        let voice = &mut self.voices[i];
+        let voice = &mut self.voices[i % CHANNELS];
+        let mut pitch_set = false;
         if let Some(change) = channel.slide.run() {
             channel.pitch = change.to_pitch(channel.pitch);
-            voice.voice.pitch = channel.pitch;
-            voice.pitch_set = true;
+            pitch_set = true;
         }
         if let Some(change) = channel.vibrato.run() {
             channel.pitch = change.to_pitch(channel.pitch);
+            pitch_set = true;
+        }
+        let volume_set = match channel.sweep.run() {
+            Some(change) => {
+                channel.volume = channel.volume.map(|v| change.to_volume(v));
+                true
+            }
+            None => false,
+        };
+        if hands && pitch_set {
             voice.voice.pitch = channel.pitch;
             voice.pitch_set = true;
         }
-        if let Some(change) = channel.sweep.run() {
-            channel.volume = channel.volume.map(|v| change.to_volume(v));
+        if hands && volume_set {
             voice.voice.volume = channel.volume;
             voice.volume_set = true;
         }
     }
 
+    /// Byte `at` of the song's data.
     fn byte(&self, at: usize) -> Result<u8, String> {
-        self.song
-            .data
-            .get(at)
-            .copied()
-            .ok_or_else(|| "a song's track runs past the end of its data".to_string())
+        byte(self.song, at)
     }
 
-    /// `n` bytes at the channel's position, moving past them.
+    /// `n` bytes at the track's position, moving past them.
     fn take(&mut self, i: usize, n: usize) -> Result<&'a [u8], String> {
-        let song: &'a Song = self.song;
+        let song = self.source(i);
         let at = self.channels[i].at;
         let bytes = song
             .data
@@ -438,7 +624,7 @@ impl<'a> Player<'a> {
 
     fn address(&mut self, i: usize) -> Result<usize, String> {
         let bytes = self.take(i, 2)?;
-        offset(self.song, u16::from_le_bytes([bytes[0], bytes[1]]))
+        offset(self.source(i), u16::from_le_bytes([bytes[0], bytes[1]]))
     }
 
     fn length(&mut self, i: usize) -> Result<u32, String> {
@@ -454,30 +640,41 @@ impl<'a> Player<'a> {
         Ok(length.max(1))
     }
 
-    /// Reads channel `i`'s items up to its next note or rest, or the end
-    /// of its track.
+    /// Reads track `i`'s items up to its next note or rest, or the end of
+    /// its track.
     fn read(&mut self, i: usize, set: &mut SettingsSet) -> Result<(), String> {
+        let hands = self.hands(i);
+        let v = i % CHANNELS;
         loop {
             let b = self.take(i, 1)?[0];
             match b {
                 0 => {
-                    self.voices[i].released = true;
+                    self.voices[v].released |= hands;
                     self.channels[i].ended = true;
+                    if i >= CHANNELS {
+                        self.end_effect(v);
+                    }
                     return Ok(());
                 }
                 1..=48 => self.command(i, b, set)?,
                 49..=127 => return Err(format!("song item {b} isn't covered by the spec")),
                 128 => {
                     self.channels[i].wait = self.length(i)?;
-                    let voice = &mut self.voices[i];
-                    voice.released = true;
-                    voice.voice.pitch = 0;
-                    voice.pitch_set = true;
+                    if hands {
+                        let voice = &mut self.voices[v];
+                        voice.released = true;
+                        voice.voice.pitch = 0;
+                        voice.pitch_set = true;
+                    }
                     return Ok(());
                 }
                 _ => {
                     self.channels[i].wait = self.length(i)?;
-                    self.note(i, b - 128)?;
+                    // A channel whose voice is taken keeps its pitch, and
+                    // its effects don't restart.
+                    if hands {
+                        self.note(i, b - 128)?;
+                    }
                     return Ok(());
                 }
             }
@@ -508,7 +705,7 @@ impl<'a> Player<'a> {
 
         let channel = &mut self.channels[i];
         channel.pitch = pitch;
-        let voice = &mut self.voices[i];
+        let voice = &mut self.voices[i % CHANNELS];
         voice.voice = Voice {
             sample: channel.sample,
             pitch,
@@ -643,9 +840,10 @@ impl<'a> Player<'a> {
                 set.noise_rate = true;
             }
             22 | 23 => {
-                let voice = &mut self.voices[i];
+                let voice = &mut self.voices[i % CHANNELS];
                 voice.echo = b == 22;
                 voice.echo_set = true;
+                self.channels[i].echo = b == 22;
             }
             24 => {
                 let args = self.take(i, 8)?;
@@ -659,7 +857,7 @@ impl<'a> Player<'a> {
                 set.echo_writing = true;
             }
             26 | 27 => {
-                let voice = &mut self.voices[i];
+                let voice = &mut self.voices[i % CHANNELS];
                 voice.noise = b == 26;
                 voice.noise_set = true;
             }
@@ -668,8 +866,13 @@ impl<'a> Player<'a> {
                 self.wide.presets[usize::from(b - 28)].copy_from_slice(args);
             }
             33..=37 => {
+                if !self.hands(i) {
+                    return Err("a preset from a channel whose voice is taken \
+                         isn't covered by the spec"
+                        .into());
+                }
                 let [l, r, e1, e2] = self.wide.presets[usize::from(b - 33)];
-                let voice = &mut self.voices[i];
+                let voice = &mut self.voices[i % CHANNELS];
                 voice.voice.volume = [l, r];
                 voice.voice.envelope = [e1, e2];
                 voice.volume_set = true;
@@ -693,9 +896,10 @@ impl<'a> Player<'a> {
             43 => self.channels[i].two_byte = true,
             44 => self.channels[i].two_byte = false,
             45 => {
+                let source = self.source(i);
                 let at = self.channels[i].at + 2 * usize::from(self.wide.branch);
-                let address = u16::from_le_bytes([self.byte(at)?, self.byte(at + 1)?]);
-                self.channels[i].at = offset(self.song, address)?;
+                let address = u16::from_le_bytes([byte(source, at)?, byte(source, at + 1)?]);
+                self.channels[i].at = offset(source, address)?;
             }
             46 => self.wide.branch = self.take(i, 1)?[0],
             47 => {
@@ -711,6 +915,14 @@ impl<'a> Player<'a> {
     }
 }
 
+/// Byte `at` of `song`'s data.
+fn byte(song: &Song, at: usize) -> Result<u8, String> {
+    song.data
+        .get(at)
+        .copied()
+        .ok_or_else(|| "a song's track runs past the end of its data".to_string())
+}
+
 /// Where song address `address` is in the song's data.
 fn offset(song: &Song, address: u16) -> Result<usize, String> {
     address
@@ -724,18 +936,19 @@ fn offset(song: &Song, address: u16) -> Result<usize, String> {
 mod tests {
     use super::*;
 
-    fn vector(name: &str) -> String {
+    /// `name` in `spec/vectors/{dir}`.
+    fn vector(dir: &str, name: &str) -> String {
         let path = format!(
-            "{}/../../spec/vectors/songs/{name}",
+            "{}/../../spec/vectors/{dir}/{name}",
             env!("CARGO_MANIFEST_DIR")
         );
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
     }
 
-    /// The song block's bytes, checking each line's position.
-    fn block() -> Vec<u8> {
+    /// A block's bytes, checking each line's position.
+    fn block(dir: &str, name: &str) -> Vec<u8> {
         let mut bytes = Vec::new();
-        for line in vector("block.hex").lines().filter(|l| !l.trim().is_empty()) {
+        for line in vector(dir, name).lines().filter(|l| !l.trim().is_empty()) {
             let mut fields = line.split_whitespace();
             let at = usize::from_str_radix(fields.next().unwrap(), 16).unwrap();
             assert_eq!(at, bytes.len(), "{line}");
@@ -756,8 +969,26 @@ mod tests {
         if on { "on" } else { "off" }.to_string()
     }
 
-    /// A step's rows as in the vectors: step, voice, event, values.
-    fn rows(n: usize, step: &Step, period: Option<u8>, rows: &mut Vec<String>) {
+    /// The rows of `events.tsv` in `spec/vectors/{dir}`.
+    fn events(dir: &str) -> Vec<String> {
+        vector(dir, "events.tsv")
+            .lines()
+            .skip(1)
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// The rows for a step as the vectors list them: step, voice, event,
+    /// values. `starts` are the effects started on voices after the step;
+    /// `effect_beats` is whether to list effect beats.
+    fn rows(
+        n: usize,
+        step: &Step,
+        period: Option<u8>,
+        starts: &[(usize, u8)],
+        effect_beats: bool,
+        rows: &mut Vec<String>,
+    ) {
         let mut row = |voice: String, event: &str, values: String| {
             rows.push(format!("{n}\t{voice}\t{event}\t{values}"));
         };
@@ -793,6 +1024,9 @@ mod tests {
                     row(i.clone(), "envelope", join(&voice.envelope));
                 }
             }
+            for (_, effect) in starts.iter().filter(|(voice, _)| voice.to_string() == i) {
+                row(i.clone(), "start", effect.to_string());
+            }
             if v.echo_set {
                 row(i.clone(), "echo", on(v.echo));
             }
@@ -819,30 +1053,65 @@ mod tests {
         if step.beat {
             row("-".into(), "beat", String::new());
         }
+        if effect_beats && step.effect_beat {
+            row("-".into(), "effect-beat", String::new());
+        }
+    }
+
+    fn same_rows(got: &[String], want: &[String]) {
+        for (k, (got, want)) in got.iter().zip(want).enumerate() {
+            assert_eq!(got, want, "row {}", k + 2);
+        }
+        assert_eq!(got.len(), want.len());
     }
 
     #[test]
     fn steps_match_the_spec_vectors() {
-        let song = Song::read(&block()).unwrap();
+        let song = Song::read(&block("songs", "block.hex")).unwrap();
         assert_eq!(song.base, 0x3000);
         let mut player = Player::new(&song).unwrap();
-        let want: Vec<String> = vector("events.tsv")
-            .lines()
-            .skip(1)
-            .map(str::to_string)
-            .collect();
         let mut got = Vec::new();
         let mut period = None;
         for n in 1..=900 {
             let step = player.step().unwrap();
             let changed = (period != Some(step.settings.period)).then_some(step.settings.period);
             period = Some(step.settings.period);
-            rows(n, &step, changed, &mut got);
+            rows(n, &step, changed, &[], false, &mut got);
         }
-        for (k, (got, want)) in got.iter().zip(&want).enumerate() {
-            assert_eq!(got, want, "row {}", k + 2);
+        same_rows(&got, &events("songs"));
+    }
+
+    #[test]
+    fn effects_match_the_spec_vectors() {
+        let song = Song::read(&block("sound-effects", "song.hex")).unwrap();
+        let effects = Effects::read(&block("sound-effects", "effects.hex")).unwrap();
+        assert_eq!(effects.block.base, 0x5000);
+        assert_eq!(effects.tracks.len(), 6);
+        let starts: Vec<(usize, u8, usize)> = vector("sound-effects", "starts.tsv")
+            .lines()
+            .skip(1)
+            .map(|l| {
+                let f: Vec<usize> = l.split('\t').map(|f| f.parse().unwrap()).collect();
+                (f[0], f[1] as u8, f[2])
+            })
+            .collect();
+        let mut player = Player::with_effects(&song, Some(&effects)).unwrap();
+        let mut got = Vec::new();
+        let mut period = None;
+        for n in 1..=700 {
+            let mut step = player.step().unwrap();
+            let changed = (period != Some(step.settings.period)).then_some(step.settings.period);
+            period = Some(step.settings.period);
+            let mut started = Vec::new();
+            for &(_, effect, voice) in starts.iter().filter(|s| s.0 == n) {
+                player.start_effect(effect, voice).unwrap();
+                let v = &mut step.voices[voice];
+                (v.echo, v.noise, v.echo_set, v.noise_set) = (false, false, true, true);
+                started.push((voice, effect));
+            }
+            rows(n, &step, changed, &started, true, &mut got);
         }
-        assert_eq!(got.len(), want.len());
+        same_rows(&got, &events("sound-effects"));
     }
 
     /// A song with the header's tracks at `tracks` and the rest of the
@@ -937,5 +1206,67 @@ mod tests {
 
     fn song_with_track_at(address: u16) -> Song {
         song(1, [address; CHANNELS], &[0])
+    }
+
+    /// An effect block at base 0 with `tracks` after a table pointing at
+    /// each.
+    fn effects(tracks: &[&[u8]]) -> Effects {
+        let mut data = Vec::new();
+        let mut at = 2 * tracks.len() as u16;
+        for track in tracks {
+            data.extend(at.to_le_bytes());
+            at += track.len() as u16;
+        }
+        data.extend(tracks.concat());
+        let mut block = (data.len() as u16).to_le_bytes().to_vec();
+        block.extend([0, 0]);
+        block.extend(data);
+        Effects::read(&block).unwrap()
+    }
+
+    #[test]
+    fn the_effect_table_runs_up_to_the_first_track() {
+        let effects = effects(&[&[0], &[1, 2, 0], &[0]]);
+        assert_eq!(effects.tracks, [6, 7, 10]);
+        // An entry pointing into the table.
+        let block = [4, 0, 0, 0, 1, 0, 0, 0];
+        assert!(Effects::read(&block).is_err());
+    }
+
+    #[test]
+    fn a_song_start_gives_back_the_voices() {
+        // Channel 0 plays note 37 with a length of 2, over and over.
+        let mut tracks = [18; CHANNELS];
+        tracks[0] = 19;
+        let mut tune = song(255, tracks, &[0, 165, 2, 3, 19, 0]);
+        tune.data[17] = 255;
+        // Sample 9, then a long note.
+        let fx = effects(&[&[1, 9, 165, 200]]);
+        let mut player = Player::with_effects(&tune, Some(&fx)).unwrap();
+        player.step().unwrap();
+        player.start_effect(0, 0).unwrap();
+        assert!(player.start_effect(0, 1).is_err());
+        player.step().unwrap();
+        let step = player.step().unwrap();
+        assert!(step.voices[0].started && step.voices[0].voice.sample == 9);
+        // While taken, the song's own notes don't reach the voice.
+        for _ in 0..4 {
+            assert!(!player.step().unwrap().voices[0].started);
+        }
+        player.start_song(&tune).unwrap();
+        let notes = (0..4).filter(|_| player.step().unwrap().voices[0].started);
+        assert_eq!(notes.count(), 2);
+        assert_eq!(player.channels[CHANNELS].sample, 9);
+    }
+
+    #[test]
+    fn bad_effect_starts_are_errors() {
+        let tune = song(1, [18; CHANNELS], &[0]);
+        let fx = effects(&[&[0]]);
+        assert!(Player::new(&tune).unwrap().start_effect(0, 0).is_err());
+        let mut player = Player::with_effects(&tune, Some(&fx)).unwrap();
+        assert!(player.start_effect(1, 0).is_err());
+        assert!(player.start_effect(0, CHANNELS).is_err());
+        assert!(player.start_effect(0, 7).is_ok());
     }
 }
