@@ -9,6 +9,7 @@ use serde::de::{self, Deserializer, Visitor};
 use toml::{Table, Value};
 
 use crate::curve;
+use crate::legs::{Dir, Legs};
 use crate::progress::Progress;
 
 pub const FORMAT: u32 = 1;
@@ -40,6 +41,10 @@ pub enum Mode {
     /// The player moves freely over the scene's terrain and enters a node
     /// by touching it.
     Free(Free),
+    /// The player moves between nodes along paths walked as straight legs
+    /// from corner to corner, each direction taking the path the file
+    /// gives it (see [`crate::LegWalker`]).
+    Legs(Legs),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -107,6 +112,13 @@ pub struct Path {
     pub hidden: bool,
     /// Can only be walked from `from` to `to`.
     pub one_way: bool,
+    /// Legs maps: the directions that take this path from `from`.
+    pub leave: Vec<Dir>,
+    /// Legs maps: the directions that take this path back from `to`.
+    pub back: Vec<Dir>,
+    /// Legs maps: the corners walking back passes, when they aren't
+    /// `via` reversed.
+    pub back_via: Option<Vec<Vec2>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -259,6 +271,36 @@ impl WorldMap {
         best.map(|(_, e)| e)
     }
 
+    /// On a legs map, the open path that `dir` takes from `node`: the
+    /// path, the node at its other end and the points of the walk (the
+    /// corners, then the other node).
+    pub fn leg_route(
+        &self,
+        node: usize,
+        dir: Dir,
+        p: &Progress,
+    ) -> Option<(usize, usize, Vec<Vec2>)> {
+        (0..self.paths.len()).find_map(|i| {
+            let path = &self.paths[i];
+            let (to, mut points) = if path.from == node && path.leave.contains(&dir) {
+                (path.to, path.via.clone())
+            } else if path.to == node && path.back.contains(&dir) {
+                let mut back = path.back_via.clone().unwrap_or_else(|| path.via.clone());
+                if path.back_via.is_none() {
+                    back.reverse();
+                }
+                (path.from, back)
+            } else {
+                return None;
+            };
+            if !self.path_open(i, p) {
+                return None;
+            }
+            points.push(self.nodes[to].at);
+            Some((i, to, points))
+        })
+    }
+
     /// The nearest unlocked node whose radius `at` is within, for
     /// free-roaming maps.
     pub fn node_touching(&self, at: Vec2, p: &Progress) -> Option<usize> {
@@ -398,6 +440,7 @@ struct File {
     mode: String,
     start: Option<String>,
     free: Option<FreeFile>,
+    legs: Option<LegsFile>,
     #[serde(default)]
     nodes: Vec<NodeFile>,
     #[serde(default, rename = "paths")]
@@ -416,6 +459,19 @@ struct FreeFile {
     start: [N; 2],
     speed: N,
     vehicle: Option<VehicleFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegsFile {
+    leg_frames: u32,
+    remember: u32,
+    page_width: u32,
+    page_wait: u32,
+    appear_offset: [N; 2],
+    appear_wait: u32,
+    #[serde(default)]
+    y_up: bool,
 }
 
 #[derive(Deserialize)]
@@ -458,6 +514,11 @@ struct PathFile {
     hidden: bool,
     #[serde(default)]
     one_way: bool,
+    #[serde(default)]
+    leave: Vec<String>,
+    #[serde(default)]
+    back: Vec<String>,
+    back_via: Option<Vec<[N; 2]>>,
 }
 
 #[derive(Deserialize)]
@@ -596,11 +657,26 @@ impl Reader<'_> {
                     .transpose()?,
                 hidden: p.hidden,
                 one_way: p.one_way,
+                leave: self.dirs(&format!("{at}.leave"), &p.leave)?,
+                back: self.dirs(&format!("{at}.back"), &p.back)?,
+                back_via: p
+                    .back_via
+                    .as_ref()
+                    .map(|v| v.iter().copied().map(v2).collect()),
             });
         }
 
+        if f.legs.is_some() && f.mode != "legs" {
+            return Err(self.err("legs", "only for maps with mode = \"legs\""));
+        }
         let mode = match (f.mode.as_str(), f.free) {
             ("paths", None) => Mode::Paths,
+            ("legs", None) => {
+                let legs = f
+                    .legs
+                    .ok_or_else(|| self.err("legs", "a legs map needs a [legs] table"))?;
+                Mode::Legs(self.legs(legs)?)
+            }
             ("free", Some(free)) => Mode::Free(Free {
                 start: v2(free.start),
                 speed: free.speed.0,
@@ -610,17 +686,33 @@ impl Reader<'_> {
                     speed: v.speed.0,
                 }),
             }),
-            ("paths", Some(_)) => {
+            ("paths" | "legs", Some(_)) => {
                 return Err(self.err("free", "only for maps with mode = \"free\""));
             }
             ("free", None) => {
                 return Err(self.err("free", "a free-roaming map needs a [free] table"));
             }
-            (m, _) => return Err(self.err("mode", format!("`{m}`; use \"paths\" or \"free\""))),
+            (m, _) => {
+                return Err(self.err(
+                    "mode",
+                    format!("`{m}`; use \"paths\", \"legs\" or \"free\""),
+                ));
+            }
         };
+        if matches!(mode, Mode::Legs(_)) {
+            self.check_legs(&paths, &nodes)?;
+        } else if let Some(i) = paths
+            .iter()
+            .position(|p| !p.leave.is_empty() || !p.back.is_empty() || p.back_via.is_some())
+        {
+            return Err(self.err(
+                &format!("paths[{i}]"),
+                "leave, back and back_via are only for maps with mode = \"legs\"",
+            ));
+        }
         if let Some(start) = &f.start {
             index("start", start)?;
-        } else if mode == Mode::Paths && !nodes.is_empty() {
+        } else if !matches!(mode, Mode::Free(_)) && !nodes.is_empty() {
             return Err(self.err("start", "a path map needs a start node"));
         }
 
@@ -643,6 +735,70 @@ impl Reader<'_> {
                 })
                 .collect(),
         })
+    }
+
+    fn dirs(&self, at: &str, names: &[String]) -> Result<Vec<Dir>, MapError> {
+        let mut dirs = Vec::new();
+        for name in names {
+            let dir = Dir::parse(name)
+                .ok_or_else(|| self.err(at, format!("`{name}`; use right, left, up or down")))?;
+            if dirs.contains(&dir) {
+                return Err(self.err(at, format!("`{name}` is listed twice")));
+            }
+            dirs.push(dir);
+        }
+        Ok(dirs)
+    }
+
+    fn legs(&self, l: LegsFile) -> Result<Legs, MapError> {
+        // a power of two divides a whole number of pixels exactly
+        if !l.leg_frames.is_power_of_two() || l.leg_frames > 1 << 16 {
+            return Err(self.err("legs.leg_frames", "use a power of two up to 65536"));
+        }
+        for (field, n) in [("remember", l.remember), ("page_width", l.page_width)] {
+            if n == 0 {
+                return Err(self.err(&format!("legs.{field}"), "must be positive"));
+            }
+        }
+        Ok(Legs {
+            leg_frames: l.leg_frames,
+            remember: l.remember,
+            page_width: l.page_width,
+            page_wait: l.page_wait,
+            appear_offset: v2(l.appear_offset),
+            appear_wait: l.appear_wait,
+            y_up: l.y_up,
+        })
+    }
+
+    /// Every path of a legs map is taken by some direction, and no
+    /// direction takes two paths from the same node.
+    fn check_legs(&self, paths: &[Path], nodes: &[Node]) -> Result<(), MapError> {
+        let mut taken = BTreeSet::new();
+        for (i, p) in paths.iter().enumerate() {
+            let at = format!("paths[{i}]");
+            if p.leave.is_empty() && p.back.is_empty() {
+                return Err(self.err(&at, "a legs map's path needs leave or back directions"));
+            }
+            if p.one_way && (!p.back.is_empty() || p.back_via.is_some()) {
+                return Err(self.err(&at, "a one-way path can't have back or back_via"));
+            }
+            for (node, dirs) in [(p.from, &p.leave), (p.to, &p.back)] {
+                for &dir in dirs {
+                    if !taken.insert((node, dir)) {
+                        return Err(self.err(
+                            &at,
+                            format!(
+                                "{} from `{}` already takes another path",
+                                dir.name(),
+                                nodes[node].id
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn kind(&self, at: &str, n: &NodeFile) -> Result<NodeKind, MapError> {

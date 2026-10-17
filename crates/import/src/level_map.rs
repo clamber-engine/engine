@@ -203,6 +203,106 @@ impl LevelMap {
         Ok(Some(route))
     }
 
+    /// The map as an engine world map (`.map`) in legs mode, starting at
+    /// stop `start`, walked as `behavior/level-map.md` says. Each pair of
+    /// neighbouring stops is one path, taken by the directions the point
+    /// tables give from either end. Every stop is a waypoint and every
+    /// path is open: what the stops are and the progress that opens
+    /// paths aren't covered by the spec.
+    pub fn to_world_map(&self, id: &str, start: u8) -> Result<String, String> {
+        use std::collections::BTreeMap;
+        use std::fmt::Write;
+
+        let stops: Vec<u8> = self.ids().filter(|&id| !is_corner(id)).collect();
+        if !stops.contains(&start) {
+            return Err(format!("the map has no stop {start}"));
+        }
+        // (lower stop, higher stop) -> each end's directions and route
+        type Way = (Vec<Direction>, Option<Vec<u8>>);
+        let mut pairs: BTreeMap<(u8, u8), [Way; 2]> = BTreeMap::new();
+        for &stop in &stops {
+            for direction in Direction::ALL {
+                let Some(route) = self.route(stop, direction)? else {
+                    continue;
+                };
+                let to = *route.last().unwrap();
+                let end = usize::from(stop > to);
+                let way = &mut pairs.entry((stop.min(to), stop.max(to))).or_default()[end];
+                let corners = route[..route.len() - 1].to_vec();
+                if way.1.as_ref().is_some_and(|r| *r != corners) {
+                    return Err(format!(
+                        "two directions from stop {stop} to {to} take different routes"
+                    ));
+                }
+                way.0.push(direction);
+                way.1 = Some(corners);
+            }
+        }
+
+        let pages = stops
+            .iter()
+            .map(|&s| self.position(s).x / 256 + 1)
+            .max()
+            .unwrap_or(1);
+        let mut out = String::new();
+        let w = &mut out;
+        let point = |id: u8| {
+            let Point { x, h } = self.position(id);
+            format!("[{x}, {h}]")
+        };
+        let points = |ids: &[u8]| {
+            let list: Vec<String> = ids.iter().map(|&id| point(id)).collect();
+            format!("[{}]", list.join(", "))
+        };
+        let dirs = |dirs: &[Direction]| {
+            let names: Vec<String> = dirs
+                .iter()
+                .map(|d| format!("\"{}\"", format!("{d:?}").to_lowercase()))
+                .collect();
+            format!("[{}]", names.join(", "))
+        };
+        let _ = writeln!(
+            w,
+            "format = 1\nid = \"{id}\"\nsize = [{}, 256]",
+            pages * 256
+        );
+        let _ = writeln!(w, "mode = \"legs\"\nstart = \"stop-{start}\"\n");
+        let _ = writeln!(
+            w,
+            "[legs]\nleg_frames = 64\nremember = 31\npage_width = 256\npage_wait = 64\n\
+             appear_offset = [{APPEARANCE_OFFSET}, 0]\nappear_wait = 64\ny_up = true"
+        );
+        for &stop in &stops {
+            let _ = writeln!(
+                w,
+                "\n[[nodes]]\nid = \"stop-{stop}\"\nkind = \"waypoint\"\nat = {}",
+                point(stop)
+            );
+        }
+        for ((a, b), [there, back]) in &pairs {
+            let (from, to, there, back) = if there.0.is_empty() {
+                (b, a, back, there)
+            } else {
+                (a, b, there, back)
+            };
+            let via = there.1.clone().unwrap_or_default();
+            let _ = writeln!(
+                w,
+                "\n[[paths]]\nfrom = \"stop-{from}\"\nto = \"stop-{to}\"\nvia = {}\nleave = {}",
+                points(&via),
+                dirs(&there.0)
+            );
+            if let Some(route) = &back.1 {
+                let _ = writeln!(w, "back = {}", dirs(&back.0));
+                let reversed: Vec<u8> = via.iter().rev().copied().collect();
+                if *route != reversed {
+                    let _ = writeln!(w, "back_via = {}", points(route));
+                }
+            }
+        }
+        Ok(out)
+    }
+
     /// Checks every route the map has, so an image whose map the spec
     /// doesn't describe is reported.
     pub fn check(&self) -> Result<(), String> {
@@ -321,6 +421,48 @@ mod tests {
             }
         }
         tables
+    }
+
+    #[test]
+    fn the_world_map_walks_the_spec_vectors_routes() {
+        use clamber_worldmap::{Dir, Mode, Progress, WorldMap};
+
+        let map = map();
+        let text = map.to_world_map("level-map", 10).unwrap();
+        let world = WorldMap::from_toml_str(&text, "level-map.map").unwrap();
+        let Mode::Legs(legs) = &world.mode else {
+            panic!("not a legs map")
+        };
+        assert!(legs.y_up);
+        assert_eq!(world.start.as_deref(), Some("stop-10"));
+        let p = Progress::default();
+        let mut walks = 0;
+        for row in vector("routes.tsv").lines().skip(1) {
+            let cols: Vec<&str> = row.split('\t').collect();
+            let from = world.node(&format!("stop-{}", cols[0])).unwrap();
+            let dir = Dir::parse(cols[1]).unwrap();
+            let (_, to, points) = world.leg_route(from, dir, &p).unwrap();
+            assert_eq!(world.nodes[to].id, format!("stop-{}", cols[2]), "{row}");
+            let expected: Vec<clamber_level::Vec2> = cols[3]
+                .split(' ')
+                .map(|p| {
+                    let (x, h) = p.split_once('@').unwrap().1.split_once(',').unwrap();
+                    clamber_level::Vec2::ints(x.parse().unwrap(), h.parse().unwrap())
+                })
+                .collect();
+            assert_eq!(points, expected, "{row}");
+            walks += 1;
+        }
+        // and no others
+        let all = world
+            .nodes
+            .iter()
+            .enumerate()
+            .flat_map(|(i, _)| Dir::ORDER.map(|d| world.leg_route(i, d, &p)))
+            .flatten()
+            .count();
+        assert_eq!(all, walks);
+        assert!(map.to_world_map("level-map", 112).is_err());
     }
 
     #[test]

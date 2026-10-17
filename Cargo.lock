@@ -341,6 +341,7 @@ dependencies = [
  "clamber-level",
  "clamber-sim",
  "clamber-sprite",
+ "clamber-worldmap",
  "serde",
  "serde_json",
  "sha2",

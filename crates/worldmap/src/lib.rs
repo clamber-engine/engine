@@ -10,16 +10,20 @@
 //! Maps nest through warp nodes: an overworld warps into a regional map
 //! and back. A map can instead be free-roaming ([`Mode::Free`]): the player
 //! moves over the terrain of the map's scene level, optionally in a
-//! vehicle, and enters nodes by touching them. Animated elements are
+//! vehicle, and enters nodes by touching them. On a legs map
+//! ([`Mode::Legs`]) each direction takes a given path, walked in straight
+//! legs by a [`LegWalker`]. Animated elements are
 //! [`Decoration`]s and node sprites.
 //!
 //! [`Progress`] is what the map needs from save data, and serializes.
 
 mod curve;
+mod legs;
 mod map;
 mod progress;
 
 pub use curve::{Walker, cosine, distance, length, smooth};
+pub use legs::{Buttons, Dir, LegWalker, Legs, Step};
 pub use map::{
     Condition, Decoration, Exit, FORMAT, Free, MapError, Mode, Node, NodeKind, Path, Vehicle,
     WorldMap, check_warps,
