@@ -14,6 +14,10 @@
 //! push down to `swim_ceiling_gap` below a ceiling; deeper is a wall.
 //! Rising into ground stops the rise, and sinking onto a floor rests on
 //! it.
+//!
+//! In a trace (`swimming.md`, "In a trace") every swimming frame is
+//! `swim`, a stroke is `stroke`, and coming onto and leaving the floor
+//! without a stroke are `land` and `leave_ground`.
 
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame};
@@ -22,6 +26,7 @@ use clamber_pack::{Param, Physics};
 
 use crate::columns::{self, column};
 use crate::player::{Facing, Player, State, ceil, ease};
+use crate::world::Event;
 
 /// How far a point is in the ground.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,7 +101,14 @@ impl Player {
     }
 
     /// One frame of swimming, with `dir` the direction held.
-    pub(crate) fn swim(&mut self, level: &Level, physics: &Physics, input: &Frame, dir: i32) {
+    pub(crate) fn swim(
+        &mut self,
+        level: &Level,
+        physics: &Physics,
+        input: &Frame,
+        dir: i32,
+        events: &mut Vec<Event>,
+    ) {
         let held = |a| input.held.contains(a);
         if self.state != State::Swim {
             self.start_swimming();
@@ -108,7 +120,9 @@ impl Player {
         self.target = target;
 
         // A stroke, then sinking.
-        if input.pressed.contains(Action::Jump) {
+        let stroke = input.pressed.contains(Action::Jump);
+        if stroke {
+            events.push(Event::Stroke);
             let speed = if held(Action::Up) {
                 physics[Param::StrokeUpSpeed]
             } else if held(Action::Down) {
@@ -201,8 +215,18 @@ impl Player {
             }
         }
 
+        if self.swim_floor && !was_on_floor {
+            events.push(Event::Land);
+        } else if was_on_floor && !self.swim_floor && !stroke {
+            events.push(Event::LeaveGround);
+        }
+
         if !stopped && dir != 0 {
-            self.facing = if dir < 0 { Facing::Left } else { Facing::Right };
+            let facing = if dir < 0 { Facing::Left } else { Facing::Right };
+            if facing != self.facing {
+                self.facing = facing;
+                events.push(Event::Turn);
+            }
         }
     }
 

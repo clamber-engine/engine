@@ -1,0 +1,15 @@
+# clamber level v1
+#
+# For scenario swim-strokes: open water with no ground at all. The whole
+# level is a water region, the start is 128 px from its left end, and
+# the path (176 px right, 82 px up and 25 px down of where the scenario
+# starts, after sinking to the limit) stays far from its edges.
+format = 1
+name = "Test: swimming strokes in open water"
+size = [512, 400]
+start = [128, 160]
+
+[[regions]]
+name = "water"
+rect = [0, 0, 512, 400]
+water = true

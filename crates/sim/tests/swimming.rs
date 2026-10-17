@@ -6,7 +6,7 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
 use clamber_pack::Fixed;
-use clamber_sim::{Facing, InputFrame, State, World, generic_feel, step};
+use clamber_sim::{Event, Facing, InputFrame, State, World, generic_feel, step};
 
 /// A level that is all water, with `collision` (TOML `[[collision]]`
 /// tables) for its ground, starting at `start`.
@@ -434,4 +434,109 @@ fn out_of_the_water_the_player_falls() {
     }
     play.step(&[]);
     assert_eq!(play.world.player.state, State::Fall);
+}
+
+impl Play {
+    fn events(&self) -> &[Event] {
+        &self.world.events
+    }
+}
+
+#[test]
+fn trace_events_while_swimming() {
+    // Floor at 1100 from x = 0 to 1200.
+    let mut play = pool(&rect(0, 1100, 1200, 100), (1000, 1000));
+    let mut lands = 0;
+    while !play.world.player.swim_floor {
+        play.step(&[]);
+        assert_eq!(play.world.player.state, State::Swim);
+        if play.world.player.swim_floor {
+            assert_eq!(play.events(), [Event::Land]);
+            lands += 1;
+        } else {
+            assert_eq!(play.events(), []);
+        }
+    }
+    assert_eq!(lands, 1);
+    // Resting frames have no events.
+    for _ in 0..10 {
+        play.step(&[]);
+        assert_eq!(play.events(), []);
+    }
+    // A stroke from the floor is a stroke, not leaving the floor.
+    play.step(&[J]);
+    assert_eq!(play.events(), [Event::Stroke]);
+    assert!(!play.world.player.swim_floor);
+    play.step(&[J]);
+    assert_eq!(play.events(), []);
+    // Back down, then swim off the end of the floor: one leave_ground,
+    // on the frame it's no longer on the floor.
+    while !play.world.player.swim_floor {
+        play.step(&[]);
+    }
+    let mut leaves = 0;
+    for _ in 0..400 {
+        let was = play.world.player.swim_floor;
+        play.step(&[R]);
+        let left_floor = was && !play.world.player.swim_floor;
+        assert_eq!(play.events().contains(&Event::LeaveGround), left_floor);
+        if left_floor {
+            assert_eq!(play.v().1, 1);
+            leaves += 1;
+        }
+    }
+    assert_eq!(leaves, 1);
+    // A turn on every frame facing changes, and never a land state's
+    // events.
+    play.step(&[L]);
+    assert_eq!(play.events(), [Event::Turn]);
+    play.step(&[L]);
+    assert_eq!(play.events(), []);
+    play.step(&[R, J]);
+    assert_eq!(play.events(), [Event::Stroke, Event::Turn]);
+}
+
+#[test]
+fn a_turn_the_left_end_stops_is_no_turn() {
+    let mut play = open();
+    play.put(10.5, 1000.0, -64, 0);
+    assert_eq!(play.world.player.facing, Facing::Right);
+    play.step(&[L]);
+    assert_eq!(play.v().0, 0);
+    assert_eq!(play.world.player.facing, Facing::Right);
+    assert_eq!(play.events(), []);
+}
+
+#[test]
+fn the_synthetic_trace_example() {
+    // Resting on the floor facing left, with the fraction of its height
+    // at least 24/256.
+    let mut play = pool(&rect(0, 1100, 1200, 100), (1000, 1000));
+    play.step(&[L]);
+    while !play.world.player.swim_floor {
+        play.step(&[]);
+    }
+    let frac = |play: &Play| n256(play.y() - Fixed::from_int(play.y().floor() as i32));
+    while !(24..=255 - 24).contains(&frac(&play)) {
+        play.step(&[]);
+    }
+    play.world.player.vel.x = Fixed::ZERO;
+    let y0 = play.y();
+    // (input, y, vy, ground, events), y in 1/256 px from the start.
+    type Row<'a> = (&'a [Action], i64, i64, bool, &'a [Event]);
+    let rows: [Row; 4] = [
+        (&[], 12, 0, true, &[]),
+        (&[], 24, 0, true, &[]),
+        (&[J], -476, -500, false, &[Event::Stroke]),
+        (&[J], -964, -488, false, &[]),
+    ];
+    for (frame, (keys, y, vy, ground, events)) in rows.into_iter().enumerate() {
+        play.step(keys);
+        assert_eq!(n256(play.y() - y0), y, "frame {frame}");
+        assert_eq!(play.v(), (0, vy), "frame {frame}");
+        assert_eq!(play.world.player.state, State::Swim);
+        assert_eq!(play.world.player.swim_floor, ground, "frame {frame}");
+        assert_eq!(play.events(), events, "frame {frame}");
+        assert_eq!(play.world.player.facing, Facing::Left);
+    }
 }

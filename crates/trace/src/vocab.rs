@@ -16,6 +16,7 @@ names! {
         Hurt => "hurt",
         Swap => "swap",
         GroundAction => "ground_action",
+        Swim => "swim",
     }
 }
 
@@ -32,5 +33,6 @@ names! {
         Bounce => "bounce",
         Hurt => "hurt",
         Turn => "turn",
+        Stroke => "stroke",
     }
 }

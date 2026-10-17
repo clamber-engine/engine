@@ -662,7 +662,7 @@ impl Player {
             _ => 0,
         };
         if Player::in_water(level, self.pos) {
-            self.swim(level, physics, input, held_dir);
+            self.swim(level, physics, input, held_dir, events);
             return;
         }
         if self.state == State::Swim {

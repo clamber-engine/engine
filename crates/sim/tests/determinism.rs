@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use clamber_level::{Level, Vec2};
 use clamber_pack::Presets;
-use clamber_sim::{Script, World, generic_feel, run};
+use clamber_sim::{Script, State, World, generic_feel, run};
 use clamber_trace::Scenario;
 
 fn root() -> PathBuf {
@@ -67,14 +67,30 @@ fn scenarios_move_the_player() {
     for (scenario, level) in scenarios() {
         let feel = Arc::new(generic_feel("default").unwrap());
         let mut world = World::new(level.clone(), feel);
-        assert!(world.player.grounded(), "{} starts in the air", scenario.id);
+        // A swimming scenario is underwater throughout; the others start
+        // and end on the ground.
+        let swimming = world.player.state == State::Swim;
+        assert!(
+            swimming || world.player.grounded(),
+            "{} starts in the air",
+            scenario.id
+        );
         let mut moved = false;
         run(&mut world, &Script::from_scenario(&scenario), |w| {
             moved |= w.player.pos != level.start;
         });
         assert_eq!(world.frame, scenario.frames);
         assert!(moved, "{} never moves the player", scenario.id);
-        assert!(world.player.grounded(), "{} ends in the air", scenario.id);
+        if swimming {
+            assert_eq!(
+                world.player.state,
+                State::Swim,
+                "{} leaves the water",
+                scenario.id
+            );
+        } else {
+            assert!(world.player.grounded(), "{} ends in the air", scenario.id);
+        }
     }
 }
 

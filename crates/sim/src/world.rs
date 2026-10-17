@@ -44,6 +44,8 @@ pub enum Event {
     Bounce,
     /// Took damage.
     Hurt,
+    /// A swimming stroke began.
+    Stroke,
 }
 
 impl Event {
@@ -58,6 +60,7 @@ impl Event {
             Event::RollEnd => "roll_end",
             Event::Bounce => "bounce",
             Event::Hurt => "hurt",
+            Event::Stroke => "stroke",
         }
     }
 }
