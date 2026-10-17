@@ -28,6 +28,11 @@ pub struct Collider {
     pub shape: Shape,
     /// A surface type name, defined in the level's or the built-in surfaces.
     pub surface: String,
+    /// Ground that hangs from above, like a ceiling: the way out of it
+    /// is down, through its underside. A swimmer measures how far it is
+    /// in such ground from the underside, and in other ground from the
+    /// top.
+    pub hangs: bool,
 }
 
 /// A direction to probe in.
@@ -60,6 +65,8 @@ pub struct Span {
     /// Index into [`Collision::colliders`].
     pub collider: usize,
     pub one_way: bool,
+    /// The collider's [`Collider::hangs`].
+    pub hangs: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -86,6 +93,7 @@ pub struct Collision {
     pub colliders: Vec<Collider>,
     edges: Vec<Edge>,
     grid: BTreeMap<(i64, i64), Vec<usize>>,
+    hanging: bool,
 }
 
 impl Collision {
@@ -120,10 +128,12 @@ impl Collision {
                 }
             }
         }
+        let hanging = colliders.iter().any(|c| c.hangs);
         Collision {
             colliders,
             edges,
             grid,
+            hanging,
         }
     }
 
@@ -265,6 +275,11 @@ impl Collision {
         best
     }
 
+    /// Whether any collider [hangs](Collider::hangs).
+    pub fn hanging(&self) -> bool {
+        self.hanging
+    }
+
     /// The first solid area containing `p`, if any. One-way areas don't
     /// count.
     pub fn solid_at(&self, p: Vec2) -> Option<usize> {
@@ -307,6 +322,7 @@ impl Collision {
                     bottom: y,
                     collider,
                     one_way: e.one_way,
+                    hangs: self.colliders[collider].hangs,
                 }),
                 Some((_, ny)) if ny < 0 => top = Some(y),
                 Some(_) => {
@@ -316,6 +332,7 @@ impl Collision {
                             bottom: y,
                             collider,
                             one_way: e.one_way,
+                            hangs: self.colliders[collider].hangs,
                         });
                     }
                 }
@@ -361,6 +378,7 @@ mod tests {
                 one_way: false,
             },
             surface: "normal".into(),
+            hangs: false,
         };
         // a slope rising to the right, from (300, 100) to (500, 50)
         let ramp = Collider {
@@ -369,6 +387,7 @@ mod tests {
                 one_way: false,
             },
             surface: "normal".into(),
+            hangs: false,
         };
         let ledge = Collider {
             shape: Shape::Segment {
@@ -377,6 +396,7 @@ mod tests {
                 one_way: true,
             },
             surface: "slippery".into(),
+            hangs: false,
         };
         Collision::new(vec![ground, ramp, ledge])
     }
@@ -420,6 +440,7 @@ mod tests {
                 one_way: true,
             },
             surface: "normal".into(),
+            hangs: false,
         };
         let w = Collision::new(vec![platform]);
         let hit = w.cast(v(50, -10), Dir::Down, f(100)).unwrap();
@@ -472,6 +493,7 @@ mod tests {
                 one_way: false,
             },
             surface: "normal".into(),
+            hangs: false,
         };
         let w = Collision::new(vec![ccw]);
         assert_eq!(
@@ -523,6 +545,7 @@ mod tests {
                 one_way: false,
             },
             surface: "normal".into(),
+            hangs: false,
         };
         let w = Collision::new(vec![long]);
         assert_eq!(

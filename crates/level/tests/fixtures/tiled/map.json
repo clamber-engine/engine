@@ -25,7 +25,9 @@
         { "id": 2, "name": "", "type": "platform", "x": 16, "y": 8, "width": 32, "height": 4, "rotation": 0, "visible": true },
         { "id": 3, "name": "", "type": "solid", "x": 10, "y": 10, "width": 0, "height": 0, "rotation": 0,
           "polyline": [ { "x": 0, "y": 0 }, { "x": 20, "y": 5 } ],
-          "properties": [ { "name": "surface", "type": "string", "value": "slippery" } ] }
+          "properties": [ { "name": "surface", "type": "string", "value": "slippery" } ] },
+        { "id": 4, "name": "", "type": "solid", "x": 0, "y": 0, "width": 64, "height": 4, "rotation": 0,
+          "properties": [ { "name": "hangs", "type": "bool", "value": true } ] }
       ] },
     { "type": "objectgroup", "id": 5, "name": "things", "objects": [
         { "id": 10, "name": "", "class": "start", "point": true, "x": 8, "y": 32, "width": 0, "height": 0, "rotation": 0 },

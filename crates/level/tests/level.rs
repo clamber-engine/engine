@@ -380,9 +380,9 @@ fn imports_tiled_map() {
     assert_eq!(plants.tiles[6].index(), Some(1));
 
     // collision: an untyped rectangle on the collision layer, a platform's
-    // top edge, and a polyline
+    // top edge, a polyline, and a rectangle that hangs
     let c = &l.collision.colliders;
-    assert_eq!(c.len(), 3);
+    assert_eq!(c.len(), 4);
     assert!(matches!(&c[0].shape, Shape::Solid { points, one_way: false } if points.len() == 4));
     assert_eq!(
         c[1].shape,
@@ -393,6 +393,8 @@ fn imports_tiled_map() {
         }
     );
     assert_eq!(c[2].surface, "slippery");
+    let hangs: Vec<_> = c.iter().map(|c| c.hangs).collect();
+    assert_eq!(hangs, [false, false, false, true]);
 
     let door = &l.entities[0];
     assert_eq!(
@@ -486,4 +488,22 @@ fn step_sets_write_as_lists() {
     let text = l.to_toml_string();
     assert!(text.contains("run_turn_steps = [2, 4]"), "{text}");
     assert_eq!(Level::from_toml_str(&text, "saved").unwrap(), l);
+}
+
+#[test]
+fn solids_can_hang() {
+    let src = "format = 1\nsize = [100, 100]\nstart = [10, 10]\n\
+        [[collision]]\nshape = \"rect\"\nrect = [0, 0, 100, 20]\nhangs = true\n\
+        [[collision]]\nshape = \"polygon\"\npoints = [[0, 90], [100, 90], [50, 60]]\n";
+    let l = Level::from_toml_str(src, "x.level").unwrap();
+    let hangs: Vec<_> = l.collision.colliders.iter().map(|c| c.hangs).collect();
+    assert_eq!(hangs, [true, false]);
+    assert!(l.collision.hanging());
+    let back = Level::from_toml_str(&l.to_toml_string(), "saved").unwrap();
+    assert_eq!(back, l);
+    assert!(!full().collision.hanging());
+    // A segment has no underside to hang by.
+    let err =
+        level_err("[[collision]]\nshape = \"segment\"\nfrom = [0, 0]\nto = [9, 0]\nhangs = true\n");
+    assert!(err.contains("hangs"), "{err}");
 }

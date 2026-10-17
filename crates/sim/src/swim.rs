@@ -8,8 +8,10 @@
 //! The ground acts on one point: the column holding `x` and the feet
 //! line, `y` rounded up. The point is in the ground when the pixel
 //! row just above the feet line is inside solid ground. How far in it is
-//! counts to the nearer of the ground's top and its underside, which also
-//! says whether it's a floor or a ceiling to the swimmer. Moving across
+//! counts to the ground's underside if it hangs (a ceiling to the
+//! swimmer), and otherwise to its top (a floor). In a level where no
+//! ground is marked as hanging, it counts to the nearer of the two, and
+//! that says which it is. Moving across
 //! into ground no more than `swim_step` deep is a step up onto it, or a
 //! push down to `swim_ceiling_gap` below a ceiling; deeper is a wall.
 //! Rising into ground stops the rise, and sinking onto a floor rests on
@@ -50,36 +52,43 @@ fn px(n: i64) -> Fixed {
     columns::left_edge(n)
 }
 
-/// The solid ground in `column`, from the top down, with overlapping and
-/// touching pieces joined: `(top, bottom, collider of the top piece)`.
-fn solids(level: &Level, column: i64) -> Vec<(Fixed, Fixed, usize)> {
+/// How far the point in `column` with its feet on line `feet` is in the
+/// ground, if it is. The piece of ground at the point reaches up through
+/// the floors overlapping or touching it, and down through all the
+/// ground: hanging ground resting on a floor has no way out below until
+/// the floor's underside.
+fn depth(level: &Level, column: i64, feet: i64) -> Option<Depth> {
+    let (row_top, row_bottom) = (px(feet - 1), px(feet));
     let mut spans: Vec<_> = columns::spans(level, column)
         .into_iter()
         .filter(|s| s.top < s.bottom)
         .collect();
     spans.sort_by_key(|s| (s.top, s.bottom));
-    let mut joined: Vec<(Fixed, Fixed, usize)> = Vec::new();
-    for s in spans {
-        match joined.last_mut() {
-            Some(last) if s.top <= last.1 => last.1 = last.1.max(s.bottom),
-            _ => joined.push((s.top, s.bottom, s.collider)),
-        }
+    let at = *spans
+        .iter()
+        .find(|s| s.top < row_bottom && s.bottom > row_top)?;
+    let (mut top, mut bottom) = (at.top, at.bottom);
+    let mut collider = at.collider;
+    while let Some(s) = spans
+        .iter()
+        .find(|s| !s.hangs && !at.hangs && s.top < top && s.bottom >= top)
+    {
+        top = s.top;
+        collider = s.collider;
     }
-    joined
-}
-
-/// How far the point in `column` with its feet on line `feet` is in the
-/// ground, if it is.
-fn depth(level: &Level, column: i64, feet: i64) -> Option<Depth> {
-    let (row_top, row_bottom) = (px(feet - 1), px(feet));
-    let (top, bottom, collider) = solids(level, column)
-        .into_iter()
-        .find(|&(top, bottom, _)| top < row_bottom && bottom > row_top)?;
+    while let Some(s) = spans.iter().find(|s| s.top <= bottom && s.bottom > bottom) {
+        bottom = s.bottom;
+    }
     let up = ceil(row_bottom - top);
     let down = ceil(bottom - row_top);
+    let ceiling = if level.collision.hanging() {
+        at.hangs
+    } else {
+        down < up
+    };
     Some(Depth {
-        px: up.min(down),
-        ceiling: down < up,
+        px: if ceiling { down } else { up },
+        ceiling,
         collider,
     })
 }

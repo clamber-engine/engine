@@ -399,12 +399,15 @@ impl Ground {
     /// line down to its ceiling line, which is the ground's underside, as
     /// the swimming player meets it (`spec/behavior/swimming.md`). A
     /// ceiling line below the band is cut to the band's bottom line.
+    /// Ceilings [hang](Collider::hangs), so the swimmer measures them
+    /// from their underside.
     pub fn colliders(&self, xs: Range<i64>, surface: &str) -> Vec<Collider> {
         let mut colliders = Vec::new();
-        let mut push = |shape| {
+        let mut push = |shape, hangs| {
             colliders.push(Collider {
                 shape,
                 surface: surface.to_string(),
+                hangs,
             })
         };
         let first = xs.start.div_euclid(CELL);
@@ -442,11 +445,14 @@ impl Ground {
                     let x0 = cell_xs.start + i as i64;
                     let x1 = cell_xs.start + end as i64;
                     if flat {
-                        push(Shape::Segment {
-                            a: point(x0, bottom),
-                            b: point(x1, bottom),
-                            one_way: true,
-                        });
+                        push(
+                            Shape::Segment {
+                                a: point(x0, bottom),
+                                b: point(x1, bottom),
+                                one_way: true,
+                            },
+                            false,
+                        );
                     } else {
                         let mut points = vec![point(x0, top)];
                         for j in i + 1..end {
@@ -459,7 +465,7 @@ impl Ground {
                         }
                         let last_top = tops[end - 1].unwrap().0;
                         points.extend([point(x1, last_top), point(x1, bottom), point(x0, bottom)]);
-                        push(Shape::Solid { points, one_way });
+                        push(Shape::Solid { points, one_way }, false);
                     }
                     i = end;
                 }
@@ -497,10 +503,13 @@ impl Ground {
                         after = before;
                     }
                     points.push(point(x0, after));
-                    push(Shape::Solid {
-                        points,
-                        one_way: false,
-                    });
+                    push(
+                        Shape::Solid {
+                            points,
+                            one_way: false,
+                        },
+                        true,
+                    );
                     i = end;
                 }
             }

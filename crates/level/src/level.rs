@@ -488,12 +488,16 @@ enum ColliderFile {
         rect: [N; 4],
         #[serde(default)]
         one_way: bool,
+        #[serde(default)]
+        hangs: bool,
         surface: Option<String>,
     },
     Polygon {
         points: Vec<[N; 2]>,
         #[serde(default)]
         one_way: bool,
+        #[serde(default)]
+        hangs: bool,
         surface: Option<String>,
     },
     Segment {
@@ -839,6 +843,7 @@ impl Reader<'_> {
             ColliderFile::Rect {
                 rect: r,
                 one_way,
+                hangs,
                 surface,
             } => {
                 let r = rect(r);
@@ -853,17 +858,20 @@ impl Reader<'_> {
                         one_way,
                     },
                     surface: check_surface(surface)?,
+                    hangs,
                 });
             }
             ColliderFile::Polygon {
                 points,
                 one_way,
+                hangs,
                 surface,
             } => {
                 let points = self.polygon(&format!("{at}.points"), points)?;
                 out.push(Collider {
                     shape: Shape::Solid { points, one_way },
                     surface: check_surface(surface)?,
+                    hangs,
                 });
             }
             ColliderFile::Segment {
@@ -877,6 +885,7 @@ impl Reader<'_> {
                 out.push(Collider {
                     shape: Shape::Segment { a, b, one_way },
                     surface: check_surface(surface)?,
+                    hangs: false,
                 });
             }
             ColliderFile::Polyline {
@@ -898,6 +907,7 @@ impl Reader<'_> {
                             one_way,
                         },
                         surface: surface.clone(),
+                        hangs: false,
                     });
                 }
             }
@@ -1242,6 +1252,9 @@ impl Level {
                         ct.insert("one_way".into(), Value::Boolean(true));
                     }
                 }
+            }
+            if c.hangs {
+                ct.insert("hangs".into(), Value::Boolean(true));
             }
             if c.surface != "normal" {
                 ct.insert("surface".into(), Value::String(c.surface.clone()));

@@ -75,11 +75,14 @@ fn under_a_ceiling_on_the_top_line(ground: &Ground, x: i64, feet: i64) -> bool {
         && matches!(ground.half(x, band - 1), Half::Ceiling { .. })
 }
 
-/// The swimmer reads the collision without knowing which halves were
-/// ceilings: it measures to the nearer of the ground's top and its
-/// underside. So the depths agree with the spec's wherever the spec's
-/// edge is the nearer one, and elsewhere the swimmer's edge is as near
-/// or nearer.
+/// The importer marks ceilings as hanging, so the swimmer measures a
+/// floor from its top and a ceiling from its underside, as the spec
+/// does, and the two agree on which it is everywhere.
+///
+/// They differ only where the spec finds no ground below a ceiling (a
+/// ceiling line at or below its band's bottom line over a floor in the
+/// next band): that's in by 4 or more, a wall, but the collision has the
+/// ceiling cut at the band's bottom line, with water below it.
 ///
 /// Points past the grid's right edge are left out: the format reads
 /// them from the next row, but the level ends there.
@@ -87,7 +90,7 @@ fn under_a_ceiling_on_the_top_line(ground: &Ground, x: i64, feet: i64) -> bool {
 fn depths_follow_the_ground_below() {
     let ground = ceilings();
     let level = level(&ground);
-    let (mut same, mut nearer, mut moves_differ) = (0, 0, 0);
+    let (mut points, mut moves_differ) = (0, 0);
     for line in vector("ceiling-ground-below.tsv").lines().skip(1) {
         let row: Vec<&str> = line.split('\t').collect();
         let x: i64 = row[0].parse().unwrap();
@@ -101,27 +104,21 @@ fn depths_follow_the_ground_below() {
         };
         let spec = spec_depth(&ground, x, feet, below);
         let engine = swim_depth(&level, x, feet);
-        if meets(spec) != meets(engine) {
-            moves_differ += 1;
-        }
         let at = format!("x {x} feet {feet}: spec {spec:?}, engine {engine:?}");
+        points += 1;
         match (spec, engine) {
-            (None, None) => same += 1,
-            (Some((want, ceiling)), Some((got, edge))) if ceiling == edge && want != DEEP => {
+            (None, None) => {}
+            (Some((DEEP, true)), Some((_, true))) => {
+                if meets(spec) != meets(engine) {
+                    moves_differ += 1;
+                }
+            }
+            (Some((want, ceiling)), Some((got, edge))) if ceiling == edge => {
                 // The swimmer only tells 1 to 3 px from deeper.
                 assert!(got == want || got.min(want) >= 4, "{at}");
-                same += 1;
-            }
-            (Some((want, _)), Some((got, _))) => {
-                assert!(got <= want || got.min(want) >= 4, "{at}");
-                nearer += 1;
             }
             _ => panic!("{at}"),
         }
     }
-    // How many points a move across would meet differently: the ground
-    // near a band's edge, mostly a floor down to its band's bottom line
-    // or a ceiling from its band's top line, where the swimmer finds the
-    // other edge within 3 px.
-    assert_eq!((same + nearer, moves_differ), (26_336, 977));
+    assert_eq!((points, moves_differ), (26_336, 33));
 }

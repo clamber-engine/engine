@@ -304,6 +304,54 @@ fn moving_under_a_ceiling_pushes_down_to_two_below_its_line() {
     }
 }
 
+/// A solid rectangle that hangs, like a ceiling.
+fn hanging(x: i32, y: i32, w: i32, h: i32) -> String {
+    rect(x, y, w, h) + "hangs = true\n"
+}
+
+#[test]
+fn hanging_ground_is_measured_from_its_underside() {
+    // Column 101's ground from 998 to 1010; feet line 1000. Its top is
+    // 2 px up, a step.
+    let mut play = pool(&rect(101, 998, 50, 12), (100, 1000));
+    play.put(100.75, 1000.0, 132, -12);
+    play.step(&[]);
+    assert_eq!((play.x(), play.y()), (f(101.25), f(998.0)));
+    // Hanging, it's in by 10 to its underside: a wall.
+    let mut play = pool(&hanging(101, 998, 50, 12), (100, 1000));
+    play.put(100.75, 1000.0, 132, -12);
+    play.step(&[]);
+    assert_eq!((play.x(), play.v().0), (f(100.25), 0));
+}
+
+#[test]
+fn with_hanging_ground_a_floor_is_measured_from_its_top() {
+    // Column 101's ground from 990 to 1002; feet line 1000. Nearer its
+    // underside, it's a ceiling coming down by 2, and pushes down.
+    let mut play = pool(&rect(101, 990, 50, 12), (100, 1000));
+    play.put(100.75, 1000.0, 132, -12);
+    play.step(&[]);
+    assert_eq!((play.x(), play.y()), (f(101.25), f(1004.0)));
+    // In a level with hanging ground somewhere, it's a floor 10 px up: a
+    // wall.
+    let ground = rect(101, 990, 50, 12) + &hanging(2000, 0, 50, 50);
+    let mut play = pool(&ground, (100, 1000));
+    play.put(100.75, 1000.0, 132, -12);
+    play.step(&[]);
+    assert_eq!((play.x(), play.v().0), (f(100.25), 0));
+}
+
+#[test]
+fn hanging_ground_on_a_floor_has_no_way_out_below() {
+    // Hanging ground from 990 to 1000 resting on a floor to 1100; feet
+    // line 999 is in it by 1 to its underside, but the floor goes on.
+    let ground = hanging(101, 990, 50, 10) + &rect(101, 1000, 50, 100);
+    let mut play = pool(&ground, (100, 999));
+    play.put(100.75, 999.0, 132, -12);
+    play.step(&[]);
+    assert_eq!((play.x(), play.v().0), (f(100.25), 0));
+}
+
 #[test]
 fn rising_into_a_ceiling_bumps() {
     // Ceiling line 990; feet line 991.

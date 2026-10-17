@@ -13,7 +13,8 @@
 //!   layer behind or in front of entities.
 //! - **Objects** are read by class (called type in older Tiled versions):
 //!   - `solid`: rectangles and polygons are solid areas, polylines are
-//!     segments. Properties `surface` (string) and `one_way` (bool).
+//!     segments. Properties `surface` (string), `one_way` (bool) and,
+//!     for rectangles and polygons, `hangs` (bool).
 //!   - `platform`: one-way; a rectangle becomes its top edge, and a
 //!     polygon a one-way area, passed up through from below.
 //!   - `region`: a rectangle or polygon with properties `water` (bool),
@@ -504,6 +505,9 @@ impl Out<'_> {
                     }
                 }
                 surface(&mut t);
+                if let Some(Value::Boolean(true)) = props.get("hangs") {
+                    t.insert("hangs".into(), Value::Boolean(true));
+                }
                 self.collision.push(t);
             }
             "region" => {
