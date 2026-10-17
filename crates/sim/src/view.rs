@@ -47,7 +47,12 @@
 //!
 //! The view starts, and starts again when the player comes back after
 //! losing a life, on its target for a player standing still. It isn't
-//! kept inside the level horizontally.
+//! kept inside the level horizontally, but with `end_stop` above 0 the
+//! picture is (level-ends.md): its left edge, [`View::x`], is the view's
+//! rounded down and kept between the level-wide camera limits' left and
+//! their right less the view's width, while the view itself moves on
+//! past them. The player is stopped `end_stop` px inside the range the
+//! picture can show (see [`stops`]).
 //!
 //! The camera rule is chosen by the player's position, not just its `x`
 //! as the spec's list of limits is.
@@ -92,6 +97,9 @@ pub struct View {
     /// Frames since the press frame of the ground action whose shake is
     /// under way, if one is.
     pub shake: Option<u8>,
+    /// What the picture's left edge is kept between, if anything (see
+    /// [`ends`]).
+    pub ends: Option<(i64, i64)>,
 }
 
 impl View {
@@ -114,12 +122,18 @@ impl View {
             top,
             gap: Fixed::ZERO,
             shake: None,
+            ends: ends(level, physics),
         }
     }
 
-    /// The left edge rounded down to a whole px.
+    /// The picture's left edge: the view's rounded down to a whole px,
+    /// kept inside its `ends`.
     pub fn x(&self) -> i64 {
-        self.left.floor()
+        let x = self.left.floor();
+        match self.ends {
+            Some((left, right)) => x.max(left).min(right),
+            None => x,
+        }
     }
 
     /// The top edge rounded down to a whole px.
@@ -303,6 +317,33 @@ fn div_floor(v: Fixed, by: i64) -> Fixed {
 fn round_down(v: Fixed, grain: Fixed) -> Fixed {
     let grain = grain.to_bits();
     Fixed::from_bits(v.to_bits().div_euclid(grain) * grain)
+}
+
+/// The range the picture's left edge is kept in, with `end_stop` above
+/// 0: from the level-wide camera limits' left to their right less the
+/// view's width (level-ends.md, `A` and `B`).
+pub(crate) fn ends(level: &Level, physics: &Physics) -> Option<(i64, i64)> {
+    if !enabled(physics) || physics[Param::EndStop] <= Fixed::ZERO {
+        return None;
+    }
+    let limits = level.camera.rule.limits?;
+    let left = limits.x.floor();
+    let right = (limits.x + limits.w).floor() - physics[Param::ViewWidth].floor();
+    Some((left, right.max(left)))
+}
+
+/// Whether a player at `x` at the start of a frame, moving across at
+/// `vx`, is stopped at one of the level's ends: moving right from
+/// `end_stop` px inside the right of the range the picture can show or
+/// past it, or left from closer than that to its left (level-ends.md).
+pub(crate) fn stops(x: Fixed, vx: Fixed, level: &Level, physics: &Physics) -> bool {
+    let Some((left, right)) = ends(level, physics) else {
+        return false;
+    };
+    let stop = physics[Param::EndStop].floor();
+    let width = physics[Param::ViewWidth].floor();
+    let x = x.floor();
+    (vx > Fixed::ZERO && x >= right + width - stop) || (vx < Fixed::ZERO && x < left + stop)
 }
 
 /// Whether the world has a view: its preset's `view_width` is above 0.
@@ -856,6 +897,28 @@ mod tests {
         let mut view = View::settled(&at_feet(400, 0, true), &ground(""), &physics);
         view.follow(&at_feet(368, 0, true), &level, &physics, false);
         assert_eq!(view.gap.to_bits() >> (FRAC_BITS - 8), -64 * 256 / 8);
+    }
+
+    #[test]
+    fn ends_and_stops() {
+        // level-ends.md, examples, with A = 64 and B = 4800.
+        let src = "format = 1\nsize = [6000, 2000]\nstart = [0, 0]\n\
+                   camera = { limits = [64, 0, 4992, 2000] }";
+        let level = Level::from_toml_str(src, "t").unwrap();
+        let mut physics = physics();
+        assert_eq!(ends(&level, &physics), Some((64, 4800)));
+        let stops_at = |x: f64, vx: f64, physics: &Physics| stops(fx(x), fx(vx), &level, physics);
+        assert!(!stops_at(5037.75, 2.0, &physics));
+        assert!(stops_at(5038.0, 2.0, &physics));
+        assert!(!stops_at(5038.5, -2.0, &physics));
+        assert!(!stops_at(82.0, -2.0, &physics));
+        assert!(stops_at(81.25, -2.0, &physics));
+        assert!(!stops_at(81.25, 2.0, &physics));
+        assert!(!stops_at(5038.5, 0.0, &physics));
+        // Without `end_stop`, neither.
+        physics.set(Param::EndStop, Fixed::ZERO);
+        assert_eq!(ends(&level, &physics), None);
+        assert!(!stops_at(5038.0, 2.0, &physics));
     }
 
     #[test]

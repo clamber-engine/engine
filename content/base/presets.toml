@@ -264,6 +264,7 @@ view_lead_speed = 0
 view_share = 0
 view_speed_share = 0
 view_hold = 0
+end_stop = 0
 view_height = 0
 view_feet = 0
 view_feet_top = 0
@@ -642,6 +643,10 @@ view_lead_speed = 24
 view_share = 32
 view_speed_share = 8
 view_hold = 2
+# The level's left and right ends (level-ends.md): the picture's left edge
+# is kept inside the level's camera limits, and the player is stopped 18
+# inside the range the picture can show.
+end_stop = 18
 # The view's vertical motion (view-vertical.md). The picture is 224 tall.
 # The level's vertical limits and rates are its camera rules' `limits`
 # and `quick`.

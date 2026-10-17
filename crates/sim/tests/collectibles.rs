@@ -11,8 +11,8 @@ use clamber_sim::{Event, FlowEvent, InputFrame, START_LIVES, View, World, generi
 
 use Action::{Down, Jump, Left};
 
-/// The player stands at x = 200 on flat ground at y = 400.
-const X: i32 = 200;
+/// The player stands at x = 600 on flat ground at y = 400.
+const X: i32 = 600;
 const F: i32 = 400;
 
 /// A level with the player standing at (`X`, `F`) and things of `kind`

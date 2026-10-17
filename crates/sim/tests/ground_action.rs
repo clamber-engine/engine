@@ -13,7 +13,7 @@ use Action::{Action as A, Down as D, Jump as J, Left as L, Right as R};
 /// Flat ground at y = 600 from x = 0 to 4000.
 const FLAT: &str = r#"
     format = 1
-    size = [4000, 800]
+    size = [4400, 800]
     start = [1000, 600]
 
     [[collision]]

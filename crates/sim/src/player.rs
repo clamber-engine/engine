@@ -28,6 +28,7 @@ use crate::pose::PoseClock;
 use crate::ride::Riding;
 use crate::rope::OnRope;
 use crate::spring::{OnSpring, SpringArc};
+use crate::view;
 use crate::world::Event;
 
 /// Half the body's width, px. The body is a box standing on its
@@ -1608,6 +1609,10 @@ impl Player {
                 self.vel.y + gravity
             }
             .min(physics[Param::MaxFallSpeed]);
+        }
+        // At the level's ends, a move toward the end leaves `x` as it is.
+        if view::stops(self.pos.x, self.vel.x, level, physics) {
+            self.vel.x = Fixed::ZERO;
         }
         let hold = self.jump_hold;
         let feet = self.pos.y;

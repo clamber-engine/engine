@@ -1028,6 +1028,12 @@ params! {
     /// Frames the view holds still, counting the frame, when the player
     /// defeats an enemy by bouncing or rolling. Whole frames.
     ViewHold => "view_hold",
+    /// Above 0, with a view, the picture is kept inside the level's
+    /// camera limits across, and the player is stopped this far inside
+    /// the range it can show at the level's left and right ends: a move
+    /// toward an end from that far inside it or closer leaves `x` as it
+    /// is, with no speed across. Whole px.
+    EndStop => "end_stop",
     /// Above 0, the view is this tall and follows the player vertically
     /// too (see `clamber_sim::View`), kept inside the level's camera
     /// limits. 0: it doesn't move vertically. Whole px.
