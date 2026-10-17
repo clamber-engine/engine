@@ -147,11 +147,18 @@ impl Catalog {
             sha256: Sha256Hash::from_hex(sha256).unwrap(),
         };
         Catalog {
-            known: vec![known(
-                "title-1",
-                4 * 1024 * 1024,
-                "628147468c3539283197f58f03b94df49758a332831857481ea9cc31645f0527",
-            )],
+            known: vec![
+                known(
+                    "title-1",
+                    4 * 1024 * 1024,
+                    "628147468c3539283197f58f03b94df49758a332831857481ea9cc31645f0527",
+                ),
+                known(
+                    "title-2",
+                    4 * 1024 * 1024,
+                    "b79c2bb86f6fc76e1fc61c62fc16d51c664c381e58bc2933be643bbc4d8b610c",
+                ),
+            ],
         }
     }
 
@@ -327,7 +334,7 @@ mod tests {
     fn supports_the_specs_release() {
         let builtin = Catalog::builtin();
         let titles: Vec<_> = builtin.known.iter().map(|k| k.title.as_str()).collect();
-        assert_eq!(titles, ["title-1"]);
+        assert_eq!(titles, ["title-1", "title-2"]);
         assert!(
             builtin
                 .identify(&Image::new(vec![0; 4 * 1024 * 1024]))

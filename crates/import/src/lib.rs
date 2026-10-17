@@ -33,6 +33,7 @@ mod location;
 mod locators;
 mod manifest;
 mod music;
+mod nibbles;
 mod placements;
 mod songs;
 mod sound;
@@ -48,19 +49,20 @@ use std::path::{Component, Path, PathBuf};
 pub use graphics::{
     Background, GridPicture, PaletteSet, Pictures, TILE, TileEntry, TileSet, channels, rgb, unpack,
 };
-pub use ground::{Below, COLUMN_BANDS, Ground, Half, Layout, Surface};
+pub use ground::{Below, COLUMN_BANDS, Ground, Half, Layout, Surface, TITLE_2_ORIGIN};
 pub use image::{COPIER_HEADER, Catalog, Image, Known, MAX_IMAGE_SIZE, Outcome, Sha256Hash};
 pub use installed::{Installed, check_shareable, installed};
 pub use kinds::{END, FINGERPRINT_SIZE, Kind, KindRow, WALKER, candidate, kind_of, kind_rows};
-pub use level::{LevelDecoder, LevelParts};
+pub use level::{LevelDecoder, LevelParts, PackedGround};
 pub use level_map::{
     APPEARANCE_OFFSET, CORNER_SIZE, Direction, FIRST_CORNER, LAST_CORNER, LevelMap, Point,
     TABLE_SIZE, corner_count, is_corner,
 };
 pub use location::{BANK_SIZE, Location};
-pub use locators::{Data, first_level, locate};
+pub use locators::{Data, first_level, first_level_ground, locate};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
 pub use music::{LevelSong, Music, RATE, render};
+pub use nibbles::{NIBBLE_HEADER, unpack_nibbles};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements};
 pub use songs::{
     CHANNELS, Effects, GAIN, HEADER_SIZE, OUTPUTS_PER_PERIOD, Player, START_PERIOD, Settings,

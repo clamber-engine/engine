@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clamber_import::{
-    BANK_SIZE, Below, Catalog, Ground, Image, Importer, Known, Layout, LevelDecoder, LevelParts,
-    LevelSong, Location, installed,
+    BANK_SIZE, Below, Catalog, Ground, Image, ImportError, Importer, Known, Layout, LevelDecoder,
+    LevelParts, LevelSong, Location, NIBBLE_HEADER, PackedGround, installed,
 };
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
@@ -338,4 +338,85 @@ fn the_player_walks_on_the_imported_ground() {
     }
     assert_eq!(lines.first(), Some(&481));
     assert_eq!(lines.last(), Some(&473), "{lines:?}");
+}
+
+/// Packs `data` as literals, 15 bytes to a command
+/// (`spec/formats/nibble-packing.md`), behind a header of zeros.
+fn nibble_packed(data: &[u8]) -> Vec<u8> {
+    let mut nibbles = Vec::new();
+    for chunk in data.chunks(15) {
+        nibbles.extend([0, chunk.len() as u8]);
+        nibbles.extend(chunk.iter().flat_map(|b| [b >> 4, b & 0x0F]));
+    }
+    nibbles.extend([0, 0]);
+    let mut block = vec![0; NIBBLE_HEADER];
+    block.extend(
+        nibbles
+            .chunks(2)
+            .map(|n| n[0] << 4 | n.get(1).unwrap_or(&0)),
+    );
+    block
+}
+
+#[test]
+fn reads_ground_from_a_packed_map() {
+    // Three map columns full of type 1, but band 15 of map column 1,
+    // the level's only column, is type 2.
+    let mut words = [1u16; 3 * 16];
+    words[16 + 15] = 2;
+    let map: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+    // Type 1 flat at rise 31 (shape 61), type 2 flat at rise 15 (shape
+    // 62), passable from below.
+    let types = [0, 0, 0, 0, 61, 0, 61, 0, 62, 0x40, 62, 0x40];
+    let mut bytes = vec![0; 2 * BANK_SIZE];
+    let packed = nibble_packed(&map);
+    bytes[BANK_SIZE..BANK_SIZE + packed.len()].copy_from_slice(&packed);
+    bytes[BANK_SIZE + 0x8000..BANK_SIZE + 0x8000 + types.len()].copy_from_slice(&types);
+    let image = Image::new(bytes);
+    let parts = PackedGround {
+        map: Location::new(0x41, 0),
+        first_column: 1,
+        columns: 1,
+        type_table: Location::new(0x41, 0x8000),
+        types: 3,
+    };
+    let ground = parts.read(&image).unwrap();
+    assert_eq!(ground.width(), 32);
+    let surface = ground.surface(5, 15).unwrap();
+    assert_eq!((surface.line, surface.passable_from_below), (497, true));
+    assert_eq!(ground.surface(5, 14).map(|s| s.line), Some(449));
+    assert_eq!(ground.surface(32, 14), None);
+
+    let past = PackedGround {
+        columns: 3,
+        ..parts
+    };
+    assert!(past.read(&image).is_err());
+    let no_end = PackedGround {
+        map: Location::new(0x41, 0xFFF0),
+        ..parts
+    };
+    assert!(no_end.read(&image).is_err());
+}
+
+#[test]
+fn title_2_images_are_recognised_but_not_imported_yet() {
+    let image = Image::new(vec![7; 4096]);
+    let importer = Importer {
+        catalog: Catalog {
+            known: vec![Known {
+                title: "title-2".into(),
+                release: "made-up release".into(),
+                size: image.len() as u64,
+                sha256: image.sha256(),
+            }],
+        },
+        decoders: Importer::builtin().decoders,
+    };
+    let err = importer
+        .import(&image, &scratch("title-2").join("packs"), false)
+        .unwrap_err();
+    assert!(matches!(err, ImportError::Unsupported(_)), "{err:?}");
+    assert!(err.to_string().contains("title-2"), "{err}");
+    assert!(err.to_string().contains("can't convert it yet"), "{err}");
 }

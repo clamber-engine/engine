@@ -1,7 +1,7 @@
 //! Where each kind of data starts in a supported image
 //! (`spec/formats/locators.md`), and the parts of the levels they give.
 
-use crate::{LevelParts, LevelSong, Location};
+use crate::{LevelParts, LevelSong, Location, PackedGround};
 
 /// The data a locator row finds. The level parts are the first level's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -20,10 +20,11 @@ pub enum Data {
     PlacementList,
     MapPoints,
     MapCorners,
+    PackedMap,
 }
 
 impl Data {
-    pub const ALL: [Data; 14] = [
+    pub const ALL: [Data; 15] = [
         Data::SampleTable,
         Data::SharedSampleList,
         Data::SampleSetTable,
@@ -38,6 +39,7 @@ impl Data {
         Data::PlacementList,
         Data::MapPoints,
         Data::MapCorners,
+        Data::PackedMap,
     ];
 
     /// The row's name in the spec's table.
@@ -57,6 +59,7 @@ impl Data {
             Data::PlacementList => "Placements: the first level's placement list",
             Data::MapPoints => "Level map: point tables",
             Data::MapCorners => "Level map: corner records",
+            Data::PackedMap => "Level ground: the first level's packed map",
         }
     }
 }
@@ -78,6 +81,8 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
         ("title-1", Data::PlacementList) => (0xFD, 0x95DC),
         ("title-1", Data::MapPoints) => (0xFC, 0xF47B),
         ("title-1", Data::MapCorners) => (0xC0, 0xD13C),
+        ("title-2", Data::PackedMap) => (0xE3, 0xE006),
+        ("title-2", Data::TypeTable) => (0xFC, 0x6154),
         _ => return None,
     };
     Some(Location::new(bank, address))
@@ -114,37 +119,77 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
     })
 }
 
+/// Where the first level's ground of `title` is, for a title whose
+/// levels' ground is in packed maps: `level-ground.md`, "The first
+/// level's data (`title-2`)".
+pub fn first_level_ground(title: &str) -> Option<PackedGround> {
+    let (first_column, columns, types) = match title {
+        // Map columns 1 to 223, `N` = 170.
+        "title-2" => (1, 223, 170),
+        _ => return None,
+    };
+    Some(PackedGround {
+        map: locate(title, Data::PackedMap)?,
+        first_column,
+        columns,
+        type_table: locate(title, Data::TypeTable)?,
+        types,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn title_1_has_the_rows_in_the_spec() {
+    fn each_title_has_the_rows_in_the_spec() {
         let path = format!(
             "{}/../../spec/formats/locators.md",
             env!("CARGO_MANIFEST_DIR")
         );
         let spec = std::fs::read_to_string(&path).unwrap();
-        let (_, title) = spec.split_once("## `title-1`").unwrap();
-        let (table, _) = title.split_once("### ").unwrap();
-        let rows: Vec<(String, Location)> = table
-            .lines()
-            .filter_map(|l| {
-                let cells: Vec<&str> = l.split('|').map(|c| c.trim().trim_matches('`')).collect();
-                let bank = u8::from_str_radix(cells.get(3)?, 16).ok()?;
-                let address = u16::from_str_radix(cells.get(4)?, 16).ok()?;
-                Some((cells[1].to_string(), Location::new(bank, address)))
-            })
-            .collect();
-        assert_eq!(rows.len(), Data::ALL.len());
-        for (name, location) in rows {
-            let data = Data::ALL
+        for title in ["title-1", "title-2"] {
+            let (_, section) = spec.split_once(&format!("## `{title}`")).unwrap();
+            let section = section.split("\n## ").next().unwrap();
+            let table = section.split("### ").next().unwrap();
+            let rows: Vec<(String, Location)> = table
+                .lines()
+                .filter_map(|l| {
+                    let cells: Vec<&str> =
+                        l.split('|').map(|c| c.trim().trim_matches('`')).collect();
+                    let bank = u8::from_str_radix(cells.get(3)?, 16).ok()?;
+                    let address = u16::from_str_radix(cells.get(4)?, 16).ok()?;
+                    Some((cells[1].to_string(), Location::new(bank, address)))
+                })
+                .collect();
+            let located = Data::ALL
                 .into_iter()
-                .find(|d| d.spec_name() == name)
-                .unwrap_or_else(|| panic!("no data for the row {name:?}"));
-            assert_eq!(locate("title-1", data), Some(location), "{name}");
+                .filter(|&d| locate(title, d).is_some());
+            assert_eq!(rows.len(), located.count(), "{title}");
+            for (name, location) in rows {
+                let data = Data::ALL
+                    .into_iter()
+                    .find(|d| d.spec_name() == name)
+                    .unwrap_or_else(|| panic!("no data for the row {name:?}"));
+                assert_eq!(locate(title, data), Some(location), "{title}: {name}");
+            }
         }
         assert_eq!(locate("title-2", Data::Grid), None);
+        assert_eq!(locate("title-3", Data::TypeTable), None);
+    }
+
+    #[test]
+    fn title_2_s_first_level_ground_is_in_a_packed_map() {
+        let ground = first_level_ground("title-2").unwrap();
+        assert_eq!(ground.map, Location::new(0xE3, 0xE006));
+        assert_eq!(ground.type_table, Location::new(0xFC, 0x6154));
+        assert_eq!(
+            (ground.first_column, ground.columns, ground.types),
+            (1, 223, 170)
+        );
+        assert!(first_level_ground("title-1").is_none());
+        // 4 bytes a type.
+        assert!(usize::from(ground.type_table.address) + 4 * ground.types <= 0x1_0000);
     }
 
     #[test]

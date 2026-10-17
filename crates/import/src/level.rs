@@ -17,7 +17,7 @@ use clamber_level::{Collision, Entity, FORMAT, Level, Track};
 use crate::{
     BANK_SIZE, Background, COLUMN_BANDS, Decoder, GridPicture, Ground, Image, Known, LEVELS,
     Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures, Placements, TileSet, kind_of,
-    kind_rows, unpack,
+    kind_rows, unpack, unpack_nibbles,
 };
 
 /// Lines in a band.
@@ -57,6 +57,33 @@ pub struct LevelParts {
     pub placements: Option<Location>,
     /// The level's song, if it has its music.
     pub song: Option<LevelSong>,
+}
+
+/// Where a level's ground is in an image whose maps are packed, as in
+/// `title-2`: the level's grid is `columns` map columns from map column
+/// `first_column` of the packed map, with types 0 to `types` − 1.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PackedGround {
+    pub map: Location,
+    pub first_column: usize,
+    pub columns: usize,
+    pub type_table: Location,
+    pub types: usize,
+}
+
+impl PackedGround {
+    /// Unpacks the map and reads the level's ground from it.
+    pub fn read(&self, image: &Image) -> Result<Ground, String> {
+        let packed = image
+            .at(self.map)
+            .ok_or_else(|| "the level's packed map isn't in the image".to_string())?;
+        let map = unpack_nibbles(packed).map_err(|e| format!("the level's map: {e}"))?;
+        let types = image
+            .at(self.type_table)
+            .and_then(|bytes| bytes.get(..4 * self.types))
+            .ok_or_else(|| "the image ends before the level's type table".to_string())?;
+        Ground::title_2(&map, self.first_column, self.columns, types)
+    }
 }
 
 /// Writes one level of a title as `levels/<file>.level`, with the images

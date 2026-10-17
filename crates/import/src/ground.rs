@@ -4,6 +4,11 @@
 //! Clamber collision. A ceiling grid's halves can also be ceilings, with
 //! ground above a line.
 //!
+//! `title-2`'s ground is a column grid too, cut from a packed map
+//! ([`Ground::title_2`]), with four-byte types and its grid's top left
+//! corner at level x and level y [`TITLE_2_ORIGIN`]. A [`Ground`] works in
+//! the grid's own px columns and lines, from 0 and 1 at that corner.
+//!
 //! Lines are level y in whole px, growing downward. A surface at line `L`
 //! is stood on with the feet at `L`, and its ground is lines `L` + 1 to
 //! its band's bottom line. As collision, that ground is a solid area from
@@ -30,6 +35,16 @@ const SHAPE_MASK: u8 = 0x3F;
 const PASSABLE: u8 = 1 << 6;
 const FLIPPED: u8 = 1 << 7;
 
+/// The same in a `title-2` half word.
+const WORD_SHAPE_MASK: u16 = 0x00FF;
+const WORD_PASSABLE: u16 = 1 << 14;
+const WORD_FLIPPED: u16 = 1 << 15;
+
+/// Where a `title-2` grid's left edge and its line 0 are, in level x and
+/// level y: grid px column `p` is level x `p` + 256, and line `L` is level
+/// y `L` + 256.
+pub const TITLE_2_ORIGIN: i64 = 256;
+
 /// How a grid's cells are stored.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Layout {
@@ -47,8 +62,38 @@ pub enum Layout {
 pub struct Ground {
     layout: Layout,
     cells: Vec<u16>,
-    /// Each type's left and right half bytes.
-    types: Vec<[u8; 2]>,
+    /// Each type's left and right halves.
+    types: Vec<[HalfType; 2]>,
+    /// Whether feet on line 0 or above look for the ground below from
+    /// the bottom band, as in `title-2`, rather than from the top one.
+    high_feet_from_bottom: bool,
+}
+
+/// One half of a type: a half byte, or a `title-2` half word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct HalfType {
+    shape: u8,
+    passable: bool,
+    flipped: bool,
+}
+
+impl HalfType {
+    fn from_byte(b: u8) -> HalfType {
+        HalfType {
+            shape: b & SHAPE_MASK,
+            passable: b & PASSABLE != 0,
+            flipped: b & FLIPPED != 0,
+        }
+    }
+
+    fn from_word(w: u16) -> HalfType {
+        HalfType {
+            // Masked to 8 bits.
+            shape: (w & WORD_SHAPE_MASK) as u8,
+            passable: w & WORD_PASSABLE != 0,
+            flipped: w & WORD_FLIPPED != 0,
+        }
+    }
 }
 
 /// A surface in one band of a 1-px column.
@@ -115,13 +160,60 @@ impl Ground {
         }
         Ok(Ground {
             layout,
-            cells: grid
+            cells: cell_words(grid),
+            types: types
                 .as_chunks::<2>()
                 .0
                 .iter()
-                .map(|&w| u16::from_le_bytes(w))
+                .map(|halves| halves.map(HalfType::from_byte))
                 .collect(),
-            types: types.as_chunks::<2>().0.to_vec(),
+            high_feet_from_bottom: false,
+        })
+    }
+
+    /// Reads a `title-2` level's grid: `columns` map columns from map
+    /// column `first` of an unpacked map, with its type table, four bytes
+    /// a type.
+    pub fn title_2(
+        map: &[u8],
+        first: usize,
+        columns: usize,
+        types: &[u8],
+    ) -> Result<Ground, String> {
+        let column = 2 * COLUMN_BANDS as usize;
+        if !map.len().is_multiple_of(column) {
+            return Err(format!(
+                "a ground map of {} bytes isn't whole {column}-byte columns",
+                map.len()
+            ));
+        }
+        let grid = map
+            .get(first * column..(first + columns) * column)
+            .ok_or_else(|| {
+                format!(
+                    "a ground map of {} columns has no columns {first} to {}",
+                    map.len() / column,
+                    first + columns - 1
+                )
+            })?;
+        if !types.len().is_multiple_of(4) {
+            return Err(format!(
+                "a ground type table of {} bytes isn't whole types",
+                types.len()
+            ));
+        }
+        Ok(Ground {
+            layout: Layout::Columns,
+            cells: cell_words(grid),
+            types: types
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|t| {
+                    [[t[0], t[1]], [t[2], t[3]]].map(|w| HalfType::from_word(u16::from_le_bytes(w)))
+                })
+                .collect(),
+            high_feet_from_bottom: true,
         })
     }
 
@@ -159,9 +251,9 @@ impl Ground {
         self.cells.get(usize::try_from(index).ok()?).copied()
     }
 
-    /// The half byte that level x column `x` uses in `band`, and the
-    /// position in that half, unless the cell is empty.
-    fn half_byte(&self, x: i64, band: i64) -> Option<(u8, i64)> {
+    /// The half that level x column `x` uses in `band`, and the position
+    /// in that half, unless the cell is empty.
+    fn half_type(&self, x: i64, band: i64) -> Option<(HalfType, i64)> {
         let word = self.cell(x, band).filter(|&w| w != 0)?;
         let halves = self.types.get(usize::from(word & TYPE_MASK))?;
         let mut p = x.rem_euclid(CELL);
@@ -170,7 +262,7 @@ impl Ground {
         }
         let half = halves[usize::from(p >= CELL / 2)];
         let mut c = p % (CELL / 2);
-        if half & FLIPPED != 0 {
+        if half.flipped {
             c = CELL / 2 - 1 - c;
         }
         Some((half, c))
@@ -179,21 +271,20 @@ impl Ground {
     /// The shape number of the half that level x column `x` uses in
     /// `band`, 0 if the cell is empty.
     fn shape(&self, x: i64, band: i64) -> u8 {
-        self.half_byte(x, band)
-            .map_or(0, |(half, _)| half & SHAPE_MASK)
+        self.half_type(x, band).map_or(0, |(half, _)| half.shape)
     }
 
     /// What the half that level x column `x` uses in `band` gives there.
     pub fn half(&self, x: i64, band: i64) -> Half {
-        let Some((half, c)) = self.half_byte(x, band) else {
+        let Some((half, c)) = self.half_type(x, band) else {
             return Half::Empty;
         };
-        let shape = half & SHAPE_MASK;
+        let shape = half.shape;
         let bottom = CELL * band + CELL;
         let floor = |rise: Option<i64>| {
             Half::Floor(rise.map(|rise| Surface {
                 line: bottom - rise,
-                passable_from_below: half & PASSABLE != 0,
+                passable_from_below: half.passable,
             }))
         };
         match (self.layout, shape) {
@@ -234,7 +325,12 @@ impl Ground {
         let rows = self.layout == Layout::Rows;
         let mut band = (feet - 1).div_euclid(CELL);
         if !rows {
-            band = band.clamp(0, i64::from(COLUMN_BANDS) - 1);
+            let last = i64::from(COLUMN_BANDS) - 1;
+            band = if feet <= 0 && self.high_feet_from_bottom {
+                last
+            } else {
+                band.clamp(0, last)
+            };
         }
         let top = CELL * band + 1;
         let line = |s: Option<Surface>| s.map(|s| s.line);
@@ -371,6 +467,15 @@ impl Ground {
     }
 }
 
+/// A grid's cell words, low byte first.
+fn cell_words(grid: &[u8]) -> Vec<u16> {
+    grid.as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&w| u16::from_le_bytes(w))
+        .collect()
+}
+
 fn point(x: i64, y: i64) -> Vec2 {
     // Grids are at most 64 Ki cells of 32 px, well inside an i32.
     Vec2::ints(x as i32, y as i32)
@@ -410,7 +515,8 @@ fn rise(shape: u8, c: i64) -> Option<i64> {
         60 => (4 * c - 16).max(15),
         61 => 31,
         62 => 15,
-        // 0 has no surface; 63 isn't defined.
+        // 0 has no surface; 63 isn't defined, nor are `title-2`'s
+        // shapes above it.
         _ => return None,
     };
     (v >= 0).then_some(v.min(31))
@@ -587,6 +693,100 @@ mod tests {
         assert_eq!(ground.below(3, 300), Below::Line(337));
         assert_eq!(ground.below(3, 360), Below::Line(372));
         assert_eq!(ground.below(3, 380), Below::Line(372));
+    }
+
+    /// The `title-2` vectors' ground: map columns 1 to 36 of their map.
+    fn title_2() -> Ground {
+        let packed: Vec<u8> = hex_digits(&vector("title-2/map.packed.hex"));
+        let map = crate::unpack_nibbles(&packed).unwrap();
+        assert_eq!(map.len(), 38 * 32);
+        let types = hex("title-2/types.hex");
+        assert_eq!(types.len(), 40 * 4);
+        Ground::title_2(&map, 1, 36, &types).unwrap()
+    }
+
+    fn hex_digits(text: &str) -> Vec<u8> {
+        let digits: Vec<u8> = text.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+        digits
+            .chunks(2)
+            .map(|d| u8::from_str_radix(std::str::from_utf8(d).unwrap(), 16).unwrap())
+            .collect()
+    }
+
+    /// Grid px column `x` in `band` of a `title-2` grid, by level x.
+    fn title_2_surface(ground: &Ground, x: i64, band: usize) -> Option<Surface> {
+        ground.surface(x - TITLE_2_ORIGIN, band as i64)
+    }
+
+    #[test]
+    fn title_2_surfaces_match_the_spec_vectors() {
+        let ground = title_2();
+        assert_eq!(ground.width(), 36 * 32);
+        let surfaces = rows("title-2/surfaces.tsv");
+        let passable = rows("title-2/passable.tsv");
+        assert_eq!(surfaces.len(), 1152);
+        assert_eq!(passable.len(), 1152);
+        for (row, pass) in surfaces.iter().zip(&passable) {
+            let x: i64 = row[0].parse().unwrap();
+            assert_eq!(pass[0], row[0]);
+            for band in 0..16 {
+                let got = title_2_surface(&ground, x, band);
+                let line = got.map(|s| (s.line + TITLE_2_ORIGIN).to_string());
+                assert_eq!(
+                    line.as_deref().unwrap_or("none"),
+                    row[band + 1],
+                    "x {x} band {band}"
+                );
+                let passes = match got {
+                    None => "none",
+                    Some(s) if s.passable_from_below => "yes",
+                    Some(_) => "no",
+                };
+                assert_eq!(passes, pass[band + 1], "x {x} band {band}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_title_2_ground_below_matches_the_spec_vectors() {
+        let ground = title_2();
+        let table = rows("title-2/ground-below.tsv");
+        assert_eq!(table.len(), 12 * 541);
+        for row in table {
+            let x: i64 = row[0].parse().unwrap();
+            let y: i64 = row[1].parse().unwrap();
+            let want = match row[2].as_str() {
+                "none" => Below::None,
+                "above" => Below::Above,
+                y => Below::Line(y.parse::<i64>().unwrap() - TITLE_2_ORIGIN),
+            };
+            let got = ground.below(x - TITLE_2_ORIGIN, y - TITLE_2_ORIGIN);
+            assert_eq!(got, want, "x {x} y {y}");
+        }
+    }
+
+    #[test]
+    fn the_title_2_example_in_the_format() {
+        // Type 1 flat at rise 15; type 2 shape 12, its left half
+        // passable from below and its right half flipped.
+        let types = [0, 0, 0, 0, 0x05, 0, 0x05, 0, 0x0C, 0x40, 0x0C, 0x80];
+        let mut map = vec![0; 4 * 32];
+        map[32 + 20] = 0x01;
+        map[32 + 22..32 + 24].copy_from_slice(&[0x02, 0x40]);
+        map[64 + 6] = 0x02;
+        let ground = Ground::title_2(&map, 1, 2, &types).unwrap();
+        let at = |x: i64, band| {
+            title_2_surface(&ground, x, band).map(|s| (s.line + 256, s.passable_from_below))
+        };
+        assert_eq!(at(259, 10), Some((593, false)));
+        assert_eq!(at(259, 11), Some((628, false)));
+        assert_eq!(at(276, 11), Some((626, true)));
+        assert_eq!(at(300, 3), Some((369, true)));
+        assert_eq!(ground.below(3, 300), Below::Line(337));
+        assert_eq!(ground.below(3, -6), Below::None);
+        assert!(Ground::title_2(&map, 3, 2, &types).is_err());
+        assert!(Ground::title_2(&map[1..], 0, 1, &types).is_err());
+        assert!(Ground::title_2(&map, 0, 1, &types[1..]).is_err());
     }
 
     #[test]
