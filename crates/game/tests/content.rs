@@ -81,6 +81,7 @@ fn the_cast_sheets_are_rendered_with_their_animations() {
         ("gem", &["spin"]),
         ("relic", &["glint"]),
         ("idol", &["shine"]),
+        ("heart", &["beat"]),
         ("checkpoint", &["waiting", "reached"]),
         ("goal", &["glow"]),
         ("launcher", &["waiting", "fire"]),

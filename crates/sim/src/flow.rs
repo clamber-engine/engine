@@ -138,6 +138,9 @@ pub struct Flow {
     /// The step `shown` last went from `count_life` less one to 0 on,
     /// for the lives display.
     pub lives_step: Option<LivesStep>,
+    /// The step the last collectible giving lives was taken on, for the
+    /// lives display.
+    pub life_item: Option<LivesStep>,
     /// The image of the relic taken last, for
     /// [`World::relic_image`](crate::World::relic_image).
     pub relic_flight: Option<RelicFlight>,

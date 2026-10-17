@@ -223,7 +223,15 @@
 #   preset that has a count display (`count_show_for` above 0), the
 #   display waits on what it's worth from `pickup_start` frames after
 #   it's taken (left out: 0). With `relic = true`, taken, it adds one to
-#   the relic count.
+#   the relic count. Taken, it gives `lives` more lives (left out: 0),
+#   and the lives display shows them (the preset's `life_item_*`). With
+#   `rise` above 0 (px per frame), it rises from the frame it appears:
+#   its speed up grows by `rise` each frame, from 0 on that frame, and
+#   it's gone on the first frame it would be at the level's top or above
+#   it. Its y, rounded up, is then what the player's feet are measured
+#   from. With a view and `once = true`, it appears when its position
+#   comes near the view, as a thrower does, and is removed on the first
+#   frame it isn't near; removed or risen out, it doesn't come back.
 # - `hutch`: a crate holding an animal. It stands on its position and
 #   never moves; walking, running or rolling through it does nothing.
 #   Offsets from it are whole px, ends included: `across`, the player's
@@ -875,6 +883,38 @@ crouch = [-25, 22, -31, 28]
 roll = [-20, 31, -23, 35]
 jump = [-22, 31, -27, 37]
 air = [-22, 28, -6, 54]
+air_below = []
+jump_early = 6
+land_hold = 0
+
+# An extra-life item (spec/behavior/extra-lives.md): taken, it gives
+# one more life, or more with `lives`; with `rise = 0.00390625` (1/256
+# px a frame), it rises as the spec's rising kinds do. It appears with
+# the view and doesn't come back once it's gone. The ranges are
+# extra-lives.md's: the standing ones for the first six frames of a
+# jump, and facing left they're measured from 3 px left of it.
+# Falling without a jump, landing and the second character weren't
+# measured, so those use the jump's later row, the standing row from
+# the frame it lands, and the first character's ranges. The size is
+# Clamber's own and only draws it.
+[archetypes.heart]
+behavior = "collect"
+size = [20, 20]
+offset = 0
+worth = 0
+release_every = 0
+count_delay = 0
+lives = 1
+once = true
+left_shift = -3
+
+[[archetypes.heart.reach]]
+stand = [-20, 23, -29, 35]
+walk = [-20, 23, -29, 35]
+crouch = [-23, 14, -33, 26]
+roll = [-18, 23, -25, 33]
+jump = [-20, 23, -29, 35]
+air = [-20, 20, -8, 52]
 air_below = []
 jump_early = 6
 land_hold = 0

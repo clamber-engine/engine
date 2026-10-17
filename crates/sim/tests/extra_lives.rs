@@ -1,0 +1,246 @@
+//! Extra-life items in Classic 1 (spec/behavior/extra-lives.md). They
+//! are `heart`s; the rising kinds have a `rise`.
+
+use std::sync::Arc;
+
+use clamber_input::{Action, Actions, Frame};
+use clamber_level::Level;
+use clamber_sim::{
+    Facing, Fixed, FlowEvent, InputFrame, LivesDisplay, Phase, START_LIVES, World, generic_feel,
+    step,
+};
+
+use Action::{Left, Right};
+
+/// The player stands at x = 600 on flat ground at y = 400.
+const X: i32 = 600;
+const F: i32 = 400;
+
+const RISE: &str = "rise = 0.00390625";
+
+/// A level with the player standing at (`X`, `F`) and an extra-life item
+/// at each of `at`, with `params`.
+fn world(at: &[(i32, i32)], params: &str) -> World {
+    let mut src = format!(
+        r#"
+        format = 1
+        name = "hearts"
+        size = [4000, 800]
+        start = [{X}, {F}]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, {F}, 4000, 200]
+        "#
+    );
+    for (x, y) in at {
+        src += &format!(
+            "\n[[entities]]\ntype = \"heart\"\nat = [{x}, {y}]\nparams = {{ {params} }}\n"
+        );
+    }
+    let level = Arc::new(Level::from_toml_str(&src, "hearts").unwrap());
+    let world = World::new(level, Arc::new(generic_feel("classic-1").unwrap()));
+    assert!(world.player.grounded());
+    world
+}
+
+/// Steps once with `keys` held; whether the item was taken on it.
+fn step_keys(world: &mut World, keys: &[Action]) -> bool {
+    let held = keys.iter().copied().collect::<Actions>();
+    step(world, &InputFrame::single(Frame::after(held, held)));
+    world.flow.events.contains(&FlowEvent::Collect(0))
+}
+
+/// Whether a standing player facing `facing` takes an item at `X - xf`
+/// = `dx` and `D` = `below` on the first step.
+fn taken_standing(dx: i32, below: i32, facing: Facing) -> bool {
+    let mut w = world(&[(X - dx, F - below)], "");
+    w.player.facing = facing;
+    step_keys(&mut w, &[])
+}
+
+#[test]
+fn standing_takes_an_item_inside_the_standing_ranges() {
+    for (i, d) in [(-20, -29), (23, 35), (-20, 35), (23, -29), (0, 0)] {
+        assert!(taken_standing(i, d, Facing::Right), "I = {i}, D = {d}");
+    }
+    for (i, d) in [(-21, 0), (24, 0), (0, -30), (0, 36)] {
+        assert!(!taken_standing(i, d, Facing::Right), "I = {i}, D = {d}");
+    }
+}
+
+#[test]
+fn facing_left_the_ranges_are_three_px_further_left() {
+    // extra-lives.md: facing left, X - xf from -26 to 17.
+    assert!(taken_standing(-26, 0, Facing::Left));
+    assert!(taken_standing(17, 0, Facing::Left));
+    assert!(!taken_standing(-27, 0, Facing::Left));
+    assert!(!taken_standing(18, 0, Facing::Left));
+}
+
+#[test]
+fn taking_an_item_gives_its_lives_on_that_step_and_it_is_gone() {
+    for lives in [1u8, 2, 3] {
+        let mut w = world(&[(X, F)], &format!("lives = {lives}"));
+        assert!(step_keys(&mut w, &[]));
+        assert_eq!(w.flow.lives, START_LIVES + lives);
+        let new = w.flow.events.iter().filter(|&&e| e == FlowEvent::Life);
+        assert_eq!(new.count(), usize::from(lives));
+        assert!(!w.things[0].active);
+        assert_eq!(w.things[0].phase, Phase::Gone);
+        for _ in 0..10 {
+            assert!(!step_keys(&mut w, &[]));
+        }
+        assert_eq!(w.flow.lives, START_LIVES + lives);
+    }
+}
+
+#[test]
+fn a_rising_item_rises_faster_every_frame() {
+    // extra-lives.md, "Rising": risen n (n + 1) / 512 px at the end of
+    // frame a + n. In view at the level's start, it appears on frame 0.
+    let y0 = 337;
+    let mut w = world(&[(X + 200, y0)], RISE);
+    assert!(w.things[0].active);
+    let mut risen = Vec::new();
+    for _ in 0..=120 {
+        step_keys(&mut w, &[]);
+        risen.push(Fixed::from_int(y0) - w.things[0].pos.y);
+    }
+    let px = |n: i64| Fixed::from_bits((n << 32) / 256);
+    for (n, want) in [(0, 0), (1, 1), (2, 3), (10, 55), (60, 1830), (120, 7260)] {
+        assert_eq!(risen[n], px(want), "frame a + {n}");
+    }
+}
+
+#[test]
+fn a_rising_item_is_gone_on_the_first_frame_it_would_reach_the_top() {
+    // extra-lives.md's example: from level y 337 it's at about 1.43 at
+    // the end of frame a + 414, and removed on a + 415.
+    let mut w = world(&[(X + 200, 337)], RISE);
+    for n in 0..=414 {
+        step_keys(&mut w, &[]);
+        assert!(w.things[0].active, "frame {n}");
+    }
+    let y = w.things[0].pos.y;
+    assert!(y > Fixed::from_int(1) && y < Fixed::from_int(2), "{y:?}");
+    step_keys(&mut w, &[]);
+    assert!(!w.things[0].active);
+    assert_eq!(w.things[0].phase, Phase::Gone);
+}
+
+#[test]
+fn a_rising_items_y_is_rounded_up_for_the_pickup() {
+    // Placed 40 px below the floor, it rises up through it. D = F - Y
+    // reaches -29 once Y, its y rounded up, is 429: at the end of frame
+    // 75 (risen 5 700 / 512, about 11.13), not 74 (about 10.84, so
+    // y 429.16, which rounded down would already be in range).
+    let mut w = world(&[(X, F + 40)], RISE);
+    let taken = (0..200).find(|_| step_keys(&mut w, &[]));
+    assert_eq!(taken, Some(75));
+}
+
+/// The lives display after each step from the one an item giving `lives`
+/// is taken on, `P`, for `steps` steps.
+fn display_after_taking(lives: u8, steps: usize) -> Vec<Option<LivesDisplay>> {
+    let mut w = world(&[(X, F)], &format!("lives = {lives}"));
+    assert!(step_keys(&mut w, &[]));
+    let mut shown = vec![w.lives_display()];
+    for _ in 1..steps {
+        step_keys(&mut w, &[]);
+        shown.push(w.lives_display());
+    }
+    shown
+}
+
+#[test]
+fn the_lives_display_comes_in_steps_up_and_goes_out() {
+    // extra-lives.md, "The lives display": with S = P + 44 (Clamber's
+    // choice in the spec's 41 to 47), one more every 16 frames up to
+    // E = S + 32 for 3 lives.
+    let l = START_LIVES;
+    let shown = display_after_taking(3, 250);
+    let at = |k: usize| shown[k].map(|d| (d.number, d.y));
+    assert_eq!(at(6), None);
+    let ys: Vec<i32> = (7..=12).map(|k| shown[k].unwrap().y).collect();
+    assert_eq!(ys, [-12, -8, -4, 0, 4, 8]);
+    assert_eq!(at(13), Some((l, 10)));
+    assert_eq!(at(43), Some((l, 10)));
+    assert_eq!(at(44), Some((l + 1, 10)));
+    assert_eq!(at(59), Some((l + 1, 10)));
+    assert_eq!(at(60), Some((l + 2, 10)));
+    let e = 44 + 32;
+    assert_eq!(at(e - 1), Some((l + 2, 10)));
+    assert_eq!(at(e), Some((l + 3, 10)));
+    assert_eq!(at(e + 121), Some((l + 3, 10)));
+    let ys: Vec<i32> = (e + 122..=e + 127).map(|k| shown[k].unwrap().y).collect();
+    assert_eq!(ys, [6, 2, -2, -6, -10, -14]);
+    assert_eq!(at(e + 128), None);
+    assert_eq!(shown[e].unwrap().x, 220);
+}
+
+#[test]
+fn an_item_that_leaves_the_window_untaken_never_comes_back() {
+    // Out of reach above the floor, in the window to the right at the
+    // start. Walk left until it's removed, then back right past it.
+    let mut w = world(&[(X + 150, F - 200)], "");
+    assert!(w.things[0].active);
+    let mut removed = None;
+    for n in 0..400 {
+        step_keys(&mut w, &[Left]);
+        if !w.things[0].active {
+            removed = Some(n);
+            break;
+        }
+    }
+    assert!(removed.is_some(), "never removed");
+    assert_eq!(w.things[0].phase, Phase::Gone);
+    for _ in 0..600 {
+        step_keys(&mut w, &[Right]);
+        assert!(!w.things[0].active);
+    }
+    assert!(w.player.pos.x > Fixed::from_int(X + 150));
+}
+
+#[test]
+fn a_jump_up_from_under_an_item_takes_it_by_six_frames_after_take_off() {
+    // extra-lives.md, "Pickup ranges": D = 40 is out of the standing
+    // range, and the jump's later row takes it from T + 6 at the latest.
+    for past in [-20, 0, 20] {
+        let mut w = world(&[(X - past, F - 40)], "");
+        assert!(!step_keys(&mut w, &[]));
+        let mut start = None;
+        let taken = (1..60).find(|&n| {
+            let before = if n == 1 {
+                Actions::default()
+            } else {
+                [Action::Jump].into_iter().collect()
+            };
+            let keys = [Action::Jump].into_iter().collect();
+            step(&mut w, &InputFrame::single(Frame::after(before, keys)));
+            let taken = w.flow.events.contains(&FlowEvent::Collect(0));
+            if w.events.contains(&clamber_sim::Event::JumpStart) {
+                start = Some(n);
+            }
+            taken
+        });
+        let (start, taken) = (start.unwrap(), taken.unwrap());
+        assert!(taken <= start + 6, "I = {past}: T = {start}, P = {taken}");
+    }
+}
+
+#[test]
+fn crouching_has_its_own_ranges() {
+    // Down held: taken once crouching starts, inside the crouching
+    // ranges (I from -23 to 14, D from -33 to 26) but not the standing
+    // ones.
+    let crouch_take = |past: i32, below: i32| {
+        let mut w = world(&[(X - past, F - below)], "");
+        (0..30).find(|_| step_keys(&mut w, &[Action::Down]))
+    };
+    assert_eq!(crouch_take(-23, 0), Some(1));
+    assert_eq!(crouch_take(-24, 0), None);
+    assert_eq!(crouch_take(0, -33), Some(1));
+    assert_eq!(crouch_take(0, -34), None);
+    assert_eq!(crouch_take(20, 0), Some(0), "standing on the first step");
+}

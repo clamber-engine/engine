@@ -86,7 +86,11 @@ pub enum Behavior {
     /// above 0 is that letter of the level's word: taken, it joins the
     /// letters taken `join_delay` frames later (see
     /// [`Flow::letters`](crate::Flow::letters)). A `relic` adds one to
-    /// [`Flow::relics`](crate::Flow::relics) instead.
+    /// [`Flow::relics`](crate::Flow::relics) instead. Taken, it gives
+    /// `lives` more lives. Above 0, `rise` is how much its speed up grows
+    /// each frame, from 0 on the frame it appears; it's gone once it
+    /// would reach the level's top. With a view, one that's there `once`
+    /// appears with the view and is gone for good when it's removed.
     Collect {
         worth: u8,
         release_every: u8,
@@ -106,6 +110,9 @@ pub enum Behavior {
         /// Facing left, how far the player is past it is measured from
         /// this many px right of it.
         left_shift: i32,
+        lives: u8,
+        rise: Fixed,
+        once: bool,
     },
     /// Sits where it's placed and throws a [`BALL`](crate::BALL) on each
     /// of its first `throw_count` `throws`, `from` its position, on that
@@ -1292,6 +1299,9 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "pickup_start",
             "relic",
             "left_shift",
+            "lives",
+            "rise",
+            "once",
         ],
         _ => return Err(format!("{path}.behavior: unknown behavior `{behavior}`")),
     };
@@ -1510,11 +1520,25 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 Some(Value::Boolean(true)) => true,
                 Some(_) => return Err(format!("{path}.relic: expected true or false")),
             };
-            if worth == 0 && letter == 0 && !relic {
+            let lives = optional("lives", u8::MAX)?;
+            if worth == 0 && letter == 0 && !relic && lives == 0 {
                 return Err(format!(
-                    "{path}.worth: must be at least 1, unless it's a `letter` or a `relic`"
+                    "{path}.worth: must be at least 1, unless it's a `letter`, a `relic` \
+                     or gives `lives`"
                 ));
             }
+            let rise = match table.get("rise") {
+                None => Fixed::ZERO,
+                Some(_) => number("rise")?,
+            };
+            if rise < Fixed::ZERO {
+                return Err(format!("{path}.rise: expected 0 or more px per frame"));
+            }
+            let once = match table.get("once") {
+                None | Some(Value::Boolean(false)) => false,
+                Some(Value::Boolean(true)) => true,
+                Some(_) => return Err(format!("{path}.once: expected true or false")),
+            };
             let left_shift = match table.get("left_shift") {
                 None => 0,
                 Some(Value::Integer(n)) if i32::try_from(*n).is_ok() => *n as i32,
@@ -1532,6 +1556,9 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 pickup_start: optional("pickup_start", u8::MAX)?,
                 relic,
                 left_shift,
+                lives,
+                rise,
+                once,
             }
         }
         "thrower" => {

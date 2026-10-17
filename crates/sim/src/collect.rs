@@ -44,11 +44,18 @@
 //! picture, resting there and leaving upward (see
 //! [`World::relic_image`]).
 //!
+//! A collectible that gives `lives` adds them on the step it's taken,
+//! and the lives display comes in and steps up to the new number one
+//! at a time (see [`World::lives_display`]). One that's there `once` is
+//! gone for good when it's taken.
+//!
 //! Engine choices where the spec says nothing: a letter taken while the
 //! row is shown for another shows it again from the start, and one taken
 //! during the ending shows the row for it instead. Of the lives display
 //! after the count reaches `count_life` and the one in the ending, the
-//! one that started last is shown. Displays show at most 99 lives. A
+//! one that started last is shown, and of that and the one after a
+//! collectible giving lives, the one that started last too. Displays
+//! show at most 99 lives. A
 //! part of what
 //! a pickup is worth that never reaches the count is no longer owed, and
 //! a step from a count with no pickup waiting (a generic gem) goes to
@@ -245,8 +252,9 @@ impl World {
 
     /// The lives display in the picture made from the last step, if it's
     /// drawn in it: after the number shown went from `count_life` less
-    /// one to 0, or with the letter row's ending, sliding in and out. Of
-    /// the two, the one that started last.
+    /// one to 0, with the letter row's ending, or after a collectible
+    /// giving lives was taken, sliding in and out. Of those, the one that
+    /// started last.
     pub fn lives_display(&self) -> Option<LivesDisplay> {
         let physics = &self.feel.world;
         let int = |p: Param| i64::from(i32::try_from(physics[p].floor()).unwrap_or(0));
@@ -256,31 +264,51 @@ impl World {
         let n = self.frame.checked_sub(1)?;
         let step = self.flow.lives_step.filter(|s| s.at <= n);
         let end = self.letter_end().filter(|e| e.at <= n);
-        // The step it started on, when it's drawn, when it slides out,
-        // when it changes to the new number, and the numbers.
-        let (at, into, out, change, before, after) = match (step, end) {
-            (Some(s), e) if e.is_none_or(|e| e.at < s.at) => (
-                s.at,
-                int(Param::LivesIn),
-                int(Param::LivesOut),
-                int(Param::LivesChange),
-                s.before,
-                s.after,
-            ),
-            (_, Some(e)) => {
-                let gone = i64::from(self.letter_gone(e, self.letter_count()));
+        let item = self.flow.life_item.filter(|s| s.at <= n);
+        let latest = [step.map(|s| s.at), end.map(|e| e.at), item.map(|s| s.at)]
+            .into_iter()
+            .flatten()
+            .max()?;
+        let since = i64::from(n - latest);
+        // When it's drawn and when it slides out, after it started, and
+        // the number it shows.
+        let (into, out, number) = match (step, end, item) {
+            (_, _, Some(s)) if s.at == latest => {
+                let (first, every) = (
+                    int(Param::LifeItemLivesStep),
+                    int(Param::LifeItemLivesEvery).max(1),
+                );
+                let gained = i64::from(s.after - s.before);
+                let steps = if since < first {
+                    0
+                } else {
+                    ((since - first) / every + 1).min(gained)
+                };
                 (
-                    e.at,
-                    int(Param::LetterEndLivesIn),
-                    gone + int(Param::LetterEndLivesOut),
-                    gone,
-                    e.before,
-                    e.after,
+                    int(Param::LifeItemLivesIn),
+                    first + every * (gained - 1).max(0) + int(Param::LifeItemLivesOut),
+                    s.before.saturating_add(steps as u8),
                 )
             }
+            (_, Some(e), _) if e.at == latest => {
+                let gone = i64::from(self.letter_gone(e, self.letter_count()));
+                (
+                    int(Param::LetterEndLivesIn),
+                    gone + int(Param::LetterEndLivesOut),
+                    if since < gone { e.before } else { e.after },
+                )
+            }
+            (Some(s), _, _) => (
+                int(Param::LivesIn),
+                int(Param::LivesOut),
+                if since < int(Param::LivesChange) {
+                    s.before
+                } else {
+                    s.after
+                },
+            ),
             _ => return None,
         };
-        let since = i64::from(n - at);
         let y = slide_y(
             since,
             (into, int(Param::LivesSlide), out),
@@ -291,7 +319,7 @@ impl World {
                 int(Param::LivesSpeed),
             ),
         )?;
-        let number = if since < change { before } else { after }.min(MAX_SHOWN);
+        let number = number.min(MAX_SHOWN);
         let gap = int(Param::LivesDigitGap) as i32;
         let digits = if number >= 10 { 2 } else { 1 };
         Some(LivesDisplay {
@@ -677,6 +705,9 @@ fn take(world: &mut World, start: Option<View>) {
             pickup_start,
             relic,
             left_shift,
+            lives,
+            rise,
+            once,
             ..
         }) = thing.archetype.map(|a| a.behavior)
         else {
@@ -696,7 +727,12 @@ fn take(world: &mut World, start: Option<View>) {
             Facing::Right => x - thing.pos.x.floor(),
             Facing::Left => thing.pos.x.floor() + i64::from(left_shift) - x,
         };
-        let below = feet - thing.pos.y.floor();
+        let y = if rise > Fixed::ZERO {
+            -(-thing.pos.y).floor()
+        } else {
+            thing.pos.y.floor()
+        };
+        let below = feet - y;
         let (Ok(past), Ok(below)) = (i32::try_from(past), i32::try_from(below)) else {
             continue;
         };
@@ -704,8 +740,23 @@ fn take(world: &mut World, start: Option<View>) {
             continue;
         }
         thing.active = false;
+        if once {
+            thing.phase = Phase::Gone;
+        }
         let flow = &mut world.flow;
         flow.events.push(FlowEvent::Collect(thing.index));
+        if lives > 0 {
+            let before = flow.lives;
+            flow.lives = flow.lives.saturating_add(lives);
+            for _ in before..flow.lives {
+                flow.events.push(FlowEvent::Life);
+            }
+            flow.life_item = Some(LivesStep {
+                at: world.frame,
+                before,
+                after: flow.lives,
+            });
+        }
         if worth > 0 {
             flow.releases.push(Release {
                 left: worth,

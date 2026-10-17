@@ -165,6 +165,8 @@ pub enum Phase {
     /// player in `reach` at the end of the last step (see
     /// [`rope`](crate::rope)).
     Rope { target: Fixed, reach: bool },
+    /// Gone for good: it doesn't appear with the view again.
+    Gone,
 }
 
 /// Everything the simulation advances.
@@ -561,6 +563,7 @@ impl World {
                 Phase::Squashed { since, from_air } => [17 + u8::from(from_air), since],
                 Phase::Wobbling { m, .. } => [19, m],
                 Phase::Rope { reach, .. } => [20, reach.into()],
+                Phase::Gone => [21, 0],
             });
             if let Phase::Wobbling { thrown, .. } = t.phase {
                 out.push(thrown.map_or(0, |n| n.saturating_add(1)));
@@ -744,6 +747,14 @@ impl World {
                 out.push(1);
                 out.extend(e.at.to_le_bytes());
                 out.extend([e.late, e.before, e.after]);
+            }
+            None => out.push(0),
+        }
+        match f.life_item {
+            Some(l) => {
+                out.push(1);
+                out.extend(l.at.to_le_bytes());
+                out.extend([l.before, l.after]);
             }
             None => out.push(0),
         }

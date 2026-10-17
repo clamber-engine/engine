@@ -281,6 +281,10 @@ lives_speed = 0
 lives_x = 0
 lives_digit_gap = 0
 lives_change = 0
+life_item_lives_in = 0
+life_item_lives_step = 0
+life_item_lives_every = 0
+life_item_lives_out = 0
 relic_approach = 0
 relic_size = 0
 relic_x = 0
@@ -723,6 +727,15 @@ lives_speed = 4
 lives_x = 220
 lives_digit_gap = 10
 lives_change = 25
+# After an extra-life item (extra-lives.md) the lives number comes in
+# the same way from 7 frames after it's taken, steps up by one every 16
+# frames from S, and slides back up from 122 frames after showing the
+# new number. The spec measured S from 41 to 47 frames after, by where
+# the item was in the picture, and doesn't cover how; Clamber takes 44.
+life_item_lives_in = 7
+life_item_lives_step = 44
+life_item_lives_every = 16
+life_item_lives_out = 122
 # The taken figure's image (figure.md): its 34 px box flies from where
 # the figure was to (74, 2), covering about an eighth of the distance
 # left each frame, rests there for 63 frames, then rises 4 px a frame.

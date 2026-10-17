@@ -361,7 +361,8 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         | Phase::Landed(_)
         | Phase::Squashed { .. }
         | Phase::Wobbling { .. }
-        | Phase::Rope { .. } => return false,
+        | Phase::Rope { .. }
+        | Phase::Gone => return false,
         Phase::Knocked { vy } => {
             if let Behavior::Walker {
                 response,
@@ -404,6 +405,13 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
                 return false;
             }
         }
+    }
+    if let Behavior::Collect { rise, .. } = archetype.behavior
+        && rise > Fixed::ZERO
+        && let Some(entity) = level.entities.get(thing.index)
+    {
+        rise_from(thing, entity.at.y, rise);
+        return false;
     }
     if thing.wait > 0 {
         thing.wait -= 1;
@@ -450,6 +458,27 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         | Behavior::Scenery => {}
     }
     false
+}
+
+/// Moves a rising collectible on a step: `n` steps after the one it
+/// appeared on at level y `from`, its speed up is `n` times `rise`, so
+/// it has risen `rise` times n (n + 1) / 2 (extra-lives.md, "Rising").
+/// It's gone for good on the first step that would take it to the
+/// level's top or above it.
+fn rise_from(thing: &mut Thing, from: Fixed, rise: Fixed) {
+    let n = i64::from(thing.clock);
+    thing.clock = thing.clock.saturating_add(1);
+    let risen = n * (n + 1) / 2;
+    let y = Fixed::from_bits(
+        from.to_bits()
+            .saturating_sub(rise.to_bits().saturating_mul(risen)),
+    );
+    if y <= Fixed::ZERO {
+        thing.active = false;
+        thing.phase = Phase::Gone;
+    } else {
+        thing.pos.y = y;
+    }
 }
 
 /// Counts down a walker's turn, turning its facing to its heading when

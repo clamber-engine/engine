@@ -50,6 +50,12 @@ pub enum Kind {
     /// A small flying creature: scenery that nothing touches
     /// (`critter.md`).
     Critter,
+    /// An extra-life item giving this many lives, 1 or 3, that stays
+    /// where it's placed (`extra-lives.md`).
+    ExtraLife(u8),
+    /// An extra-life item giving this many lives, 1 or 2, that rises
+    /// once it appears.
+    RisingExtraLife(u8),
     /// A hidden object the ground action strikes, releasing a bunch.
     HiddenBunch,
     /// A hidden object a long fall sets off, releasing a barrel.
@@ -59,7 +65,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 25] = [
+    pub const ALL: [Kind; 29] = [
         Kind::SmallWalker,
         Kind::MediumWalker,
         Kind::LargeWalker,
@@ -82,6 +88,10 @@ impl Kind {
         Kind::Tyre,
         Kind::Sign,
         Kind::Critter,
+        Kind::ExtraLife(1),
+        Kind::ExtraLife(3),
+        Kind::RisingExtraLife(1),
+        Kind::RisingExtraLife(2),
         Kind::HiddenBunch,
         Kind::HiddenBarrel,
         Kind::HiddenMetalBarrel,
@@ -112,6 +122,10 @@ impl Kind {
             Kind::Tyre => "tyre",
             Kind::Sign => "sign",
             Kind::Critter => "critter",
+            Kind::ExtraLife(1) => "extra-life-1",
+            Kind::ExtraLife(_) => "extra-life-3",
+            Kind::RisingExtraLife(1) => "rising-extra-life-1",
+            Kind::RisingExtraLife(_) => "rising-extra-life-2",
             Kind::HiddenBunch => "hidden-bunch",
             Kind::HiddenBarrel => "hidden-barrel",
             Kind::HiddenMetalBarrel => "hidden-metal-barrel",
@@ -209,6 +223,17 @@ impl Kind {
             // where it appears aren't covered, so it's placed as an
             // entity that nothing acts on and that isn't drawn.
             Kind::Critter => CRITTER,
+            // extra-lives.md: the ranges are the archetype's own. The
+            // rising kinds speed up by 1/256 px a frame each frame.
+            Kind::ExtraLife(lives) => {
+                set("lives", Value::Integer(lives.into()));
+                "heart"
+            }
+            Kind::RisingExtraLife(lives) => {
+                set("lives", Value::Integer(lives.into()));
+                set("rise", Value::Float(1.0 / 256.0));
+                "heart"
+            }
             // hidden-objects.md: a hidden bunch's values are the
             // archetype's own.
             Kind::HiddenBunch => HIDDEN,
@@ -360,6 +385,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::Tyre,
             ),
             (
+                "33ba1408651608e5bba77ae5a3232bc7fe0ea4a63c9950bb493bb07bed985c21",
+                Kind::RisingExtraLife(2),
+            ),
+            (
                 "3b1534a2da04c2655ee410d9570846bf8da60ecabf7afa758b2e5cab13c547a0",
                 Kind::Stinger,
             ),
@@ -448,6 +477,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::SmallWalker,
             ),
             (
+                "c3f159c77315eec82d09dda32bd1ff7a989fa181b9e5c3fbdf127b031f6ef15a",
+                Kind::RisingExtraLife(1),
+            ),
+            (
                 "c8337d0771ac9e0feb76d90747123b32fba93ad3fe8fc5db12cd8a1a647b5910",
                 Kind::MediumWalker,
             ),
@@ -462,6 +495,14 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "d95f1da6f034e0484756a23152ad6c3ecdc3bf418860bc083e55a33ef6cf6abc",
                 Kind::Stinger,
+            ),
+            (
+                "e03617c2b72b0aa7a602ab803484eb8c7a2a2b68340d669cb12de259701c5c19",
+                Kind::ExtraLife(1),
+            ),
+            (
+                "e28fb5597b640eb4e7a70f79a382cf2c62c20eb202c2b56e903119bb6a1c05a3",
+                Kind::ExtraLife(3),
             ),
             (
                 "e2e5bad069370a387793f29708000e57f265a85fa38b598be9d019dec4259cc9",
@@ -620,7 +661,7 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 45);
+        assert_eq!(want.len(), 49);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }
@@ -665,6 +706,20 @@ mod tests {
                 }
                 (Kind::Figure, Behavior::Collect { relic, .. }) => assert!(relic),
                 (Kind::Figure, _) => panic!("{kind} isn't a collectible"),
+                (
+                    Kind::ExtraLife(n) | Kind::RisingExtraLife(n),
+                    Behavior::Collect {
+                        lives, rise, once, ..
+                    },
+                ) => {
+                    assert_eq!(lives, n, "{kind}");
+                    assert!(once, "{kind}");
+                    let rising = matches!(kind, Kind::RisingExtraLife(_));
+                    assert_eq!(rise > clamber_sim::Fixed::ZERO, rising, "{kind}");
+                }
+                (Kind::ExtraLife(_) | Kind::RisingExtraLife(_), _) => {
+                    panic!("{kind} isn't a collectible")
+                }
                 (Kind::Holder, Behavior::Carry { holder, .. }) => assert!(holder.is_some()),
                 (Kind::MediumWalker, Behavior::Walker { rider, .. }) => {
                     assert_eq!(rider.attack_above, 38);

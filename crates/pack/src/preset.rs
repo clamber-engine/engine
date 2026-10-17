@@ -565,6 +565,10 @@ mod tests {
                     | Param::LivesX
                     | Param::LivesDigitGap
                     | Param::LivesChange
+                    | Param::LifeItemLivesIn
+                    | Param::LifeItemLivesStep
+                    | Param::LifeItemLivesEvery
+                    | Param::LifeItemLivesOut
                     | Param::RelicApproach
                     | Param::RelicSize
                     | Param::RelicX

@@ -1083,6 +1083,19 @@ params! {
     /// many frames after the step, and the new number from then on. Whole
     /// frames.
     LivesChange => "lives_change",
+    /// After a collectible giving `lives` is taken, the lives display is
+    /// first drawn this many frames after, sliding in as from `lives_in`.
+    /// Whole frames.
+    LifeItemLivesIn => "life_item_lives_in",
+    /// The lives display shows the lives before the item until this many
+    /// frames after it's taken, then one more every
+    /// `life_item_lives_every` frames up to the new number. Whole frames.
+    LifeItemLivesStep => "life_item_lives_step",
+    /// See `life_item_lives_step`. Whole frames.
+    LifeItemLivesEvery => "life_item_lives_every",
+    /// The lives display slides back up from this many frames after it
+    /// first shows the new number. Whole frames.
+    LifeItemLivesOut => "life_item_lives_out",
     /// Above 0, the image of a taken `relic` is shown flying to its
     /// resting place (see `clamber_sim::World::relic_image`): each frame
     /// it covers this part of the distance left, 1 / `relic_approach`.
