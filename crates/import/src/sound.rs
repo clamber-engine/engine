@@ -51,7 +51,7 @@ impl BlockHeader {
 
 /// The two outputs before the next one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct Earlier {
+pub(crate) struct Earlier {
     y1: i16,
     y2: i16,
 }
@@ -83,7 +83,11 @@ impl Earlier {
     }
 
     /// Decodes `blocks` in order, adding their outputs to `out`.
-    fn decode<'b>(&mut self, blocks: impl IntoIterator<Item = &'b [u8]>, out: &mut Vec<i16>) {
+    pub(crate) fn decode<'b>(
+        &mut self,
+        blocks: impl IntoIterator<Item = &'b [u8]>,
+        out: &mut Vec<i16>,
+    ) {
         for block in blocks {
             let header = BlockHeader::new(block[0]);
             for &byte in &block[1..] {

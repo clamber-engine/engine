@@ -2,8 +2,7 @@
 //! output, from the envelope settings and gain it is handed
 //! (`songs.md`), its starts and its releases.
 //!
-//! How the level scales the sample, and the rest of how a voice makes
-//! sound, isn't in the spec yet.
+//! How the level scales the sample is in [`crate::voice_output`].
 
 /// The highest level.
 pub const MAX_LEVEL: u16 = 2047;
@@ -65,6 +64,8 @@ pub struct Envelope {
     release_handed: bool,
     /// The last check took a start.
     started_at_last_check: bool,
+    /// The check on the last output took a start.
+    took_start: bool,
     /// Outputs of 0 still to come after a start.
     zeros: u8,
 }
@@ -86,6 +87,7 @@ impl Envelope {
             start_handed: false,
             release_handed: false,
             started_at_last_check: false,
+            took_start: false,
             zeros: 0,
         }
     }
@@ -93,6 +95,11 @@ impl Envelope {
     /// The level on the last output.
     pub fn level(&self) -> u16 {
         self.level
+    }
+
+    /// Whether the check on the last output took a start.
+    pub fn took_start(&self) -> bool {
+        self.took_start
     }
 
     pub fn part(&self) -> Part {
@@ -143,6 +150,7 @@ impl Envelope {
                 self.part = Part::Release;
             }
         }
+        self.took_start = started;
         if started {
             // The level stays as it was on the check that takes a start.
         } else if self.zeros > 0 {

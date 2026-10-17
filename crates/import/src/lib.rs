@@ -36,6 +36,7 @@ mod placements;
 mod songs;
 mod sound;
 mod sprites;
+mod voice_output;
 mod voices;
 
 use std::collections::BTreeSet;
@@ -72,6 +73,7 @@ pub use sprites::{
     SpritePalette, TABLE_ENTRY_SIZE, TableEntry, read_frames, sprite_sheet,
 };
 
+pub use voice_output::{Mixer, VoiceOutput};
 pub use voices::{Envelope, MAX_LEVEL, Part, due, period};
 
 /// The folder in a pack that holds its levels.
