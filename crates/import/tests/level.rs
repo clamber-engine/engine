@@ -1,8 +1,9 @@
 //! A made-up image with a level's ground and background in it, imported
 //! with a [`LevelDecoder`], loaded from the pack and played. None of the
 //! data is any real game's: it's made up from the format specs,
-//! `spec/formats/level-ground.md`, `spec/formats/graphics.md` and
-//! `spec/formats/placements.md`.
+//! `spec/formats/level-ground.md`, `spec/formats/graphics.md`,
+//! `spec/formats/placements.md`, `spec/formats/sound.md` and
+//! `spec/formats/songs.md`.
 
 use std::fs;
 use std::path::PathBuf;
@@ -10,7 +11,7 @@ use std::sync::Arc;
 
 use clamber_import::{
     BANK_SIZE, Below, Catalog, Ground, Image, Importer, Known, Layout, LevelDecoder, LevelParts,
-    Location, installed,
+    LevelSong, Location, installed,
 };
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
@@ -108,7 +109,60 @@ fn parts() -> LevelParts {
         picture_table: Location::new(BANK, 0x6000),
         pictures: 5,
         placements: Some(Location::new(BANK, 0x7000)),
+        song: Some(LevelSong {
+            sample_table: Location::new(BANK, 0x8000),
+            shared_samples: Location::new(BANK, 0x8010),
+            sample_sets: Location::new(BANK, 0x8020),
+            song_table: Location::new(BANK, 0x8040),
+            song: 0,
+        }),
     }
+}
+
+/// Where the sample record and the song block go.
+const SAMPLE: u16 = 0x8100;
+const SONG: u16 = 0x8200;
+
+/// The song's base address.
+const SONG_BASE: u16 = 0x3000;
+
+/// The sound tables: sample 0 at [`SAMPLE`], shared; sample set 0 empty,
+/// its list at 0x8030; song 0 at [`SONG`].
+fn sound_tables() -> Vec<(u16, Vec<u8>)> {
+    let [lo, hi] = SAMPLE.to_le_bytes();
+    let [song_lo, song_hi] = SONG.to_le_bytes();
+    vec![
+        (0x8000, vec![lo, hi, BANK]),
+        (0x8010, vec![0, 0, 0xFF, 0xFF]),
+        (0x8020, vec![0x30, 0x80]),
+        (0x8030, vec![0xFF, 0xFF]),
+        (0x8040, vec![song_lo, song_hi, BANK]),
+    ]
+}
+
+/// A looping sample record of one block whose points are all 4 096.
+fn sample_record() -> Vec<u8> {
+    vec![
+        0, 0, 9, 0, 0xC3, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+    ]
+}
+
+/// A song block: channel 0 sets itself up, plays a note of 4 beats,
+/// then goes round a note and a rest of 2 beats each; the other
+/// channels end at once.
+fn song_block() -> Vec<u8> {
+    let mut data: Vec<u8> = (0..8)
+        .flat_map(|c| (SONG_BASE + if c == 0 { 19 } else { 18 }).to_le_bytes())
+        .collect();
+    data.extend([128, 0, 0]);
+    data.extend([42, 100, 1, 0, 2, 127, 127, 16, 143, 224, 165, 4]);
+    let back = SONG_BASE + data.len() as u16;
+    data.extend([165, 2, 128, 2, 3]);
+    data.extend(back.to_le_bytes());
+    let mut block = (data.len() as u16).to_le_bytes().to_vec();
+    block.extend(SONG_BASE.to_le_bytes());
+    block.extend(data);
+    block
 }
 
 /// Two banks of a repeating pattern, with the level's parts written in.
@@ -123,7 +177,15 @@ fn image() -> Image {
         (p.picture_table, pictures()),
         (p.placements.unwrap(), placement_list()),
         (Location::new(BANK, 0x7208), group_members()),
-    ] {
+        (Location::new(BANK, SAMPLE), sample_record()),
+        (Location::new(BANK, SONG), song_block()),
+    ]
+    .into_iter()
+    .chain(
+        sound_tables()
+            .into_iter()
+            .map(|(address, data)| (Location::new(BANK, address), data)),
+    ) {
         let start = at.position(bytes.len()).unwrap();
         bytes[start..start + data.len()].copy_from_slice(&data);
     }
@@ -177,8 +239,8 @@ fn imported_level(name: &str) -> (Level, PathBuf) {
 #[test]
 fn writes_the_level_and_its_images() {
     let (level, dir) = imported_level("writes");
-    for image in ["first-far.png", "first-tiles.png"] {
-        assert!(dir.join(image).is_file(), "no {image}");
+    for file in ["first-far.png", "first-tiles.png", "first-music.wav"] {
+        assert!(dir.join(file).is_file(), "no {file}");
     }
     assert_eq!(level.name, "made-up level");
     assert_eq!(level.size, Vec2::ints(32 * COLUMNS as i32, 512));
@@ -187,6 +249,27 @@ fn writes_the_level_and_its_images() {
     assert_eq!(names, ["far", "ground"]);
     assert!(level.surfaces.contains_key("normal"));
     assert!(!level.collision.colliders.is_empty());
+}
+
+/// The song goes round a note and a rest of 2 beats each, on every other
+/// step at 400 outputs a step, so it loops every 3 200 outputs; the
+/// music is played through to the end of its second time round.
+#[test]
+fn writes_the_level_s_music_with_its_loop() {
+    let (level, dir) = imported_level("music");
+    let music = level.music.unwrap();
+    assert_eq!(music.file, "first-music.wav");
+    assert_eq!(music.loop_length, Some(3200));
+    let wav = fs::read(dir.join(&music.file)).unwrap();
+    let frames = (wav.len() as u64 - 44) / 4;
+    let start = music.loop_start.unwrap();
+    assert_eq!(start + 3200, frames);
+    // The game plays it, and what leads into the loop's start is what
+    // its end leaves sounding.
+    let input = clamber_audio::Input::bytes(wav, Some("wav"));
+    let seam = clamber_audio::seam::check(&input, start, start + 3200).unwrap();
+    assert!(seam.mismatch < -60.0, "{seam:?}");
+    assert!(seam.after < -60.0, "{seam:?}");
 }
 
 /// Objects without a kind fingerprint row are named by their reference;

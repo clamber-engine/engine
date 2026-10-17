@@ -3,7 +3,8 @@
 //! `spec/formats/graphics.md` for its layers.
 //!
 //! Its objects come from its placement list
-//! (`spec/formats/placements.md`).
+//! (`spec/formats/placements.md`), and its music from its song
+//! ([`crate::music`]).
 //!
 //! No format spec says where a level's grid size and type count are
 //! stored, so a [`LevelDecoder`] is given each part's location and size;
@@ -11,12 +12,12 @@
 
 use std::collections::BTreeMap;
 
-use clamber_level::{Collision, Entity, FORMAT, Level};
+use clamber_level::{Collision, Entity, FORMAT, Level, Track};
 
 use crate::{
     BANK_SIZE, Background, COLUMN_BANDS, Decoder, GridPicture, Ground, Image, Known, LEVELS,
-    Layout, Location, PackWriter, PaletteSet, Pictures, Placements, TileSet, kind_of, kind_rows,
-    unpack,
+    Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures, Placements, TileSet, kind_of,
+    kind_rows, unpack,
 };
 
 /// Lines in a band.
@@ -54,10 +55,12 @@ pub struct LevelParts {
     pub pictures: usize,
     /// The placement list, if the level has its objects.
     pub placements: Option<Location>,
+    /// The level's song, if it has its music.
+    pub song: Option<LevelSong>,
 }
 
 /// Writes one level of a title as `levels/<file>.level`, with the images
-/// its layers draw next to it, named starting `<file>-`.
+/// its layers draw and its music next to it, named starting `<file>-`.
 pub struct LevelDecoder {
     pub title: String,
     /// The level file's name, without `.level`.
@@ -68,7 +71,8 @@ pub struct LevelDecoder {
 }
 
 impl LevelDecoder {
-    /// The level, with its layers' images by path relative to it.
+    /// The level, with its layers' images and its music by path relative
+    /// to it.
     pub fn level(&self, image: &Image) -> Result<(Level, BTreeMap<String, Vec<u8>>), String> {
         let p = &self.parts;
         let read = |what: &str, at: Location, len: usize| {
@@ -95,6 +99,7 @@ impl LevelDecoder {
         )?)?;
         let picture = GridPicture::new(grid, &pictures)?;
         let background = Background::new(&picture, &tiles, &palettes, &format!("{}-", self.file))?;
+        let mut files = background.images;
 
         let width = ground.width();
         let height = ground.bands() * BAND;
@@ -115,7 +120,17 @@ impl LevelDecoder {
         if let Some(list) = p.placements {
             level.entities = self.entities(image, list, height)?;
         }
-        Ok((level, background.images))
+        if let Some(song) = p.song {
+            let music = song.music(|at| image.at(at))?;
+            let file = format!("{}-music.wav", self.file);
+            level.music = Some(Track {
+                file: file.clone(),
+                loop_start: music.looping.map(|l| l.start as u64),
+                loop_length: music.looping.map(|l| l.length as u64),
+            });
+            files.insert(file, music.wav());
+        }
+        Ok((level, files))
     }
 
     /// The objects in the placement list at `list`, for a level whose
@@ -145,9 +160,9 @@ impl Decoder for LevelDecoder {
     }
 
     fn decode(&self, image: &Image, pack: &mut PackWriter) -> Result<(), String> {
-        let (level, images) = self.level(image)?;
-        for (path, png) in images {
-            pack.write(&format!("{LEVELS}/{path}"), &png)?;
+        let (level, files) = self.level(image)?;
+        for (path, contents) in files {
+            pack.write(&format!("{LEVELS}/{path}"), &contents)?;
         }
         pack.write(
             &format!("{LEVELS}/{}.level", self.file),

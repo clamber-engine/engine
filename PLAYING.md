@@ -79,7 +79,8 @@ the same from a command line. A personal import is yours alone: it's
 marked as one wherever it's shown, and Clamber won't export it or
 capture it for sharing. This version recognizes the one game image
 it supports (with or without a copier header) and converts its first
-level's ground and background, and where its objects are. Most of the
+level's ground and background, where its objects are, and its music
+(without the echo the game adds, which Clamber can't make yet). Most of the
 objects don't appear or act yet, you start near the level's left end,
 and there's no way to finish it yet. For any other file, it says it can't
 import it, and why.

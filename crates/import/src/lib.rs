@@ -32,6 +32,7 @@ mod level_map;
 mod location;
 mod locators;
 mod manifest;
+mod music;
 mod placements;
 mod songs;
 mod sound;
@@ -59,6 +60,7 @@ pub use level_map::{
 pub use location::{BANK_SIZE, Location};
 pub use locators::{Data, first_level, locate};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
+pub use music::{LevelSong, Music, RATE, render};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements};
 pub use songs::{
     CHANNELS, Effects, GAIN, HEADER_SIZE, OUTPUTS_PER_PERIOD, Player, START_PERIOD, Settings,

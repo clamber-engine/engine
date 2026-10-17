@@ -1,7 +1,7 @@
 //! Where each kind of data starts in a supported image
 //! (`spec/formats/locators.md`), and the parts of the levels they give.
 
-use crate::{LevelParts, Location};
+use crate::{LevelParts, LevelSong, Location};
 
 /// The data a locator row finds. The level parts are the first level's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -103,6 +103,14 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
         picture_table: at(Data::PictureTable)?,
         pictures,
         placements: Some(at(Data::PlacementList)?),
+        // `sound.md`: "The first level plays song 0".
+        song: Some(LevelSong {
+            sample_table: at(Data::SampleTable)?,
+            shared_samples: at(Data::SharedSampleList)?,
+            sample_sets: at(Data::SampleSetTable)?,
+            song_table: at(Data::SongTable)?,
+            song: 0,
+        }),
     })
 }
 
@@ -144,6 +152,10 @@ mod tests {
         let parts = first_level("title-1").unwrap();
         assert_eq!(parts.grid, Location::new(0xD9, 0));
         assert_eq!(parts.placements, Some(Location::new(0xFD, 0x95DC)));
+        assert_eq!(
+            parts.song.map(|s| (s.song_table, s.song)),
+            Some((Location::new(0xCA, 0xB15E), 0))
+        );
         assert!(first_level("title-2").is_none());
     }
 

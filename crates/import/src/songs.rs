@@ -4,9 +4,9 @@
 //! effects (`spec/formats/sound-effects.md`) play in the same player, each
 //! taking a voice from the song while it plays.
 //!
-//! A voice's level from those settings is in [`crate::voices`]; the rest
-//! of how a voice turns them into sound isn't in the spec yet, so making
-//! audio from them is for later.
+//! How the voices turn those settings into sound is in
+//! [`crate::voice_output`], and [`crate::music`] plays a whole song as
+//! audio.
 
 use crate::Location;
 use crate::sound::{Read, Song};
@@ -208,7 +208,7 @@ impl Change {
 
 /// The pitch slide: its settings (`w`, `r`, `n`, amount, `f`) and
 /// counters.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 struct Slide {
     on: bool,
     wait: u8,
@@ -251,7 +251,7 @@ impl Slide {
 
 /// The vibrato or the volume sweep: settings (`N`, `r`, `d`, `w`) and
 /// counters.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 struct Swing {
     on: bool,
     turn: u8,
@@ -305,14 +305,14 @@ impl Swing {
 
 /// A call (command 4): where it goes, how many plays are left, and where
 /// it returns to.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct Call {
     to: usize,
     left: u16,
     back: usize,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq, Eq)]
 struct Channel {
     at: usize,
     ended: bool,
@@ -335,7 +335,7 @@ struct Channel {
 }
 
 /// Song-wide state beyond [`Settings`].
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq, Eq)]
 struct Wide {
     tempo: u8,
     tempo_sum: u16,
@@ -426,6 +426,18 @@ impl<'a> Player<'a> {
     /// Whether every one of the song's tracks has ended.
     pub fn ended(&self) -> bool {
         self.channels[..CHANNELS].iter().all(|c| c.ended)
+    }
+
+    /// Whether this player is where `other` is: every track, effect slot,
+    /// voice and setting as there, so that from here on both play the
+    /// same steps. Which song and effects they play isn't compared.
+    pub fn same_place(&self, other: &Player) -> bool {
+        self.channels == other.channels
+            && self.taken == other.taken
+            && self.started == other.started
+            && self.voices == other.voices
+            && self.settings == other.settings
+            && self.wide == other.wide
     }
 
     /// Starts effect `effect` on voice `voice`, between the last step and
