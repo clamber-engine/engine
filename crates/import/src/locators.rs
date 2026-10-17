@@ -20,6 +20,8 @@ pub enum Data {
     PlacementList,
     StartRecord,
     RestartRecord,
+    SceneReturnRecord,
+    RoomReturnRecord,
     ViewLimits,
     MapPoints,
     MapCorners,
@@ -27,7 +29,7 @@ pub enum Data {
 }
 
 impl Data {
-    pub const ALL: [Data; 18] = [
+    pub const ALL: [Data; 20] = [
         Data::SampleTable,
         Data::SharedSampleList,
         Data::SampleSetTable,
@@ -42,6 +44,8 @@ impl Data {
         Data::PlacementList,
         Data::StartRecord,
         Data::RestartRecord,
+        Data::SceneReturnRecord,
+        Data::RoomReturnRecord,
         Data::ViewLimits,
         Data::MapPoints,
         Data::MapCorners,
@@ -65,6 +69,8 @@ impl Data {
             Data::PlacementList => "Placements: the first level's placement list",
             Data::StartRecord => "Level start: the first level's start record",
             Data::RestartRecord => "Level start: the first level's restart record",
+            Data::SceneReturnRecord => "Level start: the first level's scene-return record",
+            Data::RoomReturnRecord => "Level start: the first level's room-return record",
             Data::ViewLimits => "View limits: the first level's record",
             Data::MapPoints => "Level map: point tables",
             Data::MapCorners => "Level map: corner records",
@@ -90,6 +96,8 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
         ("title-1", Data::PlacementList) => (0xFD, 0x95DC),
         ("title-1", Data::StartRecord) => (0xFC, 0xBF78),
         ("title-1", Data::RestartRecord) => (0xFC, 0xBFB4),
+        ("title-1", Data::SceneReturnRecord) => (0xFC, 0xC09C),
+        ("title-1", Data::RoomReturnRecord) => (0xFC, 0xBF58),
         ("title-1", Data::ViewLimits) => (0xFC, 0x957A),
         ("title-1", Data::MapPoints) => (0xFC, 0xF47B),
         ("title-1", Data::MapCorners) => (0xC0, 0xD13C),
