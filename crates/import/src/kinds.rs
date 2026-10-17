@@ -170,16 +170,9 @@ impl Kind {
             // first level; how to tell it from the level's data isn't
             // covered.
             Kind::RestartBarrel => "keg",
-            // tyre.md's throw is 6 px per frame up. Placeholder until
-            // tyres get tyre.md's catch, squash and tyre jump (#146);
-            // the first level has none.
-            Kind::Tyre => {
-                set(
-                    "velocity",
-                    Value::Array(vec![Value::Integer(0), Value::Integer(-6)]),
-                );
-                "launcher"
-            }
+            // tyre.md's values are the archetype's own. The first level
+            // has none.
+            Kind::Tyre => "spring",
             // hidden-objects.md: a hidden bunch's values are the
             // archetype's own.
             Kind::HiddenBunch => HIDDEN,
@@ -599,6 +592,9 @@ mod tests {
                 }
                 (Kind::RestartBarrel, behavior) => {
                     assert!(matches!(behavior, Behavior::Keg(_)), "{kind}")
+                }
+                (Kind::Tyre, behavior) => {
+                    assert!(matches!(behavior, Behavior::Spring(_)), "{kind}")
                 }
                 (Kind::HiddenBunch, Behavior::Hidden(h)) => {
                     assert_eq!((h.fall_height, h.becomes), (0, "cluster"))

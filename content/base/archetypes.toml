@@ -315,6 +315,32 @@
 #   pause frames. An item, or what it became while standing (not in the
 #   hands or thrown), is removed for good outside the window placed
 #   objects appear in.
+# - `spring`: a spring the player stands on, which never moves and
+#   doesn't fall. Offsets from it are whole px, ends included: `across`,
+#   the player's x rounded down less its own, as `[[from, to], [from,
+#   to]]` for the player facing right, then left; and `up`, how far the
+#   player's feet line is above its y rounded down. Its top is `top` px
+#   up at rest. The player touches it with `across` in range and `up`
+#   within `reach = [from, to]` of the top, at the end of a frame after
+#   its move. Touched at rest or wobbling, it catches a player on the
+#   ground, not taking off, or in the air falling, `up` no more than
+#   `catch_below` under the top: the player is put on the top, `up` whole
+#   px `stand` above it, keeping the fraction, and stands there. The
+#   spring squashes, its top as `squash = [[top, frames], ...]` says,
+#   putting a player that touches it and isn't rising back on the top.
+#   On the frame after, it throws a player with `up` within `throw_up`
+#   at `throw_speed` up: the player holds still on the frame after that,
+#   then flies under `gravity` up to `max_fall`. The spring catches
+#   nothing for `throw_rest` frames after a throw, and wobbles, its top
+#   as `wobble` says, but not on frames a player touches it without being
+#   caught. A player on the top goes `drop` down with each move; one the
+#   spring doesn't put back leaves the top on the next frame, `leave_drop`
+#   down. A Jump press there makes a spring jump at `jump_speed` up on
+#   that frame, falling under `jump_gravity` while Jump stays held, then
+#   `gravity`. A player caught in the air can't spring-jump until
+#   `jump_wait` frames after the catch, and then only with a press made
+#   up to `jump_early` frames before the catch and held since, or a new
+#   one.
 #
 # The player defeats an enemy by landing on it, and bounces off, or by
 # rolling into it. Touching one any other way costs a life.
@@ -514,6 +540,31 @@ upright_jump = 5
 land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }
 roll_after = [3, 9]
 fidget_time = [239, 180, 457]
+
+# title-1's tyre (spec/behavior/tyre.md). The size is Clamber's own: it's
+# what's drawn, and touches nothing.
+[archetypes.spring]
+behavior = "spring"
+size = [48, 16]
+offset = 0
+across = [[-24, 22], [-26, 20]]
+reach = [-67, 2]
+top = 16
+stand = 2
+catch_below = 13
+squash = [[12, 12], [16, 1], [12, 1]]
+wobble = [[12, 8], [16, 2], [12, 6], [16, 2], [12, 6], [16, 2], [12, 2], [16, 2], [12, 2]]
+throw_up = [-54, 15]
+throw_speed = 6
+throw_rest = 8
+drop = 8
+leave_drop = 0.44140625
+jump_speed = 10
+jump_wait = 2
+jump_early = 9
+jump_gravity = 0.3125
+gravity = 0.4375
+max_fall = 8
 
 # title-1's hidden objects (spec/behavior/hidden-objects.md). These are
 # the values of one that releases a bunch: struck by the ground action

@@ -231,6 +231,8 @@ pub(crate) fn hold(world: &mut World) -> bool {
     if r.frame == 1 {
         player.pos = Vec2::new(r.at.x, r.at.y - keg.lift);
         player.ground = None;
+        player.spring = None;
+        player.spring_arc = None;
         player.state = State::Fall;
     }
     player.vel = Vec2::default();

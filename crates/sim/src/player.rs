@@ -21,10 +21,12 @@ use clamber_level::{Dir, Hit, Level, Shape, Vec2};
 use clamber_pack::physics::MAX_STEP;
 use clamber_pack::{Feel, Param, Physics};
 
+use crate::archetype::Spring;
 use crate::columns;
 use crate::loss::Lost;
 use crate::pose::PoseClock;
 use crate::ride::Riding;
+use crate::spring::{OnSpring, SpringArc};
 use crate::world::Event;
 
 /// Half the body's width, px. The body is a box standing on its
@@ -260,6 +262,14 @@ pub struct Player {
     /// last stood on a floor, while in the air (see
     /// [`hidden`](crate::hidden)).
     pub fall_top: Option<i64>,
+    /// The spring it stands on, if any (see [`spring`](crate::spring)).
+    /// It's on the ground then.
+    pub spring: Option<OnSpring>,
+    /// A spring's throw or a spring jump under way, until it lands or a
+    /// spring catches it.
+    pub spring_arc: Option<SpringArc>,
+    /// Frames Jump has been held without a break, this one included.
+    pub jump_held: u8,
 }
 
 impl Player {
@@ -328,6 +338,9 @@ impl Player {
             riding: None,
             unseated: false,
             fall_top: None,
+            spring: None,
+            spring_arc: None,
+            jump_held: 0,
         };
         player.ground = level
             .collision
@@ -343,7 +356,7 @@ impl Player {
     }
 
     pub fn grounded(&self) -> bool {
-        self.ground.is_some()
+        self.ground.is_some() || self.spring.is_some()
     }
 
     /// The body as `(left, top, right, bottom)`.
@@ -361,6 +374,8 @@ impl Player {
         self.ground_action = None;
         self.vel = vel;
         self.ground = None;
+        self.spring = None;
+        self.spring_arc = None;
         self.coyote = None;
         self.jump_age = None;
         self.walked_off = false;
@@ -378,6 +393,8 @@ impl Player {
     pub fn bounce(&mut self, speed: Fixed, freeze: u8, events: &mut Vec<Event>) {
         self.vel.y = -speed;
         self.ground = None;
+        self.spring = None;
+        self.spring_arc = None;
         self.coyote = None;
         self.frozen = freeze;
         self.jump_age = None;
@@ -429,10 +446,68 @@ impl Player {
         }
     }
 
+    /// Puts the player on a spring's top, its feet line at `feet`: moved
+    /// by whole px, keeping the fraction, with no speed down. A player
+    /// caught in the air stops falling as on landing, without a landing.
+    pub(crate) fn stand_on_spring(&mut self, feet: i64, on: OnSpring) {
+        self.pos.y += Fixed::from_int((feet - ceil(self.pos.y)) as i32);
+        self.vel.y = Fixed::ZERO;
+        let caught = !self.grounded();
+        self.ground = None;
+        self.through = None;
+        self.spring = Some(on);
+        self.spring_arc = None;
+        if caught {
+            self.coyote = None;
+            self.jump_hold = false;
+            self.jump_age = None;
+            self.walked_off = false;
+            self.fall_step = false;
+            self.fall_facing = 0;
+            self.unseated = false;
+            self.hop = None;
+            self.state = self.next_state(self.ran, &[]);
+        }
+    }
+
+    /// Thrown up off `spring` on the frame after its squash: on the
+    /// ground, at its `throw_speed` up, for this frame and the next, on
+    /// which nothing changes, then in the air (see
+    /// [`spring`](crate::spring)).
+    pub fn throw_off_spring(&mut self, spring: &Spring) {
+        self.vel.y = -spring.throw_speed;
+        self.ground = None;
+        self.through = None;
+        self.spring = Some(OnSpring {
+            values: *spring,
+            since: 0,
+            from_air: false,
+            top: false,
+            thrown: Some(0),
+        });
+        self.spring_arc = Some(SpringArc {
+            held: false,
+            jump_gravity: spring.gravity,
+            gravity: spring.gravity,
+            max_fall: spring.max_fall,
+        });
+        self.coyote = None;
+        self.jump_hold = false;
+        self.takeoff = false;
+        self.takeoff_wait = None;
+        self.end_roll();
+        self.ground_action = None;
+        if self.state == State::Roll {
+            self.state = State::Idle;
+        }
+    }
+
     /// Hurts the player where it is: it doesn't move on this step.
     pub fn hit(&mut self, events: &mut Vec<Event>) {
         self.touched.clear();
         self.vel = Vec2::default();
+        self.spring = None;
+        self.spring_arc = None;
         self.frozen = 0;
         self.takeoff = false;
         self.takeoff_wait = None;
@@ -684,12 +759,28 @@ impl Player {
         events: &mut Vec<Event>,
     ) {
         self.touched.clear();
+        self.jump_held = if input.held.contains(Action::Jump) {
+            self.jump_held.saturating_add(1)
+        } else {
+            0
+        };
         if self.frozen > 0 {
             if self.unseated {
                 self.jump_hold &= input.held.contains(Action::Jump);
             }
             self.frozen -= 1;
             return;
+        }
+        if let Some(on) = &mut self.spring
+            && let Some(n) = on.thrown
+        {
+            if n == 0 {
+                // Nothing changes on the frame after a spring's throw.
+                on.thrown = Some(1);
+                return;
+            }
+            // In the air from the one after.
+            self.spring = None;
         }
         if self.grounded() {
             self.unseated = false;
@@ -748,9 +839,26 @@ impl Player {
             // The jump that started on the ground last frame leaves it.
             self.takeoff = false;
             self.ground = None;
+            self.spring = None;
             self.coyote = None;
             self.state = State::Jump;
         }
+        // On a spring's top, a press makes a spring jump at once; caught
+        // in the air, not before `jump_wait` frames after the catch, and
+        // then for a press made up to `jump_early` frames before it and
+        // held since.
+        let on_top = self.spring.filter(|on| on.top);
+        let spring_jump = on_top.filter(|_| self.swap == 0).is_some_and(|on| {
+            let since = u32::from(on.since) + 1;
+            let wait = u32::from(on.values.jump_wait);
+            if !on.from_air || since > wait {
+                pressed(Action::Jump)
+            } else {
+                since == wait
+                    && u32::from(self.jump_held) <= wait + u32::from(on.values.jump_early) + 1
+                    && held(Action::Jump)
+            }
+        });
         // The ground action under way goes on to its next frame. Its frame
         // after the last is over, but still moves by its rules.
         let action_time = frames(physics[Param::GroundActionTime]);
@@ -786,7 +894,7 @@ impl Player {
         // The way the steep face the player starts the frame on falls, if
         // any. Rolls on faces aren't in the spec yet.
         let slope = physics[Param::FaceSlope];
-        let face = if slope > Fixed::ZERO && self.grounded() && self.state != State::Roll {
+        let face = if slope > Fixed::ZERO && self.ground.is_some() && self.state != State::Roll {
             columns::face(level, columns::column(self.pos.x), self.pos.y, slope)
         } else {
             None
@@ -841,6 +949,10 @@ impl Player {
             .takeoff_wait
             .and_then(|n| n.checked_sub(1))
             .filter(|&n| n > 0);
+        if spring_jump {
+            due = false;
+            self.takeoff_wait = None;
+        }
         let cancelled = pending && self.takeoff_crouched && crouch_ends;
         if cancelled {
             // A jump started while crouching doesn't take off once the
@@ -855,6 +967,9 @@ impl Player {
             && !locked
             && !waiting
             && face.is_none()
+            // Caught in the air, only a spring jump leaves the top.
+            && !on_top.is_some_and(|on| on.from_air)
+            && !spring_jump
             && (self.grounded() || self.coyote.is_some() || roll_jump)
             && (physics[Param::JumpStartHold] == Fixed::ZERO || held(Action::Jump))
             && ready;
@@ -869,6 +984,25 @@ impl Player {
         // after one, ends it once this frame has moved.
         let mut takeoff_ends_roll = false;
         let starts = can_jump && self.jump_buffer.take();
+        if let Some(on) = on_top.filter(|_| spring_jump) {
+            self.jump_buffer.take();
+            if self.state == State::Roll {
+                events.push(Event::RollEnd);
+            }
+            self.end_roll();
+            self.vel.y = -on.values.jump_speed;
+            self.takeoff = true;
+            self.jump_hold = false;
+            self.coyote = None;
+            self.spring_arc = Some(SpringArc {
+                held: true,
+                jump_gravity: on.values.jump_gravity,
+                gravity: on.values.gravity,
+                max_fall: on.values.max_fall,
+            });
+            self.state = State::Jump;
+            events.push(Event::JumpStart);
+        }
         if starts && wait > 0 {
             // Nothing shows yet: the player goes on as before.
             self.takeoff_wait = Some(wait);
@@ -913,6 +1047,7 @@ impl Player {
             self.state = State::Jump;
             events.push(Event::JumpStart);
         } else if self.state == State::Jump
+            && self.spring_arc.is_none()
             && input.released.contains(Action::Jump)
             && self.vel.y.is_negative()
         {
@@ -1236,6 +1371,9 @@ impl Player {
                 self.vel.y + physics[Param::Gravity]
             };
             self.vel.y = vy.min(physics[Param::MaxFallSpeed]);
+        } else if let Some(arc) = self.spring_arc.as_mut().filter(|_| airborne) {
+            // A spring's throw, or a spring jump, has its own gravity.
+            self.vel.y = arc.fall(self.vel.y, held(Action::Jump));
         } else if airborne {
             let held_gravity = physics[Param::HeldJumpGravity];
             // A jump pressed during a roll in the air falls under the
@@ -1284,8 +1422,33 @@ impl Player {
 
         // Off a face, the fall has its own drop and no step.
         let face_leave = face.is_some() && physics[Param::FaceLeaveDrop] > Fixed::ZERO;
-        if !airborne {
-            let drop = if face_leave {
+        // Left a spring's top on the last frame without being put back.
+        let off_spring = self.spring.filter(|on| !on.top);
+        if let Some(on) = on_top {
+            // Nothing holds the player up on a spring's top: it goes down
+            // as if following the ground, and the spring puts it back.
+            self.spring = Some(OnSpring { top: false, ..on });
+            if spring_jump {
+                if let Some(arc) = &mut self.spring_arc {
+                    self.vel.y = arc.fall(self.vel.y, held(Action::Jump));
+                }
+                self.move_vertically(level, moved, Reach::NONE, slope > Fixed::ZERO, events);
+            } else {
+                let from = Vec2::new(self.pos.x, self.pos.y);
+                match level.collision.cast(from, Dir::Down, on.values.drop) {
+                    Some(hit) => {
+                        self.pos.y = hit.point.y;
+                        self.ground = Some(hit.collider);
+                        self.spring = None;
+                        self.touched.push(hit.collider);
+                    }
+                    None => self.pos.y += on.values.drop,
+                }
+            }
+        } else if !airborne {
+            let drop = if let Some(on) = off_spring {
+                on.values.leave_drop
+            } else if face_leave {
                 physics[Param::FaceLeaveDrop]
             } else if self.roll.is_some_and(|r| r.leave_hovers(r.frame, physics)) {
                 physics[Param::LeaveFallSpeed]
@@ -1314,7 +1477,16 @@ impl Player {
                 None
             };
             let over_end = self.takeoff && physics[Param::TakeoffOverEnd] > Fixed::ZERO;
-            let left = self.follow_ground(level, x, below, events);
+            let left = if off_spring.is_some() {
+                // However near the floor below.
+                self.spring = None;
+                if !self.takeoff {
+                    events.push(Event::LeaveGround);
+                }
+                !self.takeoff
+            } else {
+                self.follow_ground(level, x, below, events)
+            };
             if (left || (over_end && !self.grounded())) && drop > Fixed::ZERO {
                 // There's no ground within a step below, so the drop
                 // can't land. A jump waiting to take off drops under its
@@ -2514,6 +2686,8 @@ impl Player {
         self.pos.y = y;
         self.vel.y = Fixed::ZERO;
         self.ground = Some(collider);
+        self.spring = None;
+        self.spring_arc = None;
         self.through = None;
         self.jump_hold = false;
         self.unseated = false;

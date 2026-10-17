@@ -24,6 +24,9 @@
 //! strikes it or the player lands on it after a long fall; it then
 //! releases an item that becomes a bunch or a barrel ([`HIDDEN`]).
 //!
+//! A spring catches a player that touches it, squashes and throws it
+//! up, and a Jump press on its top makes a spring jump ([`SPRING`]).
+//!
 //! A character missing from the level joins the player when an object
 //! holding it breaks ([`Join`]).
 //!
@@ -61,6 +64,7 @@ mod record;
 mod ride;
 mod script;
 mod sections;
+mod spring;
 mod stinger;
 mod swap;
 mod swim;
@@ -73,8 +77,8 @@ pub use archetype::{
     AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
     Fall, HIDDEN_ITEMS, Hidden, Hit, Holder, Hutch, KEG_PIECES, Keg, MAX_AIR_STEPS,
     MAX_ARRIVE_RULES, MAX_HOP_STEPS, MAX_LETTERS, MAX_RESPONSE_PARTS, MAX_SHAKE_STAGES,
-    MAX_STRIKE_FRAMES, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Ride, RiderReach,
-    Span, Stinger, Throw, WalkerContact,
+    MAX_SPRING_RUNS, MAX_STRIKE_FRAMES, MAX_THROWS, MAX_TURN_PARTS, Offsets, Reach, Response, Ride,
+    RiderReach, Span, Spring, Stinger, Throw, WalkerContact,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
@@ -98,6 +102,7 @@ pub use record::record;
 pub use ride::{RidePart, Riding};
 pub use script::{InputFrame, Script};
 pub use sections::{Opening, Placed, Placing, Sections, Spot, Window};
+pub use spring::{OnSpring, SPRING, SpringArc, top as spring_top};
 pub use swap::{Move, Other, Recent, Swap};
 pub use swim::swim_depth;
 pub use things::{DEFEATED_FRAMES, LAUNCH_REST};

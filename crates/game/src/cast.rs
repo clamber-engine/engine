@@ -10,14 +10,15 @@
 //! A character in roster slot `n` past the first uses the sheet's `n`th
 //! named palette or variant image, in name order, if it has one. Entities play their
 //! sheet's first animation, except a reached checkpoint, which plays
-//! `reached`, a defeated enemy, which plays `defeated`, and a launcher
-//! that just fired, which plays `fire`. Entities facing left are
+//! `reached`, a defeated enemy, which plays `defeated`, a launcher
+//! that just fired, which plays `fire`, and a spring whose top is pressed
+//! down, which plays `squash`. Entities facing left are
 //! mirrored too.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use clamber_sim::{Behavior, CHECKPOINT, Facing, Outcome, Phase, State, Thing, World};
+use clamber_sim::{Behavior, CHECKPOINT, Facing, Outcome, Phase, State, Thing, World, spring_top};
 use clamber_sprite::{Playback, SpriteSheet};
 
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
@@ -303,6 +304,15 @@ fn thing_animation(world: &World, thing: &Thing) -> Option<&'static str> {
             return Some(if out { "animal" } else { "break" });
         }
         Phase::Mounted(_) | Phase::Ridden | Phase::Bolting { .. } => return Some("animal"),
+        Phase::Squashed { .. } | Phase::Wobbling { .. } => {
+            // A spring is drawn squashed while its top is below where
+            // it rests.
+            let low = thing.archetype.is_some_and(|a| match a.behavior {
+                Behavior::Spring(spring) => spring_top(&spring, thing.phase) < spring.top,
+                _ => false,
+            });
+            return low.then_some("squash");
+        }
         Phase::Ready
         | Phase::Held
         | Phase::Thrown(_)

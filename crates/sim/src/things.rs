@@ -41,6 +41,9 @@
 //! A stinger sways around its start and hurts the player on any contact
 //! (see [`stinger`]).
 //!
+//! A spring catches the player, puts it back on its top while squashed
+//! and throws it (see [`spring`]).
+//!
 //! A crate holding an animal breaks when the player lands on it, which
 //! bounces off it, and the player can mount the animal that comes out
 //! (see [`hutch`]).
@@ -84,6 +87,7 @@ use crate::join;
 use crate::player::{Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, frames, is_wall};
 use crate::pose::{self, Stance};
 use crate::ride;
+use crate::spring;
 use crate::stinger;
 use crate::throwers::{self, Picture};
 use crate::view;
@@ -261,6 +265,7 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
         hidden::land(world, &physics);
     }
     hidden::leave(world, &physics);
+    spring::update(world, frozen, untouchable);
     // Enemies bounced on still moved this frame, as they were.
     let freeze = frames(physics[Param::BounceFreeze]);
     let facing = world.player.facing;
@@ -345,7 +350,12 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
                 Phase::Fired(since + 1)
             };
         }
-        Phase::Held | Phase::Broken | Phase::Item { .. } | Phase::Landed(_) => return false,
+        Phase::Held
+        | Phase::Broken
+        | Phase::Item { .. }
+        | Phase::Landed(_)
+        | Phase::Squashed { .. }
+        | Phase::Wobbling { .. } => return false,
         Phase::Knocked { vy } => {
             if let Behavior::Walker {
                 response,
@@ -427,7 +437,8 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         | Behavior::Hutch(_)
         | Behavior::Stinger(_)
         | Behavior::Keg(_)
-        | Behavior::Hidden(_) => {}
+        | Behavior::Hidden(_)
+        | Behavior::Spring(_) => {}
     }
     false
 }
@@ -1192,7 +1203,8 @@ fn interact(
             | Behavior::Ball(_)
             | Behavior::Stinger(_)
             | Behavior::Keg(_)
-            | Behavior::Hidden(_) => {}
+            | Behavior::Hidden(_)
+            | Behavior::Spring(_) => {}
             _ if riding => {}
             _ => {
                 let middle = Fixed::from_bits((area.1.to_bits() + area.3.to_bits()) / 2);

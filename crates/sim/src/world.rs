@@ -7,7 +7,7 @@ use clamber_fixed::Fixed;
 use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 
-use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior};
+use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior, Spring};
 use crate::carry::{self, Flight};
 use crate::collect;
 use crate::dimming::{self, Dimming};
@@ -151,6 +151,12 @@ pub enum Phase {
     Item { vy: Fixed, wait: u8 },
     /// A hidden object's item on the floor, this many steps after landing.
     Landed(u8),
+    /// A spring squashed by a catch this many steps ago, in the air or
+    /// not (see [`spring`](crate::spring)).
+    Squashed { since: u8, from_air: bool },
+    /// A spring wobbling, `m` steps into the wobble, after a throw this
+    /// many steps ago if it threw.
+    Wobbling { m: u8, thrown: Option<u8> },
 }
 
 /// Everything the simulation advances.
@@ -477,7 +483,12 @@ impl World {
                 Phase::Broken => [14, 0],
                 Phase::Item { wait, .. } => [15, wait],
                 Phase::Landed(since) => [16, since],
+                Phase::Squashed { since, from_air } => [17 + u8::from(from_air), since],
+                Phase::Wobbling { m, .. } => [19, m],
             });
+            if let Phase::Wobbling { thrown, .. } = t.phase {
+                out.push(thrown.map_or(0, |n| n.saturating_add(1)));
+            }
             if let Phase::Falling { vy, .. }
             | Phase::Knocked { vy: Some(vy) }
             | Phase::Flying { vy, .. }
@@ -762,6 +773,24 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
         }
         None => out.push(0),
     }
+    match p.spring {
+        Some(on) => {
+            out.extend([1, on.since, on.from_air.into(), on.top.into()]);
+            out.push(on.thrown.map_or(0, |n| n.saturating_add(1)));
+            spring_bytes(out, &on.values);
+        }
+        None => out.push(0),
+    }
+    match p.spring_arc {
+        Some(arc) => {
+            out.extend([1, arc.held.into()]);
+            fixed(out, arc.jump_gravity);
+            fixed(out, arc.gravity);
+            fixed(out, arc.max_fall);
+        }
+        None => out.push(0),
+    }
+    out.push(p.jump_held);
     match p.hands {
         Some(h) => {
             out.push(1);
@@ -783,6 +812,41 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
             count(out, i);
         }
         None => out.push(0),
+    }
+}
+
+/// Appends a spring's values to `out`, for [`World::state_bytes`].
+fn spring_bytes(out: &mut Vec<u8>, s: &Spring) {
+    let fixed = |out: &mut Vec<u8>, v: Fixed| out.extend(v.to_bits().to_le_bytes());
+    let mut px = |n: i32| out.extend(n.to_le_bytes());
+    for (from, to) in [s.across[0], s.across[1], s.reach, s.throw_up] {
+        px(from);
+        px(to);
+    }
+    for n in [s.top, s.stand, s.catch_below] {
+        px(n);
+    }
+    for (top, frames) in s.squash.iter().chain(&s.wobble) {
+        px(*top);
+        px(i32::from(*frames));
+    }
+    out.extend([
+        s.squash_runs,
+        s.wobble_runs,
+        s.throw_rest,
+        s.jump_wait,
+        s.jump_early,
+    ]);
+    for v in [
+        s.throw_speed,
+        s.drop,
+        s.leave_drop,
+        s.jump_speed,
+        s.jump_gravity,
+        s.gravity,
+        s.max_fall,
+    ] {
+        fixed(out, v);
     }
 }
 

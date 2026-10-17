@@ -129,6 +129,104 @@ pub enum Behavior {
     /// until it's set off and releases its item (see
     /// [`hidden`](crate::hidden)).
     Hidden(Hidden),
+    /// A spring the player stands on, which squashes and throws it up
+    /// (see [`spring`](crate::spring)).
+    Spring(Spring),
+}
+
+/// A spring (spec/behavior/tyre.md). It never moves. Offsets from it are
+/// whole px: `across`, the player's `x` rounded down less its own, and
+/// `up`, how far the player's feet line is above its `y` rounded down.
+/// Its top is `top` px above its `y` at rest, and as `squash` and
+/// `wobble` say after a catch, each a list of `[top, frames]` runs.
+///
+/// The player touches it with `across` within `across` (the range for
+/// its facing) and `up` within `reach` of the top, at the end of a frame
+/// after its move. A spring at rest or wobbling catches a player that
+/// touches it on the ground, not taking off, or in the air falling with
+/// `up` no more than `catch_below` under the top; it puts the player on
+/// the top (`up` whole px `stand` above it) and squashes. While squashed
+/// it puts a player that touches it and isn't rising back on the top.
+/// On the frame after the squash, it throws a player with `across` in
+/// range and `up` within `throw_up` up at `throw_speed`, and then
+/// catches nothing for `throw_rest` frames. It wobbles until the wobble
+/// is over, but not on frames a player touches it without being caught.
+///
+/// A player on the top that the spring didn't put back goes `drop` down;
+/// on the frame after that it leaves the top, `leave_drop` down. A Jump
+/// press there makes a spring jump at `jump_speed`, at once, but at the
+/// earliest `jump_wait` frames after a catch in the air, and then for a
+/// press made up to `jump_early` frames before the catch and held. Spring
+/// jumps and throws fall under `gravity` up to `max_fall`, or
+/// `jump_gravity` in a spring jump while Jump stays held.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Spring {
+    pub across: [(i32, i32); 2],
+    pub reach: (i32, i32),
+    pub top: i32,
+    pub stand: i32,
+    pub catch_below: i32,
+    pub squash: [(i32, u8); MAX_SPRING_RUNS],
+    /// Only the first `squash_runs` are used.
+    pub squash_runs: u8,
+    pub wobble: [(i32, u8); MAX_SPRING_RUNS],
+    /// Only the first `wobble_runs` are used.
+    pub wobble_runs: u8,
+    pub throw_up: (i32, i32),
+    pub throw_speed: Fixed,
+    pub throw_rest: u8,
+    pub drop: Fixed,
+    pub leave_drop: Fixed,
+    pub jump_speed: Fixed,
+    pub jump_wait: u8,
+    pub jump_early: u8,
+    pub jump_gravity: Fixed,
+    pub gravity: Fixed,
+    pub max_fall: Fixed,
+}
+
+/// The most runs a spring's squash or wobble has.
+pub const MAX_SPRING_RUNS: usize = 12;
+
+impl Spring {
+    /// How long the squash lasts, in frames.
+    pub fn squash_frames(&self) -> u32 {
+        runs_length(&self.squash[..usize::from(self.squash_runs)])
+    }
+
+    /// How long the wobble lasts, in frames.
+    pub fn wobble_frames(&self) -> u32 {
+        runs_length(&self.wobble[..usize::from(self.wobble_runs)])
+    }
+
+    /// The top on the `n`th frame of the squash, counting from 1.
+    pub fn squash_top(&self, n: u32) -> i32 {
+        run_at(
+            &self.squash[..usize::from(self.squash_runs)],
+            n.saturating_sub(1),
+        )
+        .unwrap_or(self.top)
+    }
+
+    /// The top `m` frames into the wobble, counting from 0.
+    pub fn wobble_top(&self, m: u32) -> i32 {
+        run_at(&self.wobble[..usize::from(self.wobble_runs)], m).unwrap_or(self.top)
+    }
+}
+
+fn runs_length(runs: &[(i32, u8)]) -> u32 {
+    runs.iter().map(|&(_, n)| u32::from(n)).sum()
+}
+
+/// The value `at` frames into `runs`, if they last that long.
+fn run_at(runs: &[(i32, u8)], mut at: u32) -> Option<i32> {
+    for &(v, n) in runs {
+        if at < u32::from(n) {
+            return Some(v);
+        }
+        at -= u32::from(n);
+    }
+    None
 }
 
 /// A hidden object (spec/behavior/hidden-objects.md). Offsets from it are
@@ -1038,6 +1136,26 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "item_max_fall",
             "item_touch",
         ],
+        "spring" => &[
+            "across",
+            "reach",
+            "top",
+            "stand",
+            "catch_below",
+            "squash",
+            "wobble",
+            "throw_up",
+            "throw_speed",
+            "throw_rest",
+            "drop",
+            "leave_drop",
+            "jump_speed",
+            "jump_wait",
+            "jump_early",
+            "jump_gravity",
+            "gravity",
+            "max_fall",
+        ],
         "collect" => &[
             "worth",
             "release_every",
@@ -1379,6 +1497,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         }
         "keg" => Behavior::Keg(parse_keg(table, path)?),
         "hidden" => Behavior::Hidden(parse_hidden(table, path)?),
+        "spring" => Behavior::Spring(parse_spring(table, path)?),
         _ => Behavior::Launcher {
             velocity: pair("velocity")?,
         },
@@ -1565,6 +1684,83 @@ fn parse_hidden(table: &Table, path: &str) -> Result<Hidden, String> {
         item_gravity: positive("item_gravity")?,
         item_max_fall: positive("item_max_fall")?,
         item_touch: number("item_touch")?,
+    })
+}
+
+/// Reads a spring's values. Errors start with `path`.
+fn parse_spring(table: &Table, path: &str) -> Result<Spring, String> {
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let number = |key: &str| -> Result<Fixed, String> {
+        let v = clamber_pack::read_number(get(key)?, "", &format!("{path}.{key}"))
+            .map_err(|e| e.message)?;
+        if v.is_negative() {
+            return Err(format!("{path}.{key}: must not be negative"));
+        }
+        Ok(v)
+    };
+    let px = |key: &str| match get(key)? {
+        Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+        _ => Err(format!("{path}.{key}: expected a whole number of px")),
+    };
+    let frames = |key: &str| match get(key)? {
+        Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
+        _ => Err(format!(
+            "{path}.{key}: expected a whole number of frames, 0 to 255"
+        )),
+    };
+    let runs = |key: &str| -> Result<([(i32, u8); MAX_SPRING_RUNS], u8), String> {
+        let at = format!("{path}.{key}");
+        let items = match get(key)? {
+            Value::Array(items) if items.len() <= MAX_SPRING_RUNS => items,
+            _ => {
+                return Err(format!(
+                    "{at}: expected a list of up to {MAX_SPRING_RUNS} [top, frames]"
+                ));
+            }
+        };
+        let mut runs = [(0, 0); MAX_SPRING_RUNS];
+        for (i, item) in items.iter().enumerate() {
+            let parts = match item {
+                Value::Array(parts) => parts.as_slice(),
+                _ => &[],
+            };
+            let [Value::Integer(top), Value::Integer(n)] = parts else {
+                return Err(format!("{at}[{i}]: expected [top, frames], whole numbers"));
+            };
+            let (Ok(top), Ok(n)) = (i32::try_from(*top), u8::try_from(*n)) else {
+                return Err(format!("{at}[{i}]: out of range"));
+            };
+            runs[i] = (top, n);
+        }
+        Ok((runs, items.len() as u8))
+    };
+    let (squash, squash_runs) = runs("squash")?;
+    let (wobble, wobble_runs) = runs("wobble")?;
+    Ok(Spring {
+        across: parse_ranges(get("across")?, &format!("{path}.across"), "right then left")?,
+        reach: parse_range(get("reach")?, &format!("{path}.reach"))?,
+        top: px("top")?,
+        stand: px("stand")?,
+        catch_below: px("catch_below")?,
+        squash,
+        squash_runs,
+        wobble,
+        wobble_runs,
+        throw_up: parse_range(get("throw_up")?, &format!("{path}.throw_up"))?,
+        throw_speed: number("throw_speed")?,
+        throw_rest: frames("throw_rest")?,
+        drop: number("drop")?,
+        leave_drop: number("leave_drop")?,
+        jump_speed: number("jump_speed")?,
+        jump_wait: frames("jump_wait")?,
+        jump_early: frames("jump_early")?,
+        jump_gravity: number("jump_gravity")?,
+        gravity: number("gravity")?,
+        max_fall: number("max_fall")?,
     })
 }
 
@@ -2368,6 +2564,14 @@ mod tests {
         );
         check("crawler", "defeat_gravity = 0", "must be positive");
         check("flutter", "period = 1", "entities[3].params.period");
+        check(
+            "spring",
+            "squash = [[12]]",
+            "squash[0]: expected [top, frames]",
+        );
+        check("spring", "wobble = [[12, 256]]", "wobble[0]: out of range");
+        check("spring", "throw_up = [15, -54]", "it ends before it starts");
+        check("spring", "jump_gravity = -1", "must not be negative");
         check("launcher", "velocity = [1]", "expected [x, y]");
         check("launcher", "size = [0, 4]", "must be positive");
         check("crate", "reach = -1", "entities[3].params.reach");
