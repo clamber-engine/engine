@@ -2,9 +2,11 @@
 //! `spec/behavior/swimming.md` works out from the ground below ("In the
 //! ground") against the swimmer's own reading of the collision.
 
-use clamber_import::{Below, Ground, Half, Layout};
-use clamber_level::{Collision, Level};
-use clamber_sim::swim_depth;
+use std::sync::Arc;
+
+use clamber_import::{Below, Ground, Half, Layout, water};
+use clamber_level::{Collision, Fixed, Level, Vec2};
+use clamber_sim::{State, World, generic_feel, swim_depth};
 
 fn vector(name: &str) -> String {
     let path = format!(
@@ -121,4 +123,58 @@ fn depths_follow_the_ground_below() {
         }
     }
     assert_eq!((points, moves_differ), (26_336, 33));
+}
+
+/// An area on a ceiling grid is water all over, unless it starts the
+/// player riding, and the player starts swimming anywhere in it that's
+/// open.
+#[test]
+fn a_ceiling_grid_is_water_all_over() {
+    let ground = ceilings();
+    let mut level = level(&ground);
+    let region = water(&ground, false).expect("a ceiling grid swims");
+    let (width, height) = (ground.width(), ground.bands() * 32);
+    for (x, y) in [
+        (0, 0),
+        (width - 1, 0),
+        (0, height - 1),
+        (width - 1, height - 1),
+    ] {
+        assert!(region.area.contains(point(x, y)), "({x}, {y})");
+    }
+    assert!(!region.area.contains(point(width, 0)));
+    assert!(!region.area.contains(point(0, height)));
+    assert_eq!(water(&ground, true), None, "an area that starts riding");
+    level.regions.push(region);
+
+    let level = Arc::new(level);
+    let feel = Arc::new(generic_feel("classic-1").unwrap());
+    let mut starts = 0;
+    for x in (8..width).step_by(97) {
+        for feet in (1..height).step_by(29) {
+            if swim_depth(&level, x, feet).is_some() {
+                continue;
+            }
+            let mut here = (*level).clone();
+            here.start = point(x, feet);
+            let world = World::new(Arc::new(here), feel.clone());
+            assert_eq!(world.player.state, State::Swim, "x {x} feet {feet}");
+            starts += 1;
+        }
+    }
+    assert!(starts > 100, "{starts} open starts");
+}
+
+/// Areas on a column grid or a row grid have no water.
+#[test]
+fn other_grids_are_dry() {
+    let rows = Ground::new(Layout::Rows, &hex("rows-grid.hex"), &hex("types.hex")).unwrap();
+    let columns = Ground::new(Layout::Columns, &hex("grid.hex"), &hex("types.hex")).unwrap();
+    assert_eq!(water(&rows, false), None);
+    assert_eq!(water(&columns, false), None);
+}
+
+fn point(x: i64, y: i64) -> Vec2 {
+    let px = |n: i64| Fixed::from_int(n as i32);
+    Vec2::new(px(x), px(y))
 }

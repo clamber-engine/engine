@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use clamber_level::{Collision, Entity, FORMAT, Level, Track};
+use clamber_level::{Area, Collision, Entity, FORMAT, Fixed, Level, Rect, Region, Track};
 
 use crate::{
     BANK_SIZE, Background, COLUMN_BANDS, Decoder, GridPicture, Ground, Image, Known, LEVELS,
@@ -57,6 +57,32 @@ pub struct LevelParts {
     pub placements: Option<Location>,
     /// The level's song, if it has its music.
     pub song: Option<LevelSong>,
+}
+
+/// The water over a whole area with `ground`, if the player swims there:
+/// `spec/behavior/swimming.md`, "Where the player swims". An area swims
+/// all over exactly when its ground is a ceiling grid and it doesn't
+/// start the player `riding`. The region runs from the left edge to the
+/// right, and from the top of the grid to the bottom.
+pub fn water(ground: &Ground, riding: bool) -> Option<Region> {
+    if ground.layout() != Layout::Ceilings || riding {
+        return None;
+    }
+    let px = |n: i64| Fixed::from_int(i32::try_from(n).expect("a level fits in i32"));
+    Some(Region {
+        name: Some("water".into()),
+        area: Area::Rect(Rect {
+            x: Fixed::ZERO,
+            y: Fixed::ZERO,
+            w: px(ground.width()),
+            h: px(ground.bands() * BAND),
+        }),
+        water: true,
+        wind: None,
+        darkness: None,
+        physics: None,
+        camera: None,
+    })
 }
 
 /// Where a level's ground is in an image whose maps are packed, as in
@@ -144,6 +170,9 @@ impl LevelDecoder {
         let mut level = Level::from_toml_str(&src, &self.file).map_err(|e| e.to_string())?;
         level.layers = background.layers;
         level.collision = Collision::new(ground.colliders(0..width, SURFACE));
+        // No format spec says how an image records an area that starts
+        // the player riding, so none does.
+        level.regions.extend(water(&ground, false));
         if let Some(list) = p.placements {
             level.entities = self.entities(image, list, height)?;
         }
