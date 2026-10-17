@@ -223,6 +223,9 @@ pub struct World {
     /// The characters walking into the area, when it began at an arrival
     /// they walk in by, until the picture has faded in.
     pub walking_in: Option<WalkingIn>,
+    /// The things out of the area on its frame 0 as the characters walk
+    /// in, there again from frame 1.
+    pub waiting: Vec<usize>,
     /// Frames the whole game should stand still after the last step
     /// before the next, as during a knock-out. Whatever runs the world in
     /// real time holds the screen for them; they aren't steps, and a
@@ -380,6 +383,7 @@ impl World {
             bursts: Vec::new(),
             entering,
             walking_in: walk,
+            waiting: Vec::new(),
             pause: 0,
         })
     }
@@ -621,6 +625,11 @@ impl World {
         count(&mut out, self.events.len());
         out.extend(self.events.iter().map(|&e| e as u8));
 
+        count(&mut out, self.waiting.len());
+        for &i in &self.waiting {
+            count(&mut out, i);
+        }
+
         let f = &self.flow;
         match f.outcome {
             Outcome::Playing => out.push(0),
@@ -636,6 +645,8 @@ impl World {
         match self.ending {
             Some(e) => {
                 out.push(1);
+                count(&mut out, e.marker);
+                out.push(e.onward.into());
                 out.extend(e.frame.to_le_bytes());
                 out.push(e.fade.map_or(0, |n| n.saturating_add(1)));
                 out.push(e.due.into());

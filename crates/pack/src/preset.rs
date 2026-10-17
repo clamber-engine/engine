@@ -618,6 +618,8 @@ mod tests {
                     | Param::EndFadeAt
                     | Param::EndFadeTime
                     | Param::EndFadeStep
+                    | Param::EndOnwardFadeFrom
+                    | Param::EndOnwardHold
                     | Param::ExitWalkSpeed
                     | Param::ExitReach
                     | Param::ExitReachRoll

@@ -56,8 +56,9 @@ pub enum Outcome {
     Complete,
     /// The last life was lost. The world no longer changes.
     GameOver,
-    /// The lead left the area through the exit at this entity index. The
-    /// world no longer changes.
+    /// The lead left the area through the exit, or past the end marker
+    /// leading to another area, at this entity index. The world no longer
+    /// changes.
     Exited(usize),
 }
 
@@ -94,7 +95,8 @@ pub enum FlowEvent {
     Life,
     /// This letter joined the letters taken.
     Letter(u8),
-    /// The lead left the area through the exit at this entity index.
+    /// The lead left the area through the exit, or past the end marker
+    /// leading to another area, at this entity index.
     Exited(usize),
 }
 

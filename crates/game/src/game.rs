@@ -111,9 +111,11 @@ impl Game {
 
     /// Goes on where the level's entity `exit` leads, once play has left
     /// through it: the level's arrival its `arrival` param names, or the
-    /// level's start if it names none there. The areas the first level's
-    /// exits lead to aren't in the level data yet, so their arrivals are
-    /// the ones coming back from them.
+    /// level's start if it names none there. An exit that leads to
+    /// another area of the pack ([`clamber_sim::area`]) is for whatever
+    /// loads the pack's levels to follow, as [`Session`] does.
+    ///
+    /// [`Session`]: crate::Session
     pub fn leave_by(&mut self, exit: usize) {
         let level = self.world.level.clone();
         let arrival = level
@@ -130,9 +132,9 @@ impl Game {
         }
     }
 
-    /// Plays `world` in place of the one under way, keeping the debug
-    /// view setting.
-    fn replace_world(&mut self, world: World) {
+    /// Plays `world`, of this game's level, in place of the one under
+    /// way, keeping the debug view setting.
+    pub fn replace_world(&mut self, world: World) {
         *self = Game {
             debug: self.debug,
             art: self.art.clone(),

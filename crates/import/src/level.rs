@@ -18,10 +18,10 @@ use clamber_level::{
 };
 
 use crate::{
-    BANK_SIZE, Background, COLUMN_BANDS, Decoder, EXIT, GridPicture, Ground, Image, KEG, Known,
-    LEVELS, Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures, Placements, ScreenMap,
-    StartRecord, TileSet, VIEW_HEIGHT, VIEW_WIDTH, ViewLimits, kind_of, kind_rows, unpack,
-    unpack_nibbles,
+    BANK_SIZE, Background, COLUMN_BANDS, Decoder, END, EXIT, GridPicture, Ground, Image, KEG,
+    Known, LEVELS, Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures, Placements,
+    ScreenMap, StartRecord, TileSet, VIEW_HEIGHT, VIEW_WIDTH, ViewLimits, kind_of, kind_rows,
+    unpack, unpack_nibbles,
 };
 
 /// Lines in a band.
@@ -72,6 +72,15 @@ pub struct LevelParts {
     /// The room-return record, if play comes back to the level after the
     /// area its upper exit leads to, beginning as at its start.
     pub room_return: Option<Location>,
+    /// The file name, without `.level`, of the area the upper exit leads
+    /// to, if that's imported too: play comes into it at [`FROM_LEVEL`].
+    /// Without it the exit leads straight to [`ROOM_RETURN`].
+    pub room: Option<&'static str>,
+    /// The file name, without `.level`, of the level that passing an end
+    /// marker goes back into, at its [`ROOM_RETURN`] arrival, instead of
+    /// finishing this one, as in the first level's room
+    /// (`level-end.md`, "In the first level's room").
+    pub back_to: Option<&'static str>,
     /// The view-limit record, if the level has one (`view-limits.md`).
     pub view_limits: Option<Location>,
     /// The level's song, if it has its music.
@@ -144,16 +153,18 @@ pub const ROOM_RETURN: &str = "from-room";
 /// from, as into the first level's room.
 pub const FROM_LEVEL: &str = "from-level";
 
-/// Gives each exit in `entities` the arrival play comes back at, with
-/// `scene` and `room` the arrivals there are of [`SCENE_RETURN`] and
-/// [`ROOM_RETURN`]: exits.md has the floor exit lead to the scene and the
-/// upper one to the room. Where an exit leads is a setting of its
-/// definition that no format spec gives, so the lowest exit is taken to
-/// be the floor one and the others the upper one.
+/// Says where each exit in `entities` leads, with `scene` and `room` the
+/// arrivals there are of [`SCENE_RETURN`] and [`ROOM_RETURN`]: exits.md
+/// has the floor exit lead to the scene and the upper one to the room.
+/// Where an exit leads is a setting of its definition that no format
+/// spec gives, so the lowest exit is taken to be the floor one and the
+/// others the upper one.
 ///
-/// The scene and the room aren't imported yet, so each exit leads
-/// straight to where play comes back after them.
-fn lead_exits(entities: &mut [Entity], scene: bool, room: bool) {
+/// The upper exit leads into the room at [`FROM_LEVEL`] if the room is
+/// imported as `into_room`. The scene isn't imported yet, so the floor
+/// exit leads straight to where play comes back after it, and so does the
+/// upper one without the room.
+fn lead_exits(entities: &mut [Entity], scene: bool, room: bool, into_room: Option<&str>) {
     let floor = entities
         .iter()
         .enumerate()
@@ -165,14 +176,35 @@ fn lead_exits(entities: &mut [Entity], scene: bool, room: bool) {
         .enumerate()
         .filter(|(_, e)| e.kind == EXIT)
     {
-        let leads = match Some(i) == floor {
-            true => scene.then_some(SCENE_RETURN),
-            false => room.then_some(ROOM_RETURN),
+        let leads = match (Some(i) == floor, into_room) {
+            (true, _) => scene.then_some((None, SCENE_RETURN)),
+            (false, Some(area)) => Some((Some(area), FROM_LEVEL)),
+            (false, None) => room.then_some((None, ROOM_RETURN)),
         };
-        if let Some(arrival) = leads {
-            exit.params
-                .insert("arrival".into(), toml::Value::String(arrival.into()));
+        if let Some((area, arrival)) = leads {
+            lead(exit, area, arrival);
         }
+    }
+}
+
+/// Has `entity` lead to `arrival`, in the area `area` if it names one.
+fn lead(entity: &mut Entity, area: Option<&str>, arrival: &str) {
+    if let Some(area) = area {
+        entity
+            .params
+            .insert("area".into(), toml::Value::String(area.into()));
+    }
+    entity
+        .params
+        .insert("arrival".into(), toml::Value::String(arrival.into()));
+}
+
+/// Has every end marker in `entities` lead back into the level `area` at
+/// its [`ROOM_RETURN`] arrival: `level-end.md` has what follows the
+/// marker depend on the area it's in, not on the marker.
+fn lead_back(entities: &mut [Entity], area: &str) {
+    for marker in entities.iter_mut().filter(|e| e.kind == END) {
+        lead(marker, Some(area), ROOM_RETURN);
     }
 }
 
@@ -369,7 +401,11 @@ impl LevelDecoder {
             &mut level.entities,
             p.scene_return.is_some(),
             p.room_return.is_some(),
+            p.room,
         );
+        if let Some(area) = p.back_to {
+            lead_back(&mut level.entities, area);
+        }
         if let Some(song) = p.song {
             let music = song.music(|at| image.at(at))?;
             let file = format!("{}-music.wav", self.file);
@@ -439,7 +475,7 @@ mod tests {
             params: Default::default(),
         };
         let mut entities = [entity(EXIT, 300), entity(KEG, 450), entity(EXIT, 400)];
-        lead_exits(&mut entities, true, true);
+        lead_exits(&mut entities, true, true, None);
         fn leads(e: &Entity) -> Option<&str> {
             e.params.get("arrival").and_then(|v| v.as_str())
         }
@@ -447,9 +483,31 @@ mod tests {
         assert_eq!(leads(&entities[1]), None);
         assert_eq!(leads(&entities[2]), Some(SCENE_RETURN));
         let mut entities = [entity(EXIT, 300), entity(EXIT, 400)];
-        lead_exits(&mut entities, false, true);
+        lead_exits(&mut entities, false, true, None);
         assert_eq!(leads(&entities[0]), Some(ROOM_RETURN));
         assert_eq!(leads(&entities[1]), None);
+    }
+
+    #[test]
+    fn the_upper_exit_leads_into_the_room_and_the_room_s_end_markers_back() {
+        let entity = |kind: &str, y| Entity {
+            kind: kind.into(),
+            id: None,
+            at: Vec2::ints(100, y),
+            params: Default::default(),
+        };
+        let param = |e: &Entity, key| e.params.get(key).and_then(|v| v.as_str()).map(String::from);
+        let mut level = [entity(EXIT, 300), entity(EXIT, 400)];
+        lead_exits(&mut level, true, true, Some("room"));
+        assert_eq!(param(&level[0], "area").as_deref(), Some("room"));
+        assert_eq!(param(&level[0], "arrival").as_deref(), Some(FROM_LEVEL));
+        assert_eq!(param(&level[1], "area"), None);
+        assert_eq!(param(&level[1], "arrival").as_deref(), Some(SCENE_RETURN));
+        let mut room = [entity(END, 400), entity(KEG, 400)];
+        lead_back(&mut room, "level");
+        assert_eq!(param(&room[0], "area").as_deref(), Some("level"));
+        assert_eq!(param(&room[0], "arrival").as_deref(), Some(ROOM_RETURN));
+        assert!(room[1].params.is_empty());
     }
 
     #[test]

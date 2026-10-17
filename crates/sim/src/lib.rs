@@ -104,7 +104,7 @@ pub use collect::{
 pub use dimming::{DIM, Dimming};
 pub use ending::{END, Ending};
 pub use entrance::Entering;
-pub use exit::{EXIT, Leaving, WALL_EXIT};
+pub use exit::{EXIT, Leaving, WALL_EXIT, area};
 pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
 };

@@ -334,6 +334,8 @@ end_rise = 0
 end_fade_at = 0
 end_fade_time = 0
 end_fade_step = 0
+end_onward_fade_from = 0
+end_onward_hold = 0
 exit_walk_speed = 0
 exit_reach = 0
 exit_reach_roll = 0
@@ -816,6 +818,12 @@ end_rise = 0.125
 end_fade_at = 240
 end_fade_time = 28
 end_fade_step = 2
+# An end marker leading back to the level, as in the first level's room
+# (level-end.md, "In the first level's room"): the walk-out's first frame
+# doesn't count for the fade's start, and the picture stays black one
+# frame more.
+end_onward_fade_from = 1
+end_onward_hold = 1
 # Exits (exits.md): an exit takes over a lead on the ground, not moving
 # right, from 39 above it to 35 below it, within a reach that depends on
 # its state and facing. The lead walks left 2 px a frame; once it is 4 px

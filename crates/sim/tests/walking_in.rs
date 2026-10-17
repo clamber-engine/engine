@@ -225,3 +225,45 @@ fn an_arrival_without_a_walk_begins_as_the_level_does() {
         );
     }
 }
+
+/// placements.md, "In the first level's room": walking into a room the
+/// picture always shows all of, every entry's object is there from frame
+/// 1 on, and none on frame 0.
+#[test]
+fn a_rooms_objects_are_there_from_frame_1() {
+    let src = r#"
+        format = 1
+        name = "room"
+        size = [256, 700]
+        start = [200, 150]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 150, 256, 100]
+
+        [[entities]]
+        type = "spark"
+        at = [40, 134]
+
+        [[entities]]
+        type = "crawler"
+        at = [100, 150]
+
+        [[entities]]
+        type = "keg"
+        at = [230, 150]
+        "#;
+    let level = Arc::new(Level::from_toml_str(src, "room").unwrap());
+    let arrival = Arrival {
+        name: "from-level".into(),
+        at: level.start,
+        walk: Some(Dir::Left),
+    };
+    let feel = Arc::new(generic_feel("classic-1").unwrap());
+    let mut world = World::arriving(level, feel, &arrival);
+    let there = |w: &World| w.things.iter().filter(|t| t.active).count();
+    step(&mut world, &InputFrame::default());
+    assert_eq!(there(&world), 0, "frame 0");
+    step(&mut world, &InputFrame::default());
+    assert_eq!(there(&world), 3, "frame 1");
+}

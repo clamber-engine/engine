@@ -1265,6 +1265,14 @@ params! {
     /// Frames the picture stays at each brightness during the fade. Whole
     /// frames.
     EndFadeStep => "end_fade_step",
+    /// For an end marker that leads to another area: the fade waits for
+    /// the lead to get `end_fade_at` px right of the view's left edge on
+    /// a frame from this many after the walk-out's first on. Whole
+    /// frames.
+    EndOnwardFadeFrom => "end_onward_fade_from",
+    /// ... and the area's last frame comes this many after the one the
+    /// level's would be, black too. Whole frames.
+    EndOnwardHold => "end_onward_hold",
     /// Above 0, a level's `exit` entities take the lead out of the area
     /// (see `clamber_sim::Leaving`), and it walks out at this speed.
     /// px/frame.

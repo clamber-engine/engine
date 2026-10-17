@@ -307,3 +307,94 @@ fn the_marker_is_found_at_its_level_position() {
     let end = w.level.entities.iter().find(|e| e.kind == clamber_sim::END);
     assert_eq!(end.unwrap().at, Vec2::ints(1000, 449));
 }
+
+/// A room as wide as the picture, so its left edge is always at 0, with
+/// flat ground at 449, the lead standing at `start`, and an end marker at
+/// `xm` on the floor that leads back to another area if `onward`.
+fn room(start: f64, xm: i32, onward: bool) -> World {
+    let params = match onward {
+        true => r#"params = { area = "level", arrival = "back" }"#,
+        false => "",
+    };
+    let src = format!(
+        r#"
+        format = 1
+        name = "room"
+        size = [256, 700]
+        start = [{start}, 449]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 449, 256, 100]
+
+        [[entities]]
+        type = "end"
+        at = [{xm}, 449]
+        {params}
+        "#
+    );
+    let level = Arc::new(Level::from_toml_str(&src, "room").unwrap());
+    World::new(level, Arc::new(generic_feel("classic-1").unwrap()))
+}
+
+/// Steps with nothing held until the area is over, and gives the frames
+/// after T that took, the frame its fade started on, and the lead's `x`
+/// on the last frame.
+fn walk_out(play: &mut Play) -> (u32, u32, Fixed) {
+    let t = play.world.frame + 1;
+    let mut fade = None;
+    while !play.world.flow.outcome.is_over() {
+        play.step(&[]);
+        if fade.is_none() && play.world.brightness() != (15, 15) {
+            fade = Some(play.world.frame - t);
+        }
+        assert!(play.world.frame < t + 200);
+    }
+    (play.world.frame - t, fade.unwrap(), play.world.player.pos.x)
+}
+
+#[test]
+fn in_the_room_the_walk_outs_first_frame_doesnt_count_for_the_fade() {
+    // level-end.md, "In the first level's room", synthetic example: the
+    // marker passed ending at 241.25 or so, past 240 already on T.
+    let mut play = Play::new(room(241.25, 236, true));
+    assert!(play.until_passed(&[R], 1));
+    let x = play.world.player.pos.x;
+    assert!(x.floor() >= 240, "{x}");
+    assert_eq!(play.world.view.unwrap().x(), 0);
+    let (last, fade, at) = walk_out(&mut play);
+    assert_eq!(fade, 2, "F0 = T + 2");
+    assert_eq!(last, 31, "F0 + 29 is the room's last frame");
+    assert_eq!(at, x + f(62.0), "T + 31 at 303.25");
+    assert_eq!(play.world.brightness().0, 0);
+    assert_eq!(play.world.flow.outcome, Outcome::Exited(0));
+    assert!(play.world.flow.events.contains(&FlowEvent::Exited(0)));
+    // The lead rose 1/8 px on T + 1 only.
+    assert_eq!(play.world.player.pos.y, f(449.0) - f(0.125));
+}
+
+#[test]
+fn in_the_room_the_fade_starts_as_in_the_level_and_ends_a_frame_later() {
+    let pass = |onward| {
+        let mut play = Play::new(room(200.0, 210, onward));
+        assert!(play.until_passed(&[R], 100));
+        assert!(play.x() < 240);
+        walk_out(&mut play)
+    };
+    let (level_last, level_fade, level_at) = pass(false);
+    let (room_last, room_fade, room_at) = pass(true);
+    assert_eq!(room_fade, level_fade);
+    assert_eq!(level_last, level_fade + 28);
+    assert_eq!(room_last, room_fade + 29);
+    assert_eq!(room_at, level_at + f(2.0));
+}
+
+#[test]
+fn a_marker_leading_on_is_left_as_an_exit_is() {
+    let mut play = Play::new(room(200.0, 210, true));
+    assert!(play.until_passed(&[R], 100));
+    walk_out(&mut play);
+    assert_eq!(play.world.flow.outcome, Outcome::Exited(0));
+    let level = play.world.level.clone();
+    assert_eq!(clamber_sim::area(&level.entities[0]), Some("level"));
+}

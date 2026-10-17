@@ -181,3 +181,53 @@ fn the_lead_stays_the_same_and_a_lost_character_stays_lost() {
     both.other = None;
     assert!(back_at(&both, 1200).other.is_none());
 }
+
+/// A room of its own with nothing in it, as the first level's upper exit
+/// leads to.
+fn room() -> Arc<Level> {
+    let src = format!(
+        r#"
+        format = 1
+        name = "room"
+        size = [256, 800]
+        start = [100, {F}]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, {F}, 256, 200]
+        "#
+    );
+    Arc::new(Level::from_toml_str(&src, "room").unwrap())
+}
+
+#[test]
+fn another_area_carries_the_count_lives_and_letters_but_not_restart_points() {
+    let mut before = taken();
+    before.flow.lives = 7;
+    let room = World::new(room(), feel(1)).carrying(&before);
+    assert_eq!(room.flow.gems, 11);
+    assert_eq!(room.flow.shown, before.flow.shown);
+    assert_eq!(room.flow.lives, 7);
+    assert_eq!(room.flow.letters, 1);
+    assert!(room.flow.checkpoints.is_empty());
+}
+
+#[test]
+fn back_from_another_area_the_level_is_as_it_was_left_with_what_play_carried() {
+    let before = taken();
+    let mut room = World::new(room(), feel(1)).carrying(&before);
+    room.flow.lives = 9;
+    room.flow.gems = 12;
+    let arrival = Arrival {
+        name: "back".into(),
+        at: Vec2::ints(1200, F),
+        walk: None,
+    };
+    let after = before.coming_back_from(&arrival, &room);
+    assert_eq!(after.level.name, "coming-back");
+    assert_eq!((after.flow.lives, after.flow.gems), (9, 12));
+    assert_eq!(after.flow.checkpoints, [BARREL]);
+    assert_eq!(after.things[BUNCH].phase, Phase::Gone);
+    assert_eq!(after.things[BARREL].phase, Phase::Broken);
+    assert!(after.things[SINGLE].active);
+}

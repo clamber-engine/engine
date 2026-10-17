@@ -19,6 +19,13 @@
 //! frame. With `end_walk_speed` 0, passing the marker completes the
 //! level at once.
 //!
+//! A marker that names another area of the pack ([`area`]), as the first
+//! level's room's does, leads there instead of completing the level
+//! ([`Outcome::Exited`]), with the timing of "In the first level's room":
+//! the fade waits for a frame from `end_onward_fade_from` after the
+//! walk-out's first on, and the area's last frame is `end_onward_hold`
+//! after the fade's black one.
+//!
 //! Engine choices where the spec says nothing: the marker can't be
 //! passed while the player is hurt, knocked out, swapping or losing a
 //! character; during the walk-out things go on moving but don't touch
@@ -32,6 +39,7 @@ use clamber_pack::{Param, Physics};
 
 use crate::carry;
 use crate::collect;
+use crate::exit::area;
 use crate::flow::{FlowEvent, Outcome};
 use crate::follow::{self, Lead};
 use crate::loss;
@@ -46,6 +54,11 @@ pub const END: &str = "end";
 /// The walk-out after the lead passed the end marker.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Ending {
+    /// The marker's entity index.
+    pub marker: usize,
+    /// The marker leads to another area ([`area`]) rather than finishing
+    /// the level.
+    pub onward: bool,
     /// Steps of the walk-out taken so far.
     pub frame: u32,
     /// Frames into the fade, its first being 0, once it has started.
@@ -106,19 +119,32 @@ pub(crate) fn pass(world: &mut World, input: &Frame) {
     let physics = world.player_physics();
     let reach = physics[Param::EndReach].floor();
     let (x, feet) = (player.pos.x.floor(), ceil(player.pos.y));
-    let passed =
-        world.level.entities.iter().any(|e| {
-            e.kind == END && x >= e.at.x.floor() && (feet - e.at.y.floor()).abs() <= reach
-        });
-    if !passed {
+    let passed = world.level.entities.iter().position(|e| {
+        e.kind == END && x >= e.at.x.floor() && (feet - e.at.y.floor()).abs() <= reach
+    });
+    let Some(marker) = passed else {
         return;
-    }
+    };
+    let onward = area(&world.level.entities[marker]).is_some();
     if physics[Param::EndWalkSpeed] > Fixed::ZERO {
-        world.ending = Some(Ending::default());
+        world.ending = Some(Ending {
+            marker,
+            onward,
+            ..Ending::default()
+        });
     } else {
-        world.flow.outcome = Outcome::Complete;
-        world.flow.events.push(FlowEvent::Complete);
+        finish(world, marker, onward);
     }
+}
+
+/// Ends the level, or leaves the area if the marker passed leads on.
+fn finish(world: &mut World, marker: usize, onward: bool) {
+    let (outcome, event) = match onward {
+        true => (Outcome::Exited(marker), FlowEvent::Exited(marker)),
+        false => (Outcome::Complete, FlowEvent::Complete),
+    };
+    world.flow.outcome = outcome;
+    world.flow.events.push(event);
 }
 
 /// One step of the walk-out, whatever is held.
@@ -159,12 +185,22 @@ pub(crate) fn step(world: &mut World) {
 
     let x = world.player.pos.x.floor();
     let fade_at = physics[Param::EndFadeAt].floor();
-    if ending.fade.is_none() && view_at.is_none_or(|(left, _)| x - left >= fade_at) {
+    let world_physics = &world.feel.world;
+    let (counts_from, hold) = match ending.onward {
+        true => (
+            frames(world_physics[Param::EndOnwardFadeFrom]),
+            frames(world_physics[Param::EndOnwardHold]),
+        ),
+        false => (0, 0),
+    };
+    // The walk-out's first frame is T, step 1.
+    let counts = ending.frame > u32::from(counts_from);
+    if ending.fade.is_none() && counts && view_at.is_none_or(|(left, _)| x - left >= fade_at) {
         ending.due = true;
     }
-    if ending.fade == Some(frames(world.feel.world[Param::EndFadeTime])) {
-        world.flow.outcome = Outcome::Complete;
-        world.flow.events.push(FlowEvent::Complete);
+    let last = frames(world_physics[Param::EndFadeTime]).saturating_add(hold);
+    if ending.fade == Some(last) {
+        finish(world, ending.marker, ending.onward);
     }
     world.ending = Some(ending);
 }

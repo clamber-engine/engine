@@ -19,10 +19,15 @@
 //! with `view_begin_back` in place of the back and facing parts (view.md,
 //! "When an area begins").
 //!
+//! Nothing placed in the area is there on frame 0: what is there as the
+//! area begins is there from frame 1 (placements.md, "In the first
+//! level's room" and "In the first level's scene").
+//!
 //! Engine choices where the spec says nothing: while the characters walk
 //! in, everything else waits, as while they're in the level's entrance,
 //! and the level's entrance is gone, as after it burst. The characters
-//! touch nothing.
+//! touch nothing. Objects wait for frame 1 in every area walked into,
+//! the level after the scene too.
 //!
 //! [`World::brightness`]: crate::World::brightness
 //! [`View::begun`]: crate::View::begun
@@ -125,6 +130,23 @@ pub(crate) fn hold(world: &mut World) -> bool {
             world.walking_in = None;
         }
         return false;
+    }
+    // The area's objects are there from frame 1, none on frame 0.
+    match k {
+        0 => {
+            world.waiting = (0..world.things.len())
+                .filter(|&i| world.things[i].active)
+                .collect();
+            for &i in &world.waiting {
+                world.things[i].active = false;
+            }
+        }
+        1 => {
+            for i in std::mem::take(&mut world.waiting) {
+                world.things[i].active = true;
+            }
+        }
+        _ => {}
     }
     let lead = walk.lead_at(k, &physics);
     let player = &mut world.player;

@@ -3,7 +3,7 @@
 
 use clamber_level::Dir;
 
-use crate::{LevelParts, LevelSong, Location, PackedGround, Scenery};
+use crate::{FIRST_LEVEL, FIRST_ROOM, LevelParts, LevelSong, Location, PackedGround, Scenery};
 
 /// The data a locator row finds. The level parts are the first level's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -211,6 +211,8 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
         restart: Some(at(Data::RestartRecord)?),
         scene_return: Some(at(Data::SceneReturnRecord)?),
         room_return: Some(at(Data::RoomReturnRecord)?),
+        room: Some(FIRST_ROOM),
+        back_to: None,
         view_limits: Some(at(Data::ViewLimits)?),
         // `sound.md`: "The first level plays song 0".
         song: Some(LevelSong {
@@ -253,6 +255,8 @@ pub fn first_room(title: &str) -> Option<LevelParts> {
         restart: None,
         scene_return: None,
         room_return: None,
+        room: None,
+        back_to: Some(FIRST_LEVEL),
         view_limits: None,
         song: None,
     })

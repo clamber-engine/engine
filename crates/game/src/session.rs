@@ -12,7 +12,8 @@ use std::sync::Arc;
 use clamber_import::{Importer, Installed};
 
 use clamber_input::{Action, Event, Frame, Input, Settings};
-use clamber_sim::{InputFrame, Outcome};
+use clamber_level::Arrival;
+use clamber_sim::{InputFrame, Outcome, World};
 
 use crate::camera::VIEW;
 use crate::canvas::{Color, rgb};
@@ -198,6 +199,10 @@ pub struct Session {
     pub cues: Vec<Cue>,
     /// The level being played, if it came from a file.
     pub level_path: PathBuf,
+    /// The areas play went on from into the one being played, with the
+    /// files they came from, oldest first: coming back to one of them,
+    /// play goes on in it as it was left.
+    pub left: Vec<(PathBuf, Game)>,
     /// The level the session started with, to go back to from an
     /// imported one, if there's one to go back to.
     pub bundled: Option<PathBuf>,
@@ -224,6 +229,7 @@ impl Session {
             quit: false,
             cues: Vec::new(),
             level_path: PathBuf::new(),
+            left: Vec::new(),
             bundled: None,
             pack: None,
             packs_dir: None,
@@ -388,6 +394,7 @@ impl Session {
         match item {
             Item::Resume => self.screen = Screen::Playing,
             Item::Start | Item::Restart => {
+                self.first_area();
                 self.game.restart();
                 self.screen = Screen::Playing;
             }
@@ -547,19 +554,101 @@ impl Session {
     /// `pack`'s sprites if it has them. Keeps the debug view setting,
     /// and turns it on for a level with nothing else to see.
     fn play_level(&mut self, path: &Path, pack: Option<Installed>) -> Result<(), String> {
-        let sprites = pack
-            .as_ref()
-            .and_then(Installed::sprites)
-            .unwrap_or_else(|| content_dir().join(SPRITES));
-        let look = pack
-            .as_ref()
-            .map_or(Look::RENDERED, |p| Look::of(&p.manifest));
-        let mut game = load_game(path, &sprites, self.game.world.feel.clone())?.with_look(look);
-        game.debug |= self.game.debug;
-        self.game = game;
+        self.game = self.load(path, pack.as_ref())?;
         self.level_path = path.to_path_buf();
+        self.left.clear();
         self.pack = pack;
         Ok(())
+    }
+
+    /// The level at `path` with the movement being played, and `pack`'s
+    /// sprites and look if it has them, at its start. Keeps the debug
+    /// view setting, and turns it on for a level with nothing else to
+    /// see.
+    fn load(&self, path: &Path, pack: Option<&Installed>) -> Result<Game, String> {
+        let sprites = pack
+            .and_then(Installed::sprites)
+            .unwrap_or_else(|| content_dir().join(SPRITES));
+        let look = pack.map_or(Look::RENDERED, |p| Look::of(&p.manifest));
+        let mut game = load_game(path, &sprites, self.game.world.feel.clone())?.with_look(look);
+        game.debug |= self.game.debug;
+        Ok(game)
+    }
+
+    /// Goes on where the level's entity `exit` leads, once play has left
+    /// through it: into the area of the pack its `area` param names, a
+    /// level in the same folder, at the arrival its `arrival` param names
+    /// there, or that level's start without one. Coming back to an area
+    /// play went on from, it goes on as it was left, and the areas left
+    /// from it since are forgotten. Play carries the count, the lives and
+    /// the letters from area to area ([`World::carrying`]). An exit that
+    /// names no area, or one that can't be played, leads where
+    /// [`Game::leave_by`] has it.
+    ///
+    /// Engine choices where the spec says nothing: an area that isn't
+    /// one play went on from begins afresh each time, as the first
+    /// level's room does after coming back from it.
+    fn leave_by(&mut self, exit: usize) {
+        let level = self.game.world.level.clone();
+        let Some(entity) = level.entities.get(exit) else {
+            return self.game.leave_by(exit);
+        };
+        let Some(area) = clamber_sim::area(entity) else {
+            return self.game.leave_by(exit);
+        };
+        let arrival = entity.params.get("arrival").and_then(|v| v.as_str());
+        if let Err(e) = self.go_to(area, arrival) {
+            report::warn(format!("can't go on to {area}: {e}"));
+            self.game.leave_by(exit);
+        }
+    }
+
+    /// Goes on in the area `area` at the arrival called `arrival`, as in
+    /// [`leave_by`](Session::leave_by).
+    fn go_to(&mut self, area: &str, arrival: Option<&str>) -> Result<(), String> {
+        let path = self.level_path.with_file_name(format!("{area}.level"));
+        let back = self.left.iter().position(|(p, _)| *p == path);
+        let mut game = match back {
+            Some(i) => self.left.drain(i..).next().expect("found").1,
+            None => self.load(&path, self.pack.as_ref())?,
+        };
+        let level = game.world.level.clone();
+        let at = match arrival {
+            Some(name) => level
+                .arrival(name)
+                .cloned()
+                .ok_or_else(|| format!("{} has no arrival {name}", path.display()))?,
+            None => Arrival {
+                name: String::new(),
+                at: level.start,
+                walk: None,
+            },
+        };
+        let world = match back {
+            Some(_) => game.world.coming_back_from(&at, &self.game.world),
+            None => World::try_arriving(level, game.world.feel.clone(), &at)
+                .map_err(|e| e.to_string())?
+                .carrying(&self.game.world),
+        };
+        game.replace_world(world);
+        let from = std::mem::replace(&mut self.game, game);
+        if back.is_none() {
+            self.left.push((self.level_path.clone(), from));
+        }
+        self.level_path = path;
+        Ok(())
+    }
+
+    /// Goes back to the first of the areas play went on from, if it went
+    /// on from any, to begin again there.
+    fn first_area(&mut self) {
+        if self.left.is_empty() {
+            return;
+        }
+        let (path, game) = self.left.swap_remove(0);
+        self.left.clear();
+        self.game = game;
+        self.level_path = path;
     }
 
     /// The presets to choose from, with the one being played selected.
@@ -601,6 +690,7 @@ impl Session {
                 return;
             }
         };
+        self.first_area();
         self.game.set_feel(feel);
         self.prefs.preset = Some(id.to_string());
         self.save_prefs("the movement choice");
@@ -637,7 +727,7 @@ impl Session {
         match self.game.world.flow.outcome {
             Outcome::Complete => self.screen = Screen::complete(),
             Outcome::GameOver => self.screen = Screen::game_over(),
-            Outcome::Exited(exit) => self.game.leave_by(exit),
+            Outcome::Exited(exit) => self.leave_by(exit),
             _ => {}
         }
     }
@@ -1662,6 +1752,124 @@ mod tests {
         assert_eq!(gone.update(&jump), None);
         assert_eq!(gone.dir, dir);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A level with an exit near its start that leads into `room`, and
+    /// the room, whose end marker leads back to the level's `back`.
+    fn areas(name: &str) -> PathBuf {
+        let dir = scratch(name);
+        let level = r#"
+            format = 1
+            name = "level"
+            size = [1000, 400]
+            start = [200, 300]
+
+            [[collision]]
+            shape = "rect"
+            rect = [0, 300, 1000, 100]
+
+            [[entities]]
+            type = "exit"
+            at = [100, 300]
+            params = { area = "room", arrival = "in" }
+
+            [[arrivals]]
+            name = "back"
+            at = [600, 300]
+        "#;
+        let room = r#"
+            format = 1
+            name = "room"
+            size = [256, 400]
+            start = [200, 300]
+
+            [[collision]]
+            shape = "rect"
+            rect = [0, 300, 256, 100]
+
+            [[entities]]
+            type = "end"
+            at = [210, 300]
+            params = { area = "level", arrival = "back" }
+
+            [[arrivals]]
+            name = "in"
+            at = [200, 300]
+            walk = "left"
+        "#;
+        std::fs::write(dir.join("level.level"), level).unwrap();
+        std::fs::write(dir.join("room.level"), room).unwrap();
+        dir
+    }
+
+    /// Steps holding `keys` until play is in the level at `path`, at
+    /// most `most` frames.
+    fn until_in(s: &mut Session, keys: Actions, path: &Path, most: usize) {
+        for _ in 0..most {
+            s.step(&input(keys, keys));
+            if s.level_path == path {
+                return;
+            }
+        }
+        panic!("not in {} after {most} frames", path.display());
+    }
+
+    #[test]
+    fn an_exit_leads_into_another_area_and_its_end_marker_back() {
+        let dir = areas("areas");
+        let (level, room) = (dir.join("level.level"), dir.join("room.level"));
+        let mut s = session(LEVEL);
+        s.game.world.feel = Arc::new(generic_feel("classic-1").unwrap());
+        s.play_level(&level, None).unwrap();
+        s.screen = Screen::Playing;
+        s.game.world.flow.lives = 7;
+        until_in(&mut s, Action::Left.into(), &room, 300);
+        assert_eq!(s.game.world.level.name, "room");
+        assert_eq!(s.game.world.frame, 0);
+        assert!(s.game.world.walking_in.is_some());
+        assert_eq!(s.game.world.flow.lives, 7, "carried into the room");
+        assert_eq!(s.left.len(), 1);
+        s.game.world.flow.lives = 9;
+        until_in(&mut s, Action::Right.into(), &level, 300);
+        assert_eq!(s.game.world.level.name, "level");
+        assert_eq!(s.game.world.frame, 0);
+        assert_eq!(s.game.world.player.pos, clamber_level::Vec2::ints(600, 300));
+        assert_eq!(s.game.world.flow.lives, 9, "carried back");
+        assert!(s.left.is_empty());
+        assert_eq!(s.screen, Screen::Playing);
+    }
+
+    #[test]
+    fn restarting_in_another_area_begins_again_in_the_first() {
+        let dir = areas("restart-areas");
+        let (level, room) = (dir.join("level.level"), dir.join("room.level"));
+        let mut s = session(LEVEL);
+        s.game.world.feel = Arc::new(generic_feel("classic-1").unwrap());
+        s.play_level(&level, None).unwrap();
+        s.screen = Screen::Playing;
+        until_in(&mut s, Action::Left.into(), &room, 300);
+        s.first_area();
+        s.game.restart();
+        assert_eq!(s.level_path, level);
+        assert_eq!(s.game.world.level.name, "level");
+        assert!(s.left.is_empty());
+    }
+
+    #[test]
+    fn an_area_that_isnt_there_leads_where_the_level_has_it() {
+        let dir = areas("missing-area");
+        let level = dir.join("level.level");
+        std::fs::remove_file(dir.join("room.level")).unwrap();
+        let mut s = session(LEVEL);
+        s.game.world.feel = Arc::new(generic_feel("classic-1").unwrap());
+        s.play_level(&level, None).unwrap();
+        s.screen = Screen::Playing;
+        for _ in 0..300 {
+            s.step(&input(Action::Left.into(), Action::Left.into()));
+        }
+        assert_eq!(s.level_path, level);
+        assert!(s.left.is_empty());
+        assert!(!s.game.world.flow.outcome.is_over());
     }
 
     #[test]
