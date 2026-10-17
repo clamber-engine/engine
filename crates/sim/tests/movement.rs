@@ -748,6 +748,102 @@ fn classic_jump_input_worked_example() {
     assert_eq!(jump, None);
 }
 
+/// A standing jump in Classic 1 in a world from `new`, pressed on frame
+/// 0 and held for `held` frames, played twice: the second time with
+/// Jump pressed again on the frame before landing and held. Returns the frame the jump starts on (T),
+/// its approach frame, its landing frame and the next jump's start.
+fn classic_standing_jump(
+    new: impl Fn() -> Play,
+    held: usize,
+) -> (usize, usize, usize, Option<usize>) {
+    let mut probe = new();
+    let mut steps = hold(&mut probe, &[Action::Jump], held);
+    steps.extend(hold(&mut probe, &[], 80));
+    let start = first(&steps, Event::JumpStart).unwrap();
+    let land = first(&steps, Event::Land).unwrap();
+    let approach = start + usize::from(probe.player.approach.unwrap_or(20));
+
+    let mut w = new();
+    let mut steps = hold(&mut w, &[Action::Jump], held);
+    steps.extend(hold(&mut w, &[], land - 1 - held));
+    steps.extend(hold(&mut w, &[Action::Jump], 20));
+    assert_eq!(first(&steps, Event::Land), Some(land));
+    let again = steps
+        .iter()
+        .enumerate()
+        .skip(land)
+        .find(|(_, s)| s.events.contains(&Event::JumpStart))
+        .map(|(i, _)| i);
+    (start, approach, land, again)
+}
+
+#[test]
+fn classic_landing_waits_for_the_switch_frame() {
+    // spec/behavior/jump-input.md, "The switch frame M": standing jumps
+    // on flat ground, Jump pressed on T - 1, with E = M + 2 found by
+    // pressing Jump on L - 1 and holding it.
+    for (held, approach, land, earliest) in [
+        (1, 20, 31, 3),
+        (10, 20, 36, 2),
+        (14, 24, 38, 2),
+        (20, 29, 41, 3),
+    ] {
+        let (t, a, l, e) = classic_standing_jump(classic, held);
+        assert_eq!(t, 1, "held {held}");
+        assert_eq!(a - t, approach, "held {held}");
+        assert_eq!(l - t, land, "held {held}");
+        assert_eq!(e, Some(l + earliest), "held {held}");
+    }
+}
+
+/// Flat ground at y = 400, with a one-way platform 50 px above it over
+/// the start.
+const LOW_SHELF: &str = r#"
+    format = 1
+    name = "shelf"
+    size = [1024, 600]
+    start = [64, 400]
+
+    [[collision]]
+    shape = "rect"
+    rect = [0, 400, 1024, 200]
+
+    [[collision]]
+    shape = "segment"
+    from = [0, 350]
+    to = [200, 350]
+    one_way = true
+"#;
+
+#[test]
+fn classic_landing_before_the_approach_frame() {
+    // spec/behavior/jump-input.md: a landing before the approach frame A
+    // has M = A + 4, so E = A + 6 with A = T + 20.
+    let shelf = || {
+        let level = Arc::new(Level::from_toml_str(LOW_SHELF, "shelf").unwrap());
+        Play::on(level, generic_feel("classic-1").unwrap())
+    };
+    let (t, a, l, e) = classic_standing_jump(shelf, 1);
+    assert!(l < a, "lands on {l}, approach {a}");
+    assert_eq!(a, t + 20);
+    assert_eq!(e, Some(a + 6));
+}
+
+#[test]
+fn classic_landing_after_a_roll_jump_has_no_switch_frame() {
+    // spec/behavior/jump-input.md, "Landings this doesn't cover": a jump
+    // out of a roll lands with E = L + 3.
+    let rolling = || {
+        let mut w = classic();
+        w.player.vel.x = Fixed::from_int(3);
+        w.player.state = State::Roll;
+        w
+    };
+    let (t, _, l, e) = classic_standing_jump(rolling, 1);
+    assert_eq!(t, 1);
+    assert_eq!(e, Some(l + 3));
+}
+
 /// No `jump_start` frames.
 const NONE: [usize; 0] = [];
 

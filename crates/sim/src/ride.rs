@@ -422,17 +422,14 @@ impl Player {
     /// Whether there's floor within an approach's reach below the feet
     /// line, in the column holding `x`.
     fn approaching(&self, level: &Level, ride: &Ride) -> bool {
-        let feet = ceil(self.pos.y);
-        let row = |y: i64| (y - 1).div_euclid(i64::from(ride.approach_row));
-        columns::spans(level, columns::column(self.pos.x))
-            .into_iter()
-            .map(|s| ceil(s.top))
-            .filter(|&top| top >= feet)
-            .min()
-            .is_some_and(|top| {
-                top - feet <= i64::from(ride.approach_reach)
-                    && row(top) - row(feet) <= i64::from(ride.approach_rows)
-            })
+        columns::floor_within(
+            level,
+            columns::column(self.pos.x),
+            self.pos.y,
+            i64::from(ride.approach_reach),
+            i64::from(ride.approach_row),
+            i64::from(ride.approach_rows),
+        )
     }
 }
 

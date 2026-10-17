@@ -71,6 +71,10 @@ takeoff_over_end = 0
 jump_delay = 0
 landing_lockout = 0
 fall_landing_lockout = 0
+switch_from = 0
+switch_reach = 0
+switch_steps = []
+switch_late_steps = []
 jump_buffer_hold = 0
 jump_start_hold = 0
 takeoff_wait = 0
@@ -404,6 +408,13 @@ run_walk_speed = 2.5
 jump_delay = 1
 landing_lockout = 2
 fall_landing_lockout = 2
+# A jump's landing waits for its switch frame (jump-input.md, "The
+# switch frame M"); the floor within reach uses `view_band` and
+# `view_reach`.
+switch_from = 20
+switch_reach = 71
+switch_steps = [3, 7, 12, 16]
+switch_late_steps = [2, 6, 11, 15]
 jump_buffer = 12
 jump_buffer_hold = 1
 # Where the ground simply ends a press on the leave frame still jumps,

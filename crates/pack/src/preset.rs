@@ -349,6 +349,10 @@ mod tests {
                     | Param::JumpDelay
                     | Param::LandingLockout
                     | Param::FallLandingLockout
+                    | Param::SwitchFrom
+                    | Param::SwitchReach
+                    | Param::SwitchSteps
+                    | Param::SwitchLateSteps
                     | Param::JumpStartHold
                     | Param::TakeoffWait
                     | Param::JumpBufferHold

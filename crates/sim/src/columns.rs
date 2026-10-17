@@ -23,7 +23,7 @@
 use clamber_fixed::Fixed;
 use clamber_level::{Level, Span};
 
-use crate::player::{HEIGHT, STEP};
+use crate::player::{HEIGHT, STEP, ceil};
 
 /// A column's floor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -121,6 +121,28 @@ pub(crate) fn sloped(level: &Level, column: i64, feet: Fixed, slope: Fixed, piec
 /// Where the ground is under the middle of `column`, from the top down.
 pub(crate) fn spans(level: &Level, column: i64) -> Vec<Span> {
     level.collision.spans(middle(column))
+}
+
+/// Whether there's floor within reach below feet at `feet` in `column`:
+/// the nearest top at or below the feet line (`feet` rounded up) is at
+/// most `reach` px down, and at most `bands` bands of `band` px below
+/// the feet line's band. The line on a band's bottom edge is in it.
+pub(crate) fn floor_within(
+    level: &Level,
+    column: i64,
+    feet: Fixed,
+    reach: i64,
+    band: i64,
+    bands: i64,
+) -> bool {
+    let feet = ceil(feet);
+    let band_of = |y: i64| (y - 1).div_euclid(band.max(1));
+    spans(level, column)
+        .into_iter()
+        .map(|s| ceil(s.top))
+        .filter(|&top| top >= feet)
+        .min()
+        .is_some_and(|top| top - feet <= reach && band_of(top) - band_of(feet) <= bands)
 }
 
 /// The one-way platform in `column` whose layer holds feet at `feet`:

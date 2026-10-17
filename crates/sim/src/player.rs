@@ -192,6 +192,11 @@ pub struct Player {
     pub after_face: Option<Facing>,
     /// Frames since the jump under way started, until it lands.
     pub jump_age: Option<u8>,
+    /// The jump under way, or the last one, reached its approach frame
+    /// this many frames after it started (`switch_from`).
+    pub approach: Option<u8>,
+    /// The jump under way, or the last one, started out of a roll.
+    pub rolled_jump: bool,
     /// Falling after walking off the ground, until landing.
     pub walked_off: bool,
     /// The last walk-off started from a frame on a steep face.
@@ -291,6 +296,8 @@ impl Player {
             off_face: None,
             after_face: None,
             jump_age: None,
+            approach: None,
+            rolled_jump: false,
             walked_off: false,
             walked_off_face: false,
             ran: false,
@@ -858,6 +865,8 @@ impl Player {
             self.coyote = None;
         }
         if (starts && wait == 0) || due {
+            self.rolled_jump = self.state == State::Roll || roll_jump;
+            self.approach = None;
             if self.state == State::Roll {
                 events.push(Event::RollEnd);
             }
@@ -1363,15 +1372,6 @@ impl Player {
         }
         .filter(|&n| n <= frames(physics[Param::CoyoteTime]));
 
-        if events.contains(&Event::Land) {
-            self.lockout = frames(
-                physics[if self.walked_off {
-                    Param::FallLandingLockout
-                } else {
-                    Param::LandingLockout
-                }],
-            );
-        }
         self.after_face = face
             .filter(|_| physics[Param::FacePull] > Fixed::ZERO)
             .map(facing_of);
@@ -1413,12 +1413,41 @@ impl Player {
         if self.roll_stop == 0 {
             self.stopped = None;
         }
-        self.jump_age = if events.contains(&Event::JumpStart) {
+        let jump_age = if events.contains(&Event::JumpStart) {
             Some(0)
-        } else if self.grounded() && !self.takeoff {
-            None
         } else {
             self.jump_age.map(|n| n.saturating_add(1))
+        };
+        let switch_from = frames(physics[Param::SwitchFrom]);
+        if let Some(age) = jump_age
+            && switch_from > 0
+            && self.approach.is_none()
+            && age >= switch_from
+            && (self.grounded() || self.floor_within_reach(level, physics))
+        {
+            self.approach = Some(age);
+        }
+        if events.contains(&Event::Land) {
+            let lockout = frames(
+                physics[if self.walked_off {
+                    Param::FallLandingLockout
+                } else {
+                    Param::LandingLockout
+                }],
+            );
+            // A jump can start `lockout` frames after the switch frame,
+            // which is otherwise the frame after landing.
+            self.lockout = match jump_age {
+                Some(land) if switch_from > 0 && !self.rolled_jump => {
+                    (lockout + self.switch_wait(land, physics)).saturating_sub(1)
+                }
+                _ => lockout,
+            };
+        }
+        self.jump_age = if self.grounded() && !self.takeoff {
+            None
+        } else {
+            jump_age
         };
         if leaving {
             self.walked_off_face = face.is_some();
@@ -1965,6 +1994,37 @@ impl Player {
         }
         self.turn = Some(0);
         frames(physics[Param::TurnTime]) / 2 == 0
+    }
+
+    /// Whether there's floor within reach below the player for its
+    /// approach frame (`switch_reach`).
+    fn floor_within_reach(&self, level: &Level, physics: &Physics) -> bool {
+        columns::floor_within(
+            level,
+            columns::column(self.pos.x),
+            self.pos.y,
+            physics[Param::SwitchReach].floor(),
+            physics[Param::ViewBand].floor(),
+            physics[Param::ViewReach].floor(),
+        )
+    }
+
+    /// How many frames after a jump's landing frame its switch frame is,
+    /// for a landing `land` frames after the jump started.
+    fn switch_wait(&self, land: u8, physics: &Physics) -> u8 {
+        let from = frames(physics[Param::SwitchFrom]);
+        // Landing before the approach frame, the player is on the floor
+        // when the approach frame comes.
+        let approach = self.approach.unwrap_or(from).max(from);
+        let set = if approach > from {
+            Param::SwitchLateSteps
+        } else {
+            Param::SwitchSteps
+        };
+        let after = clamber_pack::physics::steps(physics[set])
+            .filter(|&step| u32::from(approach) + step - 1 > u32::from(land))
+            .count();
+        approach.saturating_sub(land) + after as u8
     }
 
     /// The state after this step's movement.

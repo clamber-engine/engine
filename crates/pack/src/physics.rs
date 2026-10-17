@@ -232,6 +232,28 @@ params! {
     /// As `landing_lockout`, after landing from a fall that didn't start
     /// with a jump, such as walking off a ledge. Whole frames.
     FallLandingLockout => "fall_landing_lockout",
+    /// Above 0, a landing after a jump (not one out of a roll) has a
+    /// switch frame M, and the first frame a jump can start is
+    /// `landing_lockout` frames after M; other landings count as M on the
+    /// frame after landing. M comes from the jump's approach frame A: the
+    /// first frame from this many after the one the jump started on that
+    /// ends with floor within reach (`switch_reach`), on the floor
+    /// included. A landing before A has M on A plus one frame for each
+    /// step of `switch_steps`; one on A or later has M on the landing
+    /// frame plus one for each step that comes after it. 0: every landing
+    /// uses `landing_lockout` as it is. Whole frames.
+    SwitchFrom => "switch_from",
+    /// Floor is within reach of a player in the air when, in the column
+    /// holding it, the floor below its feet line is at most this far
+    /// down, and at most `view_reach` bands of `view_band` px below the
+    /// band of the feet. Whole px.
+    SwitchReach => "switch_reach",
+    /// The frames that put a switch frame off, counting the approach frame
+    /// as step 1, when the approach frame is the first frame it can be.
+    /// A step set.
+    SwitchSteps => "switch_steps",
+    /// As `switch_steps`, when the approach frame is a later one.
+    SwitchLateSteps => "switch_late_steps",
     /// Above 0, a jump pressed in the air is buffered only while jump
     /// stays held: letting go before the jump is possible forgets it.
     /// 0 keeps a buffered press for all of `jump_buffer`.
@@ -1110,6 +1132,8 @@ impl Param {
                 | Param::WalkRunSteps
                 | Param::RunTurnSteps
                 | Param::GroundAttackFrames
+                | Param::SwitchSteps
+                | Param::SwitchLateSteps
         )
     }
 }
