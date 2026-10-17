@@ -842,10 +842,11 @@ impl Player {
             if takeoff_frame && self.grounded() {
                 self.vel.y = speed;
                 self.takeoff = true;
-            } else if takeoff_frame && (roll_jump || due) {
-                // Out of a roll in the air, or after waiting to take off
-                // when the ground has gone, the jump spends its first frame
-                // moving as before, and rises from the end of it.
+            } else if takeoff_frame {
+                // In the air (out of a roll, after waiting to take off
+                // when the ground has gone, or just after walking off),
+                // the jump spends its first frame moving as before, and
+                // rises from the end of it.
                 air_takeoff = Some(speed);
             } else {
                 self.vel.y = speed;
@@ -1230,16 +1231,35 @@ impl Player {
             } else {
                 (self.pos.x, STEP)
             };
-            if self.follow_ground(level, x, below, events) && drop > Fixed::ZERO {
+            // A jump starting on this frame, or pressed on it in time to
+            // start on the next, drops under its own gravity if it's the
+            // held one.
+            let graced = frames(physics[Param::CoyoteTime]) >= 1
+                && !(face.is_some() && physics[Param::NoFaceCoyote] > Fixed::ZERO);
+            let jump_gravity = if self.takeoff || (graced && self.jump_buffer.age() == Some(0)) {
+                self.waiting_gravity(false, physics)
+            } else {
+                None
+            };
+            let over_end = self.takeoff && physics[Param::TakeoffOverEnd] > Fixed::ZERO;
+            let left = self.follow_ground(level, x, below, events);
+            if (left || (over_end && !self.grounded())) && drop > Fixed::ZERO {
                 // There's no ground within a step below, so the drop
                 // can't land. A jump waiting to take off drops under its
                 // own gravity instead of `fall_gravity`.
-                self.vel.y = match waiting_gravity {
+                let speed = self.vel.y;
+                self.vel.y = match waiting_gravity.or(jump_gravity) {
                     Some(gravity) => drop - physics[Param::FallGravity] + gravity,
                     None => drop,
                 };
                 self.move_vertically(level, moved, Reach::NONE, slope > Fixed::ZERO, events);
-                self.vel.y = physics[Param::LeaveFallSpeed];
+                self.vel.y = if left {
+                    physics[Param::LeaveFallSpeed]
+                } else {
+                    // The jump rises from where the drop took it.
+                    self.takeoff = false;
+                    speed
+                };
             }
         } else {
             // Stepping onto a column while falling has landed already.
@@ -1297,6 +1317,8 @@ impl Player {
         } else if crouched_fall {
             // A jump can start while crouching in the air.
             Some(0)
+        } else if leaving && face.is_some() && physics[Param::NoFaceCoyote] > Fixed::ZERO {
+            None
         } else if leaving {
             Some(1)
         } else {

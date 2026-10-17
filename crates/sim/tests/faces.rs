@@ -310,13 +310,15 @@ fn ledge(c: i32) -> Option<i32> {
 }
 
 /// Walks right toward the ledge and presses jump on frame `press`
-/// (counting from 1), holding it. Returns the frames with a jump start
-/// and the first frame that started on the face.
-fn jump_at_the_ledge(press_on: usize) -> (Vec<usize>, usize) {
+/// (counting from 1), holding it. Returns the frames with a jump start,
+/// the first frame that started on the face, and the leave frame with
+/// how far it moved down.
+fn jump_at_the_ledge(press_on: usize) -> (Vec<usize>, usize, Option<(usize, Fixed)>) {
     let mut world = ground(ledge, 280.0);
     world.player.vel.x = Fixed::from_int(2);
     let mut jumps = Vec::new();
     let mut on_face = None;
+    let mut leave = None;
     for frame in 1..=30 {
         if on_face.is_none() && world.player.pos.x >= Fixed::from_int(300) {
             on_face = Some(frame);
@@ -331,26 +333,35 @@ fn jump_at_the_ledge(press_on: usize) -> (Vec<usize>, usize) {
         } else {
             &[Action::Right]
         };
+        let y = world.player.pos.y;
         press(&mut world, before, held);
         if world.events.contains(&Event::JumpStart) {
             jumps.push(frame);
         }
+        if world.events.contains(&Event::LeaveGround) {
+            leave = Some((frame, world.player.pos.y - y));
+        }
     }
-    (jumps, on_face.unwrap())
+    (jumps, on_face.unwrap(), leave)
 }
 
 #[test]
 fn no_jump_starts_on_a_face() {
-    let (_, face) = jump_at_the_ledge(100);
+    let (_, face, leave) = jump_at_the_ledge(100);
+    let (leave, drop) = leave.unwrap();
+    assert_eq!(drop, fx(3.4375));
     // The press on the frame before the one that moves onto the face
     // takes off on that move.
-    let (jumps, _) = jump_at_the_ledge(face - 2);
+    let (jumps, _, _) = jump_at_the_ledge(face - 2);
     assert_eq!(jumps, [face - 1]);
-    // Presses whose next frame starts on the face don't jump.
-    for press in [face - 1, face] {
-        let (jumps, _) = jump_at_the_ledge(press);
+    // Presses whose next frame starts on the face don't jump, and nor do
+    // presses on the leave frame or later: off a face there's no grace.
+    for press in face - 1..face + 8 {
+        let (jumps, _, _) = jump_at_the_ledge(press);
         assert_eq!(jumps, Vec::<usize>::new(), "press on {press}");
     }
+    // A press on the leave frame doesn't change its drop either.
+    assert_eq!(jump_at_the_ledge(leave).2, Some((leave, fx(3.4375))));
 }
 
 #[test]

@@ -748,37 +748,6 @@ fn classic_jump_input_worked_example() {
     assert_eq!(jump, None);
 }
 
-#[test]
-fn classic_has_no_grace_after_walking_off() {
-    // spec/behavior/walk-off.md, "Jumping near the edge": a press on the
-    // frame before leaving the ground still jumps; on L or later it
-    // doesn't.
-    let walk_to_edge = || {
-        let mut w = classic();
-        w.player.pos.x = Fixed::from_int(1500);
-        let mut probe = classic();
-        probe.player.pos.x = Fixed::from_int(1500);
-        let leave = first(&hold(&mut probe, &[Action::Right], 120), Event::LeaveGround).unwrap();
-        hold(&mut w, &[Action::Right], leave - 1);
-        w
-    };
-    let mut w = walk_to_edge();
-    let steps = hold(&mut w, &[Action::Right, Action::Jump], 2);
-    assert_eq!(steps[1].events, [Event::JumpStart]);
-
-    for after in 0..3 {
-        let mut w = walk_to_edge();
-        let mut steps = hold(&mut w, &[Action::Right], 1 + after);
-        steps.extend(hold(&mut w, &[Action::Right, Action::Jump], 3));
-        assert_eq!(first(&steps, Event::LeaveGround), Some(1));
-        assert_eq!(
-            first(&steps, Event::JumpStart),
-            None,
-            "pressed {after} after leaving"
-        );
-    }
-}
-
 /// No `jump_start` frames.
 const NONE: [usize; 0] = [];
 
@@ -3887,4 +3856,149 @@ fn classic_2_rolls_after_landing_from_a_stop_in_the_air() {
     assert_eq!(rolls(&|f| (a..=a + 1).contains(&f)), NONE);
     assert_eq!(rolls(&|f| f == a + 1), NONE);
     assert_eq!(rolls(&|f| f == a + 2), [a + 2]);
+}
+
+/// Classic 1 standing at `x` on ground like `RAISED_176`'s raised
+/// stretch, but going on across the whole level.
+fn classic_unended(x: i32) -> Play {
+    let toml = RAISED_176.replace("rect = [800, 400, 800, 176]", "rect = [0, 400, 4096, 176]");
+    let level = Arc::new(Level::from_toml_str(&toml, "unended").unwrap());
+    let mut w = Play::on(level, generic_feel("classic-1").unwrap());
+    w.player.pos.x = Fixed::from_int(x);
+    w
+}
+
+#[test]
+fn classic_leaves_where_the_ground_ends() {
+    // spec/behavior/walk-off.md, "Ledges without a face": up to the end
+    // the player moves as on flat ground, and is grounded exactly while
+    // their column has ground. L is the first frame ending past the end,
+    // and `vx` and `x` on L follow the speed rule as before it.
+    type Inputs = fn(usize) -> Vec<Action>;
+    let walk: Inputs = |_| vec![Action::Right];
+    let run: Inputs = |_| vec![Action::Action, Action::Right];
+    let run_then_walk: Inputs = |f| match f {
+        0..60 => vec![Action::Action, Action::Right],
+        _ => vec![Action::Right],
+    };
+    let slide: Inputs = |f| match f {
+        0..20 => vec![Action::Right],
+        _ => vec![],
+    };
+    let taps: Inputs = |f| match f % 6 {
+        0 => vec![Action::Right],
+        _ => vec![],
+    };
+    let mirror = |held: Vec<Action>| -> Vec<Action> {
+        held.into_iter()
+            .map(|a| if a == Action::Right { Action::Left } else { a })
+            .collect()
+    };
+    let cases: [(i32, Inputs); 7] = [
+        (1300, walk),
+        (1592, walk),
+        (1599, walk),
+        (1300, run),
+        (1300, run_then_walk),
+        (1590, slide),
+        (1596, taps),
+    ];
+    for (start, held) in cases {
+        for left in [false, true] {
+            // Going left from the same distance before the left end.
+            let x = if left { 2400 - start } else { start };
+            let inputs = |f| if left { mirror(held(f)) } else { held(f) };
+            let rows = play(&mut classic_raised(x), 300, inputs);
+            let flat = play(&mut classic_unended(x), 300, inputs);
+            let leave = frames_with(&rows, Event::LeaveGround);
+            assert_eq!(leave.len(), 1, "{start} {left}");
+            let l = leave[0];
+            for f in 0..=l {
+                let on_ground = if left {
+                    rows[f].x >= 800.0
+                } else {
+                    rows[f].x < RAISED_END
+                };
+                let what = format!("{start} {left} L - {}", l - f);
+                assert_eq!(rows[f].grounded, f < l, "{what}");
+                assert_eq!(on_ground, f < l, "{what}");
+                assert_eq!((rows[f].x, rows[f].vx), (flat[f].x, flat[f].vx), "{what}");
+                let y = if f < l { 400.0 } else { 403.4375 };
+                assert_eq!(
+                    (rows[f].y, rows[f].vy),
+                    (y, if f < l { 0.0 } else { 0.00390625 })
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn classic_jumps_at_a_ledge_without_a_face() {
+    // spec/behavior/walk-off.md, "Jumping at a ledge without a face": the
+    // example walking right, Jump pressed on the frame given and held for
+    // 20 frames. Height below the ledge from L - 1 to L + 3, and the
+    // frame of `jump_start`, counted from L.
+    let walked = play(&mut classic_raised(1300), 300, |_| vec![Action::Right]);
+    let l = frames_with(&walked, Event::LeaveGround)[0];
+    let off = |press: Option<usize>, frames: usize| {
+        let rows = play(&mut classic_raised(1300), l + 5, |f| match press {
+            Some(p) if (p..p + frames).contains(&f) => vec![Action::Right, Action::Jump],
+            _ => vec![Action::Right],
+        });
+        let below: Vec<f64> = rows[l - 1..l + 4].iter().map(|r| r.y - 400.0).collect();
+        let jump = frames_with(&rows, Event::JumpStart);
+        let leave = frames_with(&rows, Event::LeaveGround);
+        (
+            rows,
+            below,
+            jump.first().map(|&t| t as i64 - l as i64),
+            leave,
+        )
+    };
+    for (press, below, takeoff) in [
+        (
+            Some(l - 2),
+            [0.0, -6.71875, -13.15625, -19.3125, -25.1875],
+            Some(-1),
+        ),
+        (
+            Some(l - 1),
+            [0.0, 3.28125, -3.4375, -9.875, -16.03125],
+            Some(0),
+        ),
+        (
+            Some(l),
+            [0.0, 3.28125, 3.56640625, -3.15234375, -9.58984375],
+            Some(1),
+        ),
+        (None, [0.0, 3.4375, 3.87890625, 4.7578125, 6.07421875], None),
+    ] {
+        let (rows, got, t, leave) = off(press, 20);
+        assert_eq!(
+            (got.as_slice(), t),
+            (below.as_slice(), takeoff),
+            "{press:?}"
+        );
+        if let Some(t) = t {
+            let t = (l as i64 + t) as usize;
+            assert_eq!(rows[t].vy, -7.0);
+            assert_eq!(rows[t + 1].vy, -6.71875);
+        }
+        // Taking off on L, the row carries `jump_start` and no
+        // `leave_ground`, and the player isn't on the ground.
+        assert_eq!(leave.is_empty(), t.is_some_and(|t| t <= 0), "{press:?}");
+        assert!(!rows[l].grounded);
+    }
+    // Presses after L start nothing in the air.
+    for p in l + 1..l + 4 {
+        let (_, got, t, _) = off(Some(p), 20);
+        assert_eq!(t, None, "pressed on L + {}", p - l);
+        assert_eq!(got[1..3], [3.4375, 3.87890625]);
+    }
+    // Held for 1 frame only, g is 0.4375 from P + 1 on.
+    let (_, got, _, _) = off(Some(l - 1), 1);
+    assert_eq!(got[1], 3.4375);
+    let (_, got, _, _) = off(Some(l), 1);
+    assert_eq!((got[1], got[2] - got[1]), (3.28125, 0.44140625));
 }

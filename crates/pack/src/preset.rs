@@ -362,6 +362,8 @@ mod tests {
                     | Param::LeaveFacingWait
                     | Param::HeldGravityUntilTop
                     | Param::GroundedTakeoff
+                    | Param::NoFaceCoyote
+                    | Param::TakeoffOverEnd
                     | Param::RollTime
                     | Param::RollSpeed
                     | Param::RollSlowSpeed

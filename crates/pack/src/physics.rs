@@ -208,10 +208,20 @@ params! {
     /// A jump still works for this many frames after walking off a
     /// ledge. Whole frames.
     CoyoteTime => "coyote_time",
+    /// Above 0, `coyote_time` is only for ground that simply ends: after
+    /// walking off from a frame that starts on a steep face, no jump
+    /// starts in the air.
+    NoFaceCoyote => "no_face_coyote",
     /// Above 0, a jump leaves the ground on the frame after it starts:
     /// on the start frame the body still follows the ground, with its
     /// upward speed already set. 0 leaves on the start frame.
     GroundedTakeoff => "grounded_takeoff",
+    /// Above 0, with `grounded_takeoff`, a jump whose start frame goes
+    /// over the end of the ground moves down on it as a walk-off would,
+    /// by `leave_drop` with the jump's gravity in place of
+    /// `fall_gravity`, and rises from there. 0: it rises from the height
+    /// of the ground it left.
+    TakeoffOverEnd => "takeoff_over_end",
     /// A jump starts this many frames after its press at the earliest.
     /// 0 is on the frame of the press. Whole frames.
     JumpDelay => "jump_delay",
