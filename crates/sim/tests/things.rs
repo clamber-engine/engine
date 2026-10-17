@@ -823,7 +823,7 @@ fn classic_fidget_pose_shifts_the_hurt_range() {
     // walker-contact.md: facing right, the low end 10 px higher and the
     // high end 3 px higher; facing left, 3 and 10 px lower.
     type Walker = fn(&str, &str, &str) -> String;
-    let table: [(Walker, Facing, &str, i32, i32); 8] = [
+    let table: [(Walker, Facing, &str, i32, i32); 12] = [
         (small_walker, Facing::Right, "left", -9, 27),
         (small_walker, Facing::Right, "right", -8, 28),
         (small_walker, Facing::Left, "left", -28, 8),
@@ -832,6 +832,10 @@ fn classic_fidget_pose_shifts_the_hurt_range() {
         (medium_walker, Facing::Right, "right", -6, 35),
         (medium_walker, Facing::Left, "left", -35, 6),
         (medium_walker, Facing::Left, "right", -25, 16),
+        (large_walker, Facing::Right, "left", -12, 30),
+        (large_walker, Facing::Right, "right", -11, 31),
+        (large_walker, Facing::Left, "left", -31, 11),
+        (large_walker, Facing::Left, "right", -30, 12),
     ];
     for (n, (walker, facing, heading, low, high)) in table.into_iter().enumerate() {
         for (i, hurt) in [

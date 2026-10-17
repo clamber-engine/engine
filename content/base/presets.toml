@@ -335,11 +335,10 @@ air_acceleration = 0.09375
 # medium walker lifts it 25 px, its own `hurt_jump_lift`). In the fidget
 # pose (frames 239 to 418 of standing, and every 457 frames again, as in
 # ball-contact.md) the hurt box is 17 wide, 9.5 behind, which gives that
-# pose's hurt ranges; the large walker wasn't measured against it, and
-# the engine uses the same box. The roll's attack box (22 wide, 4 behind),
-# checked against walkers before they move as the bounce box is, gives
-# rolling-into-walkers.md's defeat ranges at the end of the frame for
-# walkers walking at full speed. The ground action's attack box (53 wide,
+# pose's hurt ranges for all three walkers. The roll's attack box (22
+# wide, 4 behind), checked against walkers before they move as the bounce
+# box is, gives rolling-into-walkers.md's defeat ranges at the end of the
+# frame for walkers walking at full speed. The ground action's attack box (53 wide,
 # its middle 26.5 ahead), checked the same way, gives
 # ground-action-enemies.md's knock-out ranges at the end of the frame for
 # walkers walking at full speed. The knock-out flight falls under `gravity`,
