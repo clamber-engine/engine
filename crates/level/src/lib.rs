@@ -8,6 +8,8 @@
 //!   its own parallax factor, drawn smoothly or as pixel art, at any
 //!   number of texels per world unit
 //! - **entities**: placed things with per-instance parameters
+//! - **sections**: optionally, when entities appear: section by section,
+//!   by the path the view takes ([`Section`])
 //! - **collision**: solid polygons and segments at any angle, one-way
 //!   platforms, thin or thick, and surface types ([`Surface`]), separate
 //!   from visuals
@@ -30,5 +32,6 @@ pub use collision::{Collider, Collision, Dir, Hit, Shape, Span};
 pub use geom::{Area, Rect, Vec2};
 pub use level::{
     Camera, CameraRule, Depth, Entity, FORMAT, KeyLight, Layer, LayerContent, Level, LevelError,
-    Light, Lighting, Region, Rgb, Surface, Tile, TileLayer, Tileset, Track, builtin_surfaces,
+    Light, Lighting, Region, Rgb, Section, Spot, Surface, Tile, TileLayer, Tileset, Track,
+    builtin_surfaces,
 };

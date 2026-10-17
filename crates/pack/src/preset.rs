@@ -552,6 +552,8 @@ mod tests {
                     | Param::ViewShakeSize
                     | Param::AppearLeft
                     | Param::AppearRight
+                    | Param::AppearAbove
+                    | Param::AppearBelow
                     | Param::RemoveLeft
                     | Param::RemoveRight
                     | Param::EndReach

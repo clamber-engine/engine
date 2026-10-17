@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use clamber_level::{Area, Collision, Entity, FORMAT, Fixed, Level, Rect, Region, Track};
+use clamber_level::{Area, Collision, Entity, FORMAT, Fixed, Level, Rect, Region, Section, Track};
 
 use crate::{
     BANK_SIZE, Background, COLUMN_BANDS, Decoder, GridPicture, Ground, Image, Known, LEVELS,
@@ -174,7 +174,7 @@ impl LevelDecoder {
         // the player riding, so none does.
         level.regions.extend(water(&ground, false));
         if let Some(list) = p.placements {
-            level.entities = self.entities(image, list, height)?;
+            (level.entities, level.sections) = self.objects(image, list, height)?;
         }
         if let Some(song) = p.song {
             let music = song.music(|at| image.at(at))?;
@@ -191,8 +191,13 @@ impl LevelDecoder {
 
     /// The objects in the placement list at `list`, for a level whose
     /// bottom edge is at `bottom`, with their kinds where `title`'s kind
-    /// fingerprint rows give them.
-    fn entities(&self, image: &Image, list: Location, bottom: i64) -> Result<Vec<Entity>, String> {
+    /// fingerprint rows give them, and the list's sections if it has them.
+    fn objects(
+        &self,
+        image: &Image,
+        list: Location,
+        bottom: i64,
+    ) -> Result<(Vec<Entity>, Vec<Section>), String> {
         let bank = |address| {
             let start = list.in_bank(address).position(image.len())?;
             let end = (start / BANK_SIZE + 1) * BANK_SIZE;
@@ -202,7 +207,7 @@ impl LevelDecoder {
             .map_err(|e| format!("the level's placement list: {e}"))?;
         let rows = kind_rows(&self.title);
         let kind = |reference| kind_of(image.bytes(), reference, &rows).map(|(_, kind)| kind);
-        Ok(placements.entities(bottom, kind))
+        Ok(placements.objects(bottom, kind))
     }
 }
 

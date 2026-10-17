@@ -988,6 +988,12 @@ params! {
     AppearLeft => "appear_left",
     /// ... to this far right of the view's right edge. Whole px.
     AppearRight => "appear_right",
+    /// A placed thing that also has to be within the view's rows to
+    /// appear (see `clamber_level::Spot`) is there from this far above
+    /// the view's top edge... Whole px.
+    AppearAbove => "appear_above",
+    /// ... to this far below its bottom edge. Whole px.
+    AppearBelow => "appear_below",
     /// A walker whose start isn't near the view is removed once its `x`,
     /// rounded down, is this far left of the view's left edge or
     /// further. Whole px.

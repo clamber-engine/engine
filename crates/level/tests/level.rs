@@ -507,3 +507,53 @@ fn solids_can_hang() {
         level_err("[[collision]]\nshape = \"segment\"\nfrom = [0, 0]\nto = [9, 0]\nhangs = true\n");
     assert!(err.contains("hangs"), "{err}");
 }
+
+#[test]
+fn entities_can_appear_by_sections() {
+    let entities = "[[entities]]\ntype = \"a\"\nat = [1, 1]\n".repeat(5);
+    let src = format!(
+        "format = 1\nsize = [100, 100]\nstart = [10, 10]\n{entities}\
+         [[sections]]\nspots = [0, {{ entities = [1, 2], at = [40, 9] }}]\nmeets = [50, 60]\n\
+         [[sections]]\nspots = [{{ entities = [3], rows = true }}, 4]\n"
+    );
+    let l = Level::from_toml_str(&src, "x.level").unwrap();
+    let spots = |i: usize| -> Vec<(Vec<usize>, Option<Vec2>, bool)> {
+        l.sections[i]
+            .spots
+            .iter()
+            .map(|s| (s.entities.clone(), s.at, s.rows))
+            .collect()
+    };
+    assert_eq!(
+        spots(0),
+        [
+            (vec![0], None, false),
+            (vec![1, 2], Some(v(40.0, 9.0)), false)
+        ]
+    );
+    assert_eq!(spots(1), [(vec![3], None, true), (vec![4], None, false)]);
+    assert_eq!(l.sections[0].meets, Some(v(50.0, 60.0)));
+    assert_eq!(l.sections[1].meets, None);
+    let back = Level::from_toml_str(&l.to_toml_string(), "saved").unwrap();
+    assert_eq!(back, l);
+    assert!(full().sections.is_empty());
+
+    let one = "[[entities]]\ntype = \"a\"\nat = [1, 1]\n";
+    let err = level_err(&format!("{one}[[sections]]\nspots = [0]\nmeets = [1, 1]\n"));
+    assert!(err.contains("sections[0]: the last section"), "{err}");
+    let err = level_err(&format!(
+        "{one}[[sections]]\nspots = [0]\n[[sections]]\nspots = []\n"
+    ));
+    assert!(err.contains("sections[0]: missing `meets`"), "{err}");
+    let err = level_err(&format!("{one}[[sections]]\nspots = [1]\n"));
+    assert!(
+        err.contains("sections[0].spots[0]: there's no entity 1"),
+        "{err}"
+    );
+    let err = level_err(&format!("{one}[[sections]]\nspots = [0, 0]\n"));
+    assert!(err.contains("entity 0 is in two spots"), "{err}");
+    let err = level_err(&format!(
+        "{one}{one}[[sections]]\nspots = [{{ entities = [0, 1], rows = true }}]\n"
+    ));
+    assert!(err.contains("`rows` is for one entity"), "{err}");
+}

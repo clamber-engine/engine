@@ -11,7 +11,7 @@
 //! its reference (`placed-1234`), for a pack to give each one a
 //! definition.
 
-use clamber_level::{Entity, Vec2};
+use clamber_level::{Entity, Section, Spot, Vec2};
 use toml::{Table, Value};
 
 use crate::Kind;
@@ -204,6 +204,68 @@ impl Placements {
     /// nothing are [`DIM`] entities at their entry's position, and classes
     /// the spec doesn't cover have no entity.
     pub fn entities(&self, bottom: i64, kind: impl Fn(u16) -> Option<Kind>) -> Vec<Entity> {
+        self.placed(bottom, kind).0
+    }
+
+    /// The [`entities`](Placements::entities), and the level's sections
+    /// if the list has them ("In a list with sections"): one for each of
+    /// the table's sections, meeting the next at its record's point. Each
+    /// entry that places objects is a spot: an object at its entry's
+    /// position, needing the view's rows too for class 15 and class 2
+    /// ("Class 1 and class 2 entries in these lists"), or a group, at its
+    /// entry's `x`. Entries that place nothing hold nothing back, so they
+    /// aren't spots.
+    pub fn objects(
+        &self,
+        bottom: i64,
+        kind: impl Fn(u16) -> Option<Kind>,
+    ) -> (Vec<Entity>, Vec<Section>) {
+        let (entities, of_entry) = self.placed(bottom, kind);
+        let Some(first) = self.records.first() else {
+            return (entities, Vec::new());
+        };
+        let spot = |i: usize| {
+            let placement = &self.list[i];
+            let entry = placement.entry;
+            let spot_entities = of_entry[i].clone();
+            let at = Vec2::ints(i32::from(entry.x), entry.level_y(bottom) as i32);
+            match entry.kind() {
+                Class::Object => Some(Spot {
+                    at: (entities[spot_entities[0]].at != at).then_some(at),
+                    entities: spot_entities,
+                    rows: entry.needs_rows() || entry.class == 2,
+                }),
+                Class::Group if !spot_entities.is_empty() => Some(Spot {
+                    at: (entities[spot_entities[0]].at.x != at.x).then_some(at),
+                    entities: spot_entities,
+                    rows: false,
+                }),
+                _ => None,
+            }
+        };
+        let runs = std::iter::once(first.first).chain(self.records.iter().map(|r| r.second));
+        let sections = runs
+            .enumerate()
+            .map(|(n, (a, b))| {
+                let last = usize::from(b).min(self.list.len().saturating_sub(1));
+                Section {
+                    spots: (usize::from(a)..=last).filter_map(spot).collect(),
+                    meets: self
+                        .records
+                        .get(n)
+                        .map(|r| Vec2::ints(i32::from(r.x), r.level_y(bottom) as i32)),
+                }
+            })
+            .collect();
+        (entities, sections)
+    }
+
+    /// The entities, and the indices of each entry's among them.
+    fn placed(
+        &self,
+        bottom: i64,
+        kind: impl Fn(u16) -> Option<Kind>,
+    ) -> (Vec<Entity>, Vec<Vec<usize>>) {
         let entity = |entry: Entry| {
             let (kind, params, below) = match kind(entry.reference) {
                 Some(kind) => {
@@ -221,7 +283,9 @@ impl Placements {
             }
         };
         let mut entities = Vec::new();
+        let mut of_entry = Vec::new();
         for (i, placement) in self.list.iter().enumerate() {
+            let before = entities.len();
             match placement.entry.kind() {
                 Class::Object => entities.push(entity(placement.entry)),
                 Class::Group => {
@@ -246,8 +310,9 @@ impl Placements {
                 }),
                 Class::Sections | Class::Other(_) => {}
             }
+            of_entry.push((before..entities.len()).collect());
         }
-        entities
+        (entities, of_entry)
     }
 }
 
@@ -293,7 +358,8 @@ fn records<'a>(bank: &impl Fn(u16) -> Option<&'a [u8]>, start: u16) -> Result<Ve
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clamber_sim::{Opening, Sections, Spot, Window};
+    use clamber_level::Level;
+    use clamber_sim::{Opening, Placed, Window};
 
     /// The vectors' bank fragment starts at this address.
     const BASE: u16 = 0x9000;
@@ -431,61 +497,42 @@ mod tests {
         }
     }
 
-    /// The vectors' list as the engine's spots and sections.
-    fn engine_sections(p: &Placements) -> (Vec<Spot>, Sections) {
-        let spots = p
-            .list
-            .iter()
-            .map(|p| {
-                let e = p.entry;
-                match e.kind() {
-                    Class::Object => Spot::Object {
-                        x: i64::from(e.x),
-                        y: e.level_y(SECTIONS_BOTTOM),
-                        rows: e.needs_rows(),
-                    },
-                    Class::Group => Spot::Group {
-                        x: i64::from(e.x),
-                        first: i64::from(p.members[0].x),
-                        last: i64::from(p.members[p.members.len() - 1].x),
-                    },
-                    _ => Spot::Marker,
-                }
-            })
-            .collect();
-        let run = |(a, b): (u8, u8)| usize::from(a)..=usize::from(b);
-        let mut runs = vec![run(p.records[0].first)];
-        runs.extend(p.records.iter().map(|r| run(r.second)));
-        let joins = p
-            .records
-            .iter()
-            .map(|r| (i64::from(r.x), r.level_y(SECTIONS_BOTTOM)))
-            .collect();
-        (spots, Sections { runs, joins })
+    /// The vectors' list as a level's sections, through a level file,
+    /// as the simulation takes them, with each spot's entry number.
+    fn engine_sections(p: &Placements) -> (Placed, Vec<usize>) {
+        let (entities, sections) = p.objects(SECTIONS_BOTTOM, |_| None);
+        let src = "format = 1\nsize = [2000, 1024]\nstart = [10, 10]\n";
+        let mut level = Level::from_toml_str(src, "t").unwrap();
+        (level.entities, level.sections) = (entities, sections);
+        let level = Level::from_toml_str(&level.to_toml_string(), "saved").unwrap();
+        let placed = Placed::of(&level).unwrap();
+        let of_entry = p.placed(SECTIONS_BOTTOM, |_| None).1;
+        let entry = |e: usize| of_entry.iter().position(|of| of.contains(&e)).unwrap();
+        let entries = placed.entities.iter().map(|es| entry(es[0])).collect();
+        (placed, entries)
     }
 
     #[test]
     fn section_appearances_match_the_spec_vectors() {
         let placements = sections_fragment();
-        let (spots, sections) = engine_sections(&placements);
+        let (placed, entries) = engine_sections(&placements);
+        let (spots, sections) = (&placed.spots, &placed.sections);
         let window = Window {
             across: -31..=288,
             down: -31..=256,
         };
         let frames = rows("sections-frames.tsv");
         let view = |row: &[String]| (row[1].parse().unwrap(), row[2].parse().unwrap());
-        let mut open = Opening::begin(&sections, view(&frames[0]).1);
+        let mut open = Opening::begin(sections, view(&frames[0]).1);
         // No object is ever removed.
         let mut there = vec![None; spots.len()];
         for (n, row) in frames.iter().enumerate() {
             assert_eq!(row[0], n.to_string());
-            let up = open.step(&sections, &spots, &window, view(row), |i| {
-                there[i].is_some()
-            });
+            let up = open.step(sections, spots, &window, view(row), |i| there[i].is_some());
             for &i in &up {
                 there[i] = Some(n);
             }
-            let got: Vec<String> = up.iter().map(usize::to_string).collect();
+            let got: Vec<String> = up.iter().map(|&i| entries[i].to_string()).collect();
             let got = if got.is_empty() {
                 "-".to_string()
             } else {
@@ -494,7 +541,8 @@ mod tests {
             assert_eq!(got, row[3], "frame {n}");
         }
         for row in rows("sections-appear.tsv") {
-            let i: usize = row[0].parse().unwrap();
+            let entry: usize = row[0].parse().unwrap();
+            let i = entries.iter().position(|&e| e == entry).unwrap();
             let got = there[i].map_or("never".to_string(), |n| n.to_string());
             assert_eq!(got, row[4], "entry {i}");
         }
@@ -508,6 +556,60 @@ mod tests {
         assert_eq!(entities.len(), 15);
         assert_eq!(entities[0].kind, "placed-a000");
         assert_eq!(entities[0].at, Vec2::ints(100, 900));
+    }
+
+    #[test]
+    fn a_list_with_sections_gives_the_levels_sections() {
+        let (entities, sections) = sections_fragment().objects(SECTIONS_BOTTOM, |_| None);
+        let meets: Vec<_> = sections.iter().map(|s| s.meets).collect();
+        assert_eq!(
+            meets,
+            [Some(Vec2::ints(960, 724)), Some(Vec2::ints(60, 324)), None]
+        );
+        let spots: Vec<Vec<(Vec<usize>, bool)>> = sections
+            .iter()
+            .map(|s| {
+                s.spots
+                    .iter()
+                    .map(|p| (p.entities.clone(), p.rows))
+                    .collect()
+            })
+            .collect();
+        // Entry 4 is the group of two; class 1 entries don't need rows.
+        let one = |e, rows| (vec![e], rows);
+        assert_eq!(
+            spots,
+            [
+                vec![
+                    one(0, true),
+                    one(1, true),
+                    one(2, false),
+                    (vec![3, 4], false),
+                    one(5, true),
+                    one(6, true)
+                ],
+                vec![one(7, true), one(8, true), one(9, true), one(10, true)],
+                vec![one(11, true), one(12, false), one(13, true), one(14, true)],
+            ]
+        );
+        // The group is at its entry's x, 10 px right of its first member.
+        let ats: Vec<_> = sections
+            .iter()
+            .flat_map(|s| &s.spots)
+            .map(|p| p.at)
+            .collect();
+        assert_eq!(entities[3].at, Vec2::ints(690, 924));
+        assert_eq!(ats[3], Some(Vec2::ints(700, 924)));
+        assert_eq!(ats.iter().flatten().count(), 1);
+        assert_eq!(entities.len(), 15);
+        // A list without sections has none.
+        assert!(
+            read(&fragment())
+                .unwrap()
+                .objects(BOTTOM, |_| None)
+                .1
+                .is_empty()
+        );
     }
 
     #[test]

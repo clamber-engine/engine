@@ -19,6 +19,7 @@ use crate::loss::{self, Loss, Lost};
 use crate::player::{Act, Facing, Player, ROLL, Roll, frames};
 use crate::ride;
 use crate::script::{InputFrame, Script};
+use crate::sections::{Placed, Placing};
 use crate::swap::{self, Move, Other, Recent, Swap};
 use crate::things;
 use crate::view::{self, View};
@@ -176,6 +177,9 @@ pub struct World {
     pub ending: Option<Ending>,
     /// The dimming of the level's background, once it has started.
     pub dimming: Option<Dimming>,
+    /// Things appearing by sections, if the level's do and there's a
+    /// view.
+    pub placing: Option<Placing>,
     /// Frames the whole game should stand still after the last step
     /// before the next, as during a knock-out. Whatever runs the world in
     /// real time holds the screen for them; they aren't steps, and a
@@ -239,11 +243,21 @@ impl World {
             })
             .collect::<Result<_, _>>()?;
         // With a view, walkers whose start is near it are in the level as
-        // placed, and the others appear later.
+        // placed, and the others appear later. Things in sections appear
+        // from the first step.
+        let placing = view.and_then(|v| {
+            let placed = Placed::of(&level)?;
+            Some(Placing::begin(Arc::new(placed), v.y()))
+        });
         if let Some(v) = view {
             let present = view::at_start(&things, &level, v.x(), &physics);
             for (thing, present) in things.iter_mut().zip(present) {
                 thing.active &= present;
+            }
+        }
+        if let Some(placing) = &placing {
+            for (thing, spot) in things.iter_mut().zip(&placing.placed.spot_of) {
+                thing.active &= spot.is_none();
             }
         }
         Ok(World {
@@ -263,6 +277,7 @@ impl World {
             flow: Flow::new(),
             ending: None,
             dimming: None,
+            placing,
             pause: 0,
         })
     }
@@ -513,6 +528,15 @@ impl World {
             }
             None => out.push(0),
         }
+        match &self.placing {
+            Some(p) => {
+                out.push(1);
+                count(&mut out, p.opening.home);
+                count(&mut out, p.opening.crossing.map_or(0, |j| j + 1));
+                out.extend(p.there.iter().map(|&t| u8::from(t)));
+            }
+            None => out.push(0),
+        }
         out.push(self.pause);
         out.extend(f.gems.to_le_bytes());
         out.extend(f.relics.to_le_bytes());
@@ -753,9 +777,9 @@ pub fn step(world: &mut World, input: &InputFrame) {
     loss::tick(world);
     // Walkers appear and are removed by where the view was at the start
     // of the step.
-    let view_left = start_view.map(|v| v.x());
-    if let Some(left) = view_left {
-        view::walkers(world, left, true);
+    let view_at = start_view.map(|v| (v.x(), v.y()));
+    if let Some(at) = view_at {
+        view::walkers(world, at, true);
     }
     let physics = world.player_physics();
     let previous_feet = world.player.pos.y;
@@ -806,8 +830,8 @@ pub fn step(world: &mut World, input: &InputFrame) {
     if !frozen && follow::due(world).is_some() {
         follow::note(world);
     }
-    if let Some(left) = view_left {
-        view::walkers(world, left, false);
+    if let Some(at) = view_at {
+        view::walkers(world, at, false);
     }
     view::update(world);
     carry::after(world, &input.players[0]);

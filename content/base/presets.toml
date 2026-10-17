@@ -268,6 +268,8 @@ view_shake_period = 0
 view_shake_size = 0
 appear_left = 0
 appear_right = 0
+appear_above = 0
+appear_below = 0
 remove_left = 0
 remove_right = 0
 end_reach = 0
@@ -611,6 +613,11 @@ view_shake_period = 4
 view_shake_size = 4
 appear_left = 31
 appear_right = 32
+# A placed thing that needs the view's rows too, and a point where two
+# sections meet, are near the view from 31 above it to 32 below it
+# (placements.md, "When placed objects appear").
+appear_above = 31
+appear_below = 32
 remove_left = 128
 remove_right = 129
 # Passing the end marker, the walk-out and the fade (level-end.md). The

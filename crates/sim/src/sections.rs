@@ -9,8 +9,18 @@
 //! and the edge the view leaves the point by decides which of the two is
 //! home afterwards. [`Opening`] keeps that state and says, frame by frame,
 //! which spots appear.
+//!
+//! A level's [`Section`](clamber_level::Section)s give the spots and runs
+//! ([`Placed`]). Engine choices where the spec says nothing: a spot of
+//! one entity is an object and one of more is a group, whose first and
+//! last members are its first and last entities; and an empty section is
+//! one marker.
 
 use std::ops::RangeInclusive;
+use std::sync::Arc;
+
+use clamber_level::Level;
+use clamber_pack::{Param, Physics};
 
 /// Where a spot or a point is near the view: level x − the view's left
 /// edge in `across`, and level y − the view's top in `down` (whole px).
@@ -21,6 +31,17 @@ pub struct Window {
 }
 
 impl Window {
+    /// The window for a preset's view: `appear_left` left of it to
+    /// `appear_right` right of it, and `appear_above` above it to
+    /// `appear_below` below it.
+    pub fn of(physics: &Physics) -> Window {
+        let whole = |param: Param| physics[param].floor();
+        Window {
+            across: -whole(Param::AppearLeft)..=whole(Param::ViewWidth) + whole(Param::AppearRight),
+            down: -whole(Param::AppearAbove)..=whole(Param::ViewHeight) + whole(Param::AppearBelow),
+        }
+    }
+
     /// The view's left edge as the window uses it: never so far left that
     /// the window reaches left of level x 1.
     fn left(&self, view_left: i64) -> i64 {
@@ -77,6 +98,90 @@ pub struct Sections {
     pub runs: Vec<RangeInclusive<usize>>,
     /// Where run `i` and run `i` + 1 meet: one fewer than the runs.
     pub joins: Vec<(i64, i64)>,
+}
+
+/// A level's sections as spots and runs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Placed {
+    pub spots: Vec<Spot>,
+    pub sections: Sections,
+    /// The entities of each spot: none for a marker.
+    pub entities: Vec<Vec<usize>>,
+    /// The spot of each of the level's entities, if it's in one.
+    pub spot_of: Vec<Option<usize>>,
+}
+
+impl Placed {
+    /// The level's sections, if its entities appear by sections.
+    pub fn of(level: &Level) -> Option<Placed> {
+        if level.sections.is_empty() {
+            return None;
+        }
+        let whole = |v: clamber_level::Vec2| (v.x.floor(), v.y.floor());
+        let mut placed = Placed {
+            spots: Vec::new(),
+            sections: Sections {
+                runs: Vec::new(),
+                joins: Vec::new(),
+            },
+            entities: Vec::new(),
+            spot_of: vec![None; level.entities.len()],
+        };
+        for section in &level.sections {
+            let first = placed.spots.len();
+            for spot in &section.spots {
+                let at = |i: usize| whole(level.entities[spot.entities[i]].at);
+                let (x, y) = spot.at.map_or_else(|| at(0), whole);
+                placed.spots.push(match spot.entities.len() {
+                    1 => Spot::Object {
+                        x,
+                        y,
+                        rows: spot.rows,
+                    },
+                    n => Spot::Group {
+                        x,
+                        first: at(0).0,
+                        last: at(n - 1).0,
+                    },
+                });
+                for &e in &spot.entities {
+                    placed.spot_of[e] = Some(placed.entities.len());
+                }
+                placed.entities.push(spot.entities.clone());
+            }
+            if section.spots.is_empty() {
+                placed.spots.push(Spot::Marker);
+                placed.entities.push(Vec::new());
+            }
+            placed.sections.runs.push(first..=placed.spots.len() - 1);
+            placed.sections.joins.extend(section.meets.map(whole));
+        }
+        Some(placed)
+    }
+}
+
+/// A level's things appearing by sections: in a world whose level has
+/// sections and whose preset has a view.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Placing {
+    pub placed: Arc<Placed>,
+    pub opening: Opening,
+    /// Whether each spot's things are there: from when they appear until
+    /// the view removes them. Things that leave by their own rule, such
+    /// as collected or defeated ones, stay there.
+    pub there: Vec<bool>,
+}
+
+impl Placing {
+    /// At the start of an area whose view's top is at level y `view_top`,
+    /// with nothing there yet.
+    pub fn begin(placed: Arc<Placed>, view_top: i64) -> Placing {
+        Placing {
+            opening: Opening::begin(&placed.sections, view_top),
+            there: vec![false; placed.spots.len()],
+            placed,
+        }
+    }
 }
 
 /// Which edge of the window a point is past.
@@ -264,6 +369,12 @@ mod tests {
     fn the_home_run_starts_after_the_joins_at_or_below_the_top() {
         assert_eq!(Opening::begin(&two_runs(), 300).home, 1);
         assert_eq!(Opening::begin(&two_runs(), 301).home, 0);
+    }
+
+    #[test]
+    fn the_window_comes_from_the_preset() {
+        let physics = clamber_pack::Presets::builtin().world("classic-1").unwrap();
+        assert_eq!(Window::of(&physics), window());
     }
 
     #[test]

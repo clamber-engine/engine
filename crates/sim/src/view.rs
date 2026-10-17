@@ -55,12 +55,13 @@
 use std::collections::{HashMap, HashSet};
 
 use clamber_fixed::{FRAC_BITS, Fixed};
-use clamber_level::{Dir, Level, Rect};
+use clamber_level::{Dir, Level, Rect, Vec2};
 use clamber_pack::{Param, Physics};
 
 use crate::archetype::Behavior;
 use crate::flow::FlowEvent;
 use crate::player::{Facing, Player, ceil, frames};
+use crate::sections::{Opening, Window};
 use crate::world::{Phase, Thing, World};
 
 /// What the view's speed is kept to, px per frame.
@@ -323,19 +324,27 @@ pub(crate) fn update(world: &mut World) {
 }
 
 /// Settles the view on the player again, if there is one, as when it
-/// comes back after losing a life.
+/// comes back after losing a life. Sections begin again from there, as
+/// at the start of an area (the engine's choice).
 pub(crate) fn restart(world: &mut World) {
     let physics = world.player_physics();
     if let Some(view) = &mut world.view {
         *view = View::settled(&world.player, &world.level, &physics);
+        if let Some(placing) = &mut world.placing {
+            placing.opening = Opening::begin(&placing.placed.sections, view.y());
+        }
     }
 }
 
 /// Whether a walker starting at `start` (whole px) is near a view whose
-/// left edge is at `left` (whole px).
+/// left edge is at `left` (whole px). The window never reaches left of
+/// level x 1: while it would, it stays where it is with its left end
+/// there (placements.md, "When placed objects appear").
 pub(crate) fn near(start: i64, left: i64, physics: &Physics) -> bool {
     let width = physics[Param::ViewWidth].floor();
-    let from = left - physics[Param::AppearLeft].floor();
+    let reach = physics[Param::AppearLeft].floor();
+    let left = left.max(1 + reach);
+    let from = left - reach;
     let to = left + width + physics[Param::AppearRight].floor();
     (from..=to).contains(&start)
 }
@@ -376,8 +385,43 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 ///
 /// Stingers appear and are removed as walkers on their own do, and come
 /// back afresh (stinger.md).
-pub(crate) fn walkers(world: &mut World, left: i64, appear: bool) {
+///
+/// In a level with sections, its things in them appear only by the
+/// sections' rules ([`Placing`]), as walkers, throwers, balls and
+/// stingers otherwise would; other things there appear as they are
+/// placed. They are removed as they would be otherwise, and can then
+/// appear again. Things that aren't removed by the view stay gone once
+/// they leave by their own rule.
+pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) {
     let physics = world.player_physics();
+    if appear && let Some(placing) = &mut world.placing {
+        let placed = &placing.placed;
+        let there = &placing.there;
+        let window = Window::of(&physics);
+        let up = placing
+            .opening
+            .step(&placed.sections, &placed.spots, &window, (left, top), |i| {
+                there[i]
+            });
+        for i in up {
+            placing.there[i] = true;
+            for &e in &placed.entities[i] {
+                arrive(&mut world.things[e], world.level.entities[e].at);
+            }
+        }
+    }
+    let placing = world.placing.as_mut();
+    let (spot_of, mut there) = match placing {
+        Some(p) => (Some(&p.placed.spot_of), Some(&mut p.there)),
+        None => (None, None),
+    };
+    let in_spot = |index: usize| spot_of.and_then(|s| s.get(index).copied().flatten());
+    // A thing in a spot that the view removes is no longer there.
+    let mut removed = |index: usize| {
+        if let (Some(spot), Some(there)) = (in_spot(index), there.as_deref_mut()) {
+            there[spot] = false;
+        }
+    };
     let level = &world.level;
     // Each group's walkers: whether any start is near the view, and
     // whether every one in the level could be removed.
@@ -393,13 +437,7 @@ pub(crate) fn walkers(world: &mut World, left: i64, appear: bool) {
         }
     }
     for thing in &mut world.things {
-        let Some(Behavior::Walker {
-            facing,
-            appear_wait,
-            group,
-            ..
-        }) = thing.archetype.map(|a| a.behavior)
-        else {
+        let Some(Behavior::Walker { group, .. }) = thing.archetype.map(|a| a.behavior) else {
             continue;
         };
         let start = level.entities[thing.index].at;
@@ -411,18 +449,12 @@ pub(crate) fn walkers(world: &mut World, left: i64, appear: bool) {
             ),
         };
         if appear {
-            if !thing.active && thing.phase == Phase::Ready && start_near {
-                thing.active = true;
-                thing.pos = start;
-                thing.vx = Fixed::ZERO;
-                thing.facing = facing;
-                thing.heading = facing;
-                thing.turn = 0;
-                thing.clock = 0;
-                thing.wait = appear_wait;
+            if in_spot(thing.index).is_none() && start_near {
+                arrive(thing, start);
             }
         } else if thing.active && !start_near && far {
             thing.active = false;
+            removed(thing.index);
         }
     }
     for thing in &mut world.things {
@@ -432,28 +464,18 @@ pub(crate) fn walkers(world: &mut World, left: i64, appear: bool) {
         };
         let start = entity.at;
         let start_near = near(start.x.floor(), left, &physics);
+        let by_view = in_spot(thing.index).is_none();
         match archetype.behavior {
-            Behavior::Thrower { .. }
-                if appear && !thing.active && thing.phase == Phase::Ready && start_near =>
+            Behavior::Thrower { .. } | Behavior::Ball(_) | Behavior::Stinger(_)
+                if appear && by_view && start_near =>
             {
-                thing.active = true;
-                thing.clock = 0;
+                arrive(thing, start);
             }
             Behavior::Thrower { .. }
                 if !appear && thing.active && far(start.x.floor(), left, &physics) =>
             {
                 thing.active = false;
-            }
-            Behavior::Ball(_)
-                if appear && !thing.active && thing.phase == Phase::Ready && start_near =>
-            {
-                thing.active = true;
-                thing.pos = start;
-            }
-            // It starts afresh when it moves on this step.
-            Behavior::Stinger(_) if appear && !thing.active && start_near => {
-                thing.active = true;
-                thing.phase = Phase::Ready;
+                removed(thing.index);
             }
             Behavior::Stinger(_)
                 if !appear
@@ -462,9 +484,46 @@ pub(crate) fn walkers(world: &mut World, left: i64, appear: bool) {
                     && far(thing.pos.x.floor(), left, &physics) =>
             {
                 thing.active = false;
+                removed(thing.index);
             }
             _ => {}
         }
+    }
+}
+
+/// A thing that isn't in the level appearing at `start`: a walker at
+/// rest, heading the way it was placed, waiting its `appear_wait` steps;
+/// a thrower starting its timetable; a stinger afresh, even after being
+/// knocked out. Defeated walkers, knocked-out throwers and thrown balls
+/// don't appear.
+fn arrive(thing: &mut Thing, start: Vec2) {
+    if thing.active {
+        return;
+    }
+    let behavior = thing.archetype.map(|a| a.behavior);
+    if thing.phase != Phase::Ready && !matches!(behavior, Some(Behavior::Stinger(_))) {
+        return;
+    }
+    thing.active = true;
+    match behavior {
+        Some(Behavior::Walker {
+            facing,
+            appear_wait,
+            ..
+        }) => {
+            thing.pos = start;
+            thing.vx = Fixed::ZERO;
+            thing.facing = facing;
+            thing.heading = facing;
+            thing.turn = 0;
+            thing.clock = 0;
+            thing.wait = appear_wait;
+        }
+        Some(Behavior::Thrower { .. }) => thing.clock = 0,
+        Some(Behavior::Ball(_)) => thing.pos = start,
+        // It starts afresh when it moves on this step.
+        Some(Behavior::Stinger(_)) => thing.phase = Phase::Ready,
+        _ => {}
     }
 }
 
@@ -812,5 +871,16 @@ mod tests {
         assert!(!far(1884, 1500, &physics));
         assert!(far(1885, 1500, &physics));
         assert!(!far(1032 - 127, 1032, &physics));
+    }
+
+    #[test]
+    fn left_of_32_the_window_is_the_one_for_32() {
+        // spec/formats/placements.md, "When placed objects appear".
+        let physics = physics();
+        for left in [0, 11, 31, 32] {
+            assert!(near(1, left, &physics) && near(320, left, &physics));
+            assert!(!near(0, left, &physics) && !near(321, left, &physics));
+        }
+        assert!(near(321, 33, &physics) && !near(1, 33, &physics));
     }
 }

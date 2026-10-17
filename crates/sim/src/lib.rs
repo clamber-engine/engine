@@ -85,7 +85,7 @@ pub use pose::{Air, Pose, PoseClock, Stance, hurt_pose, pose, stance};
 pub use record::record;
 pub use ride::{RidePart, Riding};
 pub use script::{InputFrame, Script};
-pub use sections::{Opening, Sections, Spot, Window};
+pub use sections::{Opening, Placed, Placing, Sections, Spot, Window};
 pub use swap::{Move, Other, Recent, Swap};
 pub use swim::swim_depth;
 pub use things::{DEFEATED_FRAMES, LAUNCH_REST};

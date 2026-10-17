@@ -43,6 +43,31 @@ pub struct Level {
     pub lighting: Lighting,
     /// Point lights placed in the level.
     pub lights: Vec<Light>,
+    /// When entities appear, if they appear section by section as the
+    /// view goes; empty if they don't.
+    pub sections: Vec<Section>,
+}
+
+/// A run of entities that appear section by section: which sections are
+/// open depends on the path the view has taken, and the spots of an open
+/// section appear in their order as they come near the view.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Section {
+    pub spots: Vec<Spot>,
+    /// Where it meets the next section; `None` for the last.
+    pub meets: Option<Vec2>,
+}
+
+/// Entities in a section that appear together.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Spot {
+    /// Indices into the level's entities: one, or a group's.
+    pub entities: Vec<usize>,
+    /// Where it counts as being, if not where its first entity is.
+    pub at: Option<Vec2>,
+    /// Whether one entity also has to be within the view's rows to
+    /// appear.
+    pub rows: bool,
 }
 
 /// A colour as red, green and blue, written `#rrggbb`.
@@ -388,6 +413,28 @@ struct File {
     lighting: Option<LightingFile>,
     #[serde(default)]
     lights: Vec<LightFile>,
+    #[serde(default)]
+    sections: Vec<SectionFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SectionFile {
+    spots: Vec<SpotFile>,
+    meets: Option<[N; 2]>,
+}
+
+/// An entity's index, or a table.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SpotFile {
+    One(usize),
+    Table {
+        entities: Vec<usize>,
+        at: Option<[N; 2]>,
+        #[serde(default)]
+        rows: bool,
+    },
 }
 
 #[derive(Deserialize)]
@@ -609,7 +656,7 @@ impl Reader<'_> {
             .collect::<Result<_, _>>()?;
 
         let mut ids = BTreeSet::new();
-        let entities = f
+        let entities: Vec<Entity> = f
             .entities
             .into_iter()
             .enumerate()
@@ -664,6 +711,7 @@ impl Reader<'_> {
             .enumerate()
             .map(|(i, l)| self.light(&format!("lights[{i}]"), l))
             .collect::<Result<_, _>>()?;
+        let sections = self.sections(f.sections, entities.len())?;
 
         Ok(Level {
             name: f.name,
@@ -678,7 +726,65 @@ impl Reader<'_> {
             music,
             lighting,
             lights,
+            sections,
         })
+    }
+
+    fn sections(&self, f: Vec<SectionFile>, entities: usize) -> Result<Vec<Section>, LevelError> {
+        let last = f.len().saturating_sub(1);
+        let mut placed = BTreeSet::new();
+        f.into_iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let at = format!("sections[{i}]");
+                if (i < last) != s.meets.is_some() {
+                    let message = match s.meets {
+                        Some(_) => "the last section doesn't meet another",
+                        None => "missing `meets`, where it meets the next section",
+                    };
+                    return Err(self.err(&at, message));
+                }
+                let spots = s
+                    .spots
+                    .into_iter()
+                    .enumerate()
+                    .map(|(j, spot)| {
+                        let at = format!("{at}.spots[{j}]");
+                        let spot = match spot {
+                            SpotFile::One(e) => Spot {
+                                entities: vec![e],
+                                at: None,
+                                rows: false,
+                            },
+                            SpotFile::Table { entities, at, rows } => Spot {
+                                entities,
+                                at: at.map(v2),
+                                rows,
+                            },
+                        };
+                        if spot.entities.is_empty() {
+                            return Err(self.err(&at, "needs an entity"));
+                        }
+                        if spot.rows && spot.entities.len() > 1 {
+                            return Err(self.err(&at, "`rows` is for one entity"));
+                        }
+                        for &e in &spot.entities {
+                            if e >= entities {
+                                return Err(self.err(&at, format!("there's no entity {e}")));
+                            }
+                            if !placed.insert(e) {
+                                return Err(self.err(&at, format!("entity {e} is in two spots")));
+                            }
+                        }
+                        Ok(spot)
+                    })
+                    .collect::<Result<_, _>>()?;
+                Ok(Section {
+                    spots,
+                    meets: s.meets.map(v2),
+                })
+            })
+            .collect()
     }
 
     fn color(&self, at: &str, c: &str) -> Result<Rgb, LevelError> {
@@ -1290,6 +1396,34 @@ impl Level {
             Value::Table(rt)
         });
         insert_array(&mut t, "regions", regions);
+
+        let sections = self.sections.iter().map(|s| {
+            let spots = s.spots.iter().map(|spot| {
+                let index = |&e: &usize| Value::Integer(e as i64);
+                match spot.entities.as_slice() {
+                    [e] if spot.at.is_none() && !spot.rows => index(e),
+                    entities => {
+                        let mut pt = Table::new();
+                        let entities = entities.iter().map(index).collect();
+                        pt.insert("entities".into(), Value::Array(entities));
+                        if let Some(at) = spot.at {
+                            pt.insert("at".into(), pair(at));
+                        }
+                        if spot.rows {
+                            pt.insert("rows".into(), Value::Boolean(true));
+                        }
+                        Value::Table(pt)
+                    }
+                }
+            });
+            let mut st = Table::new();
+            st.insert("spots".into(), Value::Array(spots.collect()));
+            if let Some(meets) = s.meets {
+                st.insert("meets".into(), pair(meets));
+            }
+            Value::Table(st)
+        });
+        insert_array(&mut t, "sections", sections);
 
         let mut out = format!("# clamber level v{FORMAT}\n");
         out.push_str(&toml::to_string(&t).expect("level serializes"));

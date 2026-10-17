@@ -115,9 +115,9 @@ pub(crate) fn step(world: &mut World) {
     let physics = world.player_physics();
     let start_view = world.view;
     loss::tick(world);
-    let view_left = start_view.map(|v| v.x());
-    if let Some(left) = view_left {
-        view::walkers(world, left, true);
+    let view_at = start_view.map(|v| (v.x(), v.y()));
+    if let Some(at) = view_at {
+        view::walkers(world, at, true);
     }
     if follow::due(world) == Some(true) {
         follow::update(world, Lead::of(&world.player));
@@ -136,15 +136,15 @@ pub(crate) fn step(world: &mut World) {
     if follow::due(world).is_some() {
         follow::note(world);
     }
-    if let Some(left) = view_left {
-        view::walkers(world, left, false);
+    if let Some(at) = view_at {
+        view::walkers(world, at, false);
     }
     carry::after(world, &none);
     collect::update(world, false, start_view);
 
     let x = world.player.pos.x.floor();
     let fade_at = physics[Param::EndFadeAt].floor();
-    if ending.fade.is_none() && view_left.is_none_or(|left| x - left >= fade_at) {
+    if ending.fade.is_none() && view_at.is_none_or(|(left, _)| x - left >= fade_at) {
         ending.due = true;
     }
     if ending.fade == Some(frames(world.feel.world[Param::EndFadeTime])) {
