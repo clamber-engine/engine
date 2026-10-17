@@ -30,10 +30,11 @@ pub enum Kind {
     /// An object that can be carried and holds the missing character.
     Holder,
     EndMarker,
+    Stinger,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 12] = [
+    pub const ALL: [Kind; 13] = [
         Kind::SmallWalker,
         Kind::LargeWalker,
         Kind::Thrower,
@@ -46,6 +47,7 @@ impl Kind {
         Kind::Barrel,
         Kind::Holder,
         Kind::EndMarker,
+        Kind::Stinger,
     ];
 
     /// The kind's name in the spec, which is also its entities' kind.
@@ -63,6 +65,7 @@ impl Kind {
             Kind::Barrel => "barrel",
             Kind::Holder => "holder",
             Kind::EndMarker => "end-marker",
+            Kind::Stinger => "stinger",
         }
     }
 
@@ -115,6 +118,10 @@ impl Kind {
                 "crate"
             }
             Kind::EndMarker => END,
+            // A flying enemy that hurts on any contact. Placeholder until
+            // stingers get stinger.md's own behavior (#131); the
+            // first level has none.
+            Kind::Stinger => "flutter",
         };
         (kind, params)
     }
@@ -145,16 +152,48 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
     let rows: &[(&str, Kind)] = match title {
         "title-1" => &[
             (
+                "064bbe75bd3abfab4b38a24ad7b839fc30bdfc417023fd381ada77694e617ded",
+                Kind::Stinger,
+            ),
+            (
+                "0e1f45ccf4bc6e7a48005c73ce0003f0a0d0205fbb063ade26b4f1fe83877da0",
+                Kind::Stinger,
+            ),
+            (
                 "15ac2312a3f8d89089ee4c658cf1bee3df8b12254e7ebe4d7646b35028b932d6",
                 Kind::Letter(1),
+            ),
+            (
+                "15e5d66f8306cbb5fc446248adeed6c91374c587a91b124a466964d3c2afd580",
+                Kind::Stinger,
             ),
             (
                 "180898553bcc5b68269a895a68e20ed50a90d35c3a70a22caadff48695fbdd43",
                 Kind::Holder,
             ),
             (
+                "1dd6e0d8ec2f8e99c24863107071b385b740a4d0fe8f4c5c43f37d52952db345",
+                Kind::Stinger,
+            ),
+            (
+                "21186f287296d7b9c4bd4c75f0fbb40c006ecc509ea40745ba84abfa49e97f3b",
+                Kind::Stinger,
+            ),
+            (
+                "253004ec8ef2f867d9bacc7dcc6abeb4fa4ae6dc86d98336db33c32e11196e3a",
+                Kind::Stinger,
+            ),
+            (
+                "3b1534a2da04c2655ee410d9570846bf8da60ecabf7afa758b2e5cab13c547a0",
+                Kind::Stinger,
+            ),
+            (
                 "3e1f6c2f24fa461bc637adec8e62fe520d4f2a69e7cf8e0d950610235d2e3486",
                 Kind::Letter(4),
+            ),
+            (
+                "3f9e1b957059a405568bfd11ba7757786263483c98b2a01bb8e22cc9ae833735",
+                Kind::Stinger,
             ),
             (
                 "46a03d0df615a0aff54b9f2a823f9ead4e500b9ecdeb48c2fe2dfe37aa02431f",
@@ -165,12 +204,20 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::LargeWalker,
             ),
             (
+                "5fae0c706628b184dc3d2db99a589d70ce53d54750e685369dd03f73f71e7f06",
+                Kind::Stinger,
+            ),
+            (
                 "68ec177ef637f9d79142cd826f4de8d5b14836aa0067cee144d2c606eeaf9c52",
                 Kind::Letter(3),
             ),
             (
                 "705fd77a10893864d58f32885b437d1e741c3b935279dd4648a7c2282548d067",
                 Kind::Barrel,
+            ),
+            (
+                "765a7a9517d401764d141421814606b3c711a924352de8ea10d9878433fe40de",
+                Kind::Stinger,
             ),
             (
                 "7a0a5f16cbb9153611411aa5c6ed1aa024f8f2af6b87a221073c56f814c33e3d",
@@ -181,8 +228,16 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::Bunch,
             ),
             (
+                "96815bf167d1e7ae0187cf583b5e9cd05af19646c808ad1b8abb2fe09ad30e52",
+                Kind::Stinger,
+            ),
+            (
                 "a18b370140438f25f467370655a5c802ccd40f07be7e5296c81570fd169a9add",
                 Kind::SmallWalker,
+            ),
+            (
+                "a3917b33a073e05c714b57e8b4ca93dc514015f068d5d3ae7c8e89e64d7bcf08",
+                Kind::Stinger,
             ),
             (
                 "b0b7540b3c061784c8c319b69b0c7db7ed9c67a84d094cefd7b05fa52dcbe7a4",
@@ -197,8 +252,16 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::SmallWalker,
             ),
             (
+                "d95f1da6f034e0484756a23152ad6c3ecdc3bf418860bc083e55a33ef6cf6abc",
+                Kind::Stinger,
+            ),
+            (
                 "e2e5bad069370a387793f29708000e57f265a85fa38b598be9d019dec4259cc9",
                 Kind::EndMarker,
+            ),
+            (
+                "f44d17c1cc692790ebee841de128717e08b078d09eb11b1931a12c05fbe5c81c",
+                Kind::Stinger,
             ),
             (
                 "f85e5c914a63c73583c210056c33f883bcd8fecee32b42323bb458fb6f174819",
@@ -337,7 +400,7 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 15);
+        assert_eq!(want.len(), 29);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }

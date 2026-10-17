@@ -10,6 +10,7 @@ pub enum Data {
     SharedSampleList,
     SampleSetTable,
     SongTable,
+    EffectBlock,
     Grid,
     TypeTable,
     PackedTiles,
@@ -20,11 +21,12 @@ pub enum Data {
 }
 
 impl Data {
-    pub const ALL: [Data; 11] = [
+    pub const ALL: [Data; 12] = [
         Data::SampleTable,
         Data::SharedSampleList,
         Data::SampleSetTable,
         Data::SongTable,
+        Data::EffectBlock,
         Data::Grid,
         Data::TypeTable,
         Data::PackedTiles,
@@ -41,6 +43,7 @@ impl Data {
             Data::SharedSampleList => "Sound: shared sample list",
             Data::SampleSetTable => "Sound: sample-set table",
             Data::SongTable => "Sound: song table",
+            Data::EffectBlock => "Sound: sound-effect block",
             Data::Grid => "Level ground: the first level's grid",
             Data::TypeTable => "Level ground: the first level's type table",
             Data::PackedTiles => "Level graphics: the first level's packed tile data",
@@ -59,6 +62,7 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
         ("title-1", Data::SharedSampleList) => (0xCA, 0xB24A),
         ("title-1", Data::SampleSetTable) => (0xCA, 0xB212),
         ("title-1", Data::SongTable) => (0xCA, 0xB15E),
+        ("title-1", Data::EffectBlock) => (0xC9, 0x2D95),
         ("title-1", Data::Grid) => (0xD9, 0x0000),
         ("title-1", Data::TypeTable) => (0xD9, 0xED00),
         ("title-1", Data::PackedTiles) => (0xD5, 0x8FC0),
