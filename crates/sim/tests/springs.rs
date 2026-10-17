@@ -154,10 +154,7 @@ fn the_throw_follows_its_formula() {
 #[test]
 fn the_wobble_and_the_rest_after_a_throw() {
     // Thrown from a spring at rest on the floor and caught again on
-    // L + 25, with no input. The spec says the cycle then repeats every
-    // 40 frames, but with the fraction kept (U = 18.75), the next throw
-    // falls back 0.75 px higher and isn't touching on its L + 25: asked
-    // in clamber-engine/spec#37.
+    // L + 25, with no input.
     let (rows, c) = walk_in(100.0, 200);
     let l = c + 15;
     assert!(matches!(
@@ -178,6 +175,50 @@ fn the_wobble_and_the_rest_after_a_throw() {
             thrown: Some(8)
         }
     ));
+}
+
+#[test]
+fn throws_with_no_input_keep_the_fraction() {
+    // From a whole-pixel start, the spec's table: the catch is on L + 25
+    // while the fraction on L is below 0.25, else L + 26, and from the
+    // second cycle on a group of five repeats.
+    let table = [
+        (0.0, 25, 18.75),
+        (0.75, 26, 18.5625),
+        (0.5625, 26, 18.375),
+        (0.375, 26, 18.1875),
+        (0.1875, 25, 18.9375),
+        (0.9375, 26, 18.75),
+    ];
+    let (rows, c) = walk_in(100.0, 600);
+    let mut l = c + 15;
+    for cycle in 0..9 {
+        let (f, after, u) = table[if cycle < 6 { cycle } else { cycle - 5 }];
+        let n = cycle + 1;
+        assert_eq!(
+            (rows[l].u, rows[l].vy),
+            (fx(6.0 + f), fx(-6.0)),
+            "cycle {n}: L"
+        );
+        let k = catch(&rows, l);
+        assert_eq!(k - l, after, "cycle {n}: caught on L + {}", k - l);
+        assert_eq!(
+            (rows[k].u, rows[k].vy),
+            (fx(u), Fixed::ZERO),
+            "cycle {n}: caught"
+        );
+        l = k + 15;
+    }
+    let catches: Vec<usize> = (0..7)
+        .scan(c, |from, _| {
+            let k = catch(&rows, *from);
+            *from = k + 1;
+            Some(k)
+        })
+        .collect();
+    let lengths: Vec<usize> = catches.windows(2).map(|p| p[1] - p[0]).collect();
+    assert_eq!(lengths, [40, 41, 41, 41, 40, 41]);
+    assert_eq!(catches[6] - catches[1], 204, "a group of five cycles");
 }
 
 /// Stands the player on a spring at rest on the floor, caught walking
