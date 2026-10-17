@@ -2,8 +2,8 @@
 //! with a [`LevelDecoder`], loaded from the pack and played. None of the
 //! data is any real game's: it's made up from the format specs,
 //! `spec/formats/level-ground.md`, `spec/formats/graphics.md`,
-//! `spec/formats/placements.md`, `spec/formats/sound.md` and
-//! `spec/formats/songs.md`.
+//! `spec/formats/placements.md`, `spec/formats/level-start.md`,
+//! `spec/formats/sound.md` and `spec/formats/songs.md`.
 
 use std::fs;
 use std::path::PathBuf;
@@ -97,6 +97,12 @@ fn group_members() -> Vec<u8> {
     entries(&[[2, 320, 64, 0x7180], [0; 4]])
 }
 
+/// A start record: level x 24, 31 above the bottom edge, which is on the
+/// floor.
+fn start_record() -> Vec<u8> {
+    [24u16, 31].iter().flat_map(|w| w.to_le_bytes()).collect()
+}
+
 /// Where each part goes in the made-up image.
 fn parts() -> LevelParts {
     LevelParts {
@@ -109,6 +115,8 @@ fn parts() -> LevelParts {
         picture_table: Location::new(BANK, 0x6000),
         pictures: 5,
         placements: Some(Location::new(BANK, 0x7000)),
+        start: Some(Location::new(BANK, 0x7400)),
+        restart: None,
         song: Some(LevelSong {
             sample_table: Location::new(BANK, 0x8000),
             shared_samples: Location::new(BANK, 0x8010),
@@ -177,6 +185,7 @@ fn image() -> Image {
         (p.picture_table, pictures()),
         (p.placements.unwrap(), placement_list()),
         (Location::new(BANK, 0x7208), group_members()),
+        (p.start.unwrap(), start_record()),
         (Location::new(BANK, SAMPLE), sample_record()),
         (Location::new(BANK, SONG), song_block()),
     ]
@@ -244,7 +253,7 @@ fn writes_the_level_and_its_images() {
     }
     assert_eq!(level.name, "made-up level");
     assert_eq!(level.size, Vec2::ints(32 * COLUMNS as i32, 512));
-    assert_eq!(level.start, Vec2::ints(16, 481));
+    assert_eq!(level.start, Vec2::ints(24, 481));
     let names: Vec<&str> = level.layers.iter().map(|l| l.name.as_str()).collect();
     assert_eq!(names, ["far", "ground"]);
     assert!(level.surfaces.contains_key("normal"));
@@ -304,6 +313,24 @@ fn refuses_parts_past_the_end_of_the_image() {
     decoder.parts.grid = Location::new(BANK, 0xFF00);
     let err = decoder.level(&image()).unwrap_err();
     assert!(err.contains("grid"), "{err}");
+}
+
+/// Without a start record, the characters start on the highest surface
+/// near the left end.
+#[test]
+fn without_a_start_record_the_start_is_on_the_ground_at_the_left() {
+    let mut decoder = LevelDecoder {
+        title: "title-9".into(),
+        file: "first".into(),
+        name: "made-up level".into(),
+        parts: parts(),
+    };
+    decoder.parts.start = None;
+    let (level, _) = decoder.level(&image()).unwrap();
+    assert_eq!(level.start, Vec2::ints(16, 481));
+    decoder.parts.start = Some(Location::new(BANK, 0xFFFE));
+    let err = decoder.level(&image()).unwrap_err();
+    assert!(err.contains("start record"), "{err}");
 }
 
 /// Walking right across the whole level on `classic-1`, the player is

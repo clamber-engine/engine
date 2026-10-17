@@ -16,6 +16,11 @@ fn f(v: f64) -> Fixed {
 /// The spec's example: a keg at (1000, 400) over a floor at y = 409 from
 /// x = 0 to 3000, the player standing at `start` on it.
 fn world(start: i32) -> World {
+    world_with(start, "{}")
+}
+
+/// [`world`] with the keg's `params`.
+fn world_with(start: i32, params: &str) -> World {
     let src = format!(
         r#"
         format = 1
@@ -30,6 +35,7 @@ fn world(start: i32) -> World {
         [[entities]]
         type = "keg"
         at = [1000, 400]
+        params = {params}
         "#
     );
     let level = Arc::new(Level::from_toml_str(&src, "kegs").unwrap());
@@ -43,8 +49,12 @@ struct Play {
 
 impl Play {
     fn new(start: i32) -> Play {
+        Play::in_world(world(start))
+    }
+
+    fn in_world(world: World) -> Play {
         let mut play = Play {
-            world: world(start),
+            world,
             held: Actions::NONE,
         };
         play.step(&[]);
@@ -289,6 +299,23 @@ fn a_second_lost_life_resumes_there_again() {
     assert!(play.world.resume.is_some());
     play.step(&[]);
     assert!(play.world.in_keg());
+}
+
+/// level-start.md, "The first level": the restart point is the level's
+/// restart record's, wherever the barrel is. A keg's `restart` moves it
+/// from the keg's position.
+#[test]
+fn a_keg_s_restart_moves_the_restart_point() {
+    let mut play = Play::in_world(world_with(900, "{ restart = [-60, 9] }"));
+    play.touch_and_fall_out();
+    let w = &play.world;
+    assert_eq!(w.player.pos, Vec2::ints(940, 409));
+    assert_eq!(w.view.unwrap().x(), 861);
+    assert_eq!(w.restart_point(0), Vec2::ints(940, 409));
+    play.step(&[]);
+    assert!(play.world.in_keg());
+    assert_eq!(play.y(), 409.0 - 8.5625);
+    assert_eq!(play.world.resume_keg().map(|at| at.y), Some(f(409.0)));
 }
 
 /// Without the keg touched, play begins again at the level's start, as

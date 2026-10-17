@@ -166,7 +166,7 @@ pub(crate) fn dying(world: &mut World) -> bool {
         world.flow.events.push(FlowEvent::GameOver);
     } else {
         let at = match world.flow.checkpoints.last() {
-            Some(&i) => world.level.entities[i].at,
+            Some(&i) => world.restart_point(i),
             None => world.level.start,
         };
         let character = world.player.character;

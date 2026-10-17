@@ -329,6 +329,9 @@ pub const HIDDEN_ITEMS: [&str; 3] = ["cluster", "crate", "canister"];
 /// in from black from frame `fade_from`, a step every `fade_step` frames.
 /// The first landing after that has a landing lockout of `land_lockout`
 /// frames.
+///
+/// The restart point is `restart` px from the keg's position (+y down),
+/// [0, 0] if not given.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Keg {
     pub contact: Contact,
@@ -345,6 +348,7 @@ pub struct Keg {
     pub fade_from: u8,
     pub fade_step: u8,
     pub land_lockout: u8,
+    pub restart: Vec2,
 }
 
 /// How many pieces a keg breaks into.
@@ -1161,6 +1165,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "fade_from",
             "fade_step",
             "land_lockout",
+            "restart",
         ],
         "hidden" => &[
             "across",
@@ -1643,6 +1648,17 @@ fn parse_keg(table: &Table, path: &str) -> Result<Keg, String> {
         }
         shake[i] = (from, a, b);
     }
+    let restart = match table.get("restart") {
+        None => Vec2::default(),
+        Some(Value::Array(xy)) if xy.len() == 2 => {
+            let at = format!("{path}.restart");
+            Vec2::new(
+                number(&xy[0], &format!("{at}[0]"))?,
+                number(&xy[1], &format!("{at}[1]"))?,
+            )
+        }
+        Some(_) => return Err(format!("{path}.restart: expected [x, y]")),
+    };
     Ok(Keg {
         contact: parse_contact(get("contact")?, &format!("{path}.contact"))?,
         pieces,
@@ -1657,6 +1673,7 @@ fn parse_keg(table: &Table, path: &str) -> Result<Keg, String> {
         fade_from: frames("fade_from")?,
         fade_step: frames("fade_step")?.max(1),
         land_lockout: frames("land_lockout")?,
+        restart,
     })
 }
 

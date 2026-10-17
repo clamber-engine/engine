@@ -5,8 +5,9 @@
 //! the end of a step, after its move, are within the keg's contact
 //! ranges for its pose and facing then ([`touch`]). It breaks: it's gone
 //! for the rest of the visit, a [`Burst`] of pieces and a flash is left
-//! in its place, and the level's restart point is reached, which is the
-//! keg's position, as a checkpoint's is (`Flow::checkpoints`).
+//! in its place, and the level's restart point is reached: the keg's
+//! position moved by its `restart`, where a checkpoint's is its position
+//! (`Flow::checkpoints`, [`World::restart_point`]).
 //!
 //! After a lost life with a keg's restart point reached, play resumes
 //! there inside one ([`Resume`]): the step the player comes back on is
@@ -88,6 +89,16 @@ impl Burst {
 }
 
 impl World {
+    /// Where play comes back after a lost life with the checkpoint or keg
+    /// of thing `index` reached.
+    pub fn restart_point(&self, index: usize) -> Vec2 {
+        let at = self.level.entities[index].at;
+        match keg(self, index) {
+            Some(k) => Vec2::new(at.x + k.restart.x, at.y + k.restart.y),
+            None => at,
+        }
+    }
+
     /// Whether the player is inside a keg, waiting for it to burst.
     pub fn in_keg(&self) -> bool {
         self.resume.is_some_and(|r| {
@@ -199,7 +210,7 @@ pub(crate) fn begin(world: &mut World) {
     let Some(keg) = keg(world, index) else {
         return;
     };
-    let at = world.level.entities[index].at;
+    let at = world.restart_point(index);
     world.resume = Some(Resume {
         keg: index,
         frame: 0,

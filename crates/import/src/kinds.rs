@@ -173,10 +173,10 @@ impl Kind {
             // at their start. The first level has none.
             Kind::Stinger => "stinger",
             // restart-barrel.md's values are the archetype's own. The
-            // level's restart point is the barrel's position, as in the
-            // first level; how to tell it from the level's data isn't
-            // covered.
-            Kind::RestartBarrel => "keg",
+            // level's restart point is its restart record's, where it has
+            // one ([`crate::LevelDecoder`]), and the barrel's position
+            // otherwise.
+            Kind::RestartBarrel => KEG,
             // tyre.md's values are the archetype's own. The first level
             // has none.
             Kind::Tyre => "spring",
@@ -248,6 +248,9 @@ pub const END: &str = "end";
 /// The kind of entity that marks the level's entrance. The simulation
 /// doesn't act on it yet.
 pub const ENTRANCE: &str = "entrance";
+
+/// The archetype restart barrels are.
+pub const KEG: &str = "keg";
 
 /// The archetype hidden objects are, as in `clamber-sim`.
 pub const HIDDEN: &str = "hidden";

@@ -651,7 +651,9 @@ hit_ball_early = [27, 47, 52, 50]
 # touches it by the ranges for its pose, the ball's poses with the ball's
 # timings; `above` is the spec's D turned around (the player's feet line
 # less the keg's position). Touched, it breaks into four pieces and a
-# flash, and the level's restart point, its position, is reached.
+# flash, and the level's restart point is reached: its position, moved
+# by `restart` ([x, y] px, +y down) where a level's restart point isn't
+# the barrel's (spec/formats/level-start.md).
 # Resuming there, the player waits in a keg `lift` px above it until it
 # bursts on frame `burst`, with the view `view_back` px left of it on
 # frame 0, and the keg shakes by `shake`: [from, first, second] stages,

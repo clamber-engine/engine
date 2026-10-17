@@ -116,6 +116,8 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
         picture_table: at(Data::PictureTable)?,
         pictures,
         placements: Some(at(Data::PlacementList)?),
+        start: Some(at(Data::StartRecord)?),
+        restart: Some(at(Data::RestartRecord)?),
         // `sound.md`: "The first level plays song 0".
         song: Some(LevelSong {
             sample_table: at(Data::SampleTable)?,
@@ -205,6 +207,8 @@ mod tests {
         let parts = first_level("title-1").unwrap();
         assert_eq!(parts.grid, Location::new(0xD9, 0));
         assert_eq!(parts.placements, Some(Location::new(0xFD, 0x95DC)));
+        assert_eq!(parts.start, Some(Location::new(0xFC, 0xBF78)));
+        assert_eq!(parts.restart, Some(Location::new(0xFC, 0xBFB4)));
         assert_eq!(
             parts.song.map(|s| (s.song_table, s.song)),
             Some((Location::new(0xCA, 0xB15E), 0))
