@@ -288,6 +288,16 @@ pub struct Player {
     /// change, and Jump must stay held on the frames it holds still for
     /// the held gravity.
     pub unseated: bool,
+    /// Hopped off an animal, until it lands: facing doesn't change, and
+    /// this many landing frames follow the landing (see
+    /// [`ride`](crate::ride)).
+    pub hopped_off: Option<u8>,
+    /// Jumped off an animal on the last step: this one is the jump's
+    /// take-off frame.
+    pub jumping_off: bool,
+    /// Where the animal got off on this step was left, and the way it
+    /// faces, until the animal is put there.
+    pub left: Option<(Vec2, Facing)>,
     /// The smallest feet line it has had at the end of a step since it
     /// last stood on a floor, while in the air (see
     /// [`hidden`](crate::hidden)).
@@ -392,6 +402,9 @@ impl Player {
             swim_turn: None,
             riding: None,
             unseated: false,
+            hopped_off: None,
+            jumping_off: false,
+            left: None,
             fall_top: None,
             spring: None,
             spring_arc: None,
@@ -450,6 +463,8 @@ impl Player {
         self.face_press = false;
         self.takeoff = false;
         self.takeoff_wait = None;
+        self.hopped_off = None;
+        self.jumping_off = false;
         self.state = State::Fall;
     }
 
@@ -475,6 +490,7 @@ impl Player {
         self.takeoff = false;
         self.takeoff_wait = None;
         self.unseated = false;
+        self.hopped_off = None;
         self.end_roll();
         self.ground_action = None;
         if !events.contains(&Event::Bounce) {
@@ -493,7 +509,8 @@ impl Player {
         self.pos.y += whole(feet + (-self.pos.y).floor());
         self.vel.y = Fixed::ZERO;
         self.frozen = hold;
-        self.jump_hold = false;
+        // Kept for riding's held gravity, from a jump on foot only.
+        self.jump_hold &= self.jump_age.is_some();
         self.face_press = false;
         self.takeoff = false;
         self.takeoff_wait = None;
@@ -538,6 +555,7 @@ impl Player {
             self.fall_step = false;
             self.fall_facing = 0;
             self.unseated = false;
+            self.hopped_off = None;
             self.rope_fall = false;
             self.hop = None;
             self.state = self.next_state(self.ran, &[]);
@@ -614,6 +632,7 @@ impl Player {
         self.rope_run = false;
         self.rope_fall = false;
         self.unseated = false;
+        self.hopped_off = None;
         self.frozen = 0;
         self.sling = Some(slung);
         self.state = State::Fall;
@@ -1368,9 +1387,11 @@ impl Player {
         } else {
             // With `crouch_in_air`, a crouch goes on in a fall off a ledge.
             let in_fall = crouch_in_air && self.walked_off && self.crouch.held > 0;
+            // Down doesn't count on the frame after a hop's landing.
+            let hop_landed = matches!(self.gait, Gait::Landing(l) if l.bounce && l.frame == 0);
             self.crouch.update(
                 down && !busy.no_crouch,
-                (self.grounded() || in_fall) && !rolling,
+                (self.grounded() || in_fall) && !rolling && !hop_landed,
                 physics,
             )
         };
@@ -1444,6 +1465,7 @@ impl Player {
             || keep_takeoff_facing
             || keep_bounce_facing
             || self.unseated
+            || self.hopped_off.is_some()
             || self.rope_fall
             || (keep_walk_off_facing && !air_gait)
         {
@@ -1929,6 +1951,14 @@ impl Player {
         if self.roll_stop == 0 {
             self.stopped = None;
         }
+        if std::mem::take(&mut self.jumping_off) && !self.grounded() {
+            // A jump off an animal takes off after moving as in the air.
+            self.vel.y = -physics[Param::JumpSpeed];
+            self.approach = None;
+            self.rolled_jump = false;
+            self.state = State::Jump;
+            events.push(Event::JumpStart);
+        }
         let jump_age = if events.contains(&Event::JumpStart) {
             Some(0)
         } else {
@@ -1960,7 +1990,7 @@ impl Player {
                 Some(land) if switch_from > 0 && !self.rolled_jump => {
                     self.switch_wait(land, physics)
                 }
-                _ if self.state == State::Bounce
+                _ if (self.state == State::Bounce || self.hopped_off.is_some())
                     && physics[Param::BounceLandingSwitch] > Fixed::ZERO =>
                 {
                     (0, 1 + frames(physics[Param::LandingModeWait]))
@@ -1984,12 +2014,28 @@ impl Player {
                         switch,
                         settle,
                         fixed: false,
+                        bounce: false,
                     })
                 };
             }
             let landed = strides && self.grounded() && self.roll.is_none();
             let fall_landing = frames(physics[Param::FaceFallLanding]);
-            if landed && self.walked_off && self.walked_off_face && !self.rolled_off {
+            if landed && let Some(settle) = self.hopped_off {
+                // After a hop off an animal the player is in no gait for
+                // a while, then starts one as on a bounce's landing frame;
+                // with Action and a direction held, it runs at once.
+                self.gait = if held(Action::Action) && held_dir != 0 {
+                    Gait::Running(Stride::START)
+                } else {
+                    Gait::Landing(Landing {
+                        frame: 0,
+                        switch: u8::MAX,
+                        settle,
+                        fixed: true,
+                        bounce: true,
+                    })
+                };
+            } else if landed && self.walked_off && self.walked_off_face && !self.rolled_off {
                 if fall_landing > 0 {
                     // After a fall off a steep face the player is in no
                     // gait for a while, then starts one as at the end of
@@ -1999,6 +2045,7 @@ impl Player {
                         switch: u8::MAX,
                         settle: fall_landing,
                         fixed: true,
+                        bounce: false,
                     });
                 }
             } else if landed
@@ -2018,6 +2065,7 @@ impl Player {
                     Gait::Standing
                 };
             }
+            self.hopped_off = None;
         }
         if pushed {
             self.push_down_face(level, events, jump_age, self.target - push, physics);
@@ -2685,6 +2733,20 @@ impl Player {
                     Gait::Running(Stride::START)
                 } else {
                     Gait::Walking(Stride::START)
+                }
+            }
+            // At the end of a hop's landing frames, as on a bounce's
+            // landing frame.
+            Gait::Landing(landing) if landing.bounce => {
+                if action && dir != 0 {
+                    Gait::Running(Stride::START)
+                } else if opposite {
+                    turn = true;
+                    Gait::Standing
+                } else if dir == forward {
+                    Gait::Walking(Stride::START)
+                } else {
+                    Gait::Standing
                 }
             }
             // Standing, at the end of a turn, or at the end of a fall's
@@ -3590,6 +3652,8 @@ pub struct Landing {
     /// After a fall rather than a jump: facing doesn't change, and the
     /// gait starts on `settle` as at the end of a turn.
     pub fixed: bool,
+    /// ... or, after a hop off an animal, as on a bounce's landing frame.
+    pub bounce: bool,
 }
 
 /// Progress through the stride cycle while walking or running.

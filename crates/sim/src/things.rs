@@ -522,7 +522,11 @@ fn advance(
             return false;
         }
         // Crates holding an animal move in [`hutch::update`].
-        Phase::Opened(_) | Phase::Mounted(_) | Phase::Ridden | Phase::Bolting { .. } => {
+        Phase::Opened(_)
+        | Phase::Mounted(_)
+        | Phase::Ridden
+        | Phase::Bolting { .. }
+        | Phase::Waiting(_) => {
             return false;
         }
         Phase::Swaying { .. } => {

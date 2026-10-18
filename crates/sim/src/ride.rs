@@ -1,5 +1,5 @@
 //! Riding an animal (spec/behavior/riding.md, riding-slopes.md,
-//! riding-faces.md).
+//! riding-faces.md, getting-off.md).
 //!
 //! A rider has none of the player's own moves. Its speed across eases
 //! toward a target set by Left or Right, faster with Action, closing a
@@ -30,6 +30,13 @@
 //! rider up. One that reached the rider at the end of a step knocks it
 //! off the animal on the next: the player holds still with everything
 //! else for a while, then falls on foot, and the animal runs off.
+//!
+//! A Tandem press gets off (spec/behavior/getting-off.md): with a riding
+//! jump starting on that frame it's a **jump off**, which takes off on
+//! the next frame as a jump on foot; otherwise a **hop off**, whose
+//! landing is followed by landing frames before the player's own moves
+//! start. The animal is left where the rider was (see
+//! [`hutch`](crate::hutch)).
 
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame};
@@ -134,6 +141,10 @@ pub struct Riding {
     /// one the charge under way started from, was pressed: it uses
     /// `held_jump_gravity`.
     pub held: bool,
+    /// Jump has been held on every frame since the press of the jump on
+    /// foot the player mounted from: a charge or a hop off uses
+    /// `held_jump_gravity`.
+    pub mounted_held: bool,
     /// Where the feet are put at the start of the next frame, the first
     /// one riding.
     pub mount: Option<Fixed>,
@@ -163,6 +174,7 @@ impl Riding {
             was_on_floor: false,
             press: None,
             held: false,
+            mounted_held: false,
             push: Fixed::ZERO,
             fell: false,
             approach: None,
@@ -188,12 +200,18 @@ impl Player {
         let ride = r.ride;
         let held = |a| input.held.contains(a);
         let pressed = |a| input.pressed.contains(a);
-        if let Some(y) = r.mount.take() {
+        // Getting off on the first riding frame starts from where the
+        // mount left the player.
+        let off = pressed(Action::Tandem);
+        if let Some(y) = r.mount.take()
+            && !off
+        {
             self.put_down(level, y, events);
         }
         let steered = r.steer;
         r.steered = steered;
         let grounded = self.grounded();
+        let last = r.part;
         r.part = r.part.next(&ride, r.landing);
         r.approach = r.approach.map(|age| age.saturating_add(1));
 
@@ -218,7 +236,25 @@ impl Player {
         };
         r.press = r.press.filter(|&age| age <= ride.jump_memory);
         r.held &= held(Action::Jump);
-        if r.press.is_some() && r.on_floor && !steered && face.is_none() {
+        r.mounted_held &= held(Action::Jump);
+        let jumps = r.press.is_some() && r.on_floor && !steered && face.is_none();
+        if off {
+            // A riding jump starting now makes it a jump off, with the
+            // held gravity; otherwise it's a hop, with the held gravity
+            // in a jump that has it, or after a mount that does. Down with
+            // an Action press on the floor gets off into the ground action,
+            // which the spec doesn't cover yet; that's a hop here too.
+            let in_jump = !matches!(
+                last,
+                RidePart::Riding | RidePart::Turn(_) | RidePart::Settling
+            );
+            let light = jumps || (held(Action::Jump) && ((r.held && in_jump) || r.mounted_held));
+            self.get_off(
+                level, physics, input, &ride, dir, steered, jumps, light, events,
+            );
+            return;
+        }
+        if jumps {
             r.press = None;
             r.part = RidePart::Jump(0);
             r.held = true;
@@ -243,7 +279,7 @@ impl Player {
                     age: 0,
                     steered: from_jump,
                 };
-                r.held &= from_jump;
+                r.held = (r.held && from_jump) || r.mounted_held;
             }
         }
         if !steered
@@ -388,6 +424,63 @@ impl Player {
         };
     }
 
+    /// Gets off the animal on this frame, with `dir` held: the speed across
+    /// follows the riding rule, steered or not, and facing turns to `dir`
+    /// on a steered frame. Then the player is on foot in the air, moving
+    /// up at `off_rise` less the frame's gravity, the held one if `light`.
+    /// A jump off takes off on the next frame; a hop off keeps its facing
+    /// until it lands. The animal stays where the rider was.
+    #[allow(clippy::too_many_arguments)]
+    fn get_off(
+        &mut self,
+        level: &Level,
+        physics: &Physics,
+        input: &Frame,
+        ride: &Ride,
+        dir: i32,
+        steered: bool,
+        jump: bool,
+        light: bool,
+        events: &mut Vec<Event>,
+    ) {
+        self.left = Some((self.pos, self.facing));
+        let speed = if input.held.contains(Action::Action) {
+            ride.run_speed
+        } else {
+            ride.speed
+        };
+        let response = if steered {
+            ride.steer_response
+        } else {
+            ride.response
+        };
+        self.target = speed * Fixed::from_int(dir);
+        let vx = ease(self.vel.x, self.target, response);
+        if steered && dir != 0 && facing_of(dir) != self.facing {
+            self.facing = facing_of(dir);
+            events.push(Event::Turn);
+        }
+        let gravity = if light {
+            physics[Param::HeldJumpGravity]
+        } else {
+            physics[Param::Gravity]
+        };
+        self.riding = None;
+        self.launch(Vec2::new(vx, gravity - ride.off_rise), events);
+        self.jump_hold = light;
+        self.jump_held_since_press = light;
+        self.jump_buffer.take();
+        self.lockout = 0;
+        let moved = self.move_in_air_by_columns(level, physics, events);
+        self.ride_vertically(level, physics, moved, events);
+        self.state = State::Jump;
+        if jump {
+            self.jumping_off = true;
+        } else {
+            self.hopped_off = Some(ride.off_landing);
+        }
+    }
+
     /// Moves up or down in the air by the frame's speed after moving
     /// `moved` across. Falling, it lands on the floor of the column holding
     /// `x`, the highest top that isn't above the feet, as the player does;
@@ -502,7 +595,7 @@ pub(crate) fn attack(world: &mut World) {
                 _ => false,
             };
             r.part = RidePart::Rush { steered: from_jump };
-            r.held &= from_jump;
+            r.held = (r.held && from_jump) || r.mounted_held;
             r.steer = r.part.steers();
             world.player.riding = Some(r);
         }

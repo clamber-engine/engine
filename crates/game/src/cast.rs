@@ -338,7 +338,9 @@ fn thing_animation(world: &World, thing: &Thing) -> Option<&'static str> {
             });
             return Some(if out { "animal" } else { "break" });
         }
-        Phase::Mounted(_) | Phase::Ridden | Phase::Bolting { .. } => return Some("animal"),
+        Phase::Mounted(_) | Phase::Ridden | Phase::Bolting { .. } | Phase::Waiting(_) => {
+            return Some("animal");
+        }
         Phase::Squashed { .. } | Phase::Wobbling { .. } => {
             // A spring is drawn squashed while its top is below where
             // it rests.

@@ -622,6 +622,19 @@ pub struct Ride {
     pub bolt_dash: u8,
     pub bolt_glide: Fixed,
     pub bolt_response: Fixed,
+    /// Getting off (a Tandem press), the player's speed becomes `off_rise`
+    /// up, plus the frame's gravity. After a hop off, `off_landing`
+    /// landing frames follow the landing.
+    pub off_rise: Fixed,
+    pub off_landing: u8,
+    /// An animal left above the floor falls: `drop_first` on the first
+    /// frame, `drop_second` on the next, and `drop_gravity` more on each
+    /// frame than the one before. It's put on the floor once a move would
+    /// leave it less than `drop_land` above it.
+    pub drop_first: Fixed,
+    pub drop_second: Fixed,
+    pub drop_gravity: Fixed,
+    pub drop_land: Fixed,
 }
 
 /// How a walker meets a player riding an animal
@@ -2686,7 +2699,7 @@ fn parse_hutch(table: &Table, path: &str) -> Result<Hutch, String> {
 
 /// Reads how an animal is ridden. Errors start with `path`.
 fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
-    const KEYS: [&str; 31] = [
+    const KEYS: [&str; 37] = [
         "speed",
         "run_speed",
         "response",
@@ -2718,6 +2731,12 @@ fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
         "bolt_dash",
         "bolt_glide",
         "bolt_response",
+        "off_rise",
+        "off_landing",
+        "drop_first",
+        "drop_second",
+        "drop_gravity",
+        "drop_land",
     ];
     let Value::Table(table) = value else {
         return Err(format!("{path}: expected a table"));
@@ -2777,6 +2796,12 @@ fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
         bolt_dash: frames("bolt_dash")?,
         bolt_glide: number("bolt_glide")?,
         bolt_response: number("bolt_response")?,
+        off_rise: number("off_rise")?,
+        off_landing: frames("off_landing")?,
+        drop_first: number("drop_first")?,
+        drop_second: number("drop_second")?,
+        drop_gravity: number("drop_gravity")?,
+        drop_land: number("drop_land")?,
     })
 }
 

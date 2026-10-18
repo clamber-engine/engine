@@ -191,6 +191,9 @@ pub enum Phase {
     Ridden,
     /// An animal whose rider was knocked off, running off at `vx`.
     Bolting { vx: Fixed },
+    /// An animal its rider got off, where it was left: falling for this
+    /// many frames, or standing there until it's got on again.
+    Waiting(Option<u8>),
     /// A stinger swaying around its start, with its vertical speed and
     /// its target speeds (see [`stinger`](crate::stinger)).
     Swaying { vy: Fixed, tx: Fixed, ty: Fixed },
@@ -675,6 +678,7 @@ impl World {
                 Phase::Caught(since) => [23, since],
                 Phase::LetGo { wait, .. } => [24, wait],
                 Phase::Flitting { .. } => [25, 0],
+                Phase::Waiting(falling) => [26, falling.map_or(0, |n| n.saturating_add(1))],
             });
             if let Phase::Wobbling { thrown, .. } = t.phase {
                 out.push(thrown.map_or(0, |n| n.saturating_add(1)));
@@ -1056,6 +1060,8 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     }
     out.push(p.hop.map_or(0, |n| n.saturating_add(1)));
     out.push(p.unseated.into());
+    out.push(p.hopped_off.map_or(0, |n| n.saturating_add(1)));
+    out.push(p.jumping_off.into());
     match p.fall_top {
         Some(feet) => {
             out.push(1);

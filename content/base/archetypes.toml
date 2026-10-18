@@ -320,8 +320,18 @@
 #   else for `knock_hold` frames, then falls on foot, facing as it was
 #   until it lands. The animal runs off the way the rider faced, after
 #   those frames: at `bolt_speed` for `bolt_dash` frames, then easing
-#   toward `bolt_glide` by `bolt_response` of the gap a frame. Only the
-#   character under control breaks a crate or mounts an animal.
+#   toward `bolt_glide` by `bolt_response` of the gap a frame. A Tandem
+#   press gets off: the speed across follows the riding rule once more,
+#   the speed up becomes `off_rise` plus the frame's gravity, and the
+#   player is on foot in the air. With a riding jump starting, it's a
+#   jump off, taking off on the next frame; otherwise a hop off, facing as
+#   it was until `off_landing` landing frames after it lands. The animal
+#   stays where the rider was, facing the same way; above the floor it
+#   falls `drop_first`, then `drop_second`, then `drop_gravity` more on
+#   each frame, until it would be less than `drop_land` above the floor.
+#   It's got on again as from the crate, its ranges turned around if it
+#   faces left. Only the character under control breaks a crate or
+#   mounts an animal.
 # - `keg`: a restart barrel, centred on its position, which never moves.
 #   The character under control touches it by its `contact` table, as a
 #   ball's without a turn, at the end of a frame after its move; it then
@@ -575,7 +585,7 @@ mount_above = [5, 45]
 mount_hold = 22
 
 # Riding the animal (spec/behavior/riding.md, riding-slopes.md,
-# riding-faces.md, riding-walkers.md). Getting off it isn't covered yet.
+# riding-faces.md, riding-walkers.md, getting-off.md).
 [archetypes.hutch.ride]
 speed = 2
 run_speed = 3.5
@@ -610,6 +620,13 @@ bolt_speed = 6
 bolt_dash = 5
 bolt_glide = 4
 bolt_response = 0.125
+# Getting off (getting-off.md).
+off_rise = 6
+off_landing = 9
+drop_first = 0.4375
+drop_second = 0.44140625
+drop_gravity = 0.4375
+drop_land = 5
 
 # title-1's thrower and balls (spec/behavior/thrower.md). The spec
 # doesn't say how big either is; the sizes are Clamber's own and only
