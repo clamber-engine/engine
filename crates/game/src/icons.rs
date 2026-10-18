@@ -66,6 +66,22 @@ impl UiArt {
         animation.frames.iter().map(|&i| &self.sheet.frames[i])
     }
 
+    /// The frame of the looping animation `name` showing `age` frames
+    /// after it started.
+    pub fn frame_at(&self, name: &str, age: u32) -> &Frame {
+        let frames: Vec<_> = self.frames(name).collect();
+        let period: u32 = frames.iter().map(|f| f.ticks).sum();
+        let mut t = age % period.max(1);
+        frames
+            .into_iter()
+            .find(|f| {
+                let here = t < f.ticks;
+                t = t.saturating_sub(f.ticks);
+                here
+            })
+            .unwrap_or_else(|| panic!("{name} covers its period"))
+    }
+
     /// Draws the part `src` of the sheet's image at `dst` (left, top,
     /// right and bottom, in view units).
     pub fn draw(&self, surface: &mut dyn Surface, src: Rect, dst: [f32; 4], opacity: u8) {

@@ -69,6 +69,7 @@ mod sound;
 mod sprites;
 mod surface;
 mod text;
+mod title;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

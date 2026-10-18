@@ -1,0 +1,52 @@
+{
+  "frames": [
+    {
+      "filename": "logo logo 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 1605,
+        "h": 356
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 302,
+        "y": 114,
+        "w": 1605,
+        "h": 356
+      },
+      "sourceSize": {
+        "w": 2200,
+        "h": 640
+      },
+      "duration": 17,
+      "ticks": 1
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "logo.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1609,
+      "h": 360
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "logo",
+        "from": 0,
+        "to": 0,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 1100,
+        "y": 320
+      },
+      "scale": 10
+    }
+  }
+}

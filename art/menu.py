@@ -46,35 +46,6 @@ BEAM = 0.34
 WOOD = "#8a5a32"
 
 
-def textured(name, dark, light, kind, scale, axis="X", bump=0.3, roughness=0.8):
-    """A material mottled between two `#rrggbb` colours by a noise texture,
-    or grained along `axis` by a wave texture, with a little relief."""
-    mat = cr.material(name, dark, roughness=roughness)
-    nodes, links = mat.node_tree.nodes, mat.node_tree.links
-    shader = nodes["Principled BSDF"]
-    coords = nodes.new("ShaderNodeTexCoord")
-    if kind == "wave":
-        tex = nodes.new("ShaderNodeTexWave")
-        tex.bands_direction = axis
-        tex.inputs["Distortion"].default_value = 6.0
-        tex.inputs["Detail"].default_value = 3.0
-    else:
-        tex = nodes.new("ShaderNodeTexNoise")
-        tex.inputs["Detail"].default_value = 6.0
-    tex.inputs["Scale"].default_value = scale
-    links.new(coords.outputs["Object"], tex.inputs["Vector"])
-    ramp = nodes.new("ShaderNodeValToRGB")
-    ramp.color_ramp.elements[0].color = (*cr.linear(dark), 1.0)
-    ramp.color_ramp.elements[1].color = (*cr.linear(light), 1.0)
-    links.new(tex.outputs["Fac"], ramp.inputs["Fac"])
-    links.new(ramp.outputs["Color"], shader.inputs["Base Color"])
-    relief = nodes.new("ShaderNodeBump")
-    relief.inputs["Strength"].default_value = bump
-    links.new(tex.outputs["Fac"], relief.inputs["Height"])
-    links.new(relief.outputs["Normal"], shader.inputs["Normal"])
-    return mat
-
-
 def leaf(name, mat, length, location, angle):
     """A leaf `length` long from its stem at `location`, pointing `angle`
     degrees counterclockwise from the right, as the camera sees it."""
@@ -123,23 +94,23 @@ def corner(rig, sx, sz, moss, leaves):
 def build():
     rig = cr.Rig("menu", [(piece, (0, 0, -0.9), (0, 0, 0.9), None) for piece in PIECES])
 
-    slate = textured("slate", "#1c2228", "#323a42", "noise", 3.0, bump=0.15, roughness=0.9)
+    slate = cr.textured("slate", "#1c2228", "#323a42", "noise", 3.0, bump=0.15, roughness=0.9)
     rig.attach("panel", cr.box("slab", slate, (4.6, 0.2, 3.0), (0, 0.12, 0), bevel=0.2))
-    across = textured("beam across", "#5e3c22", WOOD, "wave", 1.4, "Z")
-    down = textured("beam down", "#5e3c22", WOOD, "wave", 1.4, "X")
+    across = cr.textured("beam across", "#5e3c22", WOOD, "wave", 1.4, "Z")
+    down = cr.textured("beam down", "#5e3c22", WOOD, "wave", 1.4, "X")
     for sz in (-1, 1):
         rig.attach("panel", cr.box(f"beam {sz}", across, (4.8, 0.36, BEAM),
                                    (0, 0, sz * (1.6 - BEAM / 2)), bevel=0.7))
     for sx in (-1, 1):
         rig.attach("panel", cr.box(f"post {sx}", down, (BEAM, 0.36, 3.2 - 2 * BEAM),
                                    (sx * (2.4 - BEAM / 2), 0.02, 0), bevel=0.7))
-    moss = textured("moss", "#2e5a26", "#6aa040", "noise", 12.0, bump=0.6, roughness=0.95)
+    moss = cr.textured("moss", "#2e5a26", "#6aa040", "noise", 12.0, bump=0.6, roughness=0.95)
     leaves = cr.material("leaves", "#4c9a3a", roughness=0.6, sheen=0.3)
     for sx in (-1, 1):
         for sz in (-1, 1):
             corner(rig, sx, sz, moss, leaves)
 
-    plank = textured("plank", "#7a4e28", "#b07c48", "wave", 1.0, "Z", bump=0.15, roughness=0.6)
+    plank = cr.textured("plank", "#7a4e28", "#b07c48", "wave", 1.0, "Z", bump=0.15, roughness=0.6)
     rig.attach("highlight", cr.prism("plank", plank, stadium(3.6, 0.7), 0.16, bevel=0.06))
 
     stone = cr.glow("stone", "#3ee0b0", 0.35)[0]

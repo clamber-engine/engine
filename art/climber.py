@@ -255,7 +255,9 @@ def pose(rig, name, i, count):
         raise ValueError(name)
 
 
-cr.run(
-    "player", build, pose, FRAME, ORIGIN, ANIMATIONS, variants=VARIANTS,
-    hurtbox=lambda rig: [p for p in rig.parts if not p.name.startswith("bobble")],
-)
+
+if __name__ == "__main__":
+    cr.run(
+        "player", build, pose, FRAME, ORIGIN, ANIMATIONS, variants=VARIANTS,
+        hurtbox=lambda rig: [p for p in rig.parts if not p.name.startswith("bobble")],
+    )

@@ -75,17 +75,7 @@ pub fn draw_highlight(surface: &mut dyn Surface, dst: [f32; 4], opacity: u8) {
 /// after it first showed.
 pub fn draw_cursor(surface: &mut dyn Surface, (x, y): (f32, f32), age: u32) {
     let art = art();
-    let frames: Vec<_> = art.frames("cursor").collect();
-    let period: u32 = frames.iter().map(|f| f.ticks).sum();
-    let mut t = age % period;
-    let frame = frames
-        .iter()
-        .find(|f| {
-            let here = t < f.ticks;
-            t = t.saturating_sub(f.ticks);
-            here
-        })
-        .expect("the turn covers its period");
+    let frame = art.frame_at("cursor", age);
     let k = CURSOR_SCALE;
     let left = x + frame.offset.0 as f32 * k;
     let top = y + frame.offset.1 as f32 * k;

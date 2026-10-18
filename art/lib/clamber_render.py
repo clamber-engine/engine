@@ -159,6 +159,72 @@ def material(name, color, roughness=0.55, sheen=0.0):
     return mat
 
 
+def textured(name, dark, light, kind, scale, axis="X", bump=0.3, roughness=0.8):
+    """A material mottled between two `#rrggbb` colours by a noise texture,
+    or grained along `axis` by a wave texture, with a little relief."""
+    mat = material(name, dark, roughness=roughness)
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    shader = nodes["Principled BSDF"]
+    coords = nodes.new("ShaderNodeTexCoord")
+    if kind == "wave":
+        tex = nodes.new("ShaderNodeTexWave")
+        tex.bands_direction = axis
+        tex.inputs["Distortion"].default_value = 6.0
+        tex.inputs["Detail"].default_value = 3.0
+    else:
+        tex = nodes.new("ShaderNodeTexNoise")
+        tex.inputs["Detail"].default_value = 6.0
+    tex.inputs["Scale"].default_value = scale
+    links.new(coords.outputs["Object"], tex.inputs["Vector"])
+    ramp = nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].color = (*linear(dark), 1.0)
+    ramp.color_ramp.elements[1].color = (*linear(light), 1.0)
+    links.new(tex.outputs["Fac"], ramp.inputs["Fac"])
+    links.new(ramp.outputs["Color"], shader.inputs["Base Color"])
+    relief = nodes.new("ShaderNodeBump")
+    relief.inputs["Strength"].default_value = bump
+    links.new(tex.outputs["Fac"], relief.inputs["Height"])
+    links.new(relief.outputs["Normal"], shader.inputs["Normal"])
+    return mat
+
+
+def mossy(mat, dark="#2e5a26", light="#6aa040", amount=0.5):
+    """Grows moss over `mat`'s upward faces, ragged at its edge. More
+    `amount`, 0 to 1, reaches further down the sides: at 0.5, faces
+    turned more than about 60 degrees from straight up stay bare."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    shader = nodes["Principled BSDF"]
+    under = shader.inputs["Base Color"].links[0].from_socket
+    geometry = nodes.new("ShaderNodeNewGeometry")
+    up = nodes.new("ShaderNodeSeparateXYZ")
+    links.new(geometry.outputs["Normal"], up.inputs["Vector"])
+    coords = nodes.new("ShaderNodeTexCoord")
+    noise = nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 9.0
+    noise.inputs["Detail"].default_value = 8.0
+    links.new(coords.outputs["Object"], noise.inputs["Vector"])
+    ragged = nodes.new("ShaderNodeMath")
+    ragged.operation = "MULTIPLY_ADD"
+    links.new(noise.outputs["Fac"], ragged.inputs[0])
+    ragged.inputs[1].default_value = 0.5
+    links.new(up.outputs["Z"], ragged.inputs[2])
+    edge = nodes.new("ShaderNodeMapRange")
+    edge.inputs["From Min"].default_value = 1.2 - amount
+    edge.inputs["From Max"].default_value = 1.3 - amount
+    links.new(ragged.outputs["Value"], edge.inputs["Value"])
+    ramp = nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].color = (*linear(dark), 1.0)
+    ramp.color_ramp.elements[1].color = (*linear(light), 1.0)
+    links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+    mix = nodes.new("ShaderNodeMix")
+    mix.data_type = "RGBA"
+    links.new(edge.outputs["Result"], mix.inputs["Factor"])
+    links.new(under, mix.inputs[6])
+    links.new(ramp.outputs["Color"], mix.inputs[7])
+    links.new(mix.outputs[2], shader.inputs["Base Color"])
+    return mat
+
+
 def glow(name, color, strength):
     """A material that gives off light of an `#rrggbb` colour, as well as
     painted in it. Returns the material and its strength input, for

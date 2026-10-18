@@ -1,0 +1,242 @@
+{
+  "frames": [
+    {
+      "filename": "title rock 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 816,
+        "h": 390
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 54,
+        "y": 579,
+        "w": 816,
+        "h": 390
+      },
+      "sourceSize": {
+        "w": 960,
+        "h": 990
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "title wave 0",
+      "frame": {
+        "x": 820,
+        "y": 2,
+        "w": 211,
+        "h": 509
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 383,
+        "y": 127,
+        "w": 211,
+        "h": 509
+      },
+      "sourceSize": {
+        "w": 960,
+        "h": 990
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "title wave 1",
+      "frame": {
+        "x": 1033,
+        "y": 2,
+        "w": 210,
+        "h": 500
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 386,
+        "y": 134,
+        "w": 210,
+        "h": 500
+      },
+      "sourceSize": {
+        "w": 960,
+        "h": 990
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "title wave 2",
+      "frame": {
+        "x": 1245,
+        "y": 2,
+        "w": 209,
+        "h": 497
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 388,
+        "y": 136,
+        "w": 209,
+        "h": 497
+      },
+      "sourceSize": {
+        "w": 960,
+        "h": 990
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "title wave 3",
+      "frame": {
+        "x": 1456,
+        "y": 2,
+        "w": 210,
+        "h": 500
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 386,
+        "y": 134,
+        "w": 210,
+        "h": 500
+      },
+      "sourceSize": {
+        "w": 960,
+        "h": 990
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "title wave 4",
+      "frame": {
+        "x": 1668,
+        "y": 2,
+        "w": 211,
+        "h": 509
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 383,
+        "y": 127,
+        "w": 211,
+        "h": 509
+      },
+      "sourceSize": {
+        "w": 960,
+        "h": 990
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "title wave 5",
+      "frame": {
+        "x": 2,
+        "y": 513,
+        "w": 213,
+        "h": 515
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 380,
+        "y": 122,
+        "w": 213,
+        "h": 515
+      },
+      "sourceSize": {
+        "w": 960,
+        "h": 990
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "title wave 6",
+      "frame": {
+        "x": 217,
+        "y": 513,
+        "w": 214,
+        "h": 518
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 378,
+        "y": 120,
+        "w": 214,
+        "h": 518
+      },
+      "sourceSize": {
+        "w": 960,
+        "h": 990
+      },
+      "duration": 67,
+      "ticks": 4
+    },
+    {
+      "filename": "title wave 7",
+      "frame": {
+        "x": 433,
+        "y": 513,
+        "w": 213,
+        "h": 515
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 380,
+        "y": 122,
+        "w": 213,
+        "h": 515
+      },
+      "sourceSize": {
+        "w": 960,
+        "h": 990
+      },
+      "duration": 67,
+      "ticks": 4
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "title.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1881,
+      "h": 1033
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "rock",
+        "from": 0,
+        "to": 0,
+        "direction": "forward"
+      },
+      {
+        "name": "wave",
+        "from": 1,
+        "to": 8,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 480,
+        "y": 630
+      },
+      "scale": 15
+    }
+  }
+}

@@ -34,6 +34,7 @@ use crate::report;
 use crate::sound::{Cue, cues};
 use crate::surface::Surface;
 use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred};
+use crate::title::{draw_logo, draw_scene};
 use crate::{SPRITES, content_dir, load_game};
 
 /// Where the credits screen's lines start, and how many show at once.
@@ -238,6 +239,9 @@ pub struct Session {
     pub file_request: Option<PathBuf>,
     /// The kind of device the last button was pressed on.
     pub device: Device,
+    /// Frames the title screen has shown for, all told: its logo comes
+    /// in the first time only.
+    pub title_frames: u32,
 }
 
 impl Session {
@@ -265,6 +269,7 @@ impl Session {
             file_dialog: false,
             file_request: None,
             device: Device::Keyboard,
+            title_frames: 0,
         }
     }
 
@@ -297,6 +302,9 @@ impl Session {
             return;
         }
         let frame = everyone(input);
+        if let Screen::Title(_) = self.screen {
+            self.title_frames = self.title_frames.saturating_add(1);
+        }
         match self.screen {
             Screen::Map => return self.step_map(&frame),
             Screen::Choosing(..) => return self.step_choosing(&frame),
@@ -1051,15 +1059,18 @@ impl Session {
                 return;
             }
             Screen::Title(menu) => {
-                draw_text_centred(canvas, centre, 40, "CLAMBER", TITLE);
+                draw_logo(canvas, centre as f32, self.title_frames);
+                draw_scene(canvas, menu.age);
+                // Under the logo, which is under the HUD's top row.
+                let top = 44;
                 let name = &self.game.world.level.name;
                 if !name.is_empty() {
-                    draw_text_centred(canvas, centre, 40 + 2 * LINE, name, SUBTITLE);
+                    draw_text_centred(canvas, centre, top + 2 * LINE, name, SUBTITLE);
                 }
                 if self.pack.is_some() {
-                    draw_text_centred(canvas, centre, 40 + 3 * LINE, PERSONAL, FAILED);
+                    draw_text_centred(canvas, centre, top + 3 * LINE, PERSONAL, FAILED);
                 }
-                (menu, 40 + 5 * LINE)
+                (menu, top + 5 * LINE)
             }
             Screen::Paused(menu) => {
                 draw_text_centred(canvas, centre, 70, "PAUSED", HEADING);
@@ -1797,7 +1808,7 @@ mod tests {
         s.game.draw(&mut playing, 1.0);
         let mut title = Game::canvas();
         s.draw(&mut title, 1.0);
-        assert!(title.pixels.contains(&TITLE));
+        assert_ne!(title.get(192, 35), playing.get(192, 35), "the logo");
         assert!(title.pixels.contains(&SUBTITLE), "the level's name");
         assert_ne!(title.get(0, 100), playing.get(0, 100));
 
