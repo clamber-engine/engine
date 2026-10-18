@@ -92,7 +92,7 @@ use clamber_fixed::Fixed;
 use clamber_level::{Dir, Level, Vec2};
 use clamber_pack::{Param, Physics};
 
-use crate::archetype::{Archetype, Behavior, Fall, Response};
+use crate::archetype::{Archetype, Behavior, Fall, Hit, Response};
 use crate::carry;
 use crate::columns;
 use crate::critter;
@@ -779,12 +779,15 @@ fn knocked(
 /// in the spec, so it's the first placed. The object goes on as it was,
 /// unless it holds the missing character: then it breaks.
 ///
+/// An object holding nothing also knocks out the first thrower its
+/// thrower box holds, and goes on as it was (see [`knock_out`]).
+///
 /// One holding the character that hits no walker breaks on the first
 /// thrower or ball, in that order, whose position its thrower or ball box
 /// holds (see [`Holder`](crate::Holder)). A thrower it breaks on is
-/// knocked out: it holds still on the next step, the last of the join's
-/// (see [`join`]), and leaves from the one after as a defeated walker
-/// does. A ball it breaks on is gone.
+/// knocked out the same way: it holds still on the next step, the last
+/// of the join's (see [`join`]), and leaves from the one after. A ball
+/// it breaks on is gone.
 ///
 /// Returns where each object holding the character broke.
 fn throw_hits(world: &mut World) -> Vec<Vec2> {
@@ -798,6 +801,9 @@ fn throw_hits(world: &mut World) -> Vec<Vec2> {
             hit,
             hit_early,
             hit_early_time,
+            thrower,
+            thrower_early,
+            thrower_turn,
             holder,
             ..
         } = archetype.behavior
@@ -811,51 +817,78 @@ fn throw_hits(world: &mut World) -> Vec<Vec2> {
         let early = flight.age <= hit_early_time;
         let pos = object.pos;
         let reach = if early { hit_early } else { hit }.bounds(pos, right);
-        if hit_walker(world, reach, right) {
-            if holder.is_some() {
-                world.things[i].active = false;
-                freed.push(pos);
-            }
+        let walker = hit_walker(world, reach, right);
+        if walker && holder.is_some() {
+            world.things[i].active = false;
+            freed.push(pos);
             continue;
         }
+        let thrower = if early { thrower_early } else { thrower };
+        let thrower = thrower_at(world, thrower, thrower_turn, pos, right);
         let Some(holder) = holder else {
-            continue;
-        };
-        let (thrower, ball) = if early {
-            (holder.thrower_early, holder.ball_early)
-        } else {
-            (holder.thrower, holder.ball)
-        };
-        let target = world.things.iter_mut().find(|t| {
-            t.active
-                && match t.archetype.map(|a| a.behavior) {
-                    Some(Behavior::Thrower { .. }) => {
-                        t.phase == Phase::Ready && thrower.holds(pos, right, t.pos)
-                    }
-                    Some(Behavior::Ball(_)) => {
-                        matches!(t.phase, Phase::Ready | Phase::Flying { .. })
-                            && ball.holds(pos, right, t.pos)
-                    }
-                    _ => false,
-                }
-        });
-        let Some(target) = target else {
-            continue;
-        };
-        match target.archetype.and_then(|a| a.behavior.fall()) {
-            Some(defeat) => {
-                target.phase = Phase::Falling {
-                    vy: -defeat.jump,
-                    hold: 1,
-                };
-                world.flow.events.push(FlowEvent::Defeat(target.index));
+            if let Some(index) = thrower {
+                knock_out(world, index);
             }
-            None => target.active = false,
+            continue;
+        };
+        match thrower {
+            Some(index) => knock_out(world, index),
+            None => {
+                let ball = if early {
+                    holder.ball_early
+                } else {
+                    holder.ball
+                };
+                let target = world.things.iter_mut().find(|t| {
+                    t.active
+                        && t.archetype
+                            .is_some_and(|a| matches!(a.behavior, Behavior::Ball(_)))
+                        && matches!(t.phase, Phase::Ready | Phase::Flying { .. })
+                        && ball.holds(pos, right, t.pos)
+                });
+                let Some(target) = target else {
+                    continue;
+                };
+                target.active = false;
+            }
         }
         world.things[i].active = false;
         freed.push(pos);
     }
     freed
+}
+
+/// The first thrower that isn't knocked out whose position an object at
+/// `pos`, moving right if `right`, holds in its thrower box `hit`, moved
+/// `turn` px left moving left (see [`Behavior::Carry`]).
+fn thrower_at(world: &World, hit: Hit, turn: Fixed, pos: Vec2, right: bool) -> Option<usize> {
+    let pos = if right {
+        pos
+    } else {
+        Vec2::new(pos.x - turn, pos.y)
+    };
+    world.things.iter().position(|t| {
+        t.active
+            && t.phase == Phase::Ready
+            && t.archetype
+                .is_some_and(|a| matches!(a.behavior, Behavior::Thrower { .. }))
+            && hit.holds(pos, right, t.pos)
+    })
+}
+
+/// Knocks out a thrower an object met: it holds still on the next step
+/// too, then falls as a thrower knocked out by a bounce does, a step
+/// sooner (thrown-objects.md, "Hitting the thrower"). The speed across
+/// it's given on the hit isn't kept: it's 0 again before it moves.
+fn knock_out(world: &mut World, index: usize) {
+    let thrower = &mut world.things[index];
+    if let Some(defeat) = thrower.archetype.and_then(|a| a.behavior.fall()) {
+        thrower.phase = Phase::Falling {
+            vy: -defeat.jump,
+            hold: 1,
+        };
+        world.flow.events.push(FlowEvent::Defeat(thrower.index));
+    }
 }
 
 /// Knocks back the first walker that's walking whose box overlaps
@@ -890,10 +923,17 @@ fn hit_walker(world: &mut World, reach: (Fixed, Fixed, Fixed, Fixed), right: boo
 /// hands, a walker its `hit_early` box touches in the hands knocks back
 /// and breaks an object holding the missing character, as one thrown the
 /// way the player faces. Returns where it broke, if it did.
+///
+/// One holding nothing breaks in the hands on a thrower its
+/// `thrower_early` box holds then, and while carried on one its
+/// `thrower` box holds, the way the player faces, and knocks it out (see
+/// [`knock_out`]). A throw goes on without it; carried, the player is no
+/// longer carrying it.
 fn hands_hits(world: &mut World, physics: &Physics) -> Option<Vec2> {
     let hands = world.player.hands?;
     let release = frames(physics[Param::ThrowRelease]);
-    if hands.act != Act::Throw || hands.frame == 0 || hands.frame >= release {
+    let throwing = hands.act == Act::Throw && hands.frame > 0 && hands.frame < release;
+    if !throwing && hands.act != Act::Carry {
         return None;
     }
     let object = &world.things[hands.thing];
@@ -902,7 +942,10 @@ fn hands_hits(world: &mut World, physics: &Physics) -> Option<Vec2> {
     }
     let Some(Behavior::Carry {
         hit_early,
-        holder: Some(_),
+        thrower,
+        thrower_early,
+        thrower_turn,
+        holder,
         ..
     }) = object.archetype.map(|a| a.behavior)
     else {
@@ -910,11 +953,22 @@ fn hands_hits(world: &mut World, physics: &Physics) -> Option<Vec2> {
     };
     let pos = carry::in_hands(&world.player);
     let right = world.player.facing == Facing::Right;
-    if !hit_walker(world, hit_early.bounds(pos, right), right) {
-        return None;
+    if holder.is_some() {
+        if !throwing || !hit_walker(world, hit_early.bounds(pos, right), right) {
+            return None;
+        }
+        world.things[hands.thing].active = false;
+        return Some(pos);
     }
+    let hit = if throwing { thrower_early } else { thrower };
+    let index = thrower_at(world, hit, thrower_turn, pos, right)?;
+    knock_out(world, index);
+    // Its pieces aren't in the spec.
     world.things[hands.thing].active = false;
-    Some(pos)
+    if !throwing {
+        world.player.hands = None;
+    }
+    None
 }
 
 /// Whether a walker of `archetype` at `pos` facing `facing` is in a

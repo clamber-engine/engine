@@ -68,14 +68,20 @@ pub enum Behavior {
     /// An object the player can pick up, carry, throw and put down
     /// (see [`carry`](crate::carry)), from `reach` px away or closer.
     /// Thrown, it hits walkers its `hit` box touches, or its `hit_early`
-    /// box for its first `hit_early_time` frames out of the hands. With a
-    /// `holder`, it holds the missing character. With `opens`, it opens
-    /// wall exits.
+    /// box for its first `hit_early_time` frames out of the hands. It
+    /// knocks out throwers its `thrower` box holds, or its
+    /// `thrower_early` box early on or in the hands during a throw
+    /// ([`Hit::holds`]); moving left, both are turned around and then
+    /// moved `thrower_turn` px left. With a `holder`, it holds the missing
+    /// character. With `opens`, it opens wall exits.
     Carry {
         reach: Fixed,
         hit: Hit,
         hit_early: Hit,
         hit_early_time: u8,
+        thrower: Hit,
+        thrower_early: Hit,
+        thrower_turn: Fixed,
         holder: Option<Holder>,
         opens: Option<Opens>,
     },
@@ -1074,14 +1080,12 @@ impl Hit {
 /// What makes an object hold the missing character: it frees it when it
 /// breaks (see [`carry`](crate::carry)). Thrown, it also breaks outside
 /// `window` around the picture, as a [`Ball`] is removed, and on throwers
-/// and balls its `thrower` and `ball` boxes hold, or their early boxes
-/// for its first `hit_early_time` frames out of the hands
-/// ([`Hit::holds`]).
+/// its [`Behavior::Carry`] boxes hold and balls its `ball` box holds, or
+/// their early boxes for its first `hit_early_time` frames out of the
+/// hands ([`Hit::holds`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Holder {
     pub window: (i32, i32, i32, i32),
-    pub thrower: Hit,
-    pub thrower_early: Hit,
     pub ball: Hit,
     pub ball_early: Hit,
 }
@@ -1326,6 +1330,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "holder_window",
             "hit_thrower",
             "hit_thrower_early",
+            "hit_thrower_turn",
             "hit_ball",
             "hit_ball_early",
             "hit_wall_exit",
@@ -1632,6 +1637,10 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                     _ => Err(format!("{at}: expected [behind, ahead, above, below]")),
                 }
             };
+            let thrower_turn = match table.contains_key("hit_thrower_turn") {
+                true => number("hit_thrower_turn")?,
+                false => Fixed::ZERO,
+            };
             let hit_early_time = match get("hit_early_time")? {
                 Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => *n as u8,
                 _ => {
@@ -1644,8 +1653,6 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 None | Some(Value::Boolean(false)) => None,
                 Some(Value::Boolean(true)) => Some(Holder {
                     window: edges(get("holder_window")?, &format!("{path}.holder_window"))?,
-                    thrower: hit("hit_thrower")?,
-                    thrower_early: hit("hit_thrower_early")?,
                     ball: hit("hit_ball")?,
                     ball_early: hit("hit_ball_early")?,
                 }),
@@ -1666,6 +1673,9 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 hit: hit("hit")?,
                 hit_early: hit("hit_early")?,
                 hit_early_time,
+                thrower: hit("hit_thrower")?,
+                thrower_early: hit("hit_thrower_early")?,
+                thrower_turn,
                 holder,
                 opens,
             }
@@ -3453,6 +3463,8 @@ mod tests {
         };
         assert!(matches!(resolve(""), Behavior::Carry { holder: None, .. }));
         let Behavior::Carry {
+            thrower,
+            thrower_early,
             holder: Some(holder),
             ..
         } = resolve("holds_character = true")
@@ -3461,8 +3473,8 @@ mod tests {
         };
         assert_eq!(holder.window, (31, 32, 31, 32));
         let rows = [
-            (holder.thrower_early, (-55, 37), (-47, 65)),
-            (holder.thrower, (-30, 36), (-23, 32)),
+            (thrower_early, (-55, 37), (-47, 65)),
+            (thrower, (-30, 36), (-23, 32)),
             (holder.ball_early, (-47, 27), (-52, 50)),
             (holder.ball, (-21, 27), (-25, 20)),
         ];

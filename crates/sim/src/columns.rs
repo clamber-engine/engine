@@ -97,6 +97,39 @@ pub(crate) fn floor_in_air(level: &Level, column: i64, feet: Fixed) -> Option<Fl
         })
 }
 
+/// The floor of `column` for a thrown object at `y`: the top of the
+/// ground that holds `y`, even above it, or else of the nearest ground
+/// below, down to two steps. Ground whose top is more than a step above
+/// `y` isn't a floor: the object moves on as if there were none
+/// (thrown-objects.md, "The floor of a column"). One-way platforms count
+/// as other ground does, so an object below a platform's underside has
+/// the floor under the platform.
+pub(crate) fn object_floor(level: &Level, column: i64, y: Fixed) -> Option<Floor> {
+    spans(level, column)
+        .into_iter()
+        .find(|s| s.bottom >= y)
+        .filter(|s| s.top >= y - STEP && s.top <= y + STEP + STEP)
+        .map(|s| Floor {
+            y: s.top,
+            collider: s.collider,
+        })
+}
+
+/// The ground in `column` that stops a thrown object rising from `y` to
+/// `to`, as it stops a rising player's feet (see
+/// [`Player`](crate::Player)): ground that isn't one-way, whose
+/// underside `y` is below, with `to` rounded up in it, below its top and
+/// level with its underside or above. Returns how far the stop moves the
+/// object back down from `to`: the whole px it rose.
+pub(crate) fn stops_rise(level: &Level, column: i64, y: Fixed, to: Fixed) -> Option<Fixed> {
+    let (before, after) = (ceil(y), ceil(to));
+    let line = Fixed::from_int(after as i32);
+    spans(level, column)
+        .into_iter()
+        .any(|s| !s.one_way && y > s.bottom && s.top < line && line <= s.bottom)
+        .then(|| Fixed::from_int((before - after) as i32))
+}
+
 /// Whether `column` is in a sloped piece of ground: of the runs of
 /// `piece` columns from x = 0, one where the floor, as seen by a body
 /// with its feet at `feet`, climbs or falls between two neighbouring
@@ -250,11 +283,13 @@ pub(crate) fn blocks(
     }
 }
 
-/// Whether a body at `feet` moving `dir` (-1 or 1) from column `from`
-/// runs into `column` as into a wall: its floor is higher than the feet
-/// and holds from below, and the column is part of a steep face climbing
-/// the way the body moves, or the floor climbs into it from `from` by
-/// more than a step, or there's no floor at `from` to climb from.
+/// Whether a thrown object at `feet` moving `dir` (-1 or 1) from column
+/// `from` runs into `column` as into a wall: the column is part of a
+/// steep face climbing the way the object moves, and its floor for the
+/// object ([`object_floor`]) is higher than the feet; or its floor is
+/// higher than the feet and climbs into it from `from` by more than a
+/// step, or there's no floor at `from` to climb from. One-way ground is
+/// run into as other ground is.
 pub(crate) fn hits_side(
     level: &Level,
     from: i64,
@@ -263,17 +298,12 @@ pub(crate) fn hits_side(
     feet: Fixed,
     slope: Fixed,
 ) -> bool {
-    let Some(f) = floor(level, column, feet) else {
-        return false;
-    };
-    let one_way = spans(level, column)
-        .iter()
-        .any(|s| s.collider == f.collider && s.one_way);
-    if f.y >= feet || one_way {
-        return false;
+    let higher = object_floor(level, column, feet).is_some_and(|f| f.y < feet);
+    if higher && face(level, column, feet, slope) == Some(-dir) {
+        return true;
     }
-    let into = rise(level, from, column, feet);
-    face(level, column, feet, slope) == Some(-dir) || into.is_none_or(|h| h > STEP)
+    floor(level, column, feet).is_some_and(|f| f.y < feet)
+        && rise(level, from, column, feet).is_none_or(|h| h > STEP)
 }
 
 /// Whether the floor `ahead` columns from `column` in direction `dir` is
@@ -412,6 +442,50 @@ mod tests {
         assert_eq!(blocks(&under_platform(-4, -1), 20, 1, feet, slope()), None);
     }
 
+    /// thrown-objects.md, "The floor of a column": inside a platform's
+    /// layer up to a step below its top, the top is the floor; lower in
+    /// it there's none; below its underside, the floor under it.
+    #[test]
+    fn a_thrown_objects_floor_can_be_a_step_above_it() {
+        let level = under_platform(-20, -4);
+        let y = |feet: f64| {
+            object_floor(&level, 25, Fixed::from_f64(feet).unwrap()).map(|f| f.y.to_f64())
+        };
+        assert_eq!(y(-40.0), None);
+        assert_eq!(y(-30.0), Some(-20.0));
+        assert_eq!(y(-25.0), Some(-20.0));
+        assert_eq!(y(-12.0), Some(-20.0));
+        assert_eq!(y(-11.5), None);
+        assert_eq!(y(-4.0), None);
+        assert_eq!(y(-3.5), Some(0.0));
+        assert_eq!(y(0.0), Some(0.0));
+        // Solid ground too.
+        assert_eq!(y(4.0), Some(0.0));
+        assert_eq!(y(8.5), None);
+    }
+
+    /// thrown-objects.md, "Ground passable from below": rising into
+    /// ground that isn't one-way from below its underside stops, keeping
+    /// the whole px; a one-way platform doesn't.
+    #[test]
+    fn solid_ground_stops_a_rise_from_below() {
+        let src = "format = 1\nname = \"p\"\nsize = [100, 100]\nstart = [0, 0]\n\
+                   [[collision]]\nshape = \"rect\"\nrect = [0, -20, 10, 16]\n\
+                   [[collision]]\nshape = \"rect\"\nrect = [20, -20, 10, 16]\n\
+                   one_way = true\n";
+        let level = Level::from_toml_str(src, "p").unwrap();
+        let f = |v: f64| Fixed::from_f64(v).unwrap();
+        let stop = |column, y, to| stops_rise(&level, column, f(y), f(to)).map(|b| b.to_f64());
+        // From 1.25 below the underside to 0.5 above it: back 2 px.
+        assert_eq!(stop(5, -2.75, -4.5), Some(2.0));
+        // Ending on the underside is in the ground.
+        assert_eq!(stop(5, -2.75, -4.0), Some(2.0));
+        assert_eq!(stop(5, -2.75, -3.5), None);
+        // Level with the top or above, it isn't.
+        assert_eq!(stop(5, -2.75, -20.5), None);
+        assert_eq!(stop(25, -2.75, -4.5), None);
+    }
+
     #[test]
     fn a_single_steep_step_isnt_a_face() {
         let level = staircase(&[0, 0, -4, -4, -4]);
@@ -432,7 +506,9 @@ mod tests {
         let feet = Fixed::ZERO;
         assert!(!hits_side(&level, 0, 1, 1, feet, slope()));
         assert!(hits_side(&level, 1, 2, 1, feet, slope()));
-        assert!(hits_side(&level, 3, 4, 1, feet, slope()));
+        assert!(hits_side(&level, 3, 4, 1, Fixed::from_int(-5), slope()));
+        // More than a step below a face column's floor, it isn't there.
+        assert!(!hits_side(&level, 3, 4, 1, feet, slope()));
         // Level with its floor or above it, nothing is hit.
         assert!(!hits_side(&level, 1, 2, 1, Fixed::from_int(-1), slope()));
         // Going the other way, the face falls.

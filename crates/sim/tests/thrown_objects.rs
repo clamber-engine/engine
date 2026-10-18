@@ -41,13 +41,18 @@ const FLAT: &str = "[[collision]]\nshape = \"rect\"\nrect = [0, 400, 3000, 200]"
 /// face rising to the right starts: its first column's floor is 1 px
 /// higher than the flat floor, and each one after it 4 px higher again.
 fn face() -> String {
+    face_of("")
+}
+
+/// [`face`], with `more` added to its collider.
+fn face_of(more: &str) -> String {
     let mut points = vec![[0, 600], [0, 400], [400, 400]];
     for k in 0..10 {
         let y = 399 - 4 * k;
         points.extend([[400 + k, y], [401 + k, y]]);
     }
     points.extend([[600, 363], [600, 600]]);
-    format!("[[collision]]\nshape = \"polygon\"\npoints = {points:?}")
+    format!("[[collision]]\nshape = \"polygon\"\npoints = {points:?}\n{more}")
 }
 
 fn f(v: f64) -> Fixed {
@@ -321,4 +326,291 @@ fn hits_a_walker_later_by_the_smaller_area() {
             assert_eq!(w.y - object.y, f(8.4375));
         }
     }
+}
+
+/// A thrower at `(x, y)` that throws nothing for a long while.
+fn thrower(x: i32, y: i32) -> String {
+    format!(
+        "[[entities]]\ntype = \"thrower\"\nat = [{x}, {y}]\n\
+         params = {{ period = 5000, throws = [[4999, 0, -7]] }}"
+    )
+}
+
+/// The thrower's `y` and whether it's been knocked out.
+fn knocked_thrower(play: &Play) -> (Fixed, bool) {
+    let t = &play.world.things[1];
+    (t.pos.y, matches!(t.phase, Phase::Falling { .. }))
+}
+
+/// thrown-objects.md, "Hitting the thrower", "Example": the object
+/// thrown right knocks out a thrower 115 px right of and 20 px below its
+/// start on Q + 26, and goes on as without it; the thrower holds still
+/// on K + 1 and falls from K + 2.
+#[test]
+fn knocks_out_the_thrower_and_goes_on() {
+    let mut play = Play::new(&level(&format!("{FLAT}\n{}", thrower(315, 366))));
+    play.throw_to(21);
+    let start = play.world.things[0].pos;
+    assert_eq!(start, Vec2::new(f(200.0), f(346.0)));
+    let mut control = Play {
+        world: play.world.clone(),
+        held: play.held,
+    };
+    control.world.things[1].active = false;
+    for n in 22..=30 {
+        play.step(&[]);
+        control.step(&[]);
+        let (y, knocked) = knocked_thrower(&play);
+        assert_eq!(knocked, n >= 26, "Q + {n}");
+        let want = match n {
+            ..=27 => 20.0,
+            28 => 15.4375,
+            29 => 11.3125,
+            _ => 7.625,
+        };
+        assert_eq!(y - start.y, f(want), "Q + {n}");
+        assert!(play.world.things[0].active, "Q + {n}");
+        assert_eq!(play.world.things[0].phase, control.world.things[0].phase);
+        assert_eq!(play.world.things[0].pos, control.world.things[0].pos);
+    }
+    assert!(
+        play.world
+            .flow
+            .events
+            .iter()
+            .all(|e| *e != FlowEvent::Defeat(1))
+    );
+}
+
+/// Throws the crate, right or left, and on Q + `n` (from 22) puts the
+/// thrower `i` px left of where the object ends the frame (I, both `x`
+/// rounded down) and `h` px below it (H, both `y` rounded up). Returns
+/// whether the thrower was knocked out on that frame.
+fn thrower_hit(right: bool, n: usize, i: i64, h: i64) -> bool {
+    let mut play = Play::new(&level(&format!("{FLAT}\n{}", thrower(300, 100))));
+    if !right {
+        play.world.player.facing = Facing::Left;
+    }
+    play.throw_to(n - 1);
+    let mut control = Play {
+        world: play.world.clone(),
+        held: play.held,
+    };
+    control.step(&[]);
+    let object = control.world.things[0].pos;
+    let up = |v: Fixed| -(-v).floor();
+    let x = object.x.floor() - i;
+    let y = up(object.y) + h;
+    play.world.things[1].pos = Vec2::new(
+        Fixed::from_int(x as i32) + f(0.75),
+        Fixed::from_int(y as i32) - f(0.25),
+    );
+    play.step(&[]);
+    assert_eq!(play.world.things[0].pos, object);
+    knocked_thrower(&play).1
+}
+
+/// thrown-objects.md, "When the thrower is hit": the ranges of I and H,
+/// ends included, early (t up to 16) and late, moving right and left.
+#[test]
+fn hits_the_thrower_in_the_measured_ranges() {
+    for (right, n, (i_from, i_to), (h_from, h_to)) in [
+        (true, 22, (-55, 37), (-47, 65)),
+        (true, 37, (-55, 37), (-47, 65)),
+        (true, 38, (-30, 36), (-23, 32)),
+        (false, 22, (-36, 56), (-47, 65)),
+        (false, 38, (-35, 31), (-23, 32)),
+    ] {
+        for (i, h, want) in [
+            (i_from, 0, true),
+            (i_to, 0, true),
+            (i_from - 1, 0, false),
+            (i_to + 1, 0, false),
+            (0, h_from, true),
+            (0, h_to, true),
+            (0, h_from - 1, false),
+            (0, h_to + 1, false),
+        ] {
+            let got = thrower_hit(right, n, i, h);
+            assert_eq!(got, want, "right {right} Q + {n} I {i} H {h}");
+        }
+    }
+}
+
+/// thrown-objects.md, "What happens on a hit": still in the hands during
+/// a throw, from Q + 1 to Q + 20, it breaks on a thrower by the early
+/// ranges, and the throw goes on as without it. Not on Q or Q + 21.
+#[test]
+fn breaks_on_the_thrower_in_the_hands() {
+    for n in 0..=21 {
+        let mut play = Play::new(&level(&format!("{FLAT}\n{}", thrower(300, 100))));
+        let mut control = Play {
+            world: play.world.clone(),
+            held: play.held,
+        };
+        control.world.things[1].active = false;
+        if n > 0 {
+            play.throw_to(n - 1);
+            control.throw_to(n - 1);
+        }
+        // The thrower 55 px right of where the object ends the step on
+        // the player's head, the early range's end.
+        let mut ahead = Play {
+            world: control.world.clone(),
+            held: control.held,
+        };
+        ahead.step(&[]);
+        let head = ahead.world.things[0].pos;
+        play.world.things[1].pos = Vec2::new(head.x + f(55.0), head.y);
+        play.step(&[]);
+        control.step(&[]);
+        let hit = (1..=20).contains(&n);
+        assert_eq!(knocked_thrower(&play).1, hit, "Q + {n}");
+        assert_eq!(play.world.things[0].active, !hit, "Q + {n}");
+        if hit {
+            assert_eq!(play.world.player.pos, control.world.player.pos);
+            assert_eq!(play.world.player.hands, control.world.player.hands);
+            // The rest of the throw goes on and throws nothing.
+            play.throw_to(30);
+            control.throw_to(30);
+            assert_eq!(play.world.player.pos, control.world.player.pos);
+            assert_eq!(play.world.player.state, control.world.player.state);
+            assert!(!play.world.things[0].active);
+        }
+    }
+}
+
+/// thrown-objects.md, "What happens on a hit": carried, it breaks on a
+/// thrower by the late ranges, the way the player faces. The player
+/// goes on as without it, carrying nothing, and letting go of action
+/// throws nothing.
+#[test]
+fn breaks_on_the_thrower_while_carried() {
+    let mut play = Play::new(&level(&format!("{FLAT}\n{}", thrower(300, 100))));
+    let mut control = Play {
+        world: play.world.clone(),
+        held: play.held,
+    };
+    control.world.things[1].active = false;
+    // A jump, carrying.
+    while play.world.player.grounded() {
+        play.step(&[A, Action::Jump]);
+        control.step(&[A, Action::Jump]);
+    }
+    play.world.player.facing = Facing::Left;
+    control.world.player.facing = Facing::Left;
+    // Where the object ends the next step, from the control.
+    let mut ahead = Play {
+        world: control.world.clone(),
+        held: control.held,
+    };
+    ahead.step(&[A]);
+    let head = ahead.world.things[0].pos;
+    let up = |v: Fixed| -(-v).floor();
+    // I of 32 isn't hit; 31, the late range's end facing left, is.
+    let at = |i: i64| {
+        Vec2::new(
+            Fixed::from_int((head.x.floor() - i) as i32),
+            Fixed::from_int(up(head.y) as i32),
+        )
+    };
+    let mut miss = Play {
+        world: play.world.clone(),
+        held: play.held,
+    };
+    miss.world.things[1].pos = at(32);
+    miss.step(&[A]);
+    assert!(!knocked_thrower(&miss).1);
+    assert!(miss.world.things[0].active);
+    play.world.things[1].pos = at(31);
+    play.step(&[A]);
+    control.step(&[A]);
+    assert!(knocked_thrower(&play).1);
+    assert!(!play.world.things[0].active);
+    assert!(play.world.player.hands.is_none());
+    for _ in 0..40 {
+        assert_eq!(play.world.player.pos, control.world.player.pos);
+        assert_eq!(play.world.player.vel, control.world.player.vel);
+        play.step(&[]);
+        control.step(&[]);
+    }
+    assert!(play.world.player.hands.is_none());
+    assert!(!play.world.things[0].active);
+}
+
+/// A one-way face breaks it as a solid one does (thrown-objects.md,
+/// "Breaking against a wall"): the "Example" throw breaks on the same
+/// frame.
+#[test]
+fn breaks_against_a_one_way_face() {
+    let mut play = Play::new(&level(&face_of("one_way = true")));
+    play.throw_to(53);
+    assert!(play.world.things[0].active);
+    play.step(&[]);
+    assert!(!play.world.things[0].active);
+}
+
+/// Puts the thrown object at `(x, y)` with no speed across and `vy`
+/// (before this step's gravity), and steps once. Returns its `y` and
+/// `vy`.
+fn from(play: &mut Play, x: f64, y: f64, vy: f64) -> (Fixed, Fixed) {
+    let mut flight = play.object();
+    (flight.vx, flight.target, flight.vy, flight.rolling) =
+        (Fixed::ZERO, Fixed::ZERO, f(vy), false);
+    play.world.things[0].pos = Vec2::new(f(x), f(y));
+    play.world.things[0].phase = Phase::Thrown(flight);
+    play.step(&[]);
+    (play.world.things[0].pos.y, play.object().vy)
+}
+
+/// thrown-objects.md, "Ground passable from below": rising from below
+/// into ground that isn't one-way, it keeps its whole px and stops; a
+/// one-way platform it rises into.
+#[test]
+fn is_stopped_rising_into_solid_ground_from_below() {
+    for (one_way, want) in [(false, (325.6875, 0.0)), (true, (319.6875, -5.5625))] {
+        let ceiling = format!(
+            "[[collision]]\nshape = \"rect\"\nrect = [180, 300, 100, 20]\none_way = {one_way}"
+        );
+        let mut play = Play::new(&level(&format!("{FLAT}\n{ceiling}")));
+        play.throw_to(21);
+        assert_eq!(
+            from(&mut play, 200.5, 325.25, -6.0),
+            (f(want.0), f(want.1)),
+            "{one_way}"
+        );
+        // It falls from there.
+        play.step(&[]);
+        assert_eq!(play.object().vy, f(want.1 + 0.4375));
+    }
+}
+
+/// thrown-objects.md, "In the air" and "The floor of a column": in a
+/// platform's layer up to a step below its top and not moving down, it's
+/// lifted by as much as the top is above its `y` rounded up; lower in the
+/// layer it moves on as if there were no floor.
+#[test]
+fn is_lifted_onto_a_platform_a_step_above_it() {
+    let platform = "[[collision]]\nshape = \"rect\"\nrect = [180, 300, 100, 16]\none_way = true";
+    let src = level(&format!("{FLAT}\n{platform}"));
+    for (y, vy, want) in [
+        // New y 303.6875, lifted by 306 - 300.
+        (305.25, -2.0, (297.6875, -1.5625)),
+        // Not moving: lifted by 305 - 300.
+        (304.5625, -0.4375, (299.5625, 0.0)),
+        // More than a step below the top: no floor.
+        (310.0, -2.0, (308.4375, -1.5625)),
+        // Below the underside, it rises into the layer.
+        (317.0, -2.0, (315.4375, -1.5625)),
+    ] {
+        let mut play = Play::new(&src);
+        play.throw_to(21);
+        assert_eq!(from(&mut play, 200.5, y, vy), (f(want.0), f(want.1)), "{y}");
+    }
+    // Moving down, it touches the top instead and bounces.
+    let mut play = Play::new(&src);
+    play.throw_to(21);
+    let (y, vy) = from(&mut play, 200.5, 305.25, 2.0);
+    assert_eq!(y, f(300.0));
+    assert!(vy < Fixed::ZERO);
 }

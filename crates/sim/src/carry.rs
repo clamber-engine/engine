@@ -32,10 +32,16 @@
 //!   in the lead's hands") describes, removed only as at a knock-out.
 //!
 //! Thrown, it bounces on the floor and then rolls along it, breaks
-//! against faces and walls, and hits walkers, as
-//! `spec/behavior/thrown-objects.md` describes ([`fly`]). Touching
-//! characters and other enemies isn't in the spec yet; it doesn't.
-//! Dropped, it falls straight down and rests where it lands.
+//! against faces and walls, and hits walkers and throwers, as
+//! `spec/behavior/thrown-objects.md` describes ([`fly`]). Its floor in
+//! a column can be up to a step above it, which lifts it when it isn't
+//! moving down, and ground that isn't one-way stops it rising into it
+//! from below; one-way ground breaks it as other ground does. In the hands
+//! during a throw and carried, it breaks on throwers, which it knocks
+//! out ([`things`](crate::things)); the player isn't held up, and the
+//! carrying pose isn't kept until a jump lands. Touching characters and
+//! other enemies isn't in the spec yet; it doesn't. Dropped, it falls
+//! straight down and rests where it lands.
 //!
 //! An object that holds the missing character ([`Holder`]) moves the
 //! same way, but breaks sooner, as `spec/behavior/holder-breaking.md`
@@ -441,7 +447,7 @@ fn bounce_and_roll(
         return false;
     }
     if flight.rolling {
-        match columns::floor(level, to, pos.y) {
+        match columns::object_floor(level, to, pos.y) {
             Some(f) => {
                 thing.pos = Vec2::new(x, f.y);
                 thing.phase = Phase::Thrown(flight);
@@ -480,17 +486,31 @@ fn bounce_and_roll(
 }
 
 /// A thrown object's fall in the air in `column` from `feet` on one
-/// frame: `vy` grows by gravity up to its most, and it touches the floor
-/// once it's moving down and ends less than `margin` above it. Returns
-/// its `y` after the fall, and the floor's if it touches it.
+/// frame: `vy` grows by gravity up to its most. Not moving down, with the
+/// column's floor ([`columns::object_floor`]) higher than `feet`, it's
+/// lifted by as much as the floor is above `feet` rounded up. Rising from
+/// below ground that holds from below into it, it's stopped there as a
+/// rising player is, with `vy` 0 ([`columns::stops_rise`]). Otherwise it
+/// touches the floor once it's moving down and ends less than `margin`
+/// above it. Returns its `y` after the fall, and the floor's if it
+/// touches it.
 fn fall(level: &Level, column: i64, feet: Fixed, flight: &mut Flight) -> (Fixed, Option<Fixed>) {
     flight.vy = (flight.vy + flight.gravity).min(flight.max_fall);
     let y = feet + flight.vy;
-    let touch = (flight.vy > Fixed::ZERO)
-        .then(|| columns::floor_in_air(level, column, feet))
-        .flatten()
-        .filter(|f| y > f.y - flight.margin)
-        .map(|f| f.y);
+    let floor = columns::object_floor(level, column, feet).map(|f| f.y);
+    if let Some(floor) = floor
+        && flight.vy <= Fixed::ZERO
+        && floor < feet
+    {
+        return (y - (Fixed::from_int(ceil(feet) as i32) - floor), None);
+    }
+    if flight.vy < Fixed::ZERO
+        && let Some(back) = columns::stops_rise(level, column, feet, y)
+    {
+        flight.vy = Fixed::ZERO;
+        return (y + back, None);
+    }
+    let touch = floor.filter(|&f| flight.vy > Fixed::ZERO && y > f - flight.margin);
     (y, touch)
 }
 

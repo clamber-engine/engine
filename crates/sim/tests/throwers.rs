@@ -736,3 +736,37 @@ fn a_placed_ball_appears_after_a_character_is_lost_by_that_run_s_view() {
     }
     assert!(seen > 1, "{seen}");
 }
+
+/// thrower.md, "Balls and walkers": a walker on the floor under a
+/// thrower, whose balls fall back through it, goes on as without the
+/// balls, and the balls as without the walker.
+#[test]
+fn balls_and_walkers_pass_through_each_other() {
+    let walker = "[[entities]]\ntype = \"crawler\"\nat = [430, 381]\n";
+    let thrower = thrower(400, 340);
+    let mut both = Play::new(world(250, &format!("{walker}{thrower}")));
+    let mut walker_only = Play::new(world(250, walker));
+    let mut balls_only = Play::new(world(250, &thrower));
+    let balls = |play: &Play| -> Vec<(Vec2, Phase)> {
+        play.balls().iter().map(|b| (b.pos, b.phase)).collect()
+    };
+    let mut met = 0;
+    for n in 0..150 {
+        both.step(&[]);
+        walker_only.step(&[]);
+        balls_only.step(&[]);
+        let w = &both.world.things[0];
+        let alone = &walker_only.world.things[0];
+        assert_eq!(
+            (w.pos, w.vx, w.phase, w.active),
+            (alone.pos, alone.vx, alone.phase, alone.active),
+            "frame {n}"
+        );
+        assert_eq!(balls(&both), balls(&balls_only), "frame {n}");
+        let near = |b: &&&Thing| {
+            (b.pos.x - w.pos.x).abs() <= f(16.0) && (b.pos.y - w.pos.y).abs() <= f(24.0)
+        };
+        met += both.balls().iter().filter(near).count();
+    }
+    assert!(met > 0);
+}
