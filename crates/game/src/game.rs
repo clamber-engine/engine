@@ -35,6 +35,11 @@ const FLASH: Color = rgb(0xff, 0xf2, 0xb0);
 /// Size of the box marking an entity that has no sprite, px.
 const ENTITY_BOX: i32 = 12;
 
+/// How far a thing can move in one step, px, and still be drawn between
+/// where it was and where it is. Nothing moves this fast; a thing that
+/// went further was put somewhere else in one jump.
+const JUMP: f64 = 32.0;
+
 pub struct Game {
     pub world: World,
     pub camera: Camera,
@@ -44,6 +49,8 @@ pub struct Game {
     previous_other: Option<Vec2>,
     /// The lost character's, if one is on its way out.
     previous_leaving: Option<Vec2>,
+    /// Each thing's, by its index, if it was in the level.
+    previous_things: Vec<Option<Vec2>>,
     /// Draw collision geometry, regions and entity markers.
     pub debug: bool,
     /// The images the level's layers draw.
@@ -70,6 +77,7 @@ impl Game {
             previous: world.player.pos,
             previous_other: world.other.as_ref().map(|o| o.pos),
             previous_leaving: world.leaving().map(|p| p.pos),
+            previous_things: positions(&world),
             debug: world.level.layers.is_empty(),
             poses: Poses::new(&cast, &world),
             pause: 0,
@@ -217,6 +225,7 @@ impl Game {
         self.previous = self.world.player.pos;
         self.previous_other = self.world.other.as_ref().map(|o| o.pos);
         self.previous_leaving = self.world.leaving().map(|p| p.pos);
+        self.previous_things = positions(&self.world);
         let character = self.world.player.character;
         if self.pause > 0 {
             self.pause -= 1;
@@ -235,6 +244,7 @@ impl Game {
         if self.world.flow.events.contains(&FlowEvent::Respawn) {
             // A jump to somewhere else, not a move to draw between.
             self.previous = self.world.player.pos;
+            self.previous_things = positions(&self.world);
             self.camera = Camera::with_view(&self.world, self.shown().view);
         } else {
             self.camera.update(&self.world);
@@ -321,14 +331,14 @@ impl Game {
             }
         }
 
-        self.draw_things(canvas, &to_screen, false);
+        self.draw_things(canvas, &to_screen, alpha, false);
 
         self.draw_kegs(canvas, &to_screen);
 
         if !behind {
             self.draw_characters(canvas, alpha, origin);
         }
-        self.draw_things(canvas, &to_screen, true);
+        self.draw_things(canvas, &to_screen, alpha, true);
         self.art
             .draw(canvas, level, Depth::Front, origin, dim, time);
         draw_hud(canvas, &self.world);
@@ -341,22 +351,28 @@ impl Game {
     }
 
     /// The things in the level: scenery, which is drawn over the
-    /// characters (signs.md), or everything else.
+    /// characters (signs.md), or everything else. Those in the level are
+    /// drawn `alpha` of the way through the last step ([`thing_at`]).
+    ///
+    /// [`thing_at`]: Game::thing_at
     fn draw_things(
         &self,
         canvas: &mut dyn Surface,
         to_screen: &dyn Fn((f64, f64)) -> (f64, f64),
+        alpha: f64,
         scenery: bool,
     ) {
         let pose = |thing: &Thing| self.poses.things.get(thing.index).copied();
         let in_level = self.world.things.iter().filter(|t| t.active);
-        let waiting = self.beyond.waiting.iter();
-        let drawn = in_level
-            .chain(waiting)
-            .map(|t| (t, pose(t).unwrap_or_default(), self.beyond.opacity(t.index)));
+        let in_level = in_level.map(|t| (t, self.thing_at(t, alpha)));
+        let waiting = self.beyond.waiting.iter().map(|t| (t, point(t.pos)));
+        let drawn = in_level.chain(waiting).map(|(t, at)| {
+            let pose = pose(t).unwrap_or_default();
+            (t, at, pose, self.beyond.opacity(t.index))
+        });
         let leaving = self.beyond.leaving.iter();
-        let leaving = leaving.map(|(t, pose, left)| (t, *pose, opacity(*left)));
-        for (thing, pose, opacity) in drawn.chain(leaving) {
+        let leaving = leaving.map(|(t, pose, left)| (t, point(t.pos), *pose, opacity(*left)));
+        for (thing, at, pose, opacity) in drawn.chain(leaving) {
             // The end marker, exits, wall exits, the dimming's entity and hidden
             // objects aren't drawn.
             let is_scenery = thing
@@ -368,7 +384,7 @@ impl Game {
             {
                 continue;
             }
-            let (x, y) = to_screen(point(thing.pos));
+            let (x, y) = to_screen(at);
             if self.cast.has_kind(&thing.kind) {
                 let at = (x as f32, y as f32);
                 self.cast
@@ -381,6 +397,23 @@ impl Game {
                 canvas.plot(x, y, ENTITY);
             }
         }
+    }
+
+    /// Where `thing`, which is in the level, is drawn `alpha` of the way
+    /// through the last step: between where it was before the step and
+    /// where it is, as the characters are. A thing that wasn't in the
+    /// level before the step, or that jumped somewhere else in it, is
+    /// drawn where it is.
+    fn thing_at(&self, thing: &Thing, alpha: f64) -> (f64, f64) {
+        let to = point(thing.pos);
+        let Some(&Some(from)) = self.previous_things.get(thing.index) else {
+            return to;
+        };
+        let (x, y) = (point(from).0 - to.0, point(from).1 - to.1);
+        if x.abs() > JUMP || y.abs() > JUMP {
+            return to;
+        }
+        between(from, thing.pos, alpha, (0.0, 0.0))
     }
 
     /// The image of a taken relic, while the world shows it: its sprite
@@ -496,6 +529,15 @@ impl Game {
         }
         draw_body(canvas, (x, y), body.state, body.facing);
     }
+}
+
+/// Where each of `world`'s things is, by its index, if it's in the level.
+fn positions(world: &World) -> Vec<Option<Vec2>> {
+    world
+        .things
+        .iter()
+        .map(|t| t.active.then_some(t.pos))
+        .collect()
 }
 
 /// The view position `alpha` of the way from `from` to `to`, for a view
@@ -914,6 +956,41 @@ mod tests {
     }
 
     #[test]
+    fn draws_things_between_steps_unless_they_jumped() {
+        let src = LEVEL.replace(
+            "type = \"marker\"\n        at = [560, 280]",
+            "type = \"crawler\"\n        at = [700, 300]\n        params = { speed = 1 }",
+        );
+        let level = Level::from_toml_str(&src, "test").unwrap();
+        let mut game = Game::new(World::new(
+            Arc::new(level),
+            Arc::new(generic_feel("classic-1").unwrap()),
+        ));
+        let idle = InputFrame::default();
+        let was = game.world.things[0].pos;
+        while game.world.things[0].pos == was {
+            game.step(&idle);
+            assert!(game.world.frame < 60, "the walker doesn't move");
+        }
+        let thing = &game.world.things[0];
+        let (from, to) = (point(was), point(thing.pos));
+        assert_eq!(game.thing_at(thing, 0.0), from);
+        assert_eq!(game.thing_at(thing, 1.0), to);
+        let half = game.thing_at(thing, 0.5);
+        assert_eq!(half, ((from.0 + to.0) / 2.0, (from.1 + to.1) / 2.0));
+        assert_ne!(half, to);
+
+        // Put somewhere else in one jump: drawn where it is.
+        let mut moved = thing.clone();
+        moved.pos = Vec2::new(moved.pos.x + Fixed::from_int(100), moved.pos.y);
+        assert_eq!(game.thing_at(&moved, 0.5), point(moved.pos));
+        // Not in the level before the step: drawn where it is.
+        game.previous_things[0] = None;
+        let thing = &game.world.things[0];
+        assert_eq!(game.thing_at(thing, 0.5), point(thing.pos));
+    }
+
+    #[test]
     fn goes_on_at_the_arrival_an_exit_leads_to() {
         let src = format!(
             r#"{LEVEL}
@@ -963,6 +1040,7 @@ mod tests {
             if game.world.flow.events.contains(&FlowEvent::Respawn) {
                 respawned = true;
                 assert_eq!(game.previous, game.world.level.start);
+                assert_eq!(game.previous_things, positions(&game.world));
             }
         }
         assert!(respawned);
