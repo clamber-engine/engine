@@ -139,7 +139,7 @@ pub use sections::{Opening, Placed, Placing, Sections, Spot, Window};
 pub use sling::{SLING, Slung};
 pub use spring::{OnSpring, SPRING, SpringArc, top as spring_top};
 pub use swap::{Move, Other, Recent, Swap};
-pub use swim::swim_depth;
+pub use swim::{SwimTurn, swim_depth};
 pub use things::{DEFEATED_FRAMES, LAUNCH_REST};
 pub use throwers::BALL;
 pub use view::View;

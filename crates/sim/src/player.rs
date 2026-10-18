@@ -29,6 +29,7 @@ use crate::ride::Riding;
 use crate::rope::OnRope;
 use crate::sling::Slung;
 use crate::spring::{OnSpring, SpringArc};
+use crate::swim::SwimTurn;
 use crate::view;
 use crate::world::Event;
 
@@ -275,6 +276,12 @@ pub struct Player {
     pub touched: Vec<usize>,
     /// Swimming, and resting on the floor at the end of the last step.
     pub swim_floor: bool,
+    /// Swimming, with Action and Left or Right held on the last step.
+    pub swim_fast: bool,
+    /// Swimming, with the deeper sinking limit on the last step.
+    pub swim_deep: bool,
+    /// A swimmer's turn under way, if one is (see [`crate::swim`]).
+    pub swim_turn: Option<SwimTurn>,
     /// Riding an animal, if it is (see [`crate::ride`]).
     pub riding: Option<Riding>,
     /// Knocked off an animal, until it lands or bounces: facing doesn't
@@ -380,6 +387,9 @@ impl Player {
             through: None,
             touched: Vec::new(),
             swim_floor: false,
+            swim_fast: false,
+            swim_deep: false,
+            swim_turn: None,
             riding: None,
             unseated: false,
             fall_top: None,

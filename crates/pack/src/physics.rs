@@ -1563,6 +1563,53 @@ params! {
     /// at the end of the frame before, without a stroke, sinks at this
     /// speed. 0: it goes on sinking as it was. px/frame.
     SwimLeaveSpeed => "swim_leave_speed",
+    /// Above 0, a swimmer that held Action with Left or Right on the frame
+    /// before eases toward this instead of `swim_speed`. 0: Action
+    /// changes nothing in water. px/frame.
+    SwimFastSpeed => "swim_fast_speed",
+    /// 1: on a frame with Up held, the limit is `sink_down_speed` if it
+    /// was on the frame before, so Up straight after Down keeps the deeper
+    /// limit. 0: only Down raises the limit.
+    SinkDownKeptOnUp => "sink_down_kept_on_up",
+    /// Above 0, a swimmer's facing changes through a turn: Left or Right
+    /// held opposite the facing, with no turn running, starts one, and
+    /// facing changes on this frame of it (the frame it starts on is
+    /// frame 0). 0: facing follows the held direction at once. Whole
+    /// frames.
+    SwimTurnFace => "swim_turn_face",
+    /// A swimmer's turn runs until this frame of it; a new one can start
+    /// from here on. Whole frames.
+    SwimTurnTime => "swim_turn_time",
+    /// Above 0, the turn's first stroke, on a frame of it after its
+    /// first and before `swim_turn_face`, brings the change of facing to
+    /// the frame after the stroke, or to this frame of the turn if that
+    /// comes first. 0: strokes don't change when facing changes. Whole
+    /// frames.
+    SwimTurnStrokeFace => "swim_turn_stroke_face",
+    /// Above 0, after the turn's first stroke on frame 1 of the turn, a
+    /// new turn can start from this frame of it instead of
+    /// `swim_turn_time`. 0: the stroke doesn't change that. Whole frames.
+    SwimTurnStrokeFree1 => "swim_turn_stroke_free_1",
+    /// ... after a stroke on frame 2 of the turn. Whole frames.
+    SwimTurnStrokeFree2 => "swim_turn_stroke_free_2",
+    /// ... on frame 3. Whole frames.
+    SwimTurnStrokeFree3 => "swim_turn_stroke_free_3",
+    /// ... on frame 4. Whole frames.
+    SwimTurnStrokeFree4 => "swim_turn_stroke_free_4",
+    /// ... on frame 5. Whole frames.
+    SwimTurnStrokeFree5 => "swim_turn_stroke_free_5",
+    /// ... on frame 6. Whole frames.
+    SwimTurnStrokeFree6 => "swim_turn_stroke_free_6",
+    /// ... on frame 7. Whole frames.
+    SwimTurnStrokeFree7 => "swim_turn_stroke_free_7",
+    /// ... on frame 8. Whole frames.
+    SwimTurnStrokeFree8 => "swim_turn_stroke_free_8",
+    /// ... on frame 9. Whole frames.
+    SwimTurnStrokeFree9 => "swim_turn_stroke_free_9",
+    /// ... on frame 10. Whole frames.
+    SwimTurnStrokeFree10 => "swim_turn_stroke_free_10",
+    /// ... on frame 11. Whole frames.
+    SwimTurnStrokeFree11 => "swim_turn_stroke_free_11",
 }
 
 impl Param {

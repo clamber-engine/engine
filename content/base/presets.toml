@@ -429,6 +429,22 @@ swim_step = 4
 swim_ceiling_gap = 1
 swim_left_edge = 0
 swim_leave_speed = 0
+swim_fast_speed = 0
+sink_down_kept_on_up = 0
+swim_turn_face = 0
+swim_turn_time = 0
+swim_turn_stroke_face = 0
+swim_turn_stroke_free_1 = 0
+swim_turn_stroke_free_2 = 0
+swim_turn_stroke_free_3 = 0
+swim_turn_stroke_free_4 = 0
+swim_turn_stroke_free_5 = 0
+swim_turn_stroke_free_6 = 0
+swim_turn_stroke_free_7 = 0
+swim_turn_stroke_free_8 = 0
+swim_turn_stroke_free_9 = 0
+swim_turn_stroke_free_10 = 0
+swim_turn_stroke_free_11 = 0
 
 [presets.snappy]
 label = "Snappy"
@@ -1242,6 +1258,43 @@ view_rise_rows = 32
 view_move_max_y = 8
 view_sway_rate_y = 0.1875
 view_sway_phase_y = 3.875
+# Swimming (swimming.md, "In `title-2`"): targets of 1.5, or 2.5 after
+# a frame with Action and a direction, approached by 1/32 of the gap;
+# strokes of 2 (2.75 with Up, 1 with Down), sinking by 12/256 up to 1.25,
+# or 2.25 with Down and with Up straight after it. Facing changes 5
+# frames into a 12-frame turn; the turn's first stroke brings the change
+# to the next frame (frame 4 at the latest) and moves the turn's end by
+# its own table. Steps are up to 4 px and leaving the floor without a
+# stroke ends at 1/256, but walls, floors and ceilings otherwise work as
+# in Classic 1 for now, with no left end.
+swim_speed = 1.5
+swim_fast_speed = 2.5
+swim_response = 0.03125
+stroke_speed = 2
+stroke_up_speed = 2.75
+stroke_down_speed = 1
+sink_gravity = 0.046875
+sink_speed = 1.25
+sink_down_speed = 2.25
+swim_step = 4
+swim_ceiling_gap = 1
+swim_left_edge = 0
+swim_leave_speed = 0.00390625
+sink_down_kept_on_up = 1
+swim_turn_face = 5
+swim_turn_time = 12
+swim_turn_stroke_face = 4
+swim_turn_stroke_free_1 = 7
+swim_turn_stroke_free_2 = 7
+swim_turn_stroke_free_3 = 8
+swim_turn_stroke_free_4 = 9
+swim_turn_stroke_free_5 = 9
+swim_turn_stroke_free_6 = 10
+swim_turn_stroke_free_7 = 11
+swim_turn_stroke_free_8 = 11
+swim_turn_stroke_free_9 = 12
+swim_turn_stroke_free_10 = 10
+swim_turn_stroke_free_11 = 11
 
 [presets.classic-3]
 label = "Classic 3"

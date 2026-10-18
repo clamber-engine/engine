@@ -11,5 +11,3 @@
 # are listed as ["title-2/<id>"] and compared on that title's preset
 # (TESTING.md, layer 5).
 
-["title-2/swim-strokes"]
-expected_failures = ["top_speed", "final_x", "final_y", "curve x,y,vx,vy from stroke"]  # #164

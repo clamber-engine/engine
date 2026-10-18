@@ -694,6 +694,22 @@ mod tests {
                     | Param::JoinSag
                     | Param::SwimLeftEdge
                     | Param::SwimLeaveSpeed
+                    | Param::SwimFastSpeed
+                    | Param::SinkDownKeptOnUp
+                    | Param::SwimTurnFace
+                    | Param::SwimTurnTime
+                    | Param::SwimTurnStrokeFace
+                    | Param::SwimTurnStrokeFree1
+                    | Param::SwimTurnStrokeFree2
+                    | Param::SwimTurnStrokeFree3
+                    | Param::SwimTurnStrokeFree4
+                    | Param::SwimTurnStrokeFree5
+                    | Param::SwimTurnStrokeFree6
+                    | Param::SwimTurnStrokeFree7
+                    | Param::SwimTurnStrokeFree8
+                    | Param::SwimTurnStrokeFree9
+                    | Param::SwimTurnStrokeFree10
+                    | Param::SwimTurnStrokeFree11
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

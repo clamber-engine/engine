@@ -3,7 +3,12 @@
 //! A swimmer has no walking, running, jumping or rolling. Its speed
 //! across eases toward `swim_speed` or 0, a Jump press is a stroke that
 //! sets its upward speed, and otherwise it sinks under `sink_gravity`.
-//! Facing follows Left or Right at once.
+//! Facing follows Left or Right at once, or with `swim_turn_face` set,
+//! changes partway through a turn of `swim_turn_time` frames that the
+//! turn's first stroke can shorten. With `swim_fast_speed` set, Action and
+//! a direction held on the frame before raise the target, and with
+//! `sink_down_kept_on_up` Up straight after Down keeps the deeper sinking
+//! limit.
 //!
 //! The ground acts on one point: the column holding `x` and the feet
 //! line, `y` rounded up. The point is in the ground when the pixel
@@ -39,6 +44,33 @@ struct Depth {
     ceiling: bool,
     collider: usize,
 }
+
+/// A swimmer's turn under way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SwimTurn {
+    /// Frames since the frame it started on.
+    pub age: u8,
+    /// The frame of the turn its first stroke came on, if one has.
+    pub stroke: Option<u8>,
+    /// Facing has changed.
+    pub turned: bool,
+}
+
+/// After a stroke on frame `n` of a turn, where a new turn can start
+/// from, by `n` - 1.
+const STROKE_FREE: [Param; 11] = [
+    Param::SwimTurnStrokeFree1,
+    Param::SwimTurnStrokeFree2,
+    Param::SwimTurnStrokeFree3,
+    Param::SwimTurnStrokeFree4,
+    Param::SwimTurnStrokeFree5,
+    Param::SwimTurnStrokeFree6,
+    Param::SwimTurnStrokeFree7,
+    Param::SwimTurnStrokeFree8,
+    Param::SwimTurnStrokeFree9,
+    Param::SwimTurnStrokeFree10,
+    Param::SwimTurnStrokeFree11,
+];
 
 /// How far a swimmer's point in `column` with its feet on line `feet` is
 /// in `level`'s ground, if it is: whole px, and whether that's to a
@@ -123,8 +155,14 @@ impl Player {
             self.start_swimming();
         }
 
-        // Speed across.
-        let target = physics[Param::SwimSpeed] * Fixed::from_int(dir);
+        // Speed across: faster after a frame with Action and a direction,
+        // if the feel has a faster speed.
+        let fast = std::mem::replace(&mut self.swim_fast, held(Action::Action) && dir != 0);
+        let speed = match physics[Param::SwimFastSpeed] {
+            s if fast && s > Fixed::ZERO => s,
+            _ => physics[Param::SwimSpeed],
+        };
+        let target = speed * Fixed::from_int(dir);
         self.vel.x = ease(self.vel.x, target, physics[Param::SwimResponse]);
         self.target = target;
 
@@ -142,7 +180,10 @@ impl Player {
             self.vel.y = -speed;
         }
         self.vel.y += physics[Param::SinkGravity];
-        let limit = if held(Action::Down) {
+        let kept = physics[Param::SinkDownKeptOnUp] > Fixed::ZERO;
+        let deep = held(Action::Down) || kept && held(Action::Up) && self.swim_deep;
+        self.swim_deep = deep;
+        let limit = if deep {
             physics[Param::SinkDownSpeed]
         } else {
             physics[Param::SinkSpeed]
@@ -230,12 +271,68 @@ impl Player {
             events.push(Event::LeaveGround);
         }
 
-        if !stopped && dir != 0 {
+        if physics[Param::SwimTurnFace] > Fixed::ZERO {
+            self.swim_turn(physics, dir, stroke, events);
+        } else if !stopped && dir != 0 {
             let facing = if dir < 0 { Facing::Left } else { Facing::Right };
             if facing != self.facing {
                 self.facing = facing;
                 events.push(Event::Turn);
             }
+        }
+    }
+
+    /// One frame of a swimmer's facing by turns, with `dir` the direction
+    /// held and `stroke` whether this frame has a stroke.
+    fn swim_turn(&mut self, physics: &Physics, dir: i32, stroke: bool, events: &mut Vec<Event>) {
+        let face = physics[Param::SwimTurnFace].floor();
+        if let Some(mut turn) = self.swim_turn {
+            turn.age = turn.age.saturating_add(1);
+            if stroke && turn.stroke.is_none() {
+                turn.stroke = Some(turn.age);
+            }
+            let (face_on, free_from) = match turn.stroke {
+                Some(n) => {
+                    let n = i64::from(n);
+                    let soonest = physics[Param::SwimTurnStrokeFace].floor();
+                    let face_on = if soonest > 0 && n < face {
+                        (n + 1).min(soonest)
+                    } else {
+                        face
+                    };
+                    let free = STROKE_FREE
+                        .get(n as usize - 1)
+                        .map_or(0, |&p| physics[p].floor());
+                    let free = if free > 0 {
+                        free
+                    } else {
+                        physics[Param::SwimTurnTime].floor()
+                    };
+                    (face_on, free)
+                }
+                None => (face, physics[Param::SwimTurnTime].floor()),
+            };
+            let age = i64::from(turn.age);
+            if !turn.turned && age >= face_on {
+                self.facing = match self.facing {
+                    Facing::Left => Facing::Right,
+                    Facing::Right => Facing::Left,
+                };
+                turn.turned = true;
+                events.push(Event::Turn);
+            }
+            self.swim_turn = (age < free_from).then_some(turn);
+        }
+        let opposite = match self.facing {
+            Facing::Left => dir > 0,
+            Facing::Right => dir < 0,
+        };
+        if self.swim_turn.is_none() && opposite {
+            self.swim_turn = Some(SwimTurn {
+                age: 0,
+                stroke: None,
+                turned: false,
+            });
         }
     }
 
@@ -255,5 +352,8 @@ impl Player {
         self.jump_age = None;
         self.since_land = None;
         self.swim_floor = false;
+        self.swim_fast = false;
+        self.swim_deep = false;
+        self.swim_turn = None;
     }
 }

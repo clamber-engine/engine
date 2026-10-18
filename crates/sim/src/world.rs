@@ -1129,6 +1129,16 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
         }
         None => out.push(0),
     }
+    out.extend([p.swim_floor, p.swim_fast, p.swim_deep].map(u8::from));
+    match p.swim_turn {
+        Some(t) => out.extend([
+            1,
+            t.age,
+            t.stroke.map_or(0, |j| j.saturating_add(1)),
+            t.turned.into(),
+        ]),
+        None => out.push(0),
+    }
 }
 
 /// Appends a spring's values to `out`, for [`World::state_bytes`].
