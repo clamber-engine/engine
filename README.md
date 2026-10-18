@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/banner.jpg" alt="Clamber: a 2D platformer engine in Rust" width="100%"></p>
+
 # Clamber Engine
 
 An open-source 2D platformer engine written in Rust, built for fast,
