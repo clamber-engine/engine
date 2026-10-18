@@ -946,6 +946,16 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 ///   open wall exit, on the first step it's outside them. A wall exit
 ///   removed open comes back closed.
 ///
+/// A spot that leaves by the rows (`leave_rows`, as in the underwater
+/// levels' lists: placements.md, "In lists with sections") is also
+/// removed on the first step its objects are outside the view's rows,
+/// however near its start is: those of the first kind once they're far
+/// from the view or outside its rows, by the view's own left edge, and
+/// those of the second once their start isn't near the view or they're
+/// outside its rows. The spec gives this for bunches, signs, letters and
+/// figures; as the engine's choice the other kinds of each rule follow
+/// it too.
+///
 /// An object that can be carried, resting where it was put down, is
 /// removed by the same rule with its own position for "far" and the
 /// rows, and its start's for "near" (placements.md, "Objects put down
@@ -1041,13 +1051,14 @@ fn walkers_by(world: &mut World, physics: &Physics, (left, top): (i64, i64), app
         }
     }
     let placing = world.placing.as_mut();
-    let (spot_of, spots, mut there) = match placing {
+    let (spot_of, spots, leave_rows, mut there) = match placing {
         Some(p) => (
             Some(&p.placed.spot_of),
             Some(&p.placed.spots),
+            Some(&p.placed.leave_rows),
             Some(&mut p.there),
         ),
-        None => (None, None, None),
+        None => (None, None, None, None),
     };
     let in_spot = |index: usize| spot_of.and_then(|s| s.get(index).copied().flatten());
     // A thing in a spot that the view removes is no longer there.
@@ -1178,10 +1189,12 @@ fn walkers_by(world: &mut World, physics: &Physics, (left, top): (i64, i64), app
         let start_near = near(start.x.floor(), left, &physics);
         let (x, y) = (thing.pos.x.floor(), thing.pos.y.floor());
         let in_rows = window.holds_y(y, top);
+        let leave_rows = spot.zip(leave_rows).is_some_and(|(s, l)| l[s]);
         let gone = match leaves {
-            Leaves::Far => !start_near && (far(x, left, &physics) || !in_rows),
+            Leaves::Far => (!start_near || leave_rows) && (far(x, left, &physics) || !in_rows),
             Leaves::Soon => {
                 let rows = open
+                    || leave_rows
                     || spot.zip(spots).is_some_and(|(s, spots)| {
                         matches!(spots[s], Spot::Object { rows: true, .. })
                     });

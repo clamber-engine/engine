@@ -100,6 +100,9 @@ pub struct Spot {
     /// Whether one entity also has to be within the view's rows to
     /// appear.
     pub rows: bool,
+    /// Whether its entities also leave once they're outside the view's
+    /// rows, even while the spot is near the view.
+    pub leave_rows: bool,
     /// Whether each of its entities takes one of the preset's `pictures`
     /// while it's there.
     pub picture: bool,
@@ -557,6 +560,8 @@ enum SpotFile {
         #[serde(default)]
         rows: bool,
         #[serde(default)]
+        leave_rows: bool,
+        #[serde(default)]
         picture: bool,
     },
 }
@@ -997,17 +1002,20 @@ impl Reader<'_> {
                                 entities: vec![e],
                                 at: None,
                                 rows: false,
+                                leave_rows: false,
                                 picture: false,
                             },
                             SpotFile::Table {
                                 entities,
                                 at,
                                 rows,
+                                leave_rows,
                                 picture,
                             } => Spot {
                                 entities,
                                 at: at.map(v2),
                                 rows,
+                                leave_rows,
                                 picture,
                             },
                         };
@@ -1760,7 +1768,9 @@ impl Level {
             let spots = s.spots.iter().map(|spot| {
                 let index = |&e: &usize| Value::Integer(e as i64);
                 match spot.entities.as_slice() {
-                    [e] if spot.at.is_none() && !spot.rows && !spot.picture => index(e),
+                    [e] if spot.at.is_none() && !spot.rows && !spot.leave_rows && !spot.picture => {
+                        index(e)
+                    }
                     entities => {
                         let mut pt = Table::new();
                         let entities = entities.iter().map(index).collect();
@@ -1770,6 +1780,9 @@ impl Level {
                         }
                         if spot.rows {
                             pt.insert("rows".into(), Value::Boolean(true));
+                        }
+                        if spot.leave_rows {
+                            pt.insert("leave_rows".into(), Value::Boolean(true));
                         }
                         if spot.picture {
                             pt.insert("picture".into(), Value::Boolean(true));

@@ -614,7 +614,7 @@ fn entities_can_appear_by_sections() {
     let src = format!(
         "format = 1\nsize = [100, 100]\nstart = [10, 10]\n{entities}\
          [[sections]]\nspots = [0, {{ entities = [1, 2], at = [40, 9], picture = true }}]\nmeets = [50, 60]\n\
-         [[sections]]\nspots = [{{ entities = [3], rows = true }}, 4]\n"
+         [[sections]]\nspots = [{{ entities = [3], rows = true }}, {{ entities = [4], leave_rows = true }}]\n"
     );
     let l = Level::from_toml_str(&src, "x.level").unwrap();
     let spots = |i: usize| -> Vec<(Vec<usize>, Option<Vec2>, bool, bool)> {
@@ -635,6 +635,8 @@ fn entities_can_appear_by_sections() {
         spots(1),
         [(vec![3], None, true, false), (vec![4], None, false, false)]
     );
+    let leave: Vec<_> = l.sections[1].spots.iter().map(|s| s.leave_rows).collect();
+    assert_eq!(leave, [false, true]);
     assert_eq!(l.sections[0].meets, Some(v(50.0, 60.0)));
     assert_eq!(l.sections[1].meets, None);
     let back = Level::from_toml_str(&l.to_toml_string(), "saved").unwrap();

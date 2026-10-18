@@ -110,6 +110,9 @@ pub struct Placed {
     /// Whether each of a spot's entities takes a picture while it's
     /// there.
     pub pictures: Vec<bool>,
+    /// Whether each spot's entities also leave once they're outside the
+    /// window's rows, even while the spot is near the view.
+    pub leave_rows: Vec<bool>,
     /// The spot of each of the level's entities, if it's in one.
     pub spot_of: Vec<Option<usize>>,
 }
@@ -129,6 +132,7 @@ impl Placed {
             },
             entities: Vec::new(),
             pictures: Vec::new(),
+            leave_rows: Vec::new(),
             spot_of: vec![None; level.entities.len()],
         };
         for section in &level.sections {
@@ -153,11 +157,13 @@ impl Placed {
                 }
                 placed.entities.push(spot.entities.clone());
                 placed.pictures.push(spot.picture);
+                placed.leave_rows.push(spot.leave_rows);
             }
             if section.spots.is_empty() {
                 placed.spots.push(Spot::Marker);
                 placed.entities.push(Vec::new());
                 placed.pictures.push(false);
+                placed.leave_rows.push(false);
             }
             placed.sections.runs.push(first..=placed.spots.len() - 1);
             placed.sections.joins.extend(section.meets.map(whole));

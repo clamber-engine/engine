@@ -187,6 +187,20 @@ pub fn water(ground: &Ground, riding: bool) -> Option<Region> {
     })
 }
 
+/// Marks the spots of an underwater level's list with sections to leave
+/// by the view's rows alone (`spec/formats/placements.md`, "When placed
+/// objects are removed", "In lists with sections"): the four underwater
+/// levels' lists are the lists with sections whose areas swim. A list
+/// without sections is one section, and is left as it is.
+fn underwater(sections: &mut [Section]) {
+    if sections.len() < 2 {
+        return;
+    }
+    for spot in sections.iter_mut().flat_map(|s| &mut s.spots) {
+        spot.leave_rows = true;
+    }
+}
+
 /// The arrival play comes back to the first level at after the scene its
 /// floor exit leads to.
 pub const SCENE_RETURN: &str = "from-scene";
@@ -519,6 +533,9 @@ impl LevelDecoder {
         }
         if let Some(list) = p.placements {
             (level.entities, level.sections) = self.objects(image, list, height)?;
+            if level.regions.iter().any(|r| r.water) {
+                underwater(&mut level.sections);
+            }
         }
         if let Some(at) = p.collectibles {
             let collectibles = Collectibles::read(
@@ -853,5 +870,35 @@ mod tests {
             panic!("not a keg");
         };
         assert_eq!(keg.restart, Vec2::ints(40, -30));
+    }
+
+    /// placements.md, "In lists with sections": in the underwater levels'
+    /// lists, objects are also removed by the vertical window alone. A
+    /// list without sections, imported as one section, isn't marked.
+    #[test]
+    fn underwater_lists_with_sections_leave_by_the_rows() {
+        let section = |meets| Section {
+            spots: vec![clamber_level::Spot {
+                entities: vec![0],
+                at: None,
+                rows: true,
+                leave_rows: false,
+                picture: false,
+            }],
+            meets,
+        };
+        let marked = |mut sections: Vec<Section>| {
+            underwater(&mut sections);
+            sections
+                .iter()
+                .flat_map(|s| &s.spots)
+                .map(|s| s.leave_rows)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            marked(vec![section(Some(Vec2::ints(9, 9))), section(None)]),
+            [true, true]
+        );
+        assert_eq!(marked(vec![section(None)]), [false]);
     }
 }

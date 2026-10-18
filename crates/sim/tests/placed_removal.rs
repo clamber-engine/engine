@@ -311,3 +311,88 @@ fn an_exit_that_isnt_there_doesnt_take_the_lead() {
     step_at::<1>(&mut w, 100, 300);
     assert!(w.leaving.is_some());
 }
+
+/// One section of `entities` (kind, x, level y), each a spot of its own
+/// that leaves by the view's rows when `leave_rows`, on flat ground at
+/// y = 400 with the player standing far from them at x = 3000.
+fn sectioned(entities: &[(&str, i32, i32)], leave_rows: bool) -> World {
+    let mut src = String::from(
+        r#"
+        format = 1
+        size = [4000, 600]
+        start = [3000, 400]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 400, 4000, 200]
+        "#,
+    );
+    for (kind, x, y) in entities {
+        src += &format!("\n[[entities]]\ntype = \"{kind}\"\nat = [{x}, {y}]\n");
+    }
+    let spots: Vec<String> = (0..entities.len())
+        .map(|i| format!("{{ entities = [{i}], leave_rows = {leave_rows} }}"))
+        .collect();
+    src += &format!("\n[[sections]]\nspots = [{}]\n", spots.join(", "));
+    let level = Level::from_toml_str(&src, "test").unwrap();
+    World::new(
+        Arc::new(level),
+        Arc::new(generic_feel("classic-1").unwrap()),
+    )
+}
+
+/// "In lists with sections": in the underwater levels' lists, a bunch, a
+/// sign, a letter and a figure are also removed by the vertical window
+/// alone, with their entry in the window. A bunch or a sign keeps the
+/// margin across only while it's in the vertical window. In the shared
+/// list they stay above or below it while their entry is in the window.
+#[test]
+fn underwater_lists_remove_by_the_vertical_window_alone() {
+    let objects = [
+        ("cluster", 1000, 300),
+        ("signpost", 1000, 300),
+        ("letter", 1000, 300),
+        ("idol", 1000, 300),
+    ];
+    let mut w = sectioned(&objects, true);
+    assert_eq!(step_at(&mut w, 800, 200), [true; 4]);
+    // The bottom edge: y − U from 256 to 257, with x − V = 200.
+    assert_eq!(step_at(&mut w, 800, 44), [true; 4]);
+    assert_eq!(step_at(&mut w, 800, 43), [false; 4]);
+    assert_eq!(step_at(&mut w, 800, 200), [true; 4], "they come back");
+    // The top edge: −31 to −32.
+    assert_eq!(step_at(&mut w, 800, 331), [true; 4]);
+    assert_eq!(step_at(&mut w, 800, 332), [false; 4]);
+    assert_eq!(step_at(&mut w, 800, 200), [true; 4]);
+    // In the margin across, the letter and the figure have gone and the
+    // others go by the vertical window too.
+    assert_eq!(step_at(&mut w, 711, 200), [true, true, false, false]);
+    assert_eq!(step_at(&mut w, 650, 200), [true, true, false, false]);
+    assert_eq!(step_at(&mut w, 650, 332), [false; 4]);
+
+    let mut shared = sectioned(&objects, false);
+    assert_eq!(step_at(&mut shared, 800, 200), [true; 4]);
+    assert_eq!(step_at(&mut shared, 800, 43), [true; 4]);
+    assert_eq!(step_at(&mut shared, 800, 500), [true; 4]);
+}
+
+/// "In lists with sections", `V` below 32: an underwater bunch or sign
+/// goes by the raw `V`, at x − V = 385, while a letter or figure counts
+/// `V` less than 32 as 32, as when entries appear.
+#[test]
+fn underwater_lists_near_the_left_end() {
+    let objects = [
+        ("cluster", 400, 300),
+        ("signpost", 400, 300),
+        ("letter", 300, 300),
+        ("idol", 300, 300),
+    ];
+    let mut w = sectioned(&objects, true);
+    assert_eq!(step_at(&mut w, 150, 200), [true; 4]);
+    assert_eq!(step_at(&mut w, 16, 200), [true; 4]);
+    // x − V is 300 for the letter and the figure with the raw `V`, but
+    // 268 with `V` counted as 32.
+    assert_eq!(step_at(&mut w, 15, 200), [false, false, true, true]);
+    assert_eq!(step_at(&mut w, 0, 200), [false, false, true, true]);
+    assert_eq!(step_at(&mut w, 0, 43), [false; 4]);
+}
