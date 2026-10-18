@@ -12,8 +12,8 @@ use std::sync::Arc;
 
 use clamber_import::{
     BANK_SIZE, Below, Catalog, CollectibleParts, Ground, Image, ImportError, Importer, Known,
-    Layout, LevelDecoder, LevelParts, LevelSong, Location, NIBBLE_HEADER, PackedGround, Scenery,
-    installed,
+    Layout, LevelDecoder, LevelParts, LevelSong, Location, NIBBLE_HEADER, Optional, PackedGround,
+    Scenery, import_report, installed, skipped_summary,
 };
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Fixed, Level, Vec2};
@@ -215,6 +215,11 @@ fn song_block() -> Vec<u8> {
 
 /// Two banks of a repeating pattern, with the level's parts written in.
 fn image() -> Image {
+    image_with_song(song_block())
+}
+
+/// [`image`], with `song` as its song block.
+fn image_with_song(song: Vec<u8>) -> Image {
     let mut bytes: Vec<u8> = (0..=250u8).cycle().take(2 * BANK_SIZE).collect();
     let p = parts();
     let Scenery::Grid {
@@ -239,7 +244,7 @@ fn image() -> Image {
         (p.start.unwrap(), start_record()),
         (p.view_limits.unwrap(), view_limits()),
         (Location::new(BANK, SAMPLE), sample_record()),
-        (Location::new(BANK, SONG), song_block()),
+        (Location::new(BANK, SONG), song),
     ]
     .into_iter()
     .chain(
@@ -254,7 +259,12 @@ fn image() -> Image {
 }
 
 fn importer() -> Importer {
-    let image = image();
+    importer_for(&image())
+}
+
+/// An importer that knows `image` as `title-9` and has the level's
+/// decoder.
+fn importer_for(image: &Image) -> Importer {
     Importer {
         catalog: Catalog {
             known: vec![Known {
@@ -333,6 +343,43 @@ fn writes_the_level_s_music_with_its_loop() {
     assert!(seam.after < -60.0, "{seam:?}");
 }
 
+/// A song that can't be converted doesn't stop the import: the level
+/// goes without music of its own, and the import says so, with
+/// diagnostics that don't quote the image.
+#[test]
+fn a_song_that_cant_be_converted_is_skipped() {
+    let mut song = song_block();
+    // Channel 0's first command (after the block header, the song header
+    // and the ended track's byte) becomes an item the spec doesn't cover.
+    song[4 + 19] = 60;
+    let image = image_with_song(song);
+    let packs = scratch("skipped").join("packs");
+    let result = importer_for(&image).import(&image, &packs, false);
+    let imported = result.as_ref().unwrap();
+    assert_eq!(imported.decoded, ["made-up level"]);
+    let [skipped] = &imported.skipped[..] else {
+        panic!("{:?}", imported.skipped);
+    };
+    assert_eq!(skipped.part, Optional::Song);
+    assert_eq!(skipped.name, "song 0");
+    assert!(
+        skipped.reason.contains("song item 60"),
+        "{}",
+        skipped.reason
+    );
+    assert_eq!(
+        skipped_summary(&imported.skipped),
+        ["1 song couldn't be converted; using Clamber's music instead."]
+    );
+    let report = import_report(&result);
+    assert!(report.contains("Couldn't convert song 0: "), "{report}");
+    assert!(report.contains("  exactly: stops: "), "{report}");
+
+    let level = Level::load(&imported.dir.join("levels/first.level")).unwrap();
+    assert_eq!(level.music, None);
+    assert!(!imported.dir.join("levels/first-music.wav").exists());
+}
+
 /// Objects without a kind fingerprint row are named by their reference;
 /// a group's members carry the group. The single collectibles follow.
 #[test]
@@ -408,7 +455,7 @@ fn without_a_start_record_the_start_is_on_the_ground_at_the_left() {
         parts: parts(),
     };
     decoder.parts.start = None;
-    let (level, _) = decoder.level(&image()).unwrap();
+    let (level, _, _) = decoder.level(&image()).unwrap();
     assert_eq!(level.start, Vec2::ints(16, 481));
     decoder.parts.start = Some(Location::new(BANK, 0xFFFE));
     let err = decoder.level(&image()).unwrap_err();

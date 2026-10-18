@@ -1,8 +1,11 @@
 //! The music list: for each track, its file, how it loops and how loud
-//! it plays, and which track plays on the title screen. A TOML file:
+//! it plays, which track plays on the title screen, and which in a level
+//! without music of its own (such as an imported level whose song
+//! couldn't be converted). A TOML file:
 //!
 //! ```toml
 //! title = "opening"
+//! level = "opening"
 //!
 //! [tracks.opening]
 //! file = "music/opening.mp3"
@@ -30,6 +33,8 @@ pub const DEFAULT_MUSIC: &str = "base/music.toml";
 pub struct MusicList {
     /// The title screen's track, by name.
     pub title: Option<String>,
+    /// The track for levels without music of their own, by name.
+    pub level: Option<String>,
     pub tracks: BTreeMap<String, MusicTrack>,
 }
 
@@ -47,6 +52,7 @@ pub struct MusicTrack {
 #[serde(deny_unknown_fields)]
 struct MusicListFile {
     title: Option<String>,
+    level: Option<String>,
     #[serde(default)]
     tracks: BTreeMap<String, TrackFile>,
 }
@@ -100,13 +106,16 @@ impl MusicList {
             };
             tracks.insert(name, track);
         }
-        if let Some(title) = &file.title
-            && !tracks.contains_key(title)
-        {
-            return Err(format!("{origin}: title: no track named `{title}`"));
+        for (key, name) in [("title", &file.title), ("level", &file.level)] {
+            if let Some(name) = name
+                && !tracks.contains_key(name)
+            {
+                return Err(format!("{origin}: {key}: no track named `{name}`"));
+            }
         }
         Ok(MusicList {
             title: file.title,
+            level: file.level,
             tracks,
         })
     }
@@ -114,6 +123,11 @@ impl MusicList {
     /// The title screen's track.
     pub fn title(&self) -> Option<&MusicTrack> {
         self.tracks.get(self.title.as_ref()?)
+    }
+
+    /// The track for levels without music of their own.
+    pub fn level(&self) -> Option<&MusicTrack> {
+        self.tracks.get(self.level.as_ref()?)
     }
 
     /// The track whose file is `path`, however the path is written.

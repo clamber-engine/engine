@@ -20,9 +20,10 @@ use clamber_level::{
 
 use crate::{
     BANK_SIZE, Background, COLUMN_BANDS, Collectibles, Decoder, END, EXIT, GridPicture, Ground,
-    Image, KEG, Known, LEVELS, Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures,
-    Placements, ScreenMap, StartRecord, TileSet, VIEW_HEIGHT, VIEW_WIDTH, ViewLimits, WALL_EXIT,
-    WALL_RETURN, kind_rows, object_of, settings_rows, unpack, unpack_nibbles,
+    Image, KEG, Known, LEVELS, Layout, LevelSong, Location, Optional, PackWriter, PaletteSet,
+    Pictures, Placements, ScreenMap, Skipped, StartRecord, TileSet, VIEW_HEIGHT, VIEW_WIDTH,
+    ViewLimits, WALL_EXIT, WALL_RETURN, kind_rows, object_of, settings_rows, unpack,
+    unpack_nibbles,
 };
 
 /// Lines in a band.
@@ -311,8 +312,12 @@ pub struct LevelDecoder {
 
 impl LevelDecoder {
     /// The level, with its layers' images and its music by path relative
-    /// to it.
-    pub fn level(&self, image: &Image) -> Result<(Level, BTreeMap<String, Vec<u8>>), String> {
+    /// to it, and the optional parts it goes without.
+    #[allow(clippy::type_complexity)]
+    pub fn level(
+        &self,
+        image: &Image,
+    ) -> Result<(Level, BTreeMap<String, Vec<u8>>, Vec<Skipped>), String> {
         let p = &self.parts;
         let read = |what: &str, at: Location, len: usize| {
             image
@@ -529,17 +534,30 @@ impl LevelDecoder {
         if let Some(area) = p.back_to {
             lead_back(&mut level.entities, area);
         }
+        // Music is optional: a song that can't be converted leaves the
+        // level to the game's own music.
+        let mut skipped = Vec::new();
         if let Some(song) = p.song {
-            let music = song.music(|at| image.at(at))?;
-            let file = format!("{}-music.wav", self.file);
-            level.music = Some(Track {
-                file: file.clone(),
-                loop_start: music.looping.map(|l| l.start as u64),
-                loop_length: music.looping.map(|l| l.length as u64),
-            });
-            files.insert(file, music.wav());
+            let read = |at| image.at(at);
+            match song.music(read) {
+                Ok(music) => {
+                    let file = format!("{}-music.wav", self.file);
+                    level.music = Some(Track {
+                        file: file.clone(),
+                        loop_start: music.looping.map(|l| l.start as u64),
+                        loop_length: music.looping.map(|l| l.length as u64),
+                    });
+                    files.insert(file, music.wav());
+                }
+                Err(reason) => skipped.push(Skipped {
+                    part: Optional::Song,
+                    name: format!("song {}", song.song),
+                    reason,
+                    diagnostics: song.diagnose(read),
+                }),
+            }
         }
-        Ok((level, files))
+        Ok((level, files, skipped))
     }
 
     /// The objects in the placement list at `list`, for a level whose
@@ -581,7 +599,10 @@ impl Decoder for LevelDecoder {
     }
 
     fn decode(&self, image: &Image, pack: &mut PackWriter) -> Result<(), String> {
-        let (level, files) = self.level(image)?;
+        let (level, files, skipped) = self.level(image)?;
+        for skipped in skipped {
+            pack.skip(skipped);
+        }
         for (path, contents) in files {
             pack.write(&format!("{LEVELS}/{path}"), &contents)?;
         }

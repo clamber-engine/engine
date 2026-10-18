@@ -97,7 +97,7 @@ pub enum Screen {
     Picker(Picker, Box<Screen>),
     /// An import, running or finished, and the picker it was started
     /// from.
-    Importing(Importing, Box<Screen>),
+    Importing(Box<Importing>, Box<Screen>),
     /// Choosing a game to play, and the screen to go back to.
     Games(Games, Box<Screen>),
     /// The session's level map ([`Session::map`]).
@@ -486,7 +486,7 @@ impl Session {
         };
         let packs = self.packs_dir.clone();
         let importing = Importing::start(self.importer.clone(), file, packs, replace);
-        self.screen = Screen::Importing(importing, picker);
+        self.screen = Screen::Importing(Box::new(importing), picker);
     }
 
     fn step_importing(&mut self, frame: &Frame) {
@@ -1591,6 +1591,14 @@ mod tests {
         assert_eq!(imported.dir, dir.join("packs/title-9"));
         assert!(!imported.manifest.redistribute);
         assert_eq!(importing.menu.as_ref().unwrap().current(), After::Play);
+        let report = dir.join("packs/import-report.txt");
+        assert_eq!(importing.report.as_ref(), Some(&report));
+        let report = std::fs::read_to_string(report).unwrap();
+        assert!(
+            report.contains("Imported title-9 (made-up release)"),
+            "{report}"
+        );
+        assert!(report.contains("Nothing was skipped."), "{report}");
         let mut done = Game::canvas();
         s.draw(&mut done, 1.0);
         assert_ne!(canvas, done, "shows what came of it");

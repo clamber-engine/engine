@@ -8,6 +8,9 @@
 //! [`crate::voice_output`], and [`crate::music`] plays a whole song as
 //! audio.
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
 use crate::Location;
 use crate::sound::{Read, Song};
 
@@ -86,7 +89,7 @@ fn count(n: u8) -> u16 {
 }
 
 /// What a voice has been handed.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Voice {
     pub sample: u8,
     /// Sample outputs per audio output, in 1/[`UNIT_PITCH`]s.
@@ -99,7 +102,7 @@ pub struct Voice {
 
 /// A voice on one step: what it has been handed by the end of the step,
 /// and what the song did to it during the step.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct VoiceStep {
     pub voice: Voice,
     pub echo: bool,
@@ -119,7 +122,7 @@ pub struct VoiceStep {
 }
 
 /// The song-wide settings that reach the sound.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Settings {
     pub period: u8,
     pub main_volume: [u8; 2],
@@ -208,7 +211,7 @@ impl Change {
 
 /// The pitch slide: its settings (`w`, `r`, `n`, amount, `f`) and
 /// counters.
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 struct Slide {
     on: bool,
     wait: u8,
@@ -251,7 +254,7 @@ impl Slide {
 
 /// The vibrato or the volume sweep: settings (`N`, `r`, `d`, `w`) and
 /// counters.
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 struct Swing {
     on: bool,
     turn: u8,
@@ -305,14 +308,14 @@ impl Swing {
 
 /// A call (command 4): where it goes, how many plays are left, and where
 /// it returns to.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct Call {
     to: usize,
     left: u16,
     back: usize,
 }
 
-#[derive(Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq, Hash)]
 struct Channel {
     at: usize,
     ended: bool,
@@ -335,7 +338,7 @@ struct Channel {
 }
 
 /// Song-wide state beyond [`Settings`].
-#[derive(Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq, Hash)]
 struct Wide {
     tempo: u8,
     tempo_sum: u16,
@@ -428,6 +431,11 @@ impl<'a> Player<'a> {
         self.channels[..CHANNELS].iter().all(|c| c.ended)
     }
 
+    /// Whether each of the song's tracks has ended.
+    pub fn ended_channels(&self) -> [bool; CHANNELS] {
+        std::array::from_fn(|i| self.channels[i].ended)
+    }
+
     /// Whether this player is where `other` is: every track, effect slot,
     /// voice and setting as there, so that from here on both play the
     /// same steps. Which song and effects they play isn't compared.
@@ -438,6 +446,115 @@ impl<'a> Player<'a> {
             && self.voices == other.voices
             && self.settings == other.settings
             && self.wide == other.wide
+    }
+
+    /// Whether this player is at the same place in the score as `other`:
+    /// as in [`same_place`](Player::same_place), but leaving out the
+    /// tempo sums, what the voices were handed, and the effects' counters
+    /// and what they changed (the channels' pitches and volumes). Two
+    /// players at the same place in the score on a beat play the same
+    /// notes from there, give or take a step in their timing and the
+    /// effects' changes.
+    pub fn same_score_place(&self, other: &Player) -> bool {
+        self.score() == other.score()
+    }
+
+    fn score(&self) -> (Vec<Channel>, [bool; CHANNELS], Settings, Wide) {
+        let channels = self
+            .channels
+            .iter()
+            .map(|c| {
+                let mut c = c.clone();
+                c.pitch = 0;
+                c.volume = [0, 0];
+                c.slide.countdown = 0;
+                c.slide.made = 0;
+                for swing in [&mut c.vibrato, &mut c.sweep] {
+                    swing.countdown = 0;
+                    swing.left = 0;
+                    swing.off = false;
+                }
+                c
+            })
+            .collect();
+        let wide = Wide {
+            tempo_sum: 0,
+            effect_sum: 0,
+            ..self.wide.clone()
+        };
+        (channels, self.taken, self.settings, wide)
+    }
+
+    /// The parts of the player's place, by name, each with a fingerprint
+    /// that is the same wherever that part is the same: for finding out
+    /// which parts of a song don't come back to where they were.
+    pub fn place_parts(&self) -> Vec<(String, u64)> {
+        fn print(part: impl Hash) -> u64 {
+            let mut hasher = DefaultHasher::new();
+            part.hash(&mut hasher);
+            hasher.finish()
+        }
+        let mut parts = Vec::new();
+        for (i, c) in self.channels[..CHANNELS].iter().enumerate() {
+            parts.extend([
+                (
+                    format!("channel {i}'s position"),
+                    print((c.at, c.ended, c.wait, &c.calls)),
+                ),
+                (
+                    format!("channel {i}'s pitch and volume"),
+                    print((c.pitch, c.volume)),
+                ),
+                (
+                    format!("channel {i}'s effects"),
+                    print((c.slide, c.vibrato, c.sweep)),
+                ),
+                (
+                    format!("channel {i}'s other settings"),
+                    print((
+                        c.two_byte,
+                        c.fixed,
+                        c.fine,
+                        c.transpose,
+                        c.sample,
+                        c.saved_volume,
+                        c.envelope,
+                        c.echo,
+                    )),
+                ),
+            ]);
+        }
+        let w = &self.wide;
+        parts.extend([
+            (
+                "the effect slots".into(),
+                print((&self.channels[CHANNELS..], self.taken, self.started)),
+            ),
+            ("the voices".into(), print(self.voices)),
+            ("the song-wide settings".into(), print(self.settings)),
+            ("the tempo sum".into(), print(w.tempo_sum)),
+            ("the effect tempo sum".into(), print(w.effect_sum)),
+            ("the fade".into(), print((w.fade, w.fade_speed))),
+            (
+                "the other song-wide values".into(),
+                print((
+                    w.tempo,
+                    w.effect_tempo,
+                    w.main_base,
+                    w.echo_base,
+                    w.branch,
+                    w.presets,
+                )),
+            ),
+            ("the place in the score".into(), print(self.score())),
+        ]);
+        parts
+    }
+
+    /// The most calls inside calls any of the song's channels is in.
+    pub fn call_depth(&self) -> usize {
+        let channels = self.channels[..CHANNELS].iter();
+        channels.map(|c| c.calls.len()).max().unwrap_or(0)
     }
 
     /// Starts effect `effect` on voice `voice`, between the last step and

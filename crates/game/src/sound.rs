@@ -234,19 +234,24 @@ impl Audio {
     }
 
     /// Sets the level's music, whose file is relative to `dir`. Its loop
-    /// and volume come from `list`, unless the level gives a loop.
+    /// and volume come from `list`, unless the level gives a loop. A level
+    /// without music plays `list`'s track for one.
     pub fn set_music(&mut self, track: Option<&Track>, dir: &Path, list: &MusicList) {
-        self.level = track.map(|t| {
-            let path = dir.join(&t.file);
-            let mut play = TrackToPlay::new(path.clone(), list.find(&path));
-            if let Some(start) = t.loop_start {
-                play.looping = Some(Looping::From {
-                    start,
-                    length: t.loop_length,
-                });
-            }
-            play
-        });
+        let Some(track) = track else {
+            self.level = list
+                .level()
+                .map(|t| TrackToPlay::new(t.file.clone(), Some(t)));
+            return;
+        };
+        let path = dir.join(&track.file);
+        let mut play = TrackToPlay::new(path.clone(), list.find(&path));
+        if let Some(start) = track.loop_start {
+            play.looping = Some(Looping::From {
+                start,
+                length: track.loop_length,
+            });
+        }
+        self.level = Some(play);
     }
 
     /// Cues with a sound.
@@ -599,6 +604,37 @@ mod tests {
         audio.update(&s, |w| panic!("{w}"));
         let crossfade = (RATE as f32 * CROSSFADE) as usize;
         assert!(last(&mut mixer, crossfade + 1) > 0.2, "the second level's");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_level_without_music_plays_the_list_s_track_for_one() {
+        let dir = folder("fallback");
+        std::fs::write(dir.join("fallback.wav"), level_wav(RATE as usize, 16384)).unwrap();
+        let list = MusicList::from_toml_str(
+            "level = \"f\"\n[tracks.f]\nfile = \"fallback.wav\"\nvolume = 0.5\n",
+            &dir,
+            "music.toml",
+        )
+        .unwrap();
+        let (handle, mut mixer) = mixer(8);
+        let mut audio = Audio::new(handle, RATE, &SoundList::default(), |w| panic!("{w}"));
+        audio.set_music(None, &dir, &list);
+        let mut s = session();
+        s.step(&press(Action::Jump));
+        audio.update(&s, |w| panic!("{w}"));
+        let music = last(&mut mixer, 800);
+        assert!((music - 0.25).abs() < 0.01, "{music}");
+
+        audio.set_music(None, &dir, &MusicList::default());
+        s.step(&press(Action::Jump));
+        audio.update(&s, |w| panic!("{w}"));
+        let fade = (RATE as f32 * MUSIC_OUT) as usize;
+        assert_eq!(
+            last(&mut mixer, fade + 800),
+            0.0,
+            "no track for one: silence"
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 

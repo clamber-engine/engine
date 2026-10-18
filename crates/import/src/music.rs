@@ -8,7 +8,7 @@
 //! Nor does it say on which output a value handed between two steps
 //! first counts; here it counts from the first output after the step.
 
-use crate::songs::{GAIN, Player, Step};
+use crate::songs::{CHANNELS, GAIN, Player, Step};
 use crate::sound::{Loop, Read, Sample, read_samples, read_song, song_samples};
 use crate::voice_output::Mixer;
 use crate::{Location, Song};
@@ -55,7 +55,15 @@ impl LevelSong {
             }
         }
         let song = read_song(read, self.song_table, self.song)?;
-        render(&song, &samples).map_err(|e| format!("song {}: {e}", self.song))
+        render(&song, &samples)
+    }
+
+    /// [`diagnose`] for the song.
+    pub fn diagnose<'a>(&self, read: impl Read<'a> + Copy) -> Vec<String> {
+        match read_song(read, self.song_table, self.song) {
+            Ok(song) => diagnose(&song),
+            Err(e) => vec![format!("can't read the song: {e}")],
+        }
     }
 }
 
@@ -100,14 +108,38 @@ impl Music {
 enum Shape {
     /// Every track has ended after this many steps.
     Ends(usize),
-    /// After `lead_in` steps, the next `length` steps repeat forever.
-    Loops { lead_in: usize, length: usize },
+    /// After `lead_in` steps, the next `length` steps repeat forever:
+    /// exactly, or only as far as the score goes
+    /// ([`Player::same_score_place`]).
+    Loops {
+        lead_in: usize,
+        length: usize,
+        exact: bool,
+    },
 }
 
 /// Finds the shape of `song` by playing it until it ends or comes back
-/// to a place it was at before (Brent's cycle finding, so that only two
-/// players are kept).
+/// to a place it was at before. A song can take far longer to come back
+/// to exactly where it was than to where it was in the score: with a
+/// tempo that doesn't divide 256, the tempo sum only comes back after
+/// several times round, and an effect's counters may never line up with
+/// the notes again. Such a song loops where its score comes back.
 fn shape(song: &Song) -> Result<Shape, String> {
+    if let Some(shape) = exact_shape(song)? {
+        return Ok(shape);
+    }
+    if let Some(shape) = score_shape(song)? {
+        return Ok(shape);
+    }
+    Err(format!(
+        "it neither ends nor loops within {MAX_STEPS} steps"
+    ))
+}
+
+/// The shape of `song` where it comes back to exactly where it was
+/// within [`MAX_STEPS`] (Brent's cycle finding, so that only two
+/// players are kept).
+fn exact_shape(song: &Song) -> Result<Option<Shape>, String> {
     let start = Player::new(song)?;
     let mut tortoise = start.clone();
     let mut hare = start.clone();
@@ -116,7 +148,7 @@ fn shape(song: &Song) -> Result<Shape, String> {
         hare.step()?;
         length += 1;
         if hare.ended() {
-            return Ok(Shape::Ends(steps));
+            return Ok(Some(Shape::Ends(steps)));
         }
         if hare.same_place(&tortoise) {
             // The loop is `length` steps long; it starts at the first
@@ -132,7 +164,11 @@ fn shape(song: &Song) -> Result<Shape, String> {
                 hare.step()?;
                 lead_in += 1;
             }
-            return Ok(Shape::Loops { lead_in, length });
+            return Ok(Some(Shape::Loops {
+                lead_in,
+                length,
+                exact: true,
+            }));
         }
         if length == power {
             tortoise = hare.clone();
@@ -140,9 +176,173 @@ fn shape(song: &Song) -> Result<Shape, String> {
             length = 0;
         }
     }
-    Err(format!(
-        "it neither ends nor loops within {MAX_STEPS} steps"
-    ))
+    Ok(None)
+}
+
+/// Plays `player` up to and including its next beat, giving the steps
+/// that took; `None` if there's no beat within 256 steps (tempo 0).
+fn to_beat(player: &mut Player) -> Result<Option<usize>, String> {
+    for steps in 1..=256 {
+        if player.step()?.beat {
+            return Ok(Some(steps));
+        }
+    }
+    Ok(None)
+}
+
+/// The shape of `song` where, on a beat, it comes back to where it was
+/// in the score within [`MAX_STEPS`], as [`exact_shape`] does but a beat
+/// at a time.
+fn score_shape(song: &Song) -> Result<Option<Shape>, String> {
+    let mut first = Player::new(song)?;
+    let Some(first_steps) = to_beat(&mut first)? else {
+        return Ok(None);
+    };
+    let mut tortoise = first.clone();
+    let mut hare = first.clone();
+    let (mut power, mut length) = (1, 0);
+    let mut steps = first_steps;
+    loop {
+        let Some(n) = to_beat(&mut hare)? else {
+            return Ok(None);
+        };
+        steps += n;
+        length += 1;
+        if steps > MAX_STEPS || hare.ended() {
+            return Ok(None);
+        }
+        if hare.same_score_place(&tortoise) {
+            break;
+        }
+        if length == power {
+            tortoise = hare.clone();
+            power *= 2;
+            length = 0;
+        }
+    }
+    // The loop is `length` beats long. It starts at the first beat
+    // whose place in the score comes back `length` beats later; in
+    // steps, it's as long as it is that first time round.
+    let beat = |player: &mut Player| -> Result<usize, String> {
+        to_beat(player)?.ok_or_else(|| "a beat went missing".to_string())
+    };
+    let mut tortoise = first.clone();
+    let mut hare = first;
+    let (mut lead_in, mut ahead) = (first_steps, first_steps);
+    for _ in 0..length {
+        ahead += beat(&mut hare)?;
+    }
+    while !hare.same_score_place(&tortoise) {
+        lead_in += beat(&mut tortoise)?;
+        ahead += beat(&mut hare)?;
+    }
+    Ok(Some(Shape::Loops {
+        lead_in,
+        length: ahead - lead_in,
+        exact: false,
+    }))
+}
+
+/// Counts, step numbers and states for finding out why `song` doesn't
+/// end or loop, one line each: whether and where it comes back to
+/// where it was, exactly and in the score, and how often each part of
+/// the player's place repeats over the last half of [`MAX_STEPS`]
+/// steps. Nothing in it is from the song's data.
+pub fn diagnose(song: &Song) -> Vec<String> {
+    diagnose_for(song, MAX_STEPS)
+}
+
+fn diagnose_for(song: &Song, max_steps: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut shape_line = |what: &str, shape: Result<Option<Shape>, String>| {
+        lines.push(match shape {
+            Ok(Some(Shape::Ends(steps))) => format!("{what}: ends after {steps} steps"),
+            Ok(Some(Shape::Loops {
+                lead_in, length, ..
+            })) => format!("{what}: loops every {length} steps from step {lead_in}"),
+            Ok(None) => format!("{what}: doesn't come back within {MAX_STEPS} steps"),
+            Err(e) => format!("{what}: stops: {e}"),
+        })
+    };
+    shape_line("exactly", exact_shape(song));
+    shape_line("in the score", score_shape(song));
+
+    let mut player = match Player::new(song) {
+        Ok(player) => player,
+        Err(e) => {
+            lines.push(format!("can't start the song: {e}"));
+            return lines;
+        }
+    };
+    let names: Vec<String> = player.place_parts().into_iter().map(|(n, _)| n).collect();
+    let mut prints = vec![Vec::with_capacity(max_steps); names.len()];
+    let (mut beats, mut depth) = (0, 0);
+    let mut ended = [None; CHANNELS];
+    for steps in 1..=max_steps {
+        match player.step() {
+            Ok(step) => beats += usize::from(step.beat),
+            Err(e) => {
+                lines.push(format!("stops at step {steps}: {e}"));
+                break;
+            }
+        }
+        depth = depth.max(player.call_depth());
+        for (i, &done) in player.ended_channels().iter().enumerate() {
+            if done && ended[i].is_none() {
+                ended[i] = Some(steps);
+            }
+        }
+        for (part, (_, print)) in prints.iter_mut().zip(player.place_parts()) {
+            // Fingerprints are only compared; half of one is plenty.
+            part.push(print as u32);
+        }
+    }
+    let played = prints[0].len();
+    lines.push(format!(
+        "played {played} steps, {beats} beats; at most {depth} calls deep"
+    ));
+    let ended: Vec<String> = (ended.iter().enumerate())
+        .filter_map(|(i, at)| at.map(|at| format!("channel {i} at step {at}")))
+        .collect();
+    lines.push(match ended.is_empty() {
+        true => "no channel ended".into(),
+        false => format!("ended: {}", ended.join(", ")),
+    });
+    for (name, part) in names.iter().zip(&prints) {
+        lines.push(match repeats(part) {
+            Some((1, 1)) => format!("{name}: stays the same"),
+            Some((from, 1)) => format!("{name}: stays the same from step {from}"),
+            Some((from, period)) => {
+                format!("{name}: repeats every {period} steps from step {from}")
+            }
+            None => format!(
+                "{name}: doesn't repeat over the last {} steps",
+                played - played / 2
+            ),
+        });
+    }
+    lines
+}
+
+/// The shortest period with which `prints` (of the place after steps 1,
+/// 2, …) repeats over its second half, and the step from which it
+/// does.
+fn repeats(prints: &[u32]) -> Option<(usize, usize)> {
+    let n = prints.len();
+    let half = n / 2;
+    let last = *prints.last()?;
+    let candidates = (half..n - 1).rev().filter(|&j| prints[j] == last);
+    for j in candidates.take(64) {
+        let period = n - 1 - j;
+        if (half + period..n).all(|i| prints[i] == prints[i - period]) {
+            let mut from = n - 1 - period;
+            while from > 0 && prints[from - 1] == prints[from - 1 + period] {
+                from -= 1;
+            }
+            return Some((from + 1, period));
+        }
+    }
+    None
 }
 
 /// Hands the voices, the main volume and the echo what `step` gives
@@ -178,7 +378,9 @@ pub fn render(song: &Song, samples: &[Sample]) -> Result<Music, String> {
     let shape = shape(song)?;
     let (steps, loop_from) = match shape {
         Shape::Ends(steps) => (steps, None),
-        Shape::Loops { lead_in, length } => (lead_in + 2 * length, Some(lead_in + length)),
+        Shape::Loops {
+            lead_in, length, ..
+        } => (lead_in + 2 * length, Some(lead_in + length)),
     };
     let mut player = Player::new(song)?;
     // The memory starts all 0 when the sound starts; whether a song
@@ -222,7 +424,7 @@ pub fn render(song: &Song, samples: &[Sample]) -> Result<Music, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::CHANNELS;
+    use crate::HEADER_SIZE;
 
     /// A looping sample whose points are all 4 096 (as in
     /// `voice_output.rs`'s worked example).
@@ -277,6 +479,69 @@ mod tests {
         let first = &music.frames[looping.start - looping.length..looping.start];
         assert_eq!(first, second);
         assert!(second.iter().any(|f| f[0] != 0));
+    }
+
+    /// A song whose channels play `tracks`, one after another from byte
+    /// 19, and whose other channels end at once (byte 18). Each track is
+    /// [`SETUP`], then a note of `a` beats and one of `b` beats round and
+    /// round.
+    fn round_song(tempo: u8, tracks: &[(u8, u8)]) -> Song {
+        let mut data = vec![0u8; HEADER_SIZE];
+        data[16] = tempo;
+        data.push(0);
+        for (i, &(a, b)) in tracks.iter().enumerate() {
+            let at = (data.len() as u16).to_le_bytes();
+            data[2 * i..2 * i + 2].copy_from_slice(&at);
+            data.extend(SETUP);
+            let back = data.len() as u16;
+            data.extend([165, a, 165, b, 3]);
+            data.extend(back.to_le_bytes());
+        }
+        for i in tracks.len()..CHANNELS {
+            data[2 * i..2 * i + 2].copy_from_slice(&18u16.to_le_bytes());
+        }
+        Song { base: 0, data }
+    }
+
+    /// Tempo 3: three beats every 256 steps, so a loop of 401 beats only
+    /// comes back with the tempo sum where it was after 401 × 256 steps,
+    /// too many to find. The score comes back after about 401 × 256 / 3.
+    #[test]
+    fn a_song_whose_tempo_sum_comes_back_late_loops_where_its_score_does() {
+        let song = round_song(3, &[(200, 201)]);
+        assert_eq!(exact_shape(&song).unwrap(), None);
+        let Shape::Loops { length, exact, .. } = shape(&song).unwrap() else {
+            panic!("the song doesn't loop");
+        };
+        assert!(!exact);
+        assert!(length.abs_diff(401 * 256 / 3) <= 1, "{length}");
+    }
+
+    /// Tracks of 401 and 400 beats only come back together after 160 400
+    /// beats: the song can't be converted, and the diagnostics say which
+    /// parts repeat how often.
+    #[test]
+    fn a_song_whose_tracks_loop_apart_fails_and_says_why() {
+        let song = round_song(128, &[(200, 201), (200, 200)]);
+        let err = shape(&song).unwrap_err();
+        assert!(err.contains("neither ends nor loops"), "{err}");
+        let lines = diagnose_for(&song, 4000);
+        for line in [
+            format!("exactly: doesn't come back within {MAX_STEPS} steps"),
+            format!("in the score: doesn't come back within {MAX_STEPS} steps"),
+            "played 4000 steps, 2000 beats; at most 0 calls deep".into(),
+            "ended: channel 2 at step 2, channel 3 at step 2, channel 4 at step 2, \
+             channel 5 at step 2, channel 6 at step 2, channel 7 at step 2"
+                .into(),
+            "channel 0's position: repeats every 802 steps from step 2".into(),
+            "channel 1's position: repeats every 800 steps from step 2".into(),
+            "channel 2's position: stays the same from step 2".into(),
+            "the tempo sum: repeats every 2 steps from step 1".into(),
+            "the effect tempo sum: stays the same".into(),
+            "the place in the score: doesn't repeat over the last 2000 steps".into(),
+        ] {
+            assert!(lines.contains(&line), "no `{line}` in {lines:#?}");
+        }
     }
 
     #[test]

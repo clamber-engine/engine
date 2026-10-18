@@ -10,7 +10,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use clamber_import::{Image, ImportError, Imported, Importer, Installed, installed};
+use clamber_import::{
+    Image, ImportError, Imported, Importer, Installed, import_report, installed, skipped_summary,
+};
 use clamber_input::{Action, Frame};
 
 use crate::camera::VIEW;
@@ -26,6 +28,10 @@ const WIDTH: usize = 56;
 
 /// Folder entries shown at once.
 const PICKER_ROWS: usize = 11;
+
+/// The report on the last import, written in the packs folder for the
+/// player to share when something went wrong.
+pub const REPORT: &str = "import-report.txt";
 
 /// How a personal import is described, wherever one is shown.
 pub const PERSONAL: &str = "Personal import: yours to play, not to share";
@@ -254,7 +260,7 @@ pub enum After {
 struct Progress {
     /// The decoders that have started, in order.
     started: Vec<String>,
-    done: Option<Result<Imported, ImportError>>,
+    done: Option<(Result<Imported, ImportError>, Option<PathBuf>)>,
 }
 
 /// An import of the file at `file`, running or finished.
@@ -264,6 +270,8 @@ pub struct Importing {
     progress: Arc<Mutex<Progress>>,
     /// What the import made, or why it didn't, once it has finished.
     pub result: Option<Result<Imported, ImportError>>,
+    /// Where the report on it was written, if it could be.
+    pub report: Option<PathBuf>,
     /// The levels in the pack, once it's made.
     pub levels: usize,
     /// The choices once it's finished.
@@ -295,6 +303,7 @@ impl Importing {
             file: file.clone(),
             progress: progress.clone(),
             result: None,
+            report: None,
             levels: 0,
             menu: None,
         };
@@ -320,7 +329,19 @@ impl Importing {
                     message: "the importer stopped unexpectedly".into(),
                 })
             });
-            lock().done = Some(result);
+            // Not where there's no packs folder: nothing was imported.
+            let path = packs.join(REPORT);
+            let report = match packs.is_dir() {
+                true => match std::fs::write(&path, import_report(&result)) {
+                    Ok(()) => Some(path),
+                    Err(e) => {
+                        report::warn(format!("{}: {e}", path.display()));
+                        None
+                    }
+                },
+                false => None,
+            };
+            lock().done = Some((result, report));
         });
         importing
     }
@@ -338,7 +359,8 @@ impl Importing {
             .done
             .take();
         match done {
-            Some(result) => {
+            Some((result, report)) => {
+                self.report = report;
                 self.finish(result);
                 true
             }
@@ -369,8 +391,16 @@ impl Importing {
                 ("Done", After::Done),
             ]),
         };
-        if let Err(e) = &result {
-            report::warn(format!("importing {}: {e}", self.file.display()));
+        match &result {
+            Ok(imported) => {
+                for skipped in &imported.skipped {
+                    report::warn(format!("importing {}: {skipped}", self.file.display()));
+                }
+            }
+            Err(e) => report::warn(format!("importing {}: {e}", self.file.display())),
+        }
+        if let Some(path) = &self.report {
+            report::note(format!("The report on the import is in {}", path.display()));
         }
         self.result = Some(result);
         self.menu = Some(menu);
@@ -424,16 +454,33 @@ impl Importing {
                 if self.levels == 0 {
                     let none = "Nothing to play yet: this version of Clamber \
                                 can't convert its levels.";
-                    paragraph(canvas, centre, y + LINE, none, SUBTITLE);
+                    y = paragraph(canvas, centre, y + LINE, none, SUBTITLE);
+                }
+                for line in skipped_summary(&imported.skipped) {
+                    y = paragraph(canvas, centre, y + LINE, &line, SUBTITLE);
+                }
+                if !imported.skipped.is_empty() {
+                    self.draw_report(canvas, centre, y + LINE);
                 }
             }
             Some(Err(e)) => {
                 heading(canvas, "CAN'T IMPORT", FAILED);
-                paragraph(canvas, centre, y, &capitalized(&e.to_string()), HEADING);
+                let y = paragraph(canvas, centre, y, &capitalized(&e.to_string()), HEADING);
+                self.draw_report(canvas, centre, y + LINE);
             }
         }
         if let Some(menu) = &self.menu {
             menu.draw(canvas, centre, VIEW.1 as i32 - 20 - menu.height());
+        }
+    }
+}
+
+impl Importing {
+    /// Where the report is, if it was written.
+    fn draw_report(&self, canvas: &mut dyn Surface, centre: i32, top: i32) {
+        if let Some(path) = &self.report {
+            let text = format!("A report to share is in {}", path.display());
+            paragraph(canvas, centre, top, &text, SUBTITLE);
         }
     }
 }

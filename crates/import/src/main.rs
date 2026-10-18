@@ -1,26 +1,30 @@
 //! `clamber-import`: import a game image the player owns as a personal
 //! content pack.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clamber_import::{Image, Importer, packs_dir};
+use clamber_import::{Image, Imported, Importer, import_report, packs_dir, skipped_summary};
 
 const USAGE: &str = "\
-usage: clamber-import <image> [--into <dir>] [--replace]
+usage: clamber-import <image> [--into <dir>] [--replace] [--import-report <file>]
 
 Reads your own copy of a supported game and writes a personal content
 pack for Clamber to play. The pack is yours alone: it can't be exported
 or shared.
 
---into     put the pack in <dir> instead of your packs folder
---replace  overwrite an earlier import of the same game
+--into <dir>            put the pack in <dir> instead of your packs folder
+--replace               overwrite an earlier import of the same game
+--import-report <file>  write a report on the import to <file>, to share
+                        when something went wrong; it has nothing from
+                        the game in it
 ";
 
 fn main() -> ExitCode {
     let mut image = None;
     let mut into = None;
     let mut replace = false;
+    let mut report = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -29,6 +33,10 @@ fn main() -> ExitCode {
                 return ExitCode::SUCCESS;
             }
             "--replace" => replace = true,
+            "--import-report" => match args.next() {
+                Some(file) => report = Some(PathBuf::from(file)),
+                None => return usage("`--import-report` needs a file"),
+            },
             "--into" => match args.next() {
                 Some(dir) => into = Some(PathBuf::from(dir)),
                 None => return usage("`--into` needs a folder"),
@@ -45,20 +53,36 @@ fn main() -> ExitCode {
         eprintln!("clamber-import: can't tell where your packs folder is; use --into <dir>");
         return ExitCode::from(2);
     };
-    match import(&image, &packs, replace) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(message) => {
-            eprintln!("clamber-import: {message}");
+    let image = match Image::read(&image) {
+        Ok(image) => image,
+        Err(e) => {
+            eprintln!("clamber-import: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let result = Importer::builtin().import(&image, &packs, replace);
+    if let Some(file) = report {
+        match std::fs::write(&file, import_report(&result)) {
+            Ok(()) => eprintln!("clamber-import: wrote the report to {}", file.display()),
+            Err(e) => eprintln!("clamber-import: {}: {e}", file.display()),
+        }
+    }
+    match result {
+        Ok(imported) => {
+            show(&imported);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("clamber-import: {e}");
             ExitCode::FAILURE
         }
     }
 }
 
-fn import(image: &Path, packs: &Path, replace: bool) -> Result<(), String> {
-    let image = Image::read(image).map_err(|e| e.to_string())?;
-    let imported = Importer::builtin()
-        .import(&image, packs, replace)
-        .map_err(|e| e.to_string())?;
+fn show(imported: &Imported) {
+    for skipped in &imported.skipped {
+        eprintln!("clamber-import: warning: {skipped}");
+    }
     let m = &imported.manifest;
     println!(
         "Imported {} ({}) to {}",
@@ -69,8 +93,10 @@ fn import(image: &Path, packs: &Path, replace: bool) -> Result<(), String> {
     for decoder in &imported.decoded {
         println!("  converted the {decoder}");
     }
+    for line in skipped_summary(&imported.skipped) {
+        println!("{line}");
+    }
     println!("This is a personal import: it's yours to play, and can't be shared.");
-    Ok(())
 }
 
 fn usage(message: &str) -> ExitCode {

@@ -1,7 +1,8 @@
 # The base game's music: each track's file, how it loops and how loud it
 # plays, and which track plays on the title screen. A level names its
-# own track's file; the loop and volume for it come from here. Paths are
-# relative to this file.
+# own track's file; the loop and volume for it come from here, and a
+# level without one (as an imported level whose song couldn't be
+# converted) plays the `level` track. Paths are relative to this file.
 #
 # Loop points are frames at the file's sample rate: the music plays from
 # the start of the file to `loop_end`, then carries on from `loop_start`,
@@ -19,6 +20,7 @@
 # below the sound effects. Credits for the music are in CREDITS.md.
 
 title = "intro-theme"
+level = "grasslands-theme"
 
 [tracks.intro-theme]
 file = "music/intro-theme.mp3"

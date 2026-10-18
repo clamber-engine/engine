@@ -165,11 +165,119 @@ impl fmt::Display for ImportError {
 
 impl std::error::Error for ImportError {}
 
+/// An optional part of an image that couldn't be converted. The pack
+/// goes without it, and the game uses its own in its place: Clamber's
+/// music for a song.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Skipped {
+    pub part: Optional,
+    /// Which one, for the player: "song 0".
+    pub name: String,
+    pub reason: String,
+    /// Counts, step numbers and states for finding out why, one line
+    /// each. Like error messages, they never quote the image.
+    pub diagnostics: Vec<String>,
+}
+
+/// The kinds of part an import can go without.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Optional {
+    Song,
+}
+
+impl Optional {
+    /// What the player hears instead, after "using".
+    fn instead(self) -> &'static str {
+        match self {
+            Optional::Song => "Clamber's music",
+        }
+    }
+
+    fn noun(self, count: usize) -> &'static str {
+        match (self, count) {
+            (Optional::Song, 1) => "song",
+            (Optional::Song, _) => "songs",
+        }
+    }
+}
+
+impl fmt::Display for Skipped {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "couldn't convert {}: {}; using {} instead",
+            self.name,
+            self.reason,
+            self.part.instead()
+        )
+    }
+}
+
+/// A short note for the player on what an import went without, a line
+/// for each kind of part: "3 songs couldn't be converted; using
+/// Clamber's music instead." The same part skipped twice (as a song two
+/// levels share) counts once.
+pub fn skipped_summary(skipped: &[Skipped]) -> Vec<String> {
+    let parts: BTreeSet<(Optional, &str)> =
+        skipped.iter().map(|s| (s.part, s.name.as_str())).collect();
+    let kinds: BTreeSet<Optional> = parts.iter().map(|&(part, _)| part).collect();
+    kinds
+        .into_iter()
+        .map(|kind| {
+            let count = parts.iter().filter(|&&(part, _)| part == kind).count();
+            format!(
+                "{count} {} couldn't be converted; using {} instead.",
+                kind.noun(count),
+                kind.instead()
+            )
+        })
+        .collect()
+}
+
+/// A text report on an import, for the player to share when something
+/// went wrong: what was imported or why it wasn't, which optional parts
+/// were skipped, and their diagnostics. It never quotes the image.
+pub fn import_report(result: &Result<Imported, ImportError>) -> String {
+    let mut out = format!(
+        "Clamber import report (importer {})\n",
+        env!("CARGO_PKG_VERSION")
+    );
+    match result {
+        Ok(imported) => {
+            let m = &imported.manifest;
+            out += &format!("Imported {} ({})\n", m.title, m.release);
+            for decoder in &imported.decoded {
+                out += &format!("  converted the {decoder}\n");
+            }
+            if imported.skipped.is_empty() {
+                out += "Nothing was skipped.\n";
+            }
+            for skipped in &imported.skipped {
+                out += &format!("\n{}\n", capitalize(&skipped.to_string()));
+                for line in &skipped.diagnostics {
+                    out += &format!("  {line}\n");
+                }
+            }
+        }
+        Err(e) => out += &format!("Didn't import: {e}\n"),
+    }
+    out
+}
+
+fn capitalize(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
 /// Collects a pack's files while it's being imported, in a folder of its
 /// own that only becomes the pack once everything is written.
 pub struct PackWriter {
     dir: PathBuf,
     written: BTreeSet<PathBuf>,
+    skipped: Vec<Skipped>,
 }
 
 impl PackWriter {
@@ -194,6 +302,12 @@ impl PackWriter {
         fs::write(&full, contents).map_err(|e| format!("{}: {e}", full.display()))
     }
 
+    /// Notes that an optional part couldn't be converted, and goes on
+    /// without it.
+    pub fn skip(&mut self, skipped: Skipped) {
+        self.skipped.push(skipped);
+    }
+
     /// The files written so far, relative to the pack's folder.
     pub fn files(&self) -> impl Iterator<Item = &Path> {
         self.written.iter().map(PathBuf::as_path)
@@ -208,6 +322,9 @@ pub struct Imported {
     pub dir: PathBuf,
     /// The decoders that ran, in order.
     pub decoded: Vec<String>,
+    /// The optional parts that couldn't be converted, in the order they
+    /// were met.
+    pub skipped: Vec<Skipped>,
 }
 
 pub struct Importer {
@@ -317,11 +434,12 @@ impl Importer {
         if result.is_err() {
             let _ = fs::remove_dir_all(&staging);
         }
-        let (manifest, decoded) = result?;
+        let (manifest, decoded, skipped) = result?;
         Ok(Imported {
             manifest,
             dir: dest,
             decoded,
+            skipped,
         })
     }
 
@@ -332,10 +450,11 @@ impl Importer {
         known: &Known,
         staging: &Path,
         progress: &mut dyn FnMut(&str),
-    ) -> Result<(Manifest, Vec<String>), ImportError> {
+    ) -> Result<(Manifest, Vec<String>, Vec<Skipped>), ImportError> {
         let mut pack = PackWriter {
             dir: staging.to_path_buf(),
             written: BTreeSet::new(),
+            skipped: Vec::new(),
         };
         let mut decoded = Vec::new();
         for decoder in self.decoders.iter().filter(|d| d.applies_to(known)) {
@@ -362,7 +481,7 @@ impl Importer {
         let path = staging.join(MANIFEST);
         fs::write(&path, manifest.to_toml())
             .map_err(|e| ImportError::Write(format!("{}: {e}", path.display())))?;
-        Ok((manifest, decoded))
+        Ok((manifest, decoded, pack.skipped))
     }
 }
 
