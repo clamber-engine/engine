@@ -17,7 +17,8 @@ tags per animation, the origin, the texel scale, the normal map, the
 variants, and a `hurtbox` slice per frame around the posed model.
 
 Distances: one Blender unit is ten world units, so a body 32 units tall is
-3.2 m. Sheets are drawn at `SCALE` texels per world unit.
+3.2 m. Sheets are drawn at `SCALE` texels per world unit unless a script asks
+for more.
 """
 
 import json
@@ -123,10 +124,11 @@ def aim(obj, target):
     obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
 
-def camera(scene, frame, origin):
+def camera(scene, frame, origin, scale=SCALE):
     """An orthographic camera looking at the model from the side (from -Y,
     with +X to the right), framing `frame` world units with the world's
-    origin at `origin` within it, measured from the frame's top left."""
+    origin at `origin` within it, measured from the frame's top left, at
+    `scale` texels per world unit."""
     fw, fh = frame
     ox, oy = origin
     data = bpy.data.cameras.new("camera")
@@ -139,8 +141,8 @@ def camera(scene, frame, origin):
     cam.rotation_euler = (math.pi / 2, 0, 0)
     scene.collection.objects.link(cam)
     scene.camera = cam
-    scene.render.resolution_x = fw * SCALE
-    scene.render.resolution_y = fh * SCALE
+    scene.render.resolution_x = fw * scale
+    scene.render.resolution_y = fh * scale
     return cam
 
 
@@ -668,7 +670,7 @@ def write_png(path, image):
 
 
 def render_sheet(scene, cam, rig, out, frame, origin, animations, pose, variants=None,
-                 hurtbox=None, samples=192):
+                 hurtbox=None, samples=192, scale=SCALE, normals=True):
     """Renders and writes a sheet: `out` is the JSON's path, with the PNGs
     beside it (`<name>.png`, `<name>-<variant>.png`, `<name>-normals.png`).
 
@@ -677,6 +679,8 @@ def render_sheet(scene, cam, rig, out, frame, origin, animations, pose, variants
     None to loop. `pose(name, i, count)` poses the model for frame `i` of
     an animation of `rig`, starting from its rest pose. `variants` maps variant names to material colours (see
     `recolor`). `hurtbox` lists the objects the `hurtbox` slice surrounds.
+    `scale` is the camera's texels per world unit. Without `normals`, no
+    normal map is rendered and the sheet is drawn unlit.
     """
     variants = variants or {}
     steps = []
@@ -713,15 +717,16 @@ def render_sheet(scene, cam, rig, out, frame, origin, animations, pose, variants
             for n in range(1, len(steps) + 1)
         ]
     recolor({})
-    scene.view_layers[0].material_override = normal_material()
-    scene.cycles.samples = 32
-    view.view_transform = "Raw"
-    renders["-normals"] = [
-        _render_frame(scene, n, os.path.join(tmp, f"n{n}.png"))
-        for n in range(1, len(steps) + 1)
-    ]
-    scene.view_layers[0].material_override = None
-    view.view_transform = "Standard"
+    if normals:
+        scene.view_layers[0].material_override = normal_material()
+        scene.cycles.samples = 32
+        view.view_transform = "Raw"
+        renders["-normals"] = [
+            _render_frame(scene, n, os.path.join(tmp, f"n{n}.png"))
+            for n in range(1, len(steps) + 1)
+        ]
+        scene.view_layers[0].material_override = None
+        view.view_transform = "Standard"
 
     trims = [_trim([r[n] for r in renders.values()]) for n in range(len(steps))]
     places, size = _pack([(w, h) for _x, _y, w, h in trims])
@@ -733,7 +738,7 @@ def render_sheet(scene, cam, rig, out, frame, origin, animations, pose, variants
             sheet.paste(image, trim, place)
         write_png(f"{base}{suffix}.png", sheet)
 
-    fw, fh = frame[0] * SCALE, frame[1] * SCALE
+    fw, fh = frame[0] * scale, frame[1] * scale
     ticks_of = {name: ticks for name, _c, ticks, _r in animations}
     frames = []
     for n, ((name, i, _count), (x, y, w, h), (px, py)) in enumerate(zip(steps, trims, places)):
@@ -772,10 +777,11 @@ def render_sheet(scene, cam, rig, out, frame, origin, animations, pose, variants
             ],
         }]
     meta["clamber"] = {
-        "origin": {"x": origin[0] * SCALE, "y": origin[1] * SCALE},
-        "scale": SCALE,
-        "normals": f"{stem}-normals.png",
+        "origin": {"x": origin[0] * scale, "y": origin[1] * scale},
+        "scale": scale,
     }
+    if normals:
+        meta["clamber"]["normals"] = f"{stem}-normals.png"
     if variants:
         meta["clamber"]["variants"] = {v: f"{stem}-{v}.png" for v in variants}
     with open(out, "w") as f:
@@ -796,17 +802,19 @@ def args():
     return [a for a in given if not a.startswith("--")][0], "--quick" in given
 
 
-def run(name, build, pose, frame, origin, animations, variants=None, hurtbox=None):
+def run(name, build, pose, frame, origin, animations, variants=None, hurtbox=None,
+        folder="sprites", scale=SCALE, normals=True):
     """Renders a sheet from the command line `tools/render-art.sh` gives
-    (`-- <content folder> [--quick]`) to `sprites/<name>.json`. `build()`
+    (`-- <content folder> [--quick]`) to `<folder>/<name>.json`. `build()`
     makes the model and returns its `Rig`; `pose(rig, name, i, count)` poses
-    it. `hurtbox(rig)` picks the parts the `hurtbox` slice surrounds."""
+    it. `hurtbox(rig)` picks the parts the `hurtbox` slice surrounds.
+    `scale` and `normals` are as for `render_sheet`."""
     content, quick = args()
     scene = reset()
     lights(scene)
-    cam = camera(scene, frame, origin)
+    cam = camera(scene, frame, origin, scale)
     rig = build()
-    out = os.path.join(content, "sprites", f"{name}.json")
+    out = os.path.join(content, folder, f"{name}.json")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     render_sheet(
         scene, cam, rig, out, frame, origin, animations,
@@ -814,4 +822,6 @@ def run(name, build, pose, frame, origin, animations, variants=None, hurtbox=Non
         variants=variants,
         hurtbox=hurtbox(rig) if hurtbox else None,
         samples=16 if quick else 192,
+        scale=scale,
+        normals=normals,
     )

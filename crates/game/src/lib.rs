@@ -54,6 +54,7 @@ mod feels;
 mod game;
 mod gpu;
 mod hud;
+mod icons;
 mod import;
 pub mod keys;
 mod layers;

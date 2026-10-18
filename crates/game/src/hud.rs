@@ -6,19 +6,23 @@ use clamber_pack::Param;
 use clamber_sim::{CountDisplay, LetterRow, LivesDisplay, RELIC, World};
 
 use crate::canvas::{Color, rgb};
+use crate::icons::{Icon, draw_icon};
 use crate::surface::Surface;
-use crate::text::{ADVANCE, draw_text, draw_text_centred};
+use crate::text::{GLYPH, draw_text, draw_text_centred, text_size};
 
-const MARGIN: i32 = 6;
+/// From the top left of the view to the HUD, in view units, so it stays
+/// clear of the edges at any window shape.
+const MARGIN: i32 = 8;
 /// Space between one item and the next icon.
 const GAP: i32 = 10;
+/// An icon's square, a little taller than the capitals of the count
+/// beside it.
+const ICON: i32 = 11;
+/// From one hit point's flask to the next: they're narrower than their
+/// squares.
+const HIT_POINT_STEP: i32 = 8;
 
-const LIFE: Color = rgb(0xe8, 0x50, 0x60);
-pub(crate) const GEM: Color = rgb(0x5a, 0xd8, 0xe8);
-pub(crate) const RELIC_ICON: Color = rgb(0xf0, 0xc8, 0x40);
 pub(crate) const COUNT: Color = rgb(0xf4, 0xf0, 0xe8);
-/// Hit points, the colour of the tonic that gives them back.
-const HIT_POINT: Color = rgb(0x48, 0xd8, 0x68);
 
 /// A letter's image in the letter row, px square.
 const LETTER: i32 = 16;
@@ -49,34 +53,54 @@ pub fn draw_hud(canvas: &mut dyn Surface, world: &World) {
     }
 }
 
-/// Lives, gems, hit points and relics in a row. Hit points are a pip
+/// Lives, gems, hit points and relics in a row. Hit points are a flask
 /// each, full for those left.
 fn draw_items(canvas: &mut dyn Surface, world: &World) {
     let flow = &world.flow;
-    let relics = relic_total(world);
-    let mut items = vec![
-        ("♥".to_string(), LIFE, flow.lives.to_string()),
-        ("◆".to_string(), GEM, flow.gems.to_string()),
-    ];
+    let at = |x| (x, MARGIN);
+    let mut x = draw_counter(canvas, at(MARGIN), Icon::Life, &flow.lives.to_string()) + GAP;
+    x = draw_counter(canvas, at(x), Icon::Gem, &flow.gems.to_string()) + GAP;
     if let Some((left, max)) = world.hit_points() {
-        let pips = (0..max).map(|k| if k < left { '●' } else { '○' });
-        items.push((pips.collect(), HIT_POINT, String::new()));
+        for k in 0..max {
+            let icon = match k < left {
+                true => Icon::HitPoint,
+                false => Icon::HitPointLost,
+            };
+            draw_icon_on_line(canvas, icon, at(x));
+            x += HIT_POINT_STEP;
+        }
+        x += ICON - HIT_POINT_STEP + GAP;
     }
+    let relics = relic_total(world);
     if relics > 0 {
-        items.push((
-            "★".to_string(),
-            RELIC_ICON,
-            format!("{}/{relics}", flow.relics),
-        ));
+        let count = format!("{}/{relics}", flow.relics);
+        draw_counter(canvas, at(x), Icon::Relic, &count);
     }
+}
 
-    let mut x = MARGIN;
-    for (icon, color, count) in items {
-        draw_text(canvas, x, MARGIN, &icon, color);
-        x += icon.chars().count() as i32 * ADVANCE + 1;
-        draw_text(canvas, x, MARGIN, &count, COUNT);
-        x += count.chars().count() as i32 * ADVANCE + GAP;
-    }
+/// Draws `icon` from `x`, then `count` after it, on a line of text whose
+/// top is `y`: where the counter ends.
+pub(crate) fn draw_counter(
+    canvas: &mut dyn Surface,
+    (x, y): (i32, i32),
+    icon: Icon,
+    count: &str,
+) -> i32 {
+    draw_icon_on_line(canvas, icon, (x, y));
+    draw_text(canvas, x + ICON + 1, y, count, COUNT);
+    x + counter_width(count)
+}
+
+/// How wide [`draw_counter`] draws `count` and its icon.
+pub(crate) fn counter_width(count: &str) -> i32 {
+    ICON + 1 + text_size(count).0
+}
+
+/// Draws `icon` in its square from `x`, centred on the capitals of a
+/// line of text whose top is `y`.
+fn draw_icon_on_line(canvas: &mut dyn Surface, icon: Icon, (x, y): (i32, i32)) {
+    let top = y as f32 + (GLYPH.1 - ICON) as f32 / 2.0;
+    draw_icon(canvas, icon, (x as f32, top), ICON as f32);
 }
 
 /// Where the world's picture's left edge is on the canvas: it's centred
@@ -93,10 +117,11 @@ pub(crate) fn picture_left(canvas: &dyn Surface, world: &World) -> i32 {
 
 /// Draws the count display with its picture's left edge at `left`. How
 /// the image and digits are drawn isn't in the spec: the image is the
-/// gem icon in its 16 px square, and each digit is drawn from its place.
+/// gem icon filling its 16 px square, and each digit is drawn from its
+/// place.
 fn draw_count(canvas: &mut dyn Surface, left: i32, count: &CountDisplay) {
-    let (x, y) = count.image;
-    draw_text_centred(canvas, left + x + IMAGE / 2, y + 4, "◆", GEM);
+    let (x, y) = (count.image.0 + left, count.image.1);
+    draw_icon(canvas, Icon::Gem, (x as f32, y as f32), IMAGE as f32);
     let (x, y) = count.digits;
     for (k, digit) in count.number.to_string().chars().enumerate() {
         let x = left + x + count.gap * k as i32;
@@ -109,7 +134,7 @@ fn draw_count(canvas: &mut dyn Surface, left: i32, count: &CountDisplay) {
 /// image), then each digit from its place.
 fn draw_lives(canvas: &mut dyn Surface, left: i32, lives: &LivesDisplay) {
     let x = left + lives.x;
-    draw_text(canvas, x - ADVANCE - 1, lives.y + 4, "♥", LIFE);
+    draw_icon_on_line(canvas, Icon::Life, (x - ICON - 1, lives.y + 4));
     for (k, digit) in lives.number.to_string().chars().enumerate() {
         let x = x + lives.gap * k as i32;
         draw_text(canvas, x, lives.y + 4, &digit.to_string(), COUNT);
@@ -172,37 +197,38 @@ mod tests {
         canvas
     }
 
+    /// The lives and gems counters as the HUD draws them: where the
+    /// next item goes.
+    fn lives_and_gems(canvas: &mut Canvas, lives: &str, gems: &str) -> i32 {
+        let x = draw_counter(canvas, (MARGIN, MARGIN), Icon::Life, lives) + GAP;
+        draw_counter(canvas, (x, MARGIN), Icon::Gem, gems) + GAP
+    }
+
     #[test]
     fn shows_lives_and_gems() {
         let mut world = world("");
-        let before = drawn(&world);
-        assert!(before.pixels.contains(&LIFE));
-        assert!(before.pixels.contains(&GEM));
-        assert!(!before.pixels.contains(&RELIC_ICON), "no relics to find");
-
         world.flow.lives -= 1;
         world.flow.gems += 10;
         world.flow.hits_taken = 1;
-        let after = drawn(&world);
         let mut expected = Canvas::scaled((120, 24), 4);
-        draw_text(&mut expected, MARGIN, MARGIN, "♥", LIFE);
-        draw_text(&mut expected, MARGIN + 7, MARGIN, "2", COUNT);
-        draw_text(&mut expected, MARGIN + 23, MARGIN, "◆", GEM);
-        draw_text(&mut expected, MARGIN + 30, MARGIN, "10", COUNT);
+        let x = lives_and_gems(&mut expected, "2", "10");
         // Hit points after the gems: two left of three.
-        draw_text(&mut expected, MARGIN + 52, MARGIN, "●●○", HIT_POINT);
-        assert_eq!(after, expected);
+        draw_icon_on_line(&mut expected, Icon::HitPoint, (x, MARGIN));
+        draw_icon_on_line(&mut expected, Icon::HitPoint, (x + HIT_POINT_STEP, MARGIN));
+        let lost = (x + 2 * HIT_POINT_STEP, MARGIN);
+        draw_icon_on_line(&mut expected, Icon::HitPointLost, lost);
+        assert_eq!(drawn(&world), expected);
     }
 
     #[test]
     fn shows_no_hit_points_when_every_hit_costs_a_life() {
-        let level = Level::from_toml_str(
-            "format = 1\nsize = [400, 300]\nstart = [100, 200]\n",
-            "test",
-        );
-        let feel = generic_feel("classic-1").unwrap();
-        let world = World::new(Arc::new(level.unwrap()), Arc::new(feel));
-        assert!(!drawn(&world).pixels.contains(&HIT_POINT));
+        let mut world = world("");
+        let mut feel = (*world.feel).clone();
+        feel.world.set(Param::HitPoints, clamber_fixed::Fixed::ONE);
+        world.feel = Arc::new(feel);
+        let mut expected = Canvas::scaled((120, 24), 4);
+        lives_and_gems(&mut expected, &world.flow.lives.to_string(), "0");
+        assert_eq!(drawn(&world), expected);
     }
 
     #[test]
@@ -271,8 +297,7 @@ mod tests {
         clamber_sim::step(&mut world, &input);
         let mut canvas = Canvas::new(256, 64);
         draw_hud(&mut canvas, &world);
-        assert!(canvas.pixels.contains(&GEM));
-        assert!(!canvas.pixels.contains(&LIFE), "no lives display");
+        assert!(world.lives_display().is_none(), "no lives display");
         let mut expected = Canvas::new(256, 64);
         draw_count(&mut expected, 0, &world.count_display().unwrap());
         assert_eq!(canvas, expected);
@@ -291,18 +316,31 @@ mod tests {
             "#,
         );
         world.flow.relics = 1;
-        let canvas = drawn(&world);
         let mut expected = Canvas::scaled((120, 24), 4);
-        draw_text(&mut expected, MARGIN, MARGIN, "♥", LIFE);
-        draw_text(&mut expected, MARGIN + 7, MARGIN, "3", COUNT);
-        draw_text(&mut expected, MARGIN + 23, MARGIN, "◆", GEM);
-        draw_text(&mut expected, MARGIN + 30, MARGIN, "0", COUNT);
-        draw_text(&mut expected, MARGIN + 46, MARGIN, "●●●", HIT_POINT);
-        // Relic icon after "♥3", "◆0" and three hit points.
-        let x = MARGIN + 7 + 6 + GAP + 7 + 6 + GAP + 3 * 6 + 1 + GAP;
-        draw_text(&mut expected, x, MARGIN, "★", RELIC_ICON);
-        draw_text(&mut expected, x + 7, MARGIN, "1/2", COUNT);
-        assert_eq!(canvas, expected);
-        assert!(canvas.pixels.contains(&RELIC_ICON));
+        let mut x = lives_and_gems(&mut expected, "3", "0");
+        for _ in 0..3 {
+            draw_icon_on_line(&mut expected, Icon::HitPoint, (x, MARGIN));
+            x += HIT_POINT_STEP;
+        }
+        // The relic counter after three hit points.
+        let x = x + ICON - HIT_POINT_STEP + GAP;
+        draw_counter(&mut expected, (x, MARGIN), Icon::Relic, "1/2");
+        assert_eq!(drawn(&world), expected);
+    }
+
+    #[test]
+    fn stays_clear_of_the_edges() {
+        let world = world("");
+        let mut canvas = Canvas::scaled((120, 24), 4);
+        let bg = canvas.pixels[0];
+        draw_hud(&mut canvas, &world);
+        let w = canvas.width as usize;
+        let edge = 4 * 4;
+        for (i, &p) in canvas.pixels.iter().enumerate() {
+            let (x, y) = (i % w, i / w);
+            if p != bg {
+                assert!(x >= edge && y >= edge, "drawn at {x}, {y}");
+            }
+        }
     }
 }

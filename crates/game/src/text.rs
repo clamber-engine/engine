@@ -7,9 +7,9 @@
 //! GPU draws them at the window's resolution and the canvas at its own.
 //! Capitals are [`GLYPH`]`.1` units tall, the top of a line of text is
 //! the top of its capitals, and characters without a glyph draw as `?`.
-//! A few symbols stand for HUD icons, sized to fit [`ADVANCE`]: `♥`
-//! (lives), `◆` (gems), `★` (relics), and `●` and `○` (hit points left
-//! and lost).
+//! A few symbols are sized to fit [`ADVANCE`], to use as icons in text:
+//! `♥`, `◆`, `★`, `●` and `○`. The HUD's own icons are pre-rendered (see
+//! `icons`).
 
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};

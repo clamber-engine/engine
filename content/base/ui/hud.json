@@ -1,0 +1,168 @@
+{
+  "frames": [
+    {
+      "filename": "hud life 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 184,
+        "h": 158
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 25,
+        "w": 184,
+        "h": 158
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 200
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "hud gem 0",
+      "frame": {
+        "x": 188,
+        "y": 2,
+        "w": 141,
+        "h": 140
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 30,
+        "y": 32,
+        "w": 141,
+        "h": 140
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 200
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "hud relic 0",
+      "frame": {
+        "x": 331,
+        "y": 2,
+        "w": 180,
+        "h": 184
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10,
+        "y": 8,
+        "w": 180,
+        "h": 184
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 200
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "hud hit-point 0",
+      "frame": {
+        "x": 513,
+        "y": 2,
+        "w": 144,
+        "h": 172
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28,
+        "y": 10,
+        "w": 144,
+        "h": 172
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 200
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "hud hit-point-lost 0",
+      "frame": {
+        "x": 659,
+        "y": 2,
+        "w": 144,
+        "h": 172
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 28,
+        "y": 10,
+        "w": 144,
+        "h": 172
+      },
+      "sourceSize": {
+        "w": 200,
+        "h": 200
+      },
+      "duration": 17,
+      "ticks": 1
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "hud.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 805,
+      "h": 188
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "life",
+        "from": 0,
+        "to": 0,
+        "direction": "forward"
+      },
+      {
+        "name": "gem",
+        "from": 1,
+        "to": 1,
+        "direction": "forward"
+      },
+      {
+        "name": "relic",
+        "from": 2,
+        "to": 2,
+        "direction": "forward"
+      },
+      {
+        "name": "hit-point",
+        "from": 3,
+        "to": 3,
+        "direction": "forward"
+      },
+      {
+        "name": "hit-point-lost",
+        "from": 4,
+        "to": 4,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 100,
+        "y": 100
+      },
+      "scale": 10
+    }
+  }
+}

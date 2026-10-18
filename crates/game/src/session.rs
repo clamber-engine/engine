@@ -23,7 +23,8 @@ use crate::credits::Credits;
 use crate::display::Look;
 use crate::feels::Feels;
 use crate::game::Game;
-use crate::hud::{COUNT, GEM, RELIC_ICON, relic_total};
+use crate::hud::{counter_width, draw_counter, relic_total};
+use crate::icons::Icon;
 use crate::import::{After, Games, Importing, PERSONAL, Pick, Picked, Picker};
 use crate::map::{MapPlay, MapStep};
 use crate::menu::{Choice, Menu};
@@ -31,7 +32,7 @@ use crate::prefs::{BUNDLED, Prefs, Volume};
 use crate::report;
 use crate::sound::{Cue, cues};
 use crate::surface::Surface;
-use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred, text_size};
+use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred};
 use crate::{SPRITES, content_dir, load_game};
 
 /// Where the credits screen's lines start, and how many show at once.
@@ -1131,24 +1132,21 @@ impl Session {
         let time = format!("TIME {}", clock_time(world.frame));
         draw_text_centred(canvas, centre_x, top, &time, HEADING);
 
-        let mut items = vec![('◆', GEM, world.flow.gems.to_string())];
+        let mut items = vec![(Icon::Gem, world.flow.gems.to_string())];
         let relics = relic_total(world);
         if relics > 0 {
-            items.push(('★', RELIC_ICON, format!("{}/{relics}", world.flow.relics)));
+            items.push((Icon::Relic, format!("{}/{relics}", world.flow.relics)));
         }
         let gap = 2 * ADVANCE;
         let width: i32 = items
             .iter()
-            .map(|(_, _, count)| ADVANCE + 1 + text_size(count).0 + gap)
+            .map(|(_, count)| counter_width(count) + gap)
             .sum::<i32>()
             - gap;
         let mut x = centre_x - width / 2;
         let y = top + 2 * LINE;
-        for (icon, color, count) in items {
-            draw_text(canvas, x, y, &icon.to_string(), color);
-            x += ADVANCE + 1;
-            draw_text(canvas, x, y, &count, COUNT);
-            x += text_size(&count).0 + gap;
+        for (icon, count) in items {
+            x = draw_counter(canvas, (x, y), icon, &count) + gap;
         }
     }
 }
@@ -1749,7 +1747,12 @@ mod tests {
 
         let mut canvas = Game::canvas();
         s.draw(&mut canvas, 0.5);
-        assert!(canvas.pixels.contains(&GEM));
+        // The gem icon's bright green-blue, over the dimmed level.
+        let gem = |&c: &u32| {
+            let [r, g, b] = [c >> 16, c >> 8 & 0xff, c & 0xff];
+            r < 0x80 && g > 0xc0 && b > 0x90
+        };
+        assert!(canvas.pixels.iter().any(gem), "the gems collected");
 
         s.step(&press(Action::Jump));
         assert_eq!(s.screen, Screen::Playing, "Play again");
