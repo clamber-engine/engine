@@ -329,6 +329,25 @@ fn climbing_up_stops_41_px_below_the_view() {
 }
 
 #[test]
+fn without_a_view_climbing_up_stops_below_the_levels_top() {
+    // An engine choice: `default` has no view, and the level's top
+    // stands in for it.
+    let mut w = World::new(
+        Arc::new(level((505.0, 300.0), &[500])),
+        Arc::new(generic_feel("default").unwrap()),
+    );
+    assert!(w.view.is_none());
+    play_until_caught(&mut w, 0, |_| vec![J]);
+    let rows = play(&mut w, 400, |_| vec![U]);
+    assert!(
+        rows.iter()
+            .all(|r| r.state == State::Hold && r.feet() >= 41 - 2)
+    );
+    // It ends up held there, as below a view at the level's top.
+    assert!((39..=40).contains(&rows[rows.len() - 1].feet()));
+}
+
+#[test]
 fn holding_the_way_faced_turns_round_the_rope() {
     let (mut w, at) = holding();
     assert_eq!(at.facing, Facing::Right);

@@ -32,6 +32,8 @@
 //!   hop after taking over.
 //! - Holding a rope, nothing stops the player: it moves through the
 //!   level's ground. Hurt or bounced, it lets go.
+//! - With a preset that has no view, climbing stops `view_top` px below
+//!   the level's top instead, so it can't climb out of the level.
 //! - A rope starts where it's placed, at full speed to the right.
 //! - A jump off on the same frame as sliding off the end jumps.
 //! - The run memory is cleared on the first frame that ends on the
@@ -149,7 +151,8 @@ pub(crate) fn hold(world: &mut World, input: &Frame) -> bool {
     };
     let rope = on.values;
     let (rope_x, bottom) = (thing.pos.x.floor(), thing.pos.y.floor());
-    let view_top = world.view.map(|v| v.y() + i64::from(rope.view_top));
+    // Without a view of the preset's, the level's top stands in for it.
+    let view_top = world.view.map_or(0, |v| v.y()) + i64::from(rope.view_top);
     let held = |a| input.held.contains(a);
     let held_dir = match (held(Action::Left), held(Action::Right)) {
         (true, false) => -1,
@@ -181,11 +184,9 @@ pub(crate) fn hold(world: &mut World, input: &Frame) -> bool {
     };
     // Not up past the top of the view as it was after the last frame.
     let below_view = |p: &mut crate::Player| {
-        if let Some(top) = view_top {
-            let feet = ceil(p.pos.y);
-            if feet < top {
-                p.pos.y += Fixed::from_int((top - feet) as i32);
-            }
+        let feet = ceil(p.pos.y);
+        if feet < view_top {
+            p.pos.y += Fixed::from_int((view_top - feet) as i32);
         }
     };
     let (up, down) = (held(Action::Up), held(Action::Down));
