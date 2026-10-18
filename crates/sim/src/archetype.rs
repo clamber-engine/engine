@@ -424,6 +424,16 @@ pub const HIDDEN_ITEMS: [&str; 3] = ["cluster", "crate", "canister"];
 ///
 /// The restart point is `restart` px from the keg's position (+y down),
 /// [0, 0] if not given.
+///
+/// Input held on frame 1 can change the resume, if the keg has the
+/// values for it. Right or Left held alone moves the player right by
+/// `first_shift`'s `right` or `left`, `[without Action, with it]`, until
+/// it's in play. Jump held, with `first_jump_lift`, makes it wait that
+/// much higher, and it takes off on the frame after the burst, which
+/// moves as a frame of the fall with the jump's gravity. Otherwise Left
+/// held alone, with `first_turn`, starts a turn that is on that frame of
+/// itself on the frame after the burst. Down and Action held without Up
+/// do neither.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Keg {
     pub contact: Contact,
@@ -441,6 +451,10 @@ pub struct Keg {
     pub fade_step: u8,
     pub land_lockout: u8,
     pub restart: Vec2,
+    /// `[right, left]`, each `[without Action, with it]`.
+    pub first_shift: [[Fixed; 2]; 2],
+    pub first_jump_lift: Option<Fixed>,
+    pub first_turn: Option<u8>,
 }
 
 /// A level's entrance (spec/behavior/level-start.md). Counting the
@@ -1363,6 +1377,9 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "fade_step",
             "land_lockout",
             "restart",
+            "first_shift",
+            "first_jump_lift",
+            "first_turn",
         ],
         "entrance" => &[
             "burst",
@@ -1939,6 +1956,26 @@ fn parse_keg(table: &Table, path: &str) -> Result<Keg, String> {
         }
         Some(_) => return Err(format!("{path}.restart: expected [x, y]")),
     };
+    let mut first_shift = [[Fixed::ZERO; 2]; 2];
+    if let Some(shift) = table.get("first_shift") {
+        let at = format!("{path}.first_shift");
+        let Value::Table(shift) = shift else {
+            return Err(format!(
+                "{at}: expected {{ right = [a, b], left = [a, b] }}"
+            ));
+        };
+        for (i, side) in ["right", "left"].into_iter().enumerate() {
+            let at = format!("{at}.{side}");
+            match shift.get(side) {
+                Some(Value::Array(ab)) if ab.len() == 2 => {
+                    for (j, v) in ab.iter().enumerate() {
+                        first_shift[i][j] = number(v, &format!("{at}[{j}]"))?;
+                    }
+                }
+                _ => return Err(format!("{at}: expected [without Action, with it]")),
+            }
+        }
+    }
     Ok(Keg {
         contact: parse_contact(get("contact")?, &format!("{path}.contact"))?,
         pieces,
@@ -1954,6 +1991,15 @@ fn parse_keg(table: &Table, path: &str) -> Result<Keg, String> {
         fade_step: frames("fade_step")?.max(1),
         land_lockout: frames("land_lockout")?,
         restart,
+        first_shift,
+        first_jump_lift: match table.get("first_jump_lift") {
+            None => None,
+            Some(v) => Some(number(v, &format!("{path}.first_jump_lift"))?),
+        },
+        first_turn: match table.get("first_turn") {
+            None => None,
+            Some(_) => Some(frames("first_turn")?.max(1)),
+        },
     })
 }
 

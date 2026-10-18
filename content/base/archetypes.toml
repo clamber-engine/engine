@@ -823,6 +823,11 @@ hit_wall_exit_early = [25, 49, 50, 66]
 # fast the picture fades in: `size`, `burst_time` and `fade_step` are
 # Clamber's own. Jump held from the fall on jumps on the frame after
 # landing: no lockout.
+# Input held on frame 1 ("Input on frame 1"): Right or Left alone moves
+# the player right by `first_shift` ([without Action, with it]) until
+# frame 63. Jump held makes it wait `first_jump_lift` higher and take off
+# on frame 63. Otherwise Left alone starts a turn that is on its frame
+# `first_turn` on frame 63 (T + 4 on frame 64).
 [archetypes.keg]
 behavior = "keg"
 size = [20, 18]
@@ -838,6 +843,9 @@ shake = [[15, 1, 0], [45, -3, 1], [57, -7, 1]]
 fade_from = 4
 fade_step = 2
 land_lockout = 0
+first_shift = { right = [0.25, 0.375], left = [0.75, 0.625] }
+first_jump_lift = 0.15625
+first_turn = 3
 
 [archetypes.keg.contact]
 upright = [-24, 27, -34, 38]

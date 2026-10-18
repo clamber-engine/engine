@@ -18,7 +18,9 @@
 //! higher, inside the keg, and not drawn. The keg shakes, and bursts on
 //! frame `burst` as when broken; from the frame after, the player is in
 //! the air and in play, falling as any fall does, except that a jump can
-//! start after landing `land_lockout` frames sooner. Its gait goes on in
+//! start after landing `land_lockout` frames sooner. Input held on frame
+//! 1 can move the player across, start a jump that takes off on the frame
+//! after the burst, or start a turn ([`Keg`]'s `first_` values). Its gait goes on in
 //! the fall as off a ledge where the ground simply ends, so a turn there
 //! takes as long as on the ground. The picture is black
 //! until `fade_from` and fades in from there ([`World::brightness`]).
@@ -31,13 +33,17 @@
 //!   a character joins, and the other character isn't drawn either. It
 //!   comes back at the restart point as after any lost life
 //!   (following.md), and follows from there.
-//! - Input on frame 1 does nothing, like on the frames after it.
+//! - Down and Action held on frame 1 without Up don't start the ground
+//!   action (#258): they only move the player as Left or Right with
+//!   Action do.
 //! - The pieces and the flash start at the keg's position, move from the
 //!   step after it breaks, and are gone after `burst_time` frames. They
 //!   touch nothing.
 
 use clamber_fixed::Fixed;
+use clamber_input::{Action, Frame};
 use clamber_level::Vec2;
+use clamber_pack::Param;
 
 use crate::archetype::{Behavior, KEG_PIECES, Keg};
 use crate::flow::{FlowEvent, Outcome};
@@ -78,6 +84,9 @@ pub struct Resume {
     pub at: Vec2,
     /// The player has landed since the burst.
     pub landed: bool,
+    /// Jump was held on frame 1: the player takes off on the frame after
+    /// the burst.
+    pub jump: bool,
 }
 
 /// The keg values of thing `index`, if it's a keg.
@@ -245,6 +254,7 @@ pub(crate) fn begin(world: &mut World) {
         frame: 0,
         at,
         landed: false,
+        jump: false,
     });
     let physics = world.player_physics();
     if let Some(view) = &mut world.view {
@@ -252,9 +262,10 @@ pub(crate) fn begin(world: &mut World) {
     }
 }
 
-/// Counts a frame of a resume, if one is under way. Returns whether the
-/// player is held in the keg on this step, so nothing else moves.
-pub(crate) fn hold(world: &mut World) -> bool {
+/// Counts a frame of a resume, if one is under way, with `input` held on
+/// it. Returns whether the player is held in the keg on this step, so
+/// nothing else moves.
+pub(crate) fn hold(world: &mut World, input: &Frame) -> bool {
     let Some(mut r) = world.resume else {
         return false;
     };
@@ -264,8 +275,13 @@ pub(crate) fn hold(world: &mut World) -> bool {
     };
     r.frame = r.frame.saturating_add(1);
     let burst = u16::from(keg.burst);
-    world.resume = Some(r);
     if world.flow.outcome != Outcome::Playing || r.frame > burst {
+        world.resume = Some(r);
+        if r.frame == burst + 1 && r.jump {
+            // The take-off frame falls with the jump's gravity while Jump
+            // is held on it.
+            world.player.jump_hold = true;
+        }
         return false;
     }
     let player = &mut world.player;
@@ -279,12 +295,52 @@ pub(crate) fn hold(world: &mut World) -> bool {
         player.rope_fall = false;
         player.state = State::Fall;
         player.keg_fall = true;
+        first_input(player, &mut r, &keg, input);
     }
+    world.resume = Some(r);
+    let player = &mut world.player;
     player.vel = Vec2::default();
     if r.frame == burst {
         world.bursts.push(Burst::new(r.keg, r.at, &keg));
     }
     true
+}
+
+/// What input held on frame 1 of a resume does: Right or Left held alone
+/// moves the player across, and Jump held starts a jump, or else Left held
+/// alone a turn.
+fn first_input(player: &mut crate::Player, r: &mut Resume, keg: &Keg, input: &Frame) {
+    let held = |a: Action| input.held.contains(a);
+    let (right, left) = (held(Action::Right), held(Action::Left));
+    let action = usize::from(held(Action::Action));
+    let shift = match (right, left) {
+        (true, false) => keg.first_shift[0][action],
+        (false, true) => keg.first_shift[1][action],
+        _ => Fixed::ZERO,
+    };
+    player.pos.x += shift;
+    let ground_action = held(Action::Down) && held(Action::Action) && !held(Action::Up);
+    if let Some(lift) = keg.first_jump_lift.filter(|_| held(Action::Jump)) {
+        player.pos.y -= lift;
+        player.keg_fall = false;
+        r.jump = true;
+    } else if let Some(turn) = keg.first_turn.filter(|_| left && !right && !ground_action) {
+        // It goes on from the frame after the burst.
+        player.turn = Some(turn - 1);
+    }
+}
+
+/// The frame after the burst of a resume with Jump held on frame 1, once
+/// it has moved as a frame of the fall: the jump takes off from where it
+/// is, as from the ground.
+fn take_off(world: &mut World) {
+    let speed = world.player_physics()[Param::JumpSpeed];
+    let player = &mut world.player;
+    player.vel.y = -speed;
+    player.state = State::Jump;
+    player.jump_age = Some(0);
+    player.jump_buffer.take();
+    world.events.push(Event::JumpStart);
 }
 
 /// After a step in play: the first landing since the keg burst has the
@@ -300,6 +356,9 @@ pub(crate) fn after(world: &mut World) {
     };
     if r.frame <= u16::from(keg.burst) {
         return;
+    }
+    if r.frame == u16::from(keg.burst) + 1 && r.jump {
+        take_off(world);
     }
     if !r.landed && world.events.contains(&Event::Land) {
         world.player.lockout = keg.land_lockout;

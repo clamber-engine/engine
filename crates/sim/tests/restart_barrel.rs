@@ -424,3 +424,159 @@ fn it_resumes_facing_right_however_it_left() {
         }
     }
 }
+
+/// One frame of a resume: the player's place, speed, facing and turn, and
+/// whether it's on the ground.
+type Seen = (Vec2, Vec2, Facing, Option<u8>, bool);
+
+/// Resumes with `first` held on frame 1, `mid` on frames 2 to 62 and
+/// `late` from 63 on; frames 0 to `last`.
+fn resume_holding(first: &[Action], mid: &[Action], late: &[Action], last: usize) -> Vec<Seen> {
+    let mut play = Play::new(900);
+    play.touch_and_fall_out();
+    let seen = |w: &World| {
+        let p = &w.player;
+        (p.pos, p.vel, p.facing, p.turn, p.grounded())
+    };
+    let mut frames = vec![seen(&play.world)];
+    for frame in 1..=last {
+        play.step(match frame {
+            1 => first,
+            2..=62 => mid,
+            _ => late,
+        });
+        frames.push(seen(&play.world));
+    }
+    frames
+}
+
+const L: Action = Action::Left;
+const A: Action = Action::Action;
+const U: Action = Action::Up;
+const D: Action = Action::Down;
+
+/// restart-barrel.md, "Input on frame 1", "Position": Left and Right held
+/// on frame 1 move the player right, and `x` stays there until frame 63.
+#[test]
+fn left_or_right_on_frame_1_moves_the_player_right() {
+    let cases: [(&[Action], f64); 8] = [
+        (&[R], 0.25),
+        (&[R, A], 0.375),
+        (&[L], 0.75),
+        (&[L, A], 0.625),
+        (&[L, R], 0.0),
+        (&[L, R, A], 0.0),
+        (&[], 0.0),
+        (&[A], 0.0),
+    ];
+    for (keys, shift) in cases {
+        let frames = resume_holding(keys, &[], &[], 62);
+        assert_eq!(frames[0].0.x, f(1000.0), "{keys:?}: frame 0");
+        for (n, seen) in frames.iter().enumerate().skip(1) {
+            assert_eq!(seen.0.x, f(1000.0 + shift), "{keys:?}: frame {n}");
+            assert_eq!(seen.0.y, f(391.4375), "{keys:?}: frame {n}");
+        }
+    }
+}
+
+/// From frame 63 the player moves from there as it would from `xr`:
+/// after Right on frame 1, every frame is as with nothing held, 0.25 px
+/// further right, and it doesn't start walking. Right with Up, Down or
+/// Action, but not Down and Action without Up, changes only the
+/// position; Up, Down and Action alone change nothing.
+#[test]
+fn input_on_frame_1_otherwise_changes_only_the_position() {
+    let none = resume_holding(&[], &[], &[], 140);
+    let shifted = |frames: &[Seen], by: f64| -> Vec<Seen> {
+        frames
+            .iter()
+            .map(|&(pos, vel, facing, turn, ground)| {
+                let x = if pos.x == f(1000.0) && frames[0].0 == pos {
+                    pos.x
+                } else {
+                    pos.x + f(by)
+                };
+                (Vec2::new(x, pos.y), vel, facing, turn, ground)
+            })
+            .collect()
+    };
+    let cases: [(&[Action], f64); 7] = [
+        (&[R], 0.25),
+        (&[R, U], 0.25),
+        (&[R, D], 0.25),
+        (&[R, A, U, D], 0.375),
+        (&[U], 0.0),
+        (&[D], 0.0),
+        (&[A], 0.0),
+    ];
+    for (keys, by) in cases {
+        let frames = resume_holding(keys, &[], &[], 140);
+        assert_eq!(frames, shifted(&none, by), "{keys:?}");
+        assert!(
+            frames.iter().all(|s| s.1.x == Fixed::ZERO),
+            "{keys:?}: walks"
+        );
+    }
+}
+
+/// "Input on frame 1", "Jump held": the player waits 0.15625 px higher,
+/// and frame 63 is the jump's take-off frame: it moves down by 0.4375, or
+/// 0.28125 with Jump held on it, and `vy` is -7. Held on frame 1 only, the
+/// top is 52.5 px above `y` on frame 63, and it lands on frame 96; held
+/// on, 83.625 px and frame 114. Whatever is held on frames 2 to 62.
+#[test]
+fn jump_on_frame_1_jumps_on_frame_63() {
+    let lift = 400.0 - 8.71875;
+    for (mid, late, down, top, lands) in [
+        (&[][..], &[][..], 0.4375, 52.5, 96),
+        (&[J][..], &[][..], 0.4375, 52.5, 96),
+        (&[][..], &[J][..], 0.28125, 83.625, 114),
+        (&[J][..], &[J][..], 0.28125, 83.625, 114),
+    ] {
+        let at = format!("{mid:?} then {late:?}");
+        let frames = resume_holding(&[J], mid, late, 130);
+        for seen in &frames[1..=62] {
+            assert_eq!(seen.0.y, f(lift), "{at}");
+        }
+        let y63 = frames[63].0.y;
+        assert_eq!(y63, f(lift + down), "{at}");
+        assert_eq!(frames[63].1.y, f(-7.0), "{at}");
+        let highest = frames[63..].iter().map(|s| s.0.y).min().unwrap();
+        assert_eq!(y63 - highest, f(top), "{at}");
+        let landed = frames.iter().position(|s| s.4).unwrap();
+        assert_eq!(landed, lands, "{at}");
+        assert_eq!(frames[landed].0.y, f(409.0));
+    }
+}
+
+/// "Input on frame 1", "Left held without Right": a turn starts on frame
+/// 1 and goes on from 63; the player faces left from frame 64 on, and 67
+/// is the turn's last frame. Holding Left on, it moves left in the air
+/// and walks left after landing; with nothing held it lands and stands
+/// facing left.
+#[test]
+fn left_on_frame_1_turns_from_frame_63() {
+    for late in [&[][..], &[L][..]] {
+        let frames = resume_holding(&[L], &[], late, 140);
+        let facing_left: Vec<usize> = (0..frames.len())
+            .filter(|&n| frames[n].2 == Facing::Left)
+            .collect();
+        assert_eq!(facing_left[0], 64, "{late:?}");
+        assert_eq!(facing_left.len(), frames.len() - 64, "{late:?}");
+        assert!(frames[67].3.is_some() && frames[68].3.is_none(), "{late:?}");
+        let last = frames.last().unwrap();
+        assert!(last.4, "{late:?}: landed");
+        if late.is_empty() {
+            assert_eq!(last.1.x, Fixed::ZERO);
+            assert_eq!(last.0.x, f(1000.75));
+        } else {
+            assert!(frames[70].0.x < frames[63].0.x, "moves left in the air");
+            assert!(last.1.x.is_negative(), "walks left");
+        }
+    }
+    // Not with Right, nor with Jump, which jumps instead.
+    for first in [&[L, R][..], &[L, J][..]] {
+        let frames = resume_holding(first, &[], &[], 140);
+        assert!(frames.iter().all(|s| s.2 == Facing::Right), "{first:?}");
+    }
+}

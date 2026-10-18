@@ -1267,7 +1267,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         return;
     }
     let begin = entrance::view_begin(world);
-    if keg::hold(world) || entrance::hold(world) {
+    if keg::hold(world, &input.players[0]) || entrance::hold(world) {
         // Everything waits while the player is in the keg or the
         // entrance, but the view from frame 1 when it begins as an area
         // does.
