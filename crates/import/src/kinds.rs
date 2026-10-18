@@ -45,6 +45,9 @@ pub enum Kind {
     AnimalCrate,
     /// The restart barrel, which marks the level's restart point.
     RestartBarrel,
+    /// The place the characters come out of when play comes back to the
+    /// level from its room (`level-start.md`).
+    RoomReturnEntrance,
     /// The place the lead comes out of when play comes back to the level
     /// from the area behind its first wall exit (`wall-exits.md`).
     WallReturnEntrance,
@@ -80,7 +83,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 34] = [
+    pub const ALL: [Kind; 35] = [
         Kind::SmallWalker,
         Kind::MediumWalker,
         Kind::LargeWalker,
@@ -100,6 +103,7 @@ impl Kind {
         Kind::WallExit,
         Kind::AnimalCrate,
         Kind::RestartBarrel,
+        Kind::RoomReturnEntrance,
         Kind::WallReturnEntrance,
         Kind::LeftLaunchBarrel,
         Kind::DownLaunchBarrel,
@@ -139,6 +143,7 @@ impl Kind {
             Kind::WallExit => "wall-exit",
             Kind::AnimalCrate => "animal-crate",
             Kind::RestartBarrel => "restart-barrel",
+            Kind::RoomReturnEntrance => "room-return-entrance",
             Kind::WallReturnEntrance => "wall-return-entrance",
             Kind::LeftLaunchBarrel => "left-launch-barrel",
             Kind::DownLaunchBarrel => "down-launch-barrel",
@@ -246,6 +251,10 @@ impl Kind {
             // come back from a wall exit's area yet (#207), so it does
             // nothing.
             Kind::WallReturnEntrance => WALL_RETURN,
+            // level-start.md, "Coming back from the room": coming in from
+            // the level map it does nothing and isn't drawn. The engine
+            // doesn't come back from the room through it yet (#217).
+            Kind::RoomReturnEntrance => ROOM_ENTRANCE,
             // launch-barrel.md: the one that shoots left has the
             // archetype's own values. The one that shoots down holds
             // for 28 frames, shoots at the same speed down for a frame
@@ -374,6 +383,9 @@ pub const WALL_EXIT: &str = "wall-exit";
 
 /// The kind of entity a wall-return entrance is: no archetype's.
 pub const WALL_RETURN: &str = "wall-return";
+
+/// The kind of entity a room-return entrance is: no archetype's.
+pub const ROOM_ENTRANCE: &str = "room-entrance";
 
 /// The archetype launch barrels are.
 pub const SLING: &str = "sling";
@@ -598,6 +610,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::ExtraLife(1),
             ),
             (
+                "e19428b6ac97b12161446b28e017a417298eee371dcc9f412c79cfafdcdebd98",
+                Kind::RoomReturnEntrance,
+            ),
+            (
                 "e28fb5597b640eb4e7a70f79a382cf2c62c20eb202c2b56e903119bb6a1c05a3",
                 Kind::ExtraLife(3),
             ),
@@ -762,7 +778,7 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 56);
+        assert_eq!(want.len(), 57);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }
@@ -785,13 +801,14 @@ mod tests {
             if [
                 Kind::Exit,
                 Kind::WallExit,
+                Kind::RoomReturnEntrance,
                 Kind::WallReturnEntrance,
                 Kind::Critter,
             ]
             .contains(&kind)
             {
                 assert!(
-                    [EXIT, WALL_EXIT, WALL_RETURN, CRITTER].contains(&name),
+                    [EXIT, WALL_EXIT, ROOM_ENTRANCE, WALL_RETURN, CRITTER].contains(&name),
                     "{kind}"
                 );
                 assert!(!Archetypes::builtin().names().any(|n| n == name));

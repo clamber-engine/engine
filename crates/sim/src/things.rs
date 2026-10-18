@@ -25,8 +25,9 @@
 //!   then doesn't move on that frame, and every walker holds still on
 //!   the frozen frames after it.
 //! - A thrower with a contact table hurts the player and is bounced on
-//!   by its own ranges, which knocks it out (see
-//!   [`throwers`](crate::throwers)).
+//!   by its own ranges, which knocks it out, and with a `roll` range is
+//!   rolled into on the attack frames, which knocks it out as a defeat by
+//!   an attack box does (see [`throwers`](crate::throwers)).
 //! - With a `ground_attack_width` above 0, the ground action knocks out
 //!   walkers and throwers its attack box touches on its attack frames
 //!   (see [`ground_attacks`]). For `ground_attack_pause` frames after,
@@ -108,10 +109,11 @@ pub const DEFEATED_FRAMES: u8 = 20;
 pub const LAUNCH_REST: u8 = 20;
 
 /// Moves every thing one step, then applies what the player touched.
-/// `previous_feet` is the player's `pos.y` before this step; `frozen`
-/// says the player was held still on it. Returns the walker with a
-/// contact table that hurt the player on this step, if one did.
-pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> Option<usize> {
+/// `previous` is the player's position before this step; `frozen` says
+/// the player was held still on it. Returns the walker with a contact
+/// table that hurt the player on this step, if one did.
+pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<usize> {
+    let previous_feet = previous.y;
     let physics = world.player_physics();
     pose::note(&mut world.player, &world.events, &physics);
     let boxes = physics[Param::BounceWidth] > Fixed::ZERO;
@@ -201,6 +203,14 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
     } else {
         Vec::new()
     };
+    let rolled_thrower = if !frozen && !riding && !knocked(world) {
+        throwers::rolled_into(world, &physics, previous)
+    } else {
+        None
+    };
+    if let Some(index) = rolled_thrower {
+        world.flow.events.push(FlowEvent::Defeat(index));
+    }
     // Walkers and throwers, knocked out or not, hold still on the ground
     // action's pause frames, and so do hidden objects' items.
     let paused = frozen && world.player.ground_action.is_some();
@@ -305,13 +315,13 @@ pub(crate) fn update(world: &mut World, previous_feet: Fixed, frozen: bool) -> O
     for index in bounced_throwers {
         defeat(&mut world.things[index], freeze);
     }
-    for &index in &attacked {
+    for &index in attacked.iter().chain(&rolled_thrower) {
         defeat(&mut world.things[index], roll_freeze);
     }
     for index in rolled_into {
         bounce_off(&mut world.things[index], facing, roll_freeze);
     }
-    if !attacked.is_empty() {
+    if !attacked.is_empty() || rolled_thrower.is_some() {
         world.player.defeat_rolling(roll_freeze, &physics);
     }
     // They hold still on the pause frames instead of holding here.
@@ -374,6 +384,20 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         Phase::Falling { vy, hold } => {
             if let Some(defeat) = archetype.behavior.fall() {
                 fall(level, thing, &archetype, defeat, vy, hold);
+            }
+            // A knocked-out thrower that moved leaves the picture as a
+            // ball does, with a view.
+            if let (
+                Behavior::Thrower {
+                    window: Some(window),
+                    ..
+                },
+                Some(picture),
+            ) = (archetype.behavior, picture)
+                && hold == 0
+                && !picture.holds(thing.pos, window)
+            {
+                thing.active = false;
             }
             return false;
         }

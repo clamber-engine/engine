@@ -329,7 +329,7 @@ pub(crate) fn step(world: &mut World) {
         follow::update(world, Lead::of(&world.player));
     }
     leaving.frame += 1;
-    let previous_feet = world.player.pos.y;
+    let previous = world.player.pos;
     walk(
         &mut world.player,
         leaving.way,
@@ -337,7 +337,7 @@ pub(crate) fn step(world: &mut World) {
         &physics,
         &mut world.events,
     );
-    things::update(world, previous_feet, false);
+    things::update(world, previous, false);
     if follow::due(world) == Some(false) {
         follow::update(world, Lead::of(&world.player));
     }

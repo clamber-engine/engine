@@ -1166,7 +1166,6 @@ pub fn step(world: &mut World, input: &InputFrame) {
     }
     let physics = world.player_physics();
     let start_pos = world.player.pos;
-    let previous_feet = start_pos.y;
     let frozen = world.player.frozen > 0;
     // Nothing follows on the frames the player is held still.
     if !frozen && follow::due(world) == Some(true) {
@@ -1177,7 +1176,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         world
             .player
             .knocked_out(&world.level, &physics, &mut world.events);
-        things::update(world, previous_feet, frozen);
+        things::update(world, start_pos, frozen);
     } else {
         // What hurting a swapping player does isn't in the spec yet;
         // nothing does.
@@ -1212,7 +1211,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
             rope::catch(world);
             sling::catch(world);
         }
-        let hurt_now = things::update(world, previous_feet, frozen);
+        let hurt_now = things::update(world, start_pos, frozen);
         flow::update(world, hurt_by.or(hurt_now), facing);
         ending::pass(world, &input.players[0]);
         exit::take_over(world);

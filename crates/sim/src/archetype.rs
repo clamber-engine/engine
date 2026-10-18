@@ -131,7 +131,12 @@ pub enum Behavior {
         /// How it leaves once knocked out: as a defeated walker, never
         /// knocked back.
         defeat: Fall,
-        /// When it hurts the player or is bounced on, if it does.
+        /// With a view, once knocked out, it's removed outside this
+        /// window around the picture as a [`Ball`] is; without one, once
+        /// its top is below the level.
+        window: Option<(i32, i32, i32, i32)>,
+        /// When it hurts the player, is bounced on or is rolled into, if
+        /// it does.
         contact: Option<ThrowerContact>,
     },
     /// A ball that flies, bounces on floors and drops through them (see
@@ -713,8 +718,9 @@ pub struct Poses {
 ///
 /// When the player's offsets at the end of a step are within the range
 /// for its pose then, it's hurt on the next step: `upright`, or
-/// `airborne`; crouching and the fidget take `upright`'s, and a rolling
-/// player isn't hurt. On the ground with `above` at `ledge`, on the
+/// `airborne`; crouching, the fidget and the rolling pose take
+/// `upright`'s. A player rolling, or in the first `roll_stop_guard`
+/// frames of the stop after a roll, isn't hurt. On the ground with `above` at `ledge`, on the
 /// thrower's ledge, only `across` counts, and not at the end of the step
 /// the player lands on. Not on the step before one of the thrower's
 /// throws, though, nor on the one after a bounce.
@@ -722,6 +728,11 @@ pub struct Poses {
 /// A player in the air, not rising at the preset's `bounce_max_rise` or
 /// faster, bounces off it with its offsets after its move within
 /// `bounce`, which knocks it out.
+///
+/// With a `roll` range, a rolling player defeats it, which knocks it out,
+/// on an attack frame (as for the preset's attack boxes) with its offsets
+/// after its move within that range, and on the roll's first frame with
+/// its offsets before it too.
 ///
 /// Facing left, each `across` turns around: from `mirror` less its high
 /// end to `mirror` less its low end.
@@ -731,6 +742,7 @@ pub struct ThrowerContact {
     pub airborne: Offsets,
     pub ledge: i32,
     pub bounce: Offsets,
+    pub roll: Option<Offsets>,
     pub mirror: i32,
     pub poses: Poses,
 }
@@ -1281,6 +1293,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "defeat_jump",
             "defeat_gravity",
             "defeat_max_fall",
+            "window",
             "contact",
         ],
         "ball" => &[
@@ -1754,6 +1767,10 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 throw_count: items.len() as u8,
                 from: pair("throw_from")?,
                 defeat,
+                window: match table.get("window") {
+                    None => None,
+                    Some(v) => Some(edges(v, &format!("{path}.window"))?),
+                },
                 contact: match table.get("contact") {
                     None => None,
                     Some(v) => Some(parse_thrower_contact(v, &format!("{path}.contact"))?),
@@ -2789,6 +2806,7 @@ fn parse_thrower_contact(value: &Value, path: &str) -> Result<ThrowerContact, St
         "airborne",
         "ledge",
         "bounce",
+        "roll",
         "mirror",
         "upright_jump",
         "land_hold",
@@ -2833,6 +2851,10 @@ fn parse_thrower_contact(value: &Value, path: &str) -> Result<ThrowerContact, St
         airborne: offsets("airborne")?,
         ledge: whole("ledge")?,
         bounce: offsets("bounce")?,
+        roll: match table.get("roll") {
+            None => None,
+            Some(_) => Some(offsets("roll")?),
+        },
         mirror: whole("mirror")?,
         poses: parse_poses(table, path)?,
     })

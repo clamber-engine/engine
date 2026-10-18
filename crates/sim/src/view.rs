@@ -640,8 +640,12 @@ pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) 
                 thing.phase = Phase::Gone;
                 removed(thing.index);
             }
+            // A knocked-out one leaves by its own rule instead.
             Behavior::Thrower { .. }
-                if !appear && thing.active && far(start.x.floor(), left, &physics) =>
+                if !appear
+                    && thing.active
+                    && thing.phase == Phase::Ready
+                    && far(start.x.floor(), left, &physics) =>
             {
                 thing.active = false;
                 removed(thing.index);

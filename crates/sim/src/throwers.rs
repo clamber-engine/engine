@@ -20,16 +20,20 @@
 //! It can hurt on the step it appears, which the spec doesn't cover
 //! either. A thrower with a [`ThrowerContact`](crate::ThrowerContact)
 //! hurts the player as [`thrower_hurt_ahead`] says, and is bounced on as
-//! [`bounced_on`] says, which knocks it out
-//! (spec/behavior/thrower-contact.md). Neither touches other enemies. A
-//! ball passes through walls, and rising into a floor from below,
-//! through that, which the spec doesn't cover either.
+//! [`bounced_on`] says and rolled into as [`rolled_into`] says, which
+//! knock it out (spec/behavior/thrower-contact.md). Knocked out, it
+//! touches nothing and falls through every floor, and with a view it's
+//! removed by its `window` once it moves (see
+//! [`things`](crate::things)); it never comes back. Neither touches
+//! other enemies. A ball passes through walls, and rising into a floor
+//! from below, through that, which the spec doesn't cover either.
 //!
-//! Engine choices where thrower-contact.md says nothing: crouching and
-//! the fidget pose take the upright range and a rolling player isn't
-//! hurt (one rolling through its place on the ledge wasn't seen to be);
-//! a knocked-out thrower doesn't touch the player; and a rider, or a
-//! player on a bounce's frozen frames, doesn't bounce on it.
+//! Engine choices where thrower-contact.md says nothing: crouching, the
+//! fidget pose and the ball's rolling pose after a roll take the upright
+//! range; a knocked-out thrower touches nothing on the frames from its
+//! knock-out on, not only from the fourth, and isn't removed on the
+//! frames it holds still; and a rider, or a player on a bounce's frozen
+//! frames, doesn't bounce on it.
 
 use clamber_fixed::Fixed;
 use clamber_level::{Level, Vec2};
@@ -37,7 +41,7 @@ use clamber_pack::{Param, Physics};
 
 use crate::archetype::{Archetypes, Ball, Behavior};
 use crate::columns;
-use crate::player::{Facing, ceil};
+use crate::player::{Facing, State, ceil, frames};
 use crate::pose::{self, Pose};
 use crate::view::View;
 use crate::world::{Event, Phase, Thing, World};
@@ -266,10 +270,14 @@ pub(crate) fn hurt_ahead(world: &World) -> Option<usize> {
 /// range for the player's pose and facing then. On its ledge (on the
 /// ground with `above` at `ledge`) only `across` counts, and not on the
 /// step the player landed on. Not when the next step is the one before
-/// one of its throws, nor after a step on which the player bounced.
+/// one of its throws, nor after a step on which the player bounced, nor
+/// while the player rolls or is in the first `roll_stop_guard` frames of
+/// the stop after a roll, as with walkers.
 pub(crate) fn thrower_hurt_ahead(world: &World) -> Option<usize> {
     let player = &world.player;
-    if world.events.contains(&Event::Bounce) {
+    let physics = world.player_physics();
+    let guarded = player.roll_stop > 0 && player.roll_stop <= frames(physics[Param::RollStopGuard]);
+    if world.events.contains(&Event::Bounce) || player.state == State::Roll || guarded {
         return None;
     }
     let x = player.pos.x.floor();
@@ -298,9 +306,8 @@ pub(crate) fn thrower_hurt_ahead(world: &World) -> Option<usize> {
                 return false;
             }
             let range = match pose::pose(player, &contact.poses) {
-                Pose::Rolling => return false,
                 Pose::Airborne => contact.airborne,
-                Pose::Upright | Pose::Crouching | Pose::Fidget => contact.upright,
+                Pose::Upright | Pose::Rolling | Pose::Crouching | Pose::Fidget => contact.upright,
             };
             let mut range = contact.facing(range, player.facing);
             let above = y - ceil(t.pos.y);
@@ -347,6 +354,45 @@ pub(crate) fn bounced_on(world: &World, max_rise: Fixed) -> Option<usize> {
             contact
                 .facing(contact.bounce, player.facing)
                 .contains(x - t.pos.x.floor(), y - ceil(t.pos.y))
+        })
+        .map(|t| t.index)
+}
+
+/// The thrower a rolling player defeats on this step, if any: one with a
+/// `roll` range in its [`ThrowerContact`](crate::ThrowerContact) that
+/// isn't knocked out, on an attack frame (a roll's frames, or the first
+/// `roll_attack_stop` frames of the stop after one, not frozen), with the
+/// player's offsets from it after its move within that range for its
+/// facing. On a roll's first frame (its `roll_start`), the offsets from
+/// `before`, where the player was at the start of the step, count too.
+pub(crate) fn rolled_into(world: &World, physics: &Physics, before: Vec2) -> Option<usize> {
+    let player = &world.player;
+    let stop = player.roll_stop > 0 && player.roll_stop <= frames(physics[Param::RollAttackStop]);
+    if player.roll.is_none() && !stop {
+        return None;
+    }
+    let first = world.events.contains(&Event::RollStart);
+    let offsets =
+        |at: Vec2, t: &Thing| (at.x.floor() - t.pos.x.floor(), ceil(at.y) - ceil(t.pos.y));
+    world
+        .things
+        .iter()
+        .filter(|t| t.active && t.phase == Phase::Ready)
+        .find(|t| {
+            let Some(Behavior::Thrower {
+                contact: Some(contact),
+                ..
+            }) = t.archetype.map(|a| a.behavior)
+            else {
+                return false;
+            };
+            let Some(roll) = contact.roll else {
+                return false;
+            };
+            let range = contact.facing(roll, player.facing);
+            let (across, above) = offsets(player.pos, t);
+            let (across_before, above_before) = offsets(before, t);
+            range.contains(across, above) || (first && range.contains(across_before, above_before))
         })
         .map(|t| t.index)
 }

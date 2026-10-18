@@ -168,9 +168,9 @@ pub(crate) fn step(world: &mut World) {
         Some(f) => Some(f.saturating_add(1)),
         None => ending.due.then_some(0),
     };
-    let previous_feet = world.player.pos.y;
+    let previous = world.player.pos;
     walk(&mut world.player, &ending, &physics, &mut world.events);
-    things::update(world, previous_feet, false);
+    things::update(world, previous, false);
     if follow::due(world) == Some(false) {
         follow::update(world, Lead::of(&world.player));
     }

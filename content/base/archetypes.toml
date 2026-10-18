@@ -121,22 +121,31 @@
 #   at that speed, from `throw_from = [x, y]` away from its position. A
 #   thrown ball moves on the frame it's thrown. With a preset that has a
 #   view, a thrower appears and is removed as a walker on its own does,
-#   and starts its timetable again each time it appears. Knocked out (by
-#   the ground action), it stops throwing and leaves as a defeated walker
-#   does, by `defeat_jump`, `defeat_gravity` and `defeat_max_fall`.
+#   and starts its timetable again each time it appears. Knocked out, it
+#   stops throwing and leaves as a defeated walker does, by `defeat_jump`,
+#   `defeat_gravity` and `defeat_max_fall`, through every floor; with a
+#   `window` and a view, it's removed outside it as a ball is, on the
+#   frames it moves, instead of when it's far from the view, and without
+#   one once its top is below the level. It never comes back.
 #   With a `contact` table, it hurts the player, on the next frame, when
 #   the player's offsets from it at the end of a frame are within the
 #   range for the player's pose then, `[across from, to, above from,
 #   to]` as a ball's: `upright`, or `airborne` (the poses and their
-#   timings are a ball's; crouching and the fidget take `upright`'s, and
-#   a rolling player isn't hurt). On the ground with `above` at `ledge`,
+#   timings are a ball's; crouching, the fidget and the rolling pose take
+#   `upright`'s, and a player rolling or in the first `roll_stop_guard`
+#   frames of the stop after a roll isn't hurt). On the ground with `above` at `ledge`,
 #   on its ledge, only `across` counts, and not at the end of the frame
 #   the player lands on. It doesn't hurt on the frame before one of its
 #   throws, nor on the frame after a bounce. A player in the air after
 #   its move, not rising at the preset's `bounce_max_rise` or faster,
 #   with its offsets then within `bounce`, bounces off it (as off a
 #   walker, by the preset's `bounce_speed` and `bounce_freeze`), which
-#   knocks it out; it holds still on the bounce's frozen frames. Facing
+#   knocks it out; it holds still on the bounce's frozen frames. With a
+#   `roll` range, a rolling player on an attack frame (the preset's: a
+#   roll's frames and the first `roll_attack_stop` of the stop) with its
+#   offsets after its move within it defeats it, as a walker hit by the
+#   preset's attack box, which knocks it out; on the roll's first frame
+#   the offsets from where the player was before it count too. Facing
 #   left, each `across` turns around as a ball's, by `mirror`. Knocked
 #   out, it touches nothing. Without `contact`, it doesn't touch the
 #   player; its balls can.
@@ -576,19 +585,23 @@ period = 173
 throws = [[2, 0, -7], [33, 3.125, -7], [144, -3.125, -7]]
 throw_from = [0, -8]
 # ground-action-enemies.md: it rises at 5 px per frame and falls as a
-# knocked-out walker does.
+# knocked-out walker does; thrower-contact.md, "The knocked-out
+# thrower": it leaves by a ball's edges.
 defeat_jump = 5
 defeat_gravity = 0.4375
 defeat_max_fall = 8
+window = [31, 32, 31, 32]
 
 # spec/behavior/thrower-contact.md, whose U is `above` turned around.
-# Crouching, the fidget and rolling on its ledge, and the knocked-out
-# thrower, aren't covered.
+# Crouching and the fidget on its ledge aren't covered. A roll was
+# measured on its ledge only, and not 80 px below it; `roll`'s `above`
+# is upright's.
 [archetypes.thrower.contact]
 upright = [-26, 33, -14, 33]
 airborne = [-26, 30, 7, 50]
 ledge = 1
 bounce = [-28, 43, -27, 20]
+roll = [-24, 33, -14, 33]
 mirror = 1
 upright_jump = 5
 land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }

@@ -260,3 +260,180 @@ fn rising_fast_doesnt_bounce() {
         );
     }
 }
+
+impl Play {
+    /// Whether the thrower has been knocked out.
+    fn knocked_out(&self) -> bool {
+        self.world.things[0].phase != Phase::Ready
+    }
+
+    /// I, the player's `x` less the thrower's, both rounded down.
+    fn across(&self) -> i64 {
+        self.world.player.pos.x.floor() - self.world.things[0].pos.x.floor()
+    }
+
+    /// Starts a roll toward `way` from far enough away, and rolls on to
+    /// its sixth frame.
+    fn roll_to_frame_5(&mut self, way: Action) {
+        self.step(&[way, Action::Action]);
+        for _ in 0..5 {
+            self.step(&[way]);
+        }
+        assert_eq!(self.world.player.state, State::Roll);
+    }
+}
+
+/// thrower-contact.md, "When the thrower is defeated": on an attack
+/// frame, I at the end of it from -24 to 33 facing right and from -32 to
+/// 25 facing left, ends included; nothing else happens to a player
+/// rolling outside them.
+#[test]
+fn a_roll_defeats_the_thrower_within_its_range() {
+    for (way, start, facing, range) in [
+        (Action::Right, 900, Facing::Right, -24..=33),
+        (Action::Left, 1100, Facing::Left, -32..=25),
+    ] {
+        let mut seen = (false, false);
+        for n in 0..240 {
+            let mut play = Play::new(start, 380);
+            play.settle();
+            play.roll_to_frame_5(way);
+            // Put the player 3/8 px apart around the range.
+            play.world.player.pos.x = f(960.0 + f64::from(n) * 0.375);
+            assert!(!play.step(&[way]));
+            let across = play.across();
+            assert_eq!(play.world.player.facing, facing);
+            let inside = range.contains(&across);
+            assert_eq!(play.knocked_out(), inside, "{facing:?} I {across}");
+            seen.0 |= across == *range.start();
+            seen.1 |= across == *range.end();
+        }
+        assert!(seen.0 && seen.1, "{facing:?}");
+    }
+}
+
+/// thrower-contact.md, "After the defeat": the player pauses on K + 1
+/// and K + 2 and rolls on from K + 3, and the thrower holds still on K to
+/// K + 2, rises at 5 less 7/16 a frame from K + 3, and throws no more.
+#[test]
+fn after_a_roll_defeat_both_pause() {
+    let mut play = Play::new(940, 380);
+    play.settle();
+    play.roll_to_frame_5(Action::Right);
+    let mut defeat = None;
+    for n in 0..60 {
+        play.step(&[Action::Right]);
+        if play.knocked_out() {
+            defeat = Some(n);
+            break;
+        }
+    }
+    assert!(defeat.is_some());
+    let at_k = play.world.player.pos.x;
+    let thrower = |play: &Play| play.world.things[0].pos.y;
+    assert_eq!(thrower(&play), f(380.0), "K");
+    for k in 1..=2 {
+        assert!(!play.step(&[Action::Right]));
+        assert_eq!(play.world.player.pos.x, at_k, "K + {k}");
+        assert_eq!(thrower(&play), f(380.0), "K + {k}");
+    }
+    play.step(&[Action::Right]);
+    assert!(play.world.player.pos.x > at_k, "K + 3");
+    assert_eq!(thrower(&play), f(380.0 - 4.5625), "K + 3");
+    let placed = play.world.level.entities.len();
+    for _ in 0..300 {
+        play.step(&[]);
+        assert!(play.world.things[placed..].iter().all(|t| !t.active));
+    }
+}
+
+/// thrower-contact.md, "When the thrower is defeated": on S the
+/// thrower is also defeated from the player's position at the end of
+/// S - 1. Here the player ends S - 1 at I 33, on the frame before a
+/// throw so it isn't hurt, and the roll's first frame moves it on.
+#[test]
+fn on_the_rolls_first_frame_where_it_was_counts_too() {
+    let mut play = Play::new(900, 380);
+    play.settle();
+    play.stand_at(1033.5, Facing::Right);
+    // S is frame 32 of the timetable, the one before a throw.
+    play.world.things[0].clock = 31;
+    play.world.player.vel.x = f(2.5);
+    play.world.player.hurt_ahead = None;
+    play.step(&[Action::Right, Action::Action]);
+    assert_eq!(play.world.player.state, State::Roll);
+    assert!(play.across() > 33, "I {}", play.across());
+    assert!(play.knocked_out());
+}
+
+/// thrower-contact.md, "Being hurt around a roll": after a roll that
+/// ends in a stop, on D + 8 to D + 11 the thrower neither is defeated
+/// nor hurts the player; the earliest hurt is on D + 12.
+#[test]
+fn not_defeated_or_hurt_late_in_the_stop() {
+    let mut play = Play::new(900, 380);
+    play.settle();
+    // A slow roll, far from the thrower, ends in a stop.
+    play.step(&[Action::Action]);
+    let mut d = None;
+    for n in 1..80u32 {
+        let hurt = play.step(&[]);
+        play.world.things[0].clock = 60;
+        if d.is_none() && play.world.player.roll_stop > 0 {
+            d = Some(n);
+        }
+        let Some(d) = d else {
+            assert!(!hurt);
+            continue;
+        };
+        if n == d + 7 {
+            // The player stands still by now; put it on the thrower.
+            play.stand_at(1000.0, Facing::Right);
+        }
+        if n < d + 12 {
+            assert!(!hurt && !play.knocked_out(), "D + {}", n - d);
+        } else {
+            assert!(hurt && !play.knocked_out(), "D + {}", n - d);
+            return;
+        }
+    }
+    panic!("no stop");
+}
+
+/// thrower-contact.md, "The knocked-out thrower": it falls through every
+/// floor, and is removed on the first frame on which, after its move, it
+/// is more than 256 px below the top of the picture as it was at the
+/// start of the frame. It never comes back.
+#[test]
+fn a_knocked_out_thrower_leaves_by_the_balls_edges() {
+    let mut play = Play::new(940, 380);
+    play.settle();
+    play.roll_to_frame_5(Action::Right);
+    for _ in 0..60 {
+        play.step(&[Action::Right]);
+        if play.knocked_out() {
+            break;
+        }
+    }
+    assert!(play.knocked_out());
+    let mut removed = false;
+    for _ in 0..200 {
+        let top = play.world.view.unwrap().y();
+        play.step(&[]);
+        let thrower = &play.world.things[0];
+        let below = up(thrower.pos.y) - top;
+        if !thrower.active {
+            assert!(below > 256, "{below}");
+            // Through the ground at 381.
+            assert!(thrower.pos.y > f(381.0));
+            removed = true;
+            break;
+        }
+        assert!(below <= 256, "{below}");
+    }
+    assert!(removed);
+    for _ in 0..100 {
+        play.step(&[Action::Left]);
+        assert!(!play.world.things[0].active);
+    }
+}
