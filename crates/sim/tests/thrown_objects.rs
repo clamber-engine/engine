@@ -6,7 +6,7 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_pack::Fixed;
-use clamber_sim::{Flight, FlowEvent, InputFrame, Phase, World, generic_feel, step};
+use clamber_sim::{Facing, Flight, FlowEvent, InputFrame, Phase, View, World, generic_feel, step};
 
 const A: Action = Action::Action;
 
@@ -215,6 +215,42 @@ fn is_removed_far_right_of_the_view() {
         other => panic!("{other:?}"),
     };
     assert!(x - view >= 385, "{last} then {}", x - view);
+}
+
+/// thrown-objects.md, "Leaving the picture": removed once its x rounded
+/// down is 128 or more left of the view's left edge as it was at the
+/// start of the frame, and kept at 127.
+#[test]
+fn is_removed_far_left_of_the_view() {
+    let mut play = Play::new(&level(FLAT));
+    play.world.player.facing = Facing::Left;
+    play.throw_to(21);
+    let with_view = |play: &Play, left: i64| {
+        let mut next = Play {
+            world: play.world.clone(),
+            held: play.held,
+        };
+        next.world.view = Some(View {
+            left: Fixed::from_int(left as i32),
+            ..play.world.view.unwrap()
+        });
+        next.step(&[]);
+        next
+    };
+    // Until it nears the level's left end, past which it falls out.
+    for _ in 0..30 {
+        assert!(play.world.things[0].active);
+        // Where it ends this step, with the view clear of it.
+        let x = with_view(&play, play.world.things[0].pos.x.floor())
+            .world
+            .things[0]
+            .pos
+            .x
+            .floor();
+        assert!((0..200).contains(&x), "thrown left: {x}");
+        assert!(!with_view(&play, x + 128).world.things[0].active, "{x}");
+        play = with_view(&play, x + 127);
+    }
 }
 
 /// The walker's `(x, y, vx, vy)`, `vy` 0 while it walks.

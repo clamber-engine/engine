@@ -81,7 +81,7 @@ use clamber_pack::{Feel, Param, Physics};
 
 use crate::archetype::Behavior;
 use crate::dimming::DIM;
-use crate::exit::EXIT;
+use crate::exit::{EXIT, WALL_EXIT};
 use crate::flow::FlowEvent;
 use crate::player::{Facing, Player, ceil, frames};
 use crate::sections::{Opening, Placed, Placing, Spot, Window};
@@ -583,10 +583,11 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 ///   objects: once their start isn't near the view and either it's far
 ///   from it or outside the view's rows (`appear_above` and
 ///   `appear_below`), even on a step on which only the view's top moved.
-/// - In a spot, letters, relics, crates holding an animal and exits: on
-///   the first step their start isn't near the view, and for a spot that
-///   needs the view's rows to appear, as exits do, on the first step it's
-///   outside them.
+/// - In a spot, letters, relics, crates holding an animal, exits and
+///   wall exits: on the first step their start isn't near the view, and
+///   for a spot that needs the view's rows to appear, as exits do, or an
+///   open wall exit, on the first step it's outside them. A wall exit
+///   removed open comes back closed.
 ///
 /// An object that can be carried, resting where it was put down, is
 /// removed by the same rule with its own position for "far" and the
@@ -802,13 +803,16 @@ fn walkers_by(world: &mut World, physics: &Physics, (left, top): (i64, i64), app
             continue;
         };
         // Only while it's still as it appeared, or for an object that can
-        // be carried, resting where it was put down.
+        // be carried, resting where it was put down, or for a wall exit,
+        // opened.
         let start = entity.at;
         let put_down = matches!(
             thing.archetype.map(|a| a.behavior),
             Some(Behavior::Carry { .. })
         );
-        if !thing.active || thing.phase != Phase::Ready || thing.pos != start && !put_down {
+        let open = thing.phase == Phase::Open;
+        if !thing.active || thing.phase != Phase::Ready && !open || thing.pos != start && !put_down
+        {
             continue;
         }
         let start_near = near(start.x.floor(), left, &physics);
@@ -817,14 +821,17 @@ fn walkers_by(world: &mut World, physics: &Physics, (left, top): (i64, i64), app
         let gone = match leaves {
             Leaves::Far => !start_near && (far(x, left, &physics) || !in_rows),
             Leaves::Soon => {
-                let rows = spot
-                    .zip(spots)
-                    .is_some_and(|(s, spots)| matches!(spots[s], Spot::Object { rows: true, .. }));
+                let rows = open
+                    || spot.zip(spots).is_some_and(|(s, spots)| {
+                        matches!(spots[s], Spot::Object { rows: true, .. })
+                    });
                 !start_near || rows && !in_rows
             }
         };
         if gone {
             thing.active = false;
+            // An open wall exit comes back closed.
+            thing.phase = Phase::Ready;
             removed(thing.index);
         }
     }
@@ -912,9 +919,10 @@ enum Leaves {
 /// How `thing` leaves with the view, if it's one of the objects that
 /// leave as placed objects do: scenery anywhere, and in a spot,
 /// collectibles other than those there `once`, objects that can be
-/// carried, kegs, hidden objects, crates holding an animal and exits.
+/// carried, kegs, hidden objects, crates holding an animal, exits and
+/// wall exits.
 fn leaves(thing: &Thing, in_spot: bool) -> Option<Leaves> {
-    if thing.kind == EXIT {
+    if thing.kind == EXIT || thing.kind == WALL_EXIT {
         return in_spot.then_some(Leaves::Soon);
     }
     match thing.archetype?.behavior {

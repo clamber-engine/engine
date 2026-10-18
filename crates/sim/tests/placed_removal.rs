@@ -246,6 +246,41 @@ fn exits_need_the_vertical_window_too() {
     assert!(!step_at::<4>(&mut w, 1532, 300)[3]);
 }
 
+/// "Wall exits": a closed one follows the window alone, however far
+/// above or below the picture it is; an open one also needs the vertical
+/// window, and comes back closed once removed.
+#[test]
+fn wall_exits_need_the_vertical_window_only_while_open() {
+    let mut w = world(&[("wall-exit", 1500, 300)], false);
+    assert!(!step_at::<4>(&mut w, 1211, 200)[3]);
+    assert!(step_at::<4>(&mut w, 1212, 600)[3], "y - U = -300");
+    assert!(step_at::<4>(&mut w, 1212, 0)[3], "y - U = 300");
+    assert!(!step_at::<4>(&mut w, 1532, 0)[3], "no margin");
+    assert!(step_at::<4>(&mut w, 1531, 0)[3]);
+    let open = |w: &mut World| w.things[3].phase = Phase::Open;
+    // Open, it goes on the first frame outside the vertical window, even
+    // when only U changes, and is back closed on the next frame.
+    step_at::<4>(&mut w, 1212, 200);
+    open(&mut w);
+    assert!(step_at::<4>(&mut w, 1212, 44)[3]);
+    assert_eq!(w.things[3].phase, Phase::Open);
+    assert!(!step_at::<4>(&mut w, 1212, 43)[3]);
+    assert!(step_at::<4>(&mut w, 1212, 43)[3]);
+    assert_eq!(w.things[3].phase, Phase::Ready, "closed");
+    assert!(step_at::<4>(&mut w, 1212, 0)[3]);
+    // Open, at the top edge too.
+    step_at::<4>(&mut w, 1212, 331);
+    open(&mut w);
+    assert!(step_at::<4>(&mut w, 1212, 331)[3]);
+    assert!(!step_at::<4>(&mut w, 1212, 332)[3]);
+    // Removed open by the window, it comes back closed as well.
+    step_at::<4>(&mut w, 1212, 200);
+    open(&mut w);
+    assert!(!step_at::<4>(&mut w, 1211, 200)[3]);
+    assert!(step_at::<4>(&mut w, 1212, 200)[3]);
+    assert_eq!(w.things[3].phase, Phase::Ready, "closed");
+}
+
 /// An exit that isn't there takes over no one.
 #[test]
 fn an_exit_that_isnt_there_doesnt_take_the_lead() {

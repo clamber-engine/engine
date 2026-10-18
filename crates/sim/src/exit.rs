@@ -58,9 +58,13 @@
 //! `wall_exit_reach_left` standing or turning facing left, how far left
 //! of the wall exit the lead's `x` rounded down is. The lead walks out
 //! right, and F is the first frame it ends `exit_leave_at` px or more
-//! right of the wall exit; the rest is an exit's. The spec covers barrels
-//! only: here any thrown object with [`Opens`] boxes opens one, and a
-//! wall exit stays open for the rest of the visit.
+//! right of the wall exit; the rest is an exit's. Placed in a spot, a
+//! closed wall exit appears and is removed with the view by its entry
+//! alone, an open one also needs the view's rows to stay, and one
+//! removed open comes back closed (placements.md, "Wall exits"; see
+//! [`view::walkers`]). The spec covers barrels only: here any thrown
+//! object with [`Opens`] boxes opens one, and one outside a spot stays
+//! open for the rest of the visit.
 //!
 //! [`Opens`]: crate::Opens
 
