@@ -258,13 +258,16 @@ def tree(x, y, z, size, bark, leaves, light_leaves, seed):
         cr.ball("canopy", mat, (r, r, r * 0.92), (x + dx * size, y - 0.1, z + dz * size))
 
 
-def main():
+def write(stills):
+    """Renders `stills`, `(name, build)` with `build(quick)` making the
+    scene, to `backgrounds/<name>.png`, from the command line
+    `tools/render-art.sh` gives."""
     content, quick = cr.args()
     folder = os.path.join(content, "backgrounds")
     os.makedirs(folder, exist_ok=True)
     tmp = os.path.join(os.environ.get("TMPDIR", "/tmp"), "clamber-backgrounds")
     os.makedirs(tmp, exist_ok=True)
-    for name, build in [("sky", sky), ("mountains", mountains), ("hills", hills)]:
+    for name, build in stills:
         scene = build(quick)
         image = cr.render(scene, os.path.join(tmp, f"{name}.png"))
         path = os.path.join(folder, f"{name}.png")
@@ -272,4 +275,5 @@ def main():
         print(f"wrote {path}: {image.w}x{image.h}")
 
 
-main()
+if __name__ == "__main__":
+    write([("sky", sky), ("mountains", mountains), ("hills", hills)])

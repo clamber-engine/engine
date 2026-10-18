@@ -1,0 +1,145 @@
+{
+  "props": {
+    "arch": {
+      "ground": 3,
+      "size": [
+        64,
+        52
+      ]
+    },
+    "branch": {
+      "ground": 16,
+      "size": [
+        52,
+        18
+      ]
+    },
+    "bush": {
+      "ground": 2,
+      "size": [
+        28,
+        18
+      ]
+    },
+    "fern": {
+      "ground": 5,
+      "size": [
+        30,
+        18
+      ]
+    },
+    "flowers": {
+      "ground": 2,
+      "size": [
+        20,
+        10
+      ]
+    },
+    "front-fern": {
+      "ground": 8,
+      "size": [
+        48,
+        30
+      ]
+    },
+    "front-leaves": {
+      "ground": 2,
+      "size": [
+        98,
+        33
+      ]
+    },
+    "lip": {
+      "ground": 6,
+      "size": [
+        56,
+        11
+      ]
+    },
+    "lip-end": {
+      "ground": 11,
+      "size": [
+        40,
+        17
+      ]
+    },
+    "lip-short": {
+      "ground": 5,
+      "size": [
+        40,
+        10
+      ]
+    },
+    "log": {
+      "ground": 1,
+      "size": [
+        52,
+        15
+      ]
+    },
+    "mushrooms": {
+      "ground": 1,
+      "size": [
+        18,
+        9
+      ]
+    },
+    "old-crates": {
+      "ground": 2,
+      "size": [
+        30,
+        25
+      ]
+    },
+    "palm": {
+      "ground": 1,
+      "size": [
+        84,
+        101
+      ]
+    },
+    "pillar": {
+      "ground": 3,
+      "size": [
+        36,
+        47
+      ]
+    },
+    "rocks": {
+      "ground": 3,
+      "size": [
+        26,
+        12
+      ]
+    },
+    "roots": {
+      "ground": 15,
+      "size": [
+        32,
+        17
+      ]
+    },
+    "sign": {
+      "ground": 2,
+      "size": [
+        24,
+        26
+      ]
+    },
+    "tree": {
+      "ground": 3,
+      "size": [
+        84,
+        106
+      ]
+    },
+    "vine": {
+      "ground": 39,
+      "size": [
+        18,
+        41
+      ]
+    }
+  },
+  "scale": 5
+}

@@ -162,3 +162,44 @@ fn the_first_level_is_up_to_date_with_its_layout() {
         "content/base/levels/first.level is out of date: run tools/levels/first.py"
     );
 }
+
+/// The props for decorating levels are rendered by `tools/render-art.sh`
+/// in sets, each prop with a normal map the size of its image, and the
+/// extra backgrounds as wide as the view, so they tile across it.
+#[test]
+fn the_props_and_backgrounds_are_rendered_with_normal_maps() {
+    let size = |path: &std::path::Path| {
+        let image = decode_png(&std::fs::read(path).unwrap()).unwrap();
+        (image.width(), image.height())
+    };
+    let props = content_dir().join("base/props");
+    for set in ["jungle", "treetops", "cave"] {
+        assert!(props.join(format!("{set}.json")).is_file(), "{set}");
+        let mut count = 0;
+        for entry in std::fs::read_dir(props.join(set)).unwrap() {
+            let path = entry.unwrap().path();
+            let stem = path.file_stem().unwrap().to_str().unwrap().to_owned();
+            if stem.ends_with("-normals") {
+                continue;
+            }
+            let normals = path.with_file_name(format!("{stem}-normals.png"));
+            assert_eq!(size(&path), size(&normals), "{set}/{stem}");
+            count += 1;
+        }
+        assert!(count > 0, "{set}");
+    }
+    let player = SpriteSheet::load(&content_dir().join(SPRITES).join("player.json")).unwrap();
+    for name in [
+        "jungle-far",
+        "jungle-near",
+        "light-shafts",
+        "canopy",
+        "cave-far",
+        "cave-near",
+    ] {
+        let path = content_dir()
+            .join("base/backgrounds")
+            .join(format!("{name}.png"));
+        assert_eq!(size(&path).0, 384 * player.sheet.scale, "{name}");
+    }
+}

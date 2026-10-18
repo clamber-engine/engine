@@ -1,0 +1,61 @@
+{
+  "props": {
+    "bough": {
+      "ground": 9,
+      "size": [
+        66,
+        21
+      ]
+    },
+    "bough-end": {
+      "ground": 31,
+      "size": [
+        42,
+        62
+      ]
+    },
+    "front-canopy": {
+      "ground": 12,
+      "size": [
+        84,
+        21
+      ]
+    },
+    "hanging-moss": {
+      "ground": 20,
+      "size": [
+        22,
+        22
+      ]
+    },
+    "leaf-clump": {
+      "ground": 14,
+      "size": [
+        54,
+        30
+      ]
+    },
+    "leaf-clump-small": {
+      "ground": 10,
+      "size": [
+        30,
+        19
+      ]
+    },
+    "nest": {
+      "ground": 2,
+      "size": [
+        20,
+        9
+      ]
+    },
+    "trunk": {
+      "ground": 2,
+      "size": [
+        20,
+        143
+      ]
+    }
+  },
+  "scale": 5
+}

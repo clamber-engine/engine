@@ -4,9 +4,9 @@
 # they're out of date.
 #
 # The climber, enemies, pickups and objects, the terrain tiles, the
-# background layers, the HUD's icons, the menus' panel, highlight and
-# cursor, and the title's logo and scene are pre-rendered from the scripts in art/ at the repository root
-# by tools/render-art.sh.
+# background layers, the levels' props, the HUD's icons, the menus' panel,
+# highlight and cursor, and the title's logo and scene are pre-rendered
+# from the scripts in art/ at the repository root by tools/render-art.sh.
 
 # Sound effects, one per cue in sounds.toml. Each is a sequence of tones:
 # `wave` (square, triangle, saw or noise), a frequency in Hz sweeping
