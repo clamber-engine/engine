@@ -141,11 +141,18 @@ const SAMPLES: u32 = 4;
 /// Frames a texture can go undrawn before it's dropped from the GPU.
 const UNUSED_FRAMES: u64 = 600;
 
+/// Frames queued for the display at most. Each one queued shows input a
+/// refresh later (#192), and a frame takes far less than a refresh to
+/// draw, so there's no need for more than one.
+const FRAME_LATENCY: u32 = 1;
+
 pub struct Gpu {
     window: Arc<Window>,
     instance: wgpu::Instance,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
+    /// The surface is to be set up again before the next frame.
+    stale: bool,
     painter: Painter,
 }
 
@@ -174,6 +181,7 @@ impl Gpu {
             config.format = plain;
         }
         config.present_mode = present_mode(vsync);
+        config.desired_maximum_frame_latency = FRAME_LATENCY;
         surface.configure(&device, &config);
         let painter = Painter::new(&adapter, device, queue, config.format);
         Ok(Gpu {
@@ -181,6 +189,7 @@ impl Gpu {
             instance,
             surface,
             config,
+            stale: false,
             painter,
         })
     }
@@ -189,10 +198,11 @@ impl Gpu {
         self.config.present_mode == present_mode(true)
     }
 
+    /// Takes effect from the next frame, as a frame may be being drawn.
     pub fn set_vsync(&mut self, vsync: bool) {
         if vsync != self.vsync() {
             self.config.present_mode = present_mode(vsync);
-            self.configure();
+            self.stale = true;
         }
     }
 
@@ -200,32 +210,34 @@ impl Gpu {
         self.surface.configure(&self.painter.device, &self.config);
     }
 
-    /// Draws `list`. With vsync, waits for the display to be ready for
-    /// another frame first. Draws nothing while the window has no area or
-    /// can't be seen.
-    pub fn present(&mut self, list: &DrawList) -> Result<(), String> {
+    /// The next frame to draw into, once [`present`](Self::present)ed.
+    /// With vsync, waits for the display to be ready for it first, so
+    /// what's drawn into it is shown as soon as it can be. `None` while
+    /// the window has no area or can't be seen.
+    pub fn next_frame(&mut self) -> Result<Option<wgpu::SurfaceTexture>, String> {
         let size = self.window.inner_size();
         if size.width == 0 || size.height == 0 {
-            return Ok(());
+            return Ok(None);
         }
-        if (size.width, size.height) != (self.config.width, self.config.height) {
+        if self.stale || (size.width, size.height) != (self.config.width, self.config.height) {
             self.config.width = size.width;
             self.config.height = size.height;
+            self.stale = false;
             self.configure();
         }
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
             wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
                 // Shown as it is; set up again for the next frame.
-                self.config.width = 0;
+                self.stale = true;
                 frame
             }
             wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                return Ok(());
+                return Ok(None);
             }
             wgpu::CurrentSurfaceTexture::Outdated => {
                 self.configure();
-                return Ok(());
+                return Ok(None);
             }
             wgpu::CurrentSurfaceTexture::Lost => {
                 self.surface = self
@@ -233,15 +245,19 @@ impl Gpu {
                     .create_surface(self.window.clone())
                     .map_err(|e| e.to_string())?;
                 self.configure();
-                return Ok(());
+                return Ok(None);
             }
             wgpu::CurrentSurfaceTexture::Validation => {
                 return Err("the GPU couldn't get a frame to draw".into());
             }
         };
+        Ok(Some(frame))
+    }
+
+    /// Draws `list` into `frame` and shows it.
+    pub fn present(&mut self, list: &DrawList, frame: wgpu::SurfaceTexture) {
         self.painter.paint(list, &frame.texture);
         self.painter.queue.present(frame);
-        Ok(())
     }
 }
 

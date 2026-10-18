@@ -639,6 +639,15 @@ impl App {
 
     /// Runs the steps that are due, then draws between the last two.
     fn frame(&mut self) -> Result<(), String> {
+        // The wait for the display comes first, so the steps read input
+        // as late as they can before what they do is shown (#192).
+        let next = match &mut self.window {
+            Some(Shown {
+                output: Output::Gpu(gpu),
+                ..
+            }) => gpu.next_frame()?,
+            _ => None,
+        };
         self.update();
         if self.session.quit {
             return Ok(());
@@ -651,11 +660,15 @@ impl App {
         };
         match &mut shown.output {
             Output::Gpu(gpu) => {
+                let Some(next) = next else {
+                    return Ok(());
+                };
                 let look = self.session.look();
                 self.list.view = look.view;
                 self.list.pixel_art = look.pixel_art;
                 self.session.draw(&mut self.list, alpha);
-                gpu.present(&self.list)
+                gpu.present(&self.list, next);
+                Ok(())
             }
             Output::Software(surface) => {
                 let size = shown.window.inner_size();

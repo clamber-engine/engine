@@ -38,8 +38,18 @@ impl Clock {
 
     /// Adds the time a frame drawn with vsync `elapsed` after the last
     /// stands for under `pace`, and returns how many steps are due now.
+    ///
+    /// On a display the steps follow exactly, a frame is drawn as late
+    /// into its refresh as can be, so it shows the newest step rather
+    /// than one from up to a step before (#192).
     pub fn advance_paced(&mut self, elapsed: Duration, pace: &mut Pace) -> u32 {
-        self.add(pace.frame(elapsed))
+        let (units, waited) = pace.frame(elapsed);
+        let steps = self.add(units);
+        if waited && pace.locked {
+            let period = pace.period;
+            self.owed = (self.owed - self.owed % period + period - 1).min(NANOS - 1);
+        }
+        steps
     }
 
     fn add(&mut self, units: u128) -> u32 {
@@ -119,25 +129,26 @@ impl Pace {
     /// The time, in the clock's units, a frame drawn `elapsed` after the
     /// last stands for: whole refreshes, unless it's too far from any to
     /// have waited for the display, as when the window can't be seen.
-    fn frame(&mut self, elapsed: Duration) -> u128 {
+    /// Also whether it waited.
+    fn frame(&mut self, elapsed: Duration) -> (u128, bool) {
         let measured = units(elapsed);
         let period = self.period;
         let refreshes = (measured + period / 2) / period;
         if refreshes == 0 || measured.abs_diff(refreshes * period) > period / 4 {
             self.behind = 0;
-            return measured;
+            return (measured, false);
         }
         let paced = refreshes * period;
         if self.locked {
-            return paced;
+            return (paced, true);
         }
         self.behind += measured as i128 - paced as i128;
         if self.behind.unsigned_abs() < period {
-            return paced;
+            return (paced, true);
         }
         let caught_up = (paced as i128 + self.behind).max(0) as u128;
         self.behind = 0;
-        caught_up
+        (caught_up, true)
     }
 }
 
@@ -190,7 +201,8 @@ mod tests {
             let refresh = Duration::from_secs(1000) / millihertz;
             for elapsed in jittery(refresh, 600) {
                 assert_eq!(clock.advance_paced(elapsed, &mut pace), 1, "{millihertz}");
-                assert!((clock.alpha() - 0.5).abs() < 1e-6);
+                // Drawn at the newest step, not halfway to it.
+                assert!(clock.alpha() > 1.0 - 1e-6);
             }
         }
     }
@@ -204,6 +216,22 @@ mod tests {
             .map(|elapsed| clock.advance_paced(elapsed, &mut pace))
             .collect();
         assert!(steps.chunks(2).all(|pair| pair == [0, 1]), "{steps:?}");
+        // The frame after a step's is drawn at that step.
+        assert!(clock.alpha() > 0.5 - 1e-6 && clock.alpha() < 0.5);
+        clock.advance_paced(sixtieth() / 2, &mut pace);
+        assert!(clock.alpha() > 1.0 - 1e-6);
+    }
+
+    #[test]
+    fn keeps_in_step_at_180_hz() {
+        let mut pace = Pace::new(180_000).unwrap();
+        let mut clock = Clock::new();
+        let steps: Vec<u32> = jittery(Duration::from_secs(1) / 180, 900)
+            .into_iter()
+            .map(|elapsed| clock.advance_paced(elapsed, &mut pace))
+            .collect();
+        assert!(steps.chunks(3).all(|c| c == [0, 0, 1]), "{steps:?}");
+        assert!(clock.alpha() < 1.0);
     }
 
     #[test]
@@ -246,7 +274,7 @@ mod tests {
         let mut clock = Clock::new();
         let late = sixtieth() * 2 + Duration::from_millis(1);
         assert_eq!(clock.advance_paced(late, &mut pace), 2);
-        assert_eq!(clock.alpha(), 0.0);
+        assert!(clock.alpha() > 1.0 - 1e-6);
     }
 
     #[test]
