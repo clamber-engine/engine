@@ -25,10 +25,12 @@ use crate::menu::{Choice, Menu};
 use crate::report;
 use crate::session::{FAILED, HEADING, SUBTITLE, TITLE};
 use crate::surface::Surface;
-use crate::text::{LINE, draw_text_centred, wrap};
+use crate::text::{ADVANCE, LINE, draw_text_centred, fit, fit_end, wrap};
 
-/// Characters across a line of text on these screens.
-const WIDTH: usize = 56;
+/// How wide a line of text on these screens can be, in view units.
+const WIDTH: i32 = 336;
+/// How wide a menu item can be, leaving room for the cursor.
+const ITEM_WIDTH: i32 = WIDTH - 4 * ADVANCE;
 
 /// Folder entries shown at once.
 const PICKER_ROWS: usize = 11;
@@ -39,16 +41,6 @@ pub const REPORT: &str = "import-report.txt";
 
 /// How a personal import is described, wherever one is shown.
 pub const PERSONAL: &str = "Personal import: yours to play, not to share";
-
-/// `text` cut to `width` characters, with `…` where it was cut.
-fn fit(text: &str, width: usize) -> String {
-    if text.chars().count() <= width {
-        return text.to_string();
-    }
-    let mut out: String = text.chars().take(width.saturating_sub(1)).collect();
-    out.push('…');
-    out
-}
 
 /// Draws `text` wrapped to [`WIDTH`], centred, from `top` down. Returns
 /// where the next line would go.
@@ -175,7 +167,7 @@ impl Picker {
             }
             Err(e) => problem = Some(format!("Can't read this folder: {e}")),
         }
-        let width = WIDTH - 4;
+        let width = ITEM_WIDTH;
         let labels = entries.iter().enumerate().map(|(i, e)| {
             let label = match e {
                 Entry::Up => "../".to_string(),
@@ -231,7 +223,7 @@ impl Picker {
         let marks = self.marks.lock().unwrap_or_else(PoisonError::into_inner);
         for &i in &marks.found[self.marked..] {
             if let Entry::File(name) = &self.entries[i] {
-                self.menu.items[i].0 = fit(&format!("{SUPPORTED}{name}"), WIDTH - 4);
+                self.menu.items[i].0 = fit(&format!("{SUPPORTED}{name}"), ITEM_WIDTH);
             }
         }
         self.marked = marks.found.len();
@@ -287,17 +279,8 @@ impl Picker {
             SUBTITLE,
         );
         let shown = self.dir.display().to_string();
-        let tail: String = {
-            let chars: Vec<char> = shown.chars().collect();
-            if chars.len() <= WIDTH {
-                shown
-            } else {
-                // The end of a long path says the most.
-                let mut tail = String::from("…");
-                tail.extend(&chars[chars.len() - (WIDTH - 1)..]);
-                tail
-            }
-        };
+        // The end of a long path says the most.
+        let tail = fit_end(&shown, WIDTH);
         draw_text_centred(canvas, centre, 12 + 2 * LINE + 6, &tail, TITLE);
         let top = 12 + 4 * LINE;
         if let Some(problem) = &self.problem {
@@ -606,7 +589,7 @@ impl Games {
             if pack.levels().is_empty() {
                 unavailable.push(items.len());
             }
-            items.push((fit(&pack.manifest.name, WIDTH - 4), Pick::Pack(i)));
+            items.push((fit(&pack.manifest.name, ITEM_WIDTH), Pick::Pack(i)));
         }
         items.push(("Back".to_string(), Pick::Back));
         let selected = playing

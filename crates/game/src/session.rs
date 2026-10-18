@@ -40,8 +40,8 @@ use crate::{SPRITES, content_dir, load_game};
 /// Where the credits screen's lines start, and how many show at once.
 const CREDITS_TOP: i32 = 34;
 const CREDITS_ROWS: usize = 18;
-/// Characters across a line of credits.
-const CREDITS_WIDTH: usize = 60;
+/// How wide a line of credits can be, in view units.
+const CREDITS_WIDTH: i32 = 360;
 
 pub(crate) const TITLE: Color = rgb(0xf0, 0xc8, 0x40);
 pub(crate) const HEADING: Color = rgb(0xf4, 0xf0, 0xe8);
@@ -1123,7 +1123,7 @@ impl Session {
     fn draw_credits(&self, canvas: &mut dyn Surface, scroll: usize, centre: i32) {
         draw_text_centred(canvas, centre, 14, "CREDITS", HEADING);
         let lines = self.credits.wrapped(CREDITS_WIDTH);
-        let left = centre - (CREDITS_WIDTH as i32 * ADVANCE) / 2;
+        let left = centre - CREDITS_WIDTH / 2;
         let bottom = CREDITS_TOP + CREDITS_ROWS as i32 * LINE;
         let (l, r) = (left - 8, centre + (centre - left) + 8);
         let panel = [l, CREDITS_TOP - 7, r, bottom + 3];

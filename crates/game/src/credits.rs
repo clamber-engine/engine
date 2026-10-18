@@ -7,6 +7,8 @@
 
 use std::path::Path;
 
+use crate::text::wrap_hanging;
+
 /// The credits shown when none are given, relative to the content folder.
 pub const DEFAULT_CREDITS: &str = "base/CREDITS.md";
 
@@ -75,38 +77,20 @@ impl Credits {
         Credits { lines }
     }
 
-    /// The lines broken at spaces to at most `width` characters, or
+    /// The lines broken at spaces to at most `width` view units wide, or
     /// mid-word for a word longer than that. A list item's later lines
     /// are indented under its text.
-    pub fn wrapped(&self, width: usize) -> Vec<Line> {
-        let width = width.max(4);
+    pub fn wrapped(&self, width: i32) -> Vec<Line> {
         let mut out = Vec::new();
         for line in &self.lines {
-            let indent = if line.text.starts_with("- ") { 2 } else { 0 };
-            let mut rows = vec![String::new()];
-            for word in line.text.split_whitespace() {
-                let mut word: Vec<char> = word.chars().collect();
-                loop {
-                    let row = rows.last_mut().expect("there's always a row");
-                    let used = row.chars().count();
-                    let fresh = row.trim().is_empty();
-                    let space = usize::from(!fresh);
-                    if used + space + word.len() <= width {
-                        if !fresh {
-                            row.push(' ');
-                        }
-                        row.extend(&word);
-                        break;
-                    }
-                    if fresh {
-                        // longer than a line: break it
-                        row.extend(word.drain(..width - used));
-                    }
-                    rows.push(" ".repeat(indent));
-                }
-            }
-            if rows.len() > 1 && rows.last().is_some_and(|r| r.trim().is_empty()) {
-                rows.pop();
+            let indent = if line.text.starts_with("- ") {
+                "  "
+            } else {
+                ""
+            };
+            let mut rows = wrap_hanging(&line.text, width, indent);
+            if rows.is_empty() {
+                rows.push(String::new());
             }
             out.extend(rows.into_iter().map(|text| Line {
                 text,
@@ -150,6 +134,7 @@ fn inline(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::text::text_size;
 
     fn texts(lines: &[Line]) -> Vec<&str> {
         lines.iter().map(|l| l.text.as_str()).collect()
@@ -194,8 +179,9 @@ else is ours.
     #[test]
     fn wraps_at_spaces_and_indents_list_items() {
         let credits = Credits::from_markdown(SAMPLE);
-        let wrapped = credits.wrapped(24);
-        assert!(wrapped.iter().all(|l| l.text.chars().count() <= 24));
+        let width = text_size("Everything else is ours.").0 + 1;
+        let wrapped = credits.wrapped(width);
+        assert!(wrapped.iter().all(|l| text_size(&l.text).0 <= width));
         assert_eq!(
             texts(&wrapped[..3]),
             ["Third-party content.", "Everything else is ours.", ""]
@@ -213,10 +199,10 @@ else is ours.
             .iter()
             .position(|l| l.text.starts_with("- Source"))
             .unwrap();
-        assert_eq!(
-            texts(&wrapped[source..source + 3]),
-            ["- Source:", "  https://music.test/pac", "  k"]
-        );
+        assert_eq!(wrapped[source].text, "- Source:");
+        let address = texts(&wrapped[source + 1..source + 3]);
+        assert!(address.iter().all(|row| row.starts_with("  ")));
+        assert_eq!(address.concat().replace(' ', ""), "https://music.test/pack");
     }
 
     #[test]

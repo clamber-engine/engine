@@ -10,10 +10,11 @@
 
 use clamber_input::{Action, Device, Frame, Input, MAX_PLAYERS, Remapped, Settings};
 
+use crate::camera::VIEW;
 use crate::canvas::{Color, rgb};
 use crate::panel::{draw_cursor, draw_highlight, draw_panel};
 use crate::surface::Surface;
-use crate::text::{GLYPH, LINE, draw_text, draw_text_centred, text_size};
+use crate::text::{ADVANCE, GLYPH, LINE, draw_text, draw_text_centred, fit_end, text_size};
 
 const HEADING: Color = rgb(0xf4, 0xf0, 0xe8);
 const LABEL: Color = rgb(0xa8, 0xb0, 0xbc);
@@ -32,9 +33,9 @@ const PITCH: i32 = LINE + 2;
 const ACTION_X: i32 = 20;
 const KEYS_X: i32 = 74;
 const PAD_X: i32 = 182;
-/// Characters that fit in the keyboard and gamepad columns.
-const KEYS_CHARS: usize = 16;
-const PAD_CHARS: usize = 32;
+/// How wide the keyboard and gamepad columns are, in view units.
+const KEYS_WIDTH: i32 = PAD_X - KEYS_X - 2 * ADVANCE;
+const PAD_WIDTH: i32 = VIEW.0 as i32 - PAD_X - ACTION_X;
 const TOP: i32 = 8;
 /// The panel behind the rows, as left, top, right and bottom edges: the
 /// view's width, from just above the first row to just below the last.
@@ -212,7 +213,7 @@ impl Controls {
     /// Shows how saving went: where to, or what went wrong.
     pub fn saved(&mut self, result: Result<String, String>) {
         self.status = Some(match result {
-            Ok(path) => (format!("Saved to {}", tail(&path, 50)), DONE),
+            Ok(path) => (format!("Saved to {}", fit_end(&path, 300)), DONE),
             Err(e) => (format!("Can't save: {e}"), FAILED),
         });
     }
@@ -252,9 +253,9 @@ impl Controls {
                 }
                 Row::Action(action) => {
                     draw_text(canvas, ACTION_X, y, action.name(), color);
-                    for (device, x, chars) in [
-                        (Device::Keyboard, KEYS_X, KEYS_CHARS),
-                        (Device::Pad, PAD_X, PAD_CHARS),
+                    for (device, x, width) in [
+                        (Device::Keyboard, KEYS_X, KEYS_WIDTH),
+                        (Device::Pad, PAD_X, PAD_WIDTH),
                     ] {
                         let waiting = remap.is_some_and(|r| {
                             r.player == self.player && r.action == action && r.device == device
@@ -264,7 +265,7 @@ impl Controls {
                         } else {
                             let picked = selected && device == self.device;
                             let names = bindings.names(action, device);
-                            (fit(&names, chars), if picked { SELECTED } else { ITEM })
+                            (fit(&names, width), if picked { SELECTED } else { ITEM })
                         };
                         if selected && device == self.device {
                             cursor(canvas, x);
@@ -329,20 +330,9 @@ pub fn label(name: &str) -> String {
     words.join(" ").to_uppercase()
 }
 
-/// The end of `text`, at most `chars` characters, marked with `...`
-/// when cut.
-fn tail(text: &str, chars: usize) -> String {
-    let count = text.chars().count();
-    if count <= chars {
-        return text.to_string();
-    }
-    let rest: String = text.chars().skip(count - chars + 3).collect();
-    format!("...{rest}")
-}
-
-/// As many of the inputs as fit in `chars` characters, then how many
+/// As many of the inputs as fit in `width` view units, then how many
 /// more there are.
-fn fit(names: &[&str], chars: usize) -> String {
+fn fit(names: &[&str], width: i32) -> String {
     if names.is_empty() {
         return "-".to_string();
     }
@@ -360,7 +350,7 @@ fn fit(names: &[&str], chars: usize) -> String {
         } else {
             String::new()
         };
-        if joined.chars().count() + more.chars().count() > chars && !text.is_empty() {
+        if text_size(&format!("{joined}{more}")).0 > width && !text.is_empty() {
             return format!("{text} +{}", labels.len() - i);
         }
         text = joined;
@@ -408,29 +398,20 @@ mod tests {
     }
 
     #[test]
-    fn cuts_long_paths_from_the_front() {
-        assert_eq!(tail("input.toml", 10), "input.toml");
-        assert_eq!(tail("/a/input.toml", 10), "...ut.toml");
-    }
-
-    #[test]
     fn fits_bindings_in_a_column() {
+        let w = |text: &str| text_size(text).0;
         assert_eq!(fit(&[], 10), "-");
-        assert_eq!(fit(&["KeyZ", "Space"], 16), "Z, SPACE");
-        assert_eq!(fit(&["KeyZ", "Space"], 6), "Z +1");
+        assert_eq!(fit(&["KeyZ", "Space"], w("Z, SPACE")), "Z, SPACE");
+        assert_eq!(fit(&["KeyZ", "Space"], w("Z, SPACE") - 1), "Z +1");
         assert_eq!(
             fit(&["LeftStickLeft"], 4),
             "L STICK LEFT",
             "one always shows"
         );
-        assert_eq!(
-            fit(&["North", "LeftShoulder", "RightShoulder"], 32),
-            "NORTH, L SHOULDER, R SHOULDER"
-        );
-        assert_eq!(
-            fit(&["North", "LeftShoulder", "RightShoulder"], 20),
-            "NORTH, L SHOULDER +1"
-        );
+        let names = ["North", "LeftShoulder", "RightShoulder"];
+        let all = "NORTH, L SHOULDER, R SHOULDER";
+        assert_eq!(fit(&names, w(all)), all);
+        assert_eq!(fit(&names, w(all) - 1), "NORTH, L SHOULDER +1");
     }
 
     #[test]

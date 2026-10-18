@@ -22,8 +22,8 @@ use crate::surface::{Flip, Quad, Surface, Texture};
 /// A typical character's size, in view units: digits are this wide and
 /// capitals this tall.
 pub const GLYPH: (i32, i32) = (5, 7);
-/// A typical character's width, for laying out by character counts.
-/// Digits and the HUD icons are exactly this wide.
+/// A typical character's width. Digits and the HUD icons are exactly
+/// this wide; other text is laid out by its measured width.
 pub const ADVANCE: i32 = 6;
 /// From one line's top to the next.
 pub const LINE: i32 = 9;
@@ -265,35 +265,83 @@ pub fn text_size(text: &str) -> (i32, i32) {
     (width, height)
 }
 
-/// `text` in lines of at most `width` characters, broken between words
-/// where it can be.
-pub fn wrap(text: &str, width: usize) -> Vec<String> {
-    let width = width.max(1);
+/// How wide `text` is drawn on one line, in view units.
+fn measure(text: &str) -> f32 {
+    font().width(text)
+}
+
+/// `text` in lines no wider than `width` view units, broken between
+/// words where it can be.
+pub fn wrap(text: &str, width: i32) -> Vec<String> {
+    wrap_hanging(text, width, "")
+}
+
+/// `text` wrapped like [`wrap`], with every line after the first
+/// starting with `indent`.
+pub fn wrap_hanging(text: &str, width: i32, indent: &str) -> Vec<String> {
+    let width = width as f32;
     let mut lines = Vec::new();
     let mut line = String::new();
-    for word in text.split_whitespace() {
-        let mut word: Vec<char> = word.chars().collect();
+    for mut word in text.split_whitespace() {
         while !word.is_empty() {
-            let used = line.chars().count();
-            let space = usize::from(used > 0);
-            if used + space + word.len() <= width {
-                if space > 0 {
-                    line.push(' ');
-                }
-                line.extend(word.drain(..));
-            } else if used == 0 {
-                // Longer than a line: break it.
-                line.extend(word.drain(..width));
-                lines.push(std::mem::take(&mut line));
+            let fresh = line.trim().is_empty();
+            let joined = if fresh {
+                format!("{line}{word}")
             } else {
-                lines.push(std::mem::take(&mut line));
+                format!("{line} {word}")
+            };
+            if measure(&joined) <= width {
+                line = joined;
+                word = "";
+            } else if fresh {
+                // Longer than a line: break it.
+                let (head, rest) = word.split_at(fitting(word.chars(), width - measure(&line)));
+                line.push_str(head);
+                lines.push(std::mem::replace(&mut line, indent.to_string()));
+                word = rest;
+            } else {
+                lines.push(std::mem::replace(&mut line, indent.to_string()));
             }
         }
     }
-    if !line.is_empty() {
+    if !line.trim().is_empty() {
         lines.push(line);
     }
     lines
+}
+
+/// `text` cut to fit in `width` view units, with `…` where it was cut.
+pub fn fit(text: &str, width: i32) -> String {
+    if measure(text) <= width as f32 {
+        return text.to_string();
+    }
+    let keep = fitting(text.chars(), width as f32 - measure("…"));
+    format!("{}…", &text[..keep])
+}
+
+/// The end of `text` that fits in `width` view units, with `…` where
+/// its start was cut.
+pub fn fit_end(text: &str, width: i32) -> String {
+    if measure(text) <= width as f32 {
+        return text.to_string();
+    }
+    let keep = fitting(text.chars().rev(), width as f32 - measure("…"));
+    format!("…{}", &text[text.len() - keep..])
+}
+
+/// How many bytes of `chars`, taken in order, fit in `width` view units,
+/// and always at least one character.
+fn fitting(chars: impl Iterator<Item = char>, width: f32) -> usize {
+    let font = font();
+    let (mut used, mut bytes) = (0.0, 0);
+    for c in chars {
+        used += font.glyph(c).advance;
+        if used > width && bytes > 0 {
+            break;
+        }
+        bytes += c.len_utf8();
+    }
+    bytes
 }
 
 /// Draws `text` with its top left at `(x, y)` and its outline under it.
@@ -441,11 +489,39 @@ mod tests {
     }
 
     #[test]
-    fn wraps_between_words() {
-        assert_eq!(wrap("", 10), Vec::<String>::new());
-        assert_eq!(wrap("one two three", 7), ["one two", "three"]);
-        assert_eq!(wrap("  spaced   out ", 20), ["spaced out"]);
-        assert_eq!(wrap("abcdefghij k", 4), ["abcd", "efgh", "ij k"]);
+    fn wraps_between_words_by_width() {
+        assert_eq!(wrap("", 60), Vec::<String>::new());
+        let width = text_size("one two").0 + 1;
+        assert_eq!(wrap("one two three", width), ["one two", "three"]);
+        assert_eq!(wrap("  spaced   out ", 200), ["spaced out"]);
+        // Narrow letters fit more to a line than wide ones.
+        let width = text_size("WWWW").0 + 1;
+        assert_eq!(wrap("WWWWWWWW", width), ["WWWW", "WWWW"]);
+        assert_eq!(wrap("iiii iiii", width), ["iiii iiii"]);
+        for line in wrap("MMMM WW MMMMMMMMMMMM i", width) {
+            assert!(text_size(&line).0 <= width, "{line}");
+        }
+        assert_eq!(wrap("WW", 1), ["W", "W"], "at least a character a line");
+    }
+
+    #[test]
+    fn hangs_later_lines_from_an_indent() {
+        let width = text_size("- one two").0 + 1;
+        assert_eq!(
+            wrap_hanging("- one two three four", width, "  "),
+            ["- one two", "  three", "  four"]
+        );
+    }
+
+    #[test]
+    fn fits_by_width_from_either_end() {
+        assert_eq!(fit("short", 100), "short");
+        let cut = fit("WWWWWWWWWW", text_size("WWWW").0);
+        assert!(cut.ends_with('…') && text_size(&cut).0 <= text_size("WWWW").0);
+        assert_eq!(fit("iiiiiiiiii", text_size("WWWW").0), "iiiiiiiiii");
+        let end = fit_end("/a/long/path/input.toml", text_size("…input.toml").0 + 1);
+        assert_eq!(end, "…input.toml");
+        assert_eq!(fit_end("é", 0), "…é", "at least a character");
     }
 
     #[test]
