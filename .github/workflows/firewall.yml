@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch: # rebuild main by hand, e.g. after changing signing settings
 
 # Agents push often; a newer push makes older runs on the same branch moot.
 concurrency:
@@ -57,7 +58,7 @@ jobs:
   # the game crate exists.
   windows-build:
     runs-on: windows-latest
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       id-token: write # Azure login for code signing, without a stored secret
