@@ -398,3 +398,17 @@ fn a_lives_display_at_rest_stays_until_the_burst() {
     assert!(lives_from(&rows, g + 3, g + 10).iter().all(Option::is_none));
     assert_eq!(lives_from(&rows, g + 17, g + 17), [Some((10, 6, true))]);
 }
+
+#[test]
+fn reaching_100_with_99_lives_keeps_100_and_shows_99() {
+    // extra-lives.md, "More than 99 lives".
+    let mut w = world(&[("spark", X, F - 8)]);
+    (w.flow.gems, w.flow.shown, w.flow.lives) = (99, 99, 99);
+    let rows = play(&mut w, 300);
+    assert_eq!(w.flow.lives, 100);
+    let shown: Vec<u8> = rows
+        .iter()
+        .filter_map(|r| r.lives.map(|l| l.number))
+        .collect();
+    assert!(!shown.is_empty() && shown.iter().all(|&n| n == 99));
+}

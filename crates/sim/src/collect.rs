@@ -58,9 +58,10 @@
 //! two are drawn takes the place of the older one. Of the lives display
 //! after the count reaches `count_life` and the one in the ending, the
 //! one that started last is shown, and of that and the one after a
-//! collectible giving lives, the one that started last too. Displays
-//! show at most 99 lives. A
-//! part of what
+//! collectible giving lives, the one that started last too. The number
+//! of lives goes past 99, and displays show it as 99 (extra-lives.md,
+//! "More than 99 lives"); how far past isn't covered, and Clamber's
+//! stops at 255. A part of what
 //! a pickup is worth that never reaches the count is no longer owed, and
 //! a step from a count with no pickup waiting (a generic gem) goes to
 //! none. The relic image starts centred on where the relic was in the

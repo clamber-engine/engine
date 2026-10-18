@@ -244,3 +244,88 @@ fn crouching_has_its_own_ranges() {
     assert_eq!(crouch_take(0, -34), None);
     assert_eq!(crouch_take(20, 0), Some(0), "standing on the first step");
 }
+
+#[test]
+fn past_99_lives_the_number_is_kept_and_shown_as_99() {
+    // extra-lives.md, "More than 99 lives": an `extra-life-3` with 97
+    // lives shows 98, 99 and 99 on its steps, and gives 100.
+    for (before, steps) in [
+        (96, [97, 98, 99]),
+        (97, [98, 99, 99]),
+        (99, [99; 3]),
+        (150, [99; 3]),
+    ] {
+        let mut w = world(&[(X, F)], "lives = 3");
+        w.flow.lives = before;
+        assert!(step_keys(&mut w, &[]));
+        assert_eq!(w.flow.lives, before + 3);
+        let mut shown = vec![w.lives_display()];
+        for _ in 1..250 {
+            step_keys(&mut w, &[]);
+            shown.push(w.lives_display());
+        }
+        let number = |k: usize| shown[k].map(|d| d.number);
+        assert_eq!(number(13), Some(before.min(99)), "{before}");
+        let got = [44, 60, 76].map(|k| number(k).unwrap());
+        assert_eq!(got, steps, "{before}");
+        assert!(shown.iter().flatten().all(|d| d.number <= 99));
+        assert_eq!(shown[76].unwrap().x, 215, "two digits");
+    }
+}
+
+/// Falls out of the level from where the player stands and plays on
+/// until play comes back. Returns what the lives display shows after
+/// the loss.
+fn fall_out(w: &mut World) -> u8 {
+    w.player.pos.y = Fixed::from_int(F + 900);
+    w.player.ground = None;
+    let (mut since, mut shown) = (None, None);
+    for _ in 0..200 {
+        step_keys(w, &[]);
+        if w.flow.events.contains(&FlowEvent::Respawn) {
+            return shown.expect("shown after the loss");
+        }
+        if w.flow.events.contains(&FlowEvent::Die) {
+            since = Some(0);
+        }
+        since = since.map(|n| n + 1);
+        if since == Some(60) {
+            shown = w.lives_display().map(|d| d.number);
+        }
+    }
+    panic!("play comes back");
+}
+
+#[test]
+fn lost_lives_take_one_off_the_number_kept_past_99() {
+    // extra-lives.md, "More than 99 lives", the example: the display
+    // after each lost life tells apart the 99, 100 and 101 lives an
+    // `extra-life-3` gave.
+    for (before, after) in [(96, [98, 97, 96]), (97, [99, 98, 97]), (98, [99, 99, 98])] {
+        let mut w = world(&[(X + 40, F)], "lives = 3");
+        w.flow.lives = before;
+        let mut taken = false;
+        for _ in 0..60 {
+            taken |= step_keys(&mut w, &[Right]);
+        }
+        assert!(taken, "{before}");
+        assert_eq!(w.flow.lives, before + 3);
+        let shown = after.map(|_| fall_out(&mut w));
+        assert_eq!(shown, after, "{before}");
+    }
+}
+
+#[test]
+fn a_lost_life_from_100_shows_99_before_and_after() {
+    let mut w = world(&[], "");
+    w.flow.lives = 100;
+    w.player.pos.y = Fixed::from_int(F + 900);
+    w.player.ground = None;
+    let mut numbers = Vec::new();
+    for _ in 0..80 {
+        step_keys(&mut w, &[]);
+        numbers.extend(w.lives_display().map(|d| d.number));
+    }
+    assert_eq!(w.flow.lives, 99);
+    assert!(!numbers.is_empty() && numbers.iter().all(|&n| n == 99));
+}
