@@ -563,6 +563,7 @@ impl World {
             None => out.push(0),
         }
         out.push(r.landed.into());
+        out.push(r.kept.into());
         match self.loss {
             Some(l) => {
                 out.push(1);

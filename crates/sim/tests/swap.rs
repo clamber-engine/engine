@@ -370,6 +370,61 @@ fn crouching_holds_off_a_swap() {
 }
 
 #[test]
+fn holding_swap_through_a_crouch_swaps_once_it_can() {
+    // swap.md's example: down held from C, let go on U = C + 30, swap
+    // pressed on C + 10 and held: the swap starts on U + 10 = C + 40.
+    let mut play = Play::flat();
+    play.hold(&[D], 10);
+    let mut rows = play.hold(&[D, S], 20);
+    rows.extend(play.hold(&[S], 20));
+    let first = rows.iter().position(|r| r.state == State::Swap);
+    assert_eq!(first, Some(30));
+
+    // Tandem's press isn't kept (controls.md).
+    let mut play = Play::flat();
+    play.hold(&[D], 10);
+    let mut rows = play.hold(&[D, T], 20);
+    rows.extend(play.hold(&[T], 20));
+    assert!(rows.iter().all(|r| r.state != State::Swap));
+}
+
+#[test]
+fn a_jump_from_a_crouch_with_swap_held_swaps_on_the_next_frame() {
+    let mut play = Play::flat();
+    play.hold(&[D], 40);
+    assert_ne!(play.step(&[D, J, S]).state, State::Swap);
+    let row = play.step(&[D, J, S]);
+    assert_eq!(row.state, State::Swap);
+    assert!(!row.events.contains(&Event::JumpStart));
+}
+
+#[test]
+fn holding_swap_through_a_roll_swaps_once_it_can() {
+    // The first frame a fresh press would swap, found press by press.
+    let first_press = {
+        let mut play = Play::flat();
+        play.hold(&[A], 1);
+        let mut frame = 1;
+        loop {
+            let mut again = play.world.clone();
+            let input = InputFrame::single(Frame::after(Actions::NONE, [S].into_iter().collect()));
+            step(&mut again, &input);
+            if again.player.state == State::Swap {
+                break frame;
+            }
+            play.step(&[]);
+            frame += 1;
+        }
+    };
+    let mut play = Play::flat();
+    play.hold(&[A], 1);
+    let rows = play.hold(&[S], 60);
+    let first = rows.iter().position(|r| r.state == State::Swap);
+    assert_eq!(first, Some(first_press - 1));
+    assert!(first_press > 20, "{first_press}");
+}
+
+#[test]
 fn down_or_action_pressed_with_swap_does_nothing() {
     let mut play = Play::flat();
     let rows = play.hold(&[D, A, S], 79);

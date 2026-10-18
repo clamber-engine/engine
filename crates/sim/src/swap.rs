@@ -118,6 +118,9 @@ pub struct Recent {
     pub jump: Option<(u16, bool)>,
     /// The last step landed.
     pub landed: bool,
+    /// A swap press refused while rolling or crouching, kept while swap
+    /// stays held: it starts a swap on the first frame that can.
+    pub kept: bool,
 }
 
 impl Recent {
@@ -155,6 +158,7 @@ impl Recent {
 /// counts on it.
 pub(crate) fn update(world: &mut World, physics: &Physics, input: &Frame) -> bool {
     let Some(other) = world.other.clone() else {
+        world.recent.kept = false;
         return false;
     };
     let mut swap = match world.swap.take() {
@@ -162,10 +166,28 @@ pub(crate) fn update(world: &mut World, physics: &Physics, input: &Frame) -> boo
             swap.frame += 1;
             swap
         }
-        None if swap_press(input) && can_start(world, physics, &other) => {
-            start(world, physics, input, &other)
+        None => {
+            let held = input.held.contains(Action::Swap);
+            let kept = std::mem::take(&mut world.recent.kept);
+            if !swap_press(input) && !(kept && held) {
+                return false;
+            }
+            match refusal(world, physics, &other) {
+                None => start(
+                    world,
+                    physics,
+                    input,
+                    kept || input.pressed.contains(Action::Swap),
+                    &other,
+                ),
+                Some(Refusal::Wait) => {
+                    // Tandem's presses count only on their frame.
+                    world.recent.kept = held && (kept || input.pressed.contains(Action::Swap));
+                    return false;
+                }
+                Some(Refusal::End) => return false,
+            }
         }
-        None => return false,
     };
     if swap.frame >= swap.end {
         hand_over(world, &swap);
@@ -185,46 +207,67 @@ pub(crate) fn update(world: &mut World, physics: &Physics, input: &Frame) -> boo
 }
 
 /// Whether this frame has a swap press: Swap, or Tandem, which counts
-/// only on the frame of its press (`controls.md`). Swap's presses are
-/// the same so far, since a refused press isn't kept.
+/// only on the frame of its press (`controls.md`). A Swap press refused
+/// for a while can still start a swap later while it's held ([`update`]).
 pub(crate) fn swap_press(input: &Frame) -> bool {
     input.pressed.contains(Action::Swap) || input.pressed.contains(Action::Tandem)
 }
 
-/// Whether a swap press on this frame starts a swap, from how things
-/// were on the frame before.
-fn can_start(world: &World, physics: &Physics, other: &Other) -> bool {
+/// Why a swap press doesn't start a swap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Refusal {
+    /// Rolling or crouching: holding swap keeps the press.
+    Wait,
+    /// Anything else: the press is gone, however long swap is held.
+    End,
+}
+
+/// Why a swap press on this frame doesn't start a swap, from how things
+/// were on the frame before, or `None` if it does.
+fn refusal(world: &World, physics: &Physics, other: &Other) -> Option<Refusal> {
     let p = &world.player;
     let recent = &world.recent;
     if !p.grounded() || recent.landed {
-        return false;
-    }
-    let busy = p.state == State::Roll
-        || p.roll.is_some()
-        || p.roll_stop > 0
-        || p.ground_action.is_some()
-        || p.frozen > 0
-        || p.knockout.is_some()
-        // Swapping with an object in hand isn't in the spec yet.
-        || p.hands.is_some();
-    if busy {
-        return false;
-    }
-    if let Some((since, up)) = recent.down {
-        let crouch = u16::from(frames(physics[Param::SwapCrouchWait]));
-        let rise = u16::from(frames(physics[Param::SwapRiseWait]));
-        if since < crouch || up.is_none_or(|n| n < rise) {
-            return false;
-        }
+        return Some(Refusal::End);
     }
     let height = physics[Param::SwapHeight];
     let apart = Fixed::from_int((ceil(p.pos.y) - ceil(other.pos.y)).abs() as i32);
-    height <= Fixed::ZERO || apart < height
+    if height > Fixed::ZERO && apart >= height {
+        return Some(Refusal::End);
+    }
+    // Swapping during these isn't in the spec yet; a press is refused as
+    // in the air.
+    let unspecified =
+        p.ground_action.is_some() || p.frozen > 0 || p.knockout.is_some() || p.hands.is_some();
+    if unspecified {
+        return Some(Refusal::End);
+    }
+    if p.state == State::Roll || p.roll.is_some() || p.roll_stop > 0 {
+        return Some(Refusal::Wait);
+    }
+    // A jump pressed since down was first held ends the crouch.
+    if let Some((since, up)) = recent.down
+        && recent.jump.is_none_or(|(age, _)| age > since)
+    {
+        let crouch = u16::from(frames(physics[Param::SwapCrouchWait]));
+        let rise = u16::from(frames(physics[Param::SwapRiseWait]));
+        if since < crouch || up.is_none_or(|n| n < rise) {
+            return Some(Refusal::Wait);
+        }
+    }
+    None
 }
 
 /// Starts a swap on this frame: what the player was doing stops, and
-/// both characters hold still where they were.
-fn start(world: &mut World, physics: &Physics, input: &Frame, other: &Other) -> Swap {
+/// both characters hold still where they were. `by_swap` is for a swap
+/// started by Swap rather than Tandem alone.
+fn start(
+    world: &mut World,
+    physics: &Physics,
+    input: &Frame,
+    by_swap: bool,
+    other: &Other,
+) -> Swap {
     let recent = &world.recent;
     let jumped = matches!(recent.jump, Some((0 | 1, _)));
     let wait = u16::from(frames(physics[Param::SwapWait]));
@@ -236,7 +279,7 @@ fn start(world: &mut World, physics: &Physics, input: &Frame, other: &Other) -> 
     let lag = u16::from(frames(physics[Param::SwapLag]));
     // A jump pressed up to two frames before, and held since, keeps its
     // lighter gravity, but not in a swap started by Tandem alone.
-    let held_jump = input.pressed.contains(Action::Swap)
+    let held_jump = by_swap
         && input.held.contains(Action::Jump)
         && (input.pressed.contains(Action::Jump) || matches!(recent.jump, Some((0 | 1, true))));
     let held_gravity = physics[Param::HeldJumpGravity];
