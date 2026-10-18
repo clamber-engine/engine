@@ -960,7 +960,15 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     out.extend([p.face_press, p.clear_start].map(u8::from));
     out.extend([p.carried_press, p.uphill_onto_face].map(u8::from));
     out.push(p.takeoff_wait.map_or(0, |n| n.saturating_add(1)));
-    out.extend([p.takeoff_crouched, p.takeoff_rolled].map(u8::from));
+    out.extend(
+        [
+            p.takeoff_crouched,
+            p.takeoff_rolled,
+            p.action_jump,
+            p.action_fall,
+        ]
+        .map(u8::from),
+    );
     out.push(p.swap);
     out.extend([p.crouch.held, p.crouch.rising, p.crouch.turn_lock]);
     out.push(p.turn.map_or(0, |n| n.saturating_add(1)));
@@ -990,7 +998,16 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     roll(out, p.stopped);
     out.push(p.air_stopped.into());
     match p.ground_action {
-        Some(a) => out.extend([1, a.frame, a.dir as u8, a.air.into()]),
+        Some(a) => {
+            out.extend([1, a.frame, a.dir as u8, a.air.into()]);
+            match a.speed {
+                Some(v) => {
+                    out.push(1);
+                    fixed(out, v);
+                }
+                None => out.push(0),
+            }
+        }
         None => out.push(0),
     }
     match p.boost {

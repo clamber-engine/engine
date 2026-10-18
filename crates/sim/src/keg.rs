@@ -330,6 +330,7 @@ fn first_input(player: &mut crate::Player, r: &mut Resume, keg: &Keg, input: &Fr
         player.ground_action = Some(GroundAction {
             frame: frame - 1,
             dir: i32::from(right) - i32::from(left),
+            speed: None,
             air: true,
         });
         player.state = State::GroundAction;

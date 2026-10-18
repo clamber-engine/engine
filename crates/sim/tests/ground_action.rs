@@ -366,7 +366,8 @@ fn a_jump_ends_it() {
 }
 
 #[test]
-fn going_off_a_ledge_ends_it() {
+fn going_off_a_ledge_doesnt_end_it() {
+    // "At a ledge without a face": it goes on in the air.
     let mut w = world();
     w.player.pos.x = Fixed::from_int(3950);
     assert!(w.player.grounded());
@@ -374,8 +375,7 @@ fn going_off_a_ledge_ends_it() {
     let rows = play(&mut w, &mut last, 59, |_| vec![D, A, R]);
     let off = rows.iter().position(|r| !r.grounded).unwrap();
     assert!(off < 58);
-    assert_eq!(acting(&rows), (0..off).collect::<Vec<_>>());
-    assert_eq!(rows[off].state, State::Fall);
+    assert_eq!(acting(&rows), (0..59).collect::<Vec<_>>());
 }
 
 /// The view's top and smoothed gap on each frame of a ground action

@@ -162,6 +162,12 @@ pub struct Player {
     /// The jump waiting to take off started during a timed roll
     /// (`roll_jump_held_gravity`).
     pub takeoff_rolled: bool,
+    /// A jump pressed during the ground action ended it on the last
+    /// frame, and takes off on this one even onto a face.
+    pub action_jump: bool,
+    /// The player left the ground during the ground action, and hasn't
+    /// been on the ground since the frame after landing.
+    pub action_fall: bool,
     /// Frames of swapping left.
     pub swap: u8,
     /// Frames left that the player is held still after a bounce.
@@ -354,6 +360,8 @@ impl Player {
             takeoff_wait: None,
             takeoff_crouched: false,
             takeoff_rolled: false,
+            action_jump: false,
+            action_fall: false,
             swap: 0,
             frozen: 0,
             crouch: Crouch::default(),
@@ -1118,6 +1126,9 @@ impl Player {
         // doesn't count as starting on it.
         let face_wait = physics[Param::FaceJumpWait] > Fixed::ZERO;
         let jump_face = face.is_some() && !std::mem::take(&mut self.uphill_onto_face);
+        // A jump that ended the ground action takes off even onto a face.
+        let action_jumped = std::mem::take(&mut self.action_jump);
+        let jump_face = jump_face && !action_jumped;
         // With `face_speed`, a direction held up the face, or back up one
         // just come off, counts as none.
         let downhill = face
@@ -1209,7 +1220,7 @@ impl Player {
             && (self.grounded() || self.coyote.is_some() || roll_jump)
             && (physics[Param::JumpStartHold] == Fixed::ZERO || held(Action::Jump))
             && ready;
-        if face.is_some() && ready {
+        if face.is_some() && ready && !action_jumped {
             // No jump starts on a face: the press is treated as one made
             // in the air. Made on the frame before, if that one started on
             // the ground off the face, it still lightens the fall.
@@ -1318,9 +1329,32 @@ impl Player {
         if self.roll.is_some() && pressed(Action::Jump) {
             self.roll_jump = true;
         }
-        // So does one pressed during the ground action, which still moves
-        // by its rules on this frame.
-        let mut goes_on = acting.is_some_and(|a| a.frame < action_time) && !pressed(Action::Jump);
+        // So does one pressed during the ground action on a frame that
+        // starts on the floor off a face, which still moves by its rules
+        // on this frame, and one held through a landing during it, on the
+        // frame after the landing. In the air a press is only kept for
+        // the landing.
+        let action_jump = acting.is_some_and(|a| {
+            let on_floor = self.grounded() && face.is_none();
+            // That press takes off on the next frame if it's still kept.
+            let kept = self
+                .jump_buffer
+                .age()
+                .is_some_and(|age| age < frames(physics[Param::JumpBuffer]));
+            let landed = self.since_land == Some(0) && held(Action::Jump) && kept;
+            (pressed(Action::Jump) && (a.air || on_floor)) || (on_floor && landed)
+        });
+        let mut goes_on = acting.is_some_and(|a| a.frame < action_time) && !action_jump;
+        self.action_jump = action_jump;
+        // Next to ground ahead too high to start toward, it turns the
+        // player its way, and a moving start goes at walking speed the
+        // way the player was headed.
+        let ahead = physics[Param::StartRiseAhead].floor();
+        let (column, feet) = (columns::column(self.pos.x), self.pos.y);
+        let rise_ahead = |dir: i32| {
+            ahead > 0 && dir != 0 && columns::rise_ahead(level, column, dir, ahead, feet)
+        };
+        let mut action_turn = None;
         if acting.is_none()
             && action_time > 0
             && pressed(Action::Action)
@@ -1332,14 +1366,30 @@ impl Player {
             && self.roll_stop == 0
             && !events.contains(&Event::JumpStart)
         {
-            // It goes the way held now, whatever the player was doing.
-            acting = Some(GroundAction {
-                frame: 0,
-                dir: held_dir,
-                air: false,
-            });
-            goes_on = true;
             self.vel.x = Fixed::ZERO;
+            // Not on a face, where the press is as without Down.
+            if start_face.is_none() {
+                // It goes the way held now, whatever the player was doing.
+                let mut speed = None;
+                if rise_ahead(held_dir) {
+                    action_turn = Some(facing_of(held_dir));
+                    if start_vx != Fixed::ZERO {
+                        let way = if self.target.is_negative() {
+                            -1
+                        } else {
+                            i32::from(self.target > Fixed::ZERO)
+                        };
+                        speed = Some(physics[Param::WalkSpeed] * Fixed::from_int(way));
+                    }
+                }
+                acting = Some(GroundAction {
+                    frame: 0,
+                    dir: held_dir,
+                    speed,
+                    air: false,
+                });
+                goes_on = true;
+            }
         }
 
         let roll_input = held(Action::Down)
@@ -1388,7 +1438,8 @@ impl Player {
             // With `crouch_in_air`, a crouch goes on in a fall off a ledge.
             let in_fall = crouch_in_air && self.walked_off && self.crouch.held > 0;
             // Down doesn't count on the frame after a hop's landing.
-            let hop_landed = matches!(self.gait, Gait::Landing(l) if l.bounce && l.frame == 0);
+            let hop_landed = matches!(self.gait, Gait::Landing(l) if l.bounce && l.frame == 0)
+                || (self.action_fall && self.grounded());
             self.crouch.update(
                 down && !busy.no_crouch,
                 (self.grounded() || in_fall) && !rolling && !hop_landed,
@@ -1429,7 +1480,7 @@ impl Player {
         self.fall_facing = self.fall_facing.saturating_sub(1);
         let facing = if acting.is_some() {
             self.turn = None;
-            self.facing
+            action_turn.unwrap_or(self.facing)
         } else if let Some(mut roll) = self.roll {
             // Steering does nothing on a frame that starts on a face.
             if !started && roll_face.is_none() {
@@ -1515,15 +1566,12 @@ impl Player {
         // A crouch holds the player where they are, and so does ground
         // ahead that's too high to start walking toward.
         let run_dir = dir;
-        let ahead = physics[Param::StartRiseAhead].floor();
-        let walled = ahead > 0
-            && dir != 0
-            && start_vx == Fixed::ZERO
+        let walled = start_vx == Fixed::ZERO
             && self.grounded()
             && !rolling
             && !events.contains(&Event::JumpStart)
             && self.face_switch.is_none()
-            && columns::rise_ahead(level, columns::column(self.pos.x), dir, ahead, self.pos.y);
+            && rise_ahead(dir);
         // With Up keeping crouches going, Down held with Up still stops
         // the player, without a crouch.
         let down_stops = up_holds && held(Action::Down) && self.grounded();
@@ -1550,8 +1598,17 @@ impl Player {
         let mut push = Fixed::ZERO;
         self.target = Fixed::ZERO;
         self.vel.x = if let Some(action) = acting {
-            self.target = physics[Param::GroundActionSpeed] * Fixed::from_int(action.dir);
-            if action.frame < action_time {
+            // Down a face, faster; its last frame takes one more step,
+            // unless it's in the air.
+            self.target = action
+                .speed
+                .unwrap_or(physics[Param::GroundActionSpeed] * Fixed::from_int(action.dir))
+                + face.map_or(Fixed::ZERO, |way| {
+                    physics[Param::FaceSpeed] * Fixed::from_int(way)
+                });
+            if start_vx == Fixed::ZERO && self.grounded() && rise_ahead(action.dir) {
+                Fixed::ZERO
+            } else if action.frame < action_time || self.grounded() {
                 ease(self.vel.x, self.target, response)
             } else {
                 self.vel.x
@@ -1990,7 +2047,9 @@ impl Player {
                 Some(land) if switch_from > 0 && !self.rolled_jump => {
                     self.switch_wait(land, physics)
                 }
-                _ if (self.state == State::Bounce || self.hopped_off.is_some())
+                _ if (self.state == State::Bounce
+                    || self.hopped_off.is_some()
+                    || self.action_fall)
                     && physics[Param::BounceLandingSwitch] > Fixed::ZERO =>
                 {
                     (0, 1 + frames(physics[Param::LandingModeWait]))
@@ -2088,9 +2147,15 @@ impl Player {
         if self.grounded() {
             self.hop = None;
         }
-        // Going off a ledge ends the ground action, unless it started in
-        // the air.
-        self.ground_action = acting.filter(|a| goes_on && (a.air || self.grounded()));
+        // A fall that started in the ground action lands as a bounce
+        // does, and Down doesn't count on the frame after its landing.
+        self.action_fall = if leaving && acting.is_some() {
+            true
+        } else {
+            self.action_fall && !(self.grounded() && !events.contains(&Event::Land))
+        };
+        // Going off a ledge doesn't end the ground action.
+        self.ground_action = acting.filter(|_| goes_on);
         self.state = self.next_state(held(Action::Action), events);
     }
 
@@ -3441,6 +3506,9 @@ pub struct GroundAction {
     pub frame: u8,
     /// The way it goes: -1, 0 or 1.
     pub dir: i32,
+    /// The speed it eases toward off a face, if not `dir` times
+    /// `ground_action_speed`: next to a rise.
+    pub speed: Option<Fixed>,
     /// It started in the air, on frame 1 of a resume, and goes on in the
     /// air (restart-barrel.md).
     pub air: bool,
