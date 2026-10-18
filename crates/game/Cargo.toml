@@ -13,6 +13,7 @@ audio = ["clamber-audio/output"]
 gamepad = ["clamber-input/gamepad"]
 
 [dependencies]
+arboard = { version = "3.7.0", default-features = false, features = ["wayland-data-control"] }
 clamber-audio = { path = "../audio" }
 clamber-fixed = { path = "../fixed" }
 clamber-import = { path = "../import" }

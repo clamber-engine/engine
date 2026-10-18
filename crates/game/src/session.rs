@@ -24,7 +24,7 @@ use crate::feels::Feels;
 use crate::game::Game;
 use crate::hud::{counter_width, draw_counter, relic_total};
 use crate::icons::Icon;
-use crate::import::{After, Games, Importing, PERSONAL, Pick, Picked, Picker};
+use crate::import::{After, Edit, Games, Importing, PERSONAL, Pick, Picked, Picker};
 use crate::map::{MapPlay, MapStep};
 use crate::menu::{Choice, Menu};
 use crate::panel::draw_panel;
@@ -607,12 +607,39 @@ impl Session {
         let Screen::Picker(picker, _) = &mut self.screen else {
             return;
         };
-        match picker.update(frame) {
+        let picked = picker.update(frame);
+        self.picked(picked);
+    }
+
+    /// Whether the screen showing takes typed text: the game's browser
+    /// takes a path.
+    pub fn takes_text(&self) -> bool {
+        matches!(self.screen, Screen::Picker(..))
+    }
+
+    /// Whether a path is being typed, so that Enter, Escape and
+    /// Backspace edit it rather than work the menu.
+    pub fn typing(&self) -> bool {
+        matches!(&self.screen, Screen::Picker(picker, _) if picker.typed.is_some())
+    }
+
+    /// Changes the path being typed in the game's browser.
+    pub fn edit(&mut self, edit: Edit) {
+        let Screen::Picker(picker, _) = &mut self.screen else {
+            return;
+        };
+        let picked = picker.edit(edit);
+        self.picked(picked);
+    }
+
+    fn picked(&mut self, picked: Option<Picked>) {
+        match picked {
             None => {}
             Some(Picked::Back) => self.back(),
             Some(Picked::File(file)) => {
-                let dir = picker.dir.clone();
-                self.remember_import_folder(&dir);
+                if let Some(dir) = file.parent() {
+                    self.remember_import_folder(dir);
+                }
                 self.start_import(file, false);
             }
         }
@@ -1051,6 +1078,7 @@ impl Session {
                 if more { vec![scroll, BACK] } else { vec![BACK] }
             }
             Screen::Choosing(_) => vec![(&[Action::Pause], "browse in the game instead")],
+            Screen::Picker(picker, _) if picker.typed.is_some() => vec![],
             Screen::Picker(..) => vec![
                 (&[Action::Jump], "open"),
                 (&[Action::Left], "up a folder"),
@@ -2467,6 +2495,73 @@ mod tests {
         assert_eq!(labels(&gone), ["../"]);
         assert_eq!(gone.update(&jump), None);
         assert_eq!(gone.dir, dir);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_picker_takes_a_typed_path() {
+        let dir = scratch("picker-typed");
+        std::fs::create_dir_all(dir.join("my games/inner")).unwrap();
+        std::fs::write(dir.join("my games/c.img"), [1; 2048]).unwrap();
+        let mut picker = Picker::open(&dir, catalog());
+        let insert = |t: &str| Edit::Insert(t.into());
+
+        // A space alone doesn't start a path, nor does Backspace.
+        picker.edit(insert(" "));
+        picker.edit(Edit::Backspace);
+        assert_eq!(picker.typed, None);
+
+        // Relative to the folder shown; the menu waits meanwhile.
+        picker.edit(insert("my"));
+        picker.edit(insert(" gamez"));
+        picker.edit(Edit::Backspace);
+        assert_eq!(picker.typed.as_deref(), Some("my game"));
+        let down = Frame::after(Actions::NONE, Action::Down.into());
+        let pause = Frame::after(Actions::NONE, Action::Pause.into());
+        assert_eq!(picker.update(&pause), None);
+        picker.update(&down);
+        assert_eq!(picker.menu.current(), 0);
+        assert_eq!(picker.edit(Edit::Enter), None);
+        assert!(picker.nothing_there);
+        assert_eq!(picker.typed.as_deref(), Some("my game"), "kept to fix");
+        picker.edit(insert("s"));
+        assert!(!picker.nothing_there);
+        assert_eq!(picker.edit(Edit::Enter), None);
+        assert_eq!(picker.dir, dir.join("my games"));
+        assert_eq!(picker.typed, None);
+
+        // Pasted, in quotes, over more than one line.
+        let file = dir.join("my games/c.img");
+        let pasted = format!("\"{}\"\nmore", file.display());
+        assert_eq!(picker.edit(insert(&pasted)), None);
+        assert_eq!(picker.edit(Edit::Enter), Some(Picked::File(file)));
+        assert_eq!(picker.typed, None);
+
+        // Escape stops typing; then the menu works again.
+        picker.edit(insert("inn"));
+        picker.edit(Edit::Cancel);
+        assert_eq!(picker.typed, None);
+        assert_eq!(picker.edit(Edit::Enter), None);
+        picker.update(&down);
+        assert_eq!(picker.menu.current(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn imports_a_typed_path() {
+        let (mut s, dir) = importing_session("typed");
+        assert!(!s.takes_text());
+        pick(&mut s, Item::Import);
+        assert!(matches!(s.screen, Screen::Picker(..)), "{:?}", s.screen);
+        assert!(s.takes_text());
+        let file = dir.join("games/game.img");
+        s.edit(Edit::Insert(file.display().to_string()));
+        assert!(s.typing());
+        assert!(s.hints().is_empty());
+        s.edit(Edit::Enter);
+        let importing = finish_import(&mut s);
+        assert!(importing.result.as_ref().unwrap().is_ok());
+        assert_eq!(s.prefs.import_folder, Some(dir.join("games")));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

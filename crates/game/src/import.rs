@@ -5,7 +5,8 @@
 //! dropping it on the window. Where there's no dialog, or the player is
 //! using a gamepad, a [`Picker`] browses their folders for it instead,
 //! using the same neutral actions as every menu. It lists only files
-//! the size of a supported image, and marks those that are one.
+//! the size of a supported image, and marks those that are one. On a
+//! keyboard, the player can also type or paste a path there.
 //! [`Importing`] runs the importer on a thread of its own and shows its
 //! progress, then what came of it. [`Games`] lists the bundled game and
 //! the imported packs, each marked as a personal import.
@@ -64,6 +65,18 @@ enum Entry {
 /// How a file that is a supported image is marked in the picker.
 const SUPPORTED: &str = "★ ";
 
+/// A change to the path being typed in the picker.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Edit {
+    /// Typed or pasted text. Only its first line is kept.
+    Insert(String),
+    Backspace,
+    /// Go to the path.
+    Enter,
+    /// Stop typing.
+    Cancel,
+}
+
 /// What a frame of input did to the picker.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Picked {
@@ -81,7 +94,8 @@ struct Marks {
 }
 
 /// Choosing a file, a folder at a time: Jump opens a folder or picks a
-/// file, Left goes up a folder and Pause leaves.
+/// file, Left goes up a folder and Pause leaves. Or typing a path:
+/// see [`Picker::edit`].
 #[derive(Clone, Debug)]
 pub struct Picker {
     /// The folder being shown.
@@ -90,6 +104,10 @@ pub struct Picker {
     pub menu: Menu<usize>,
     /// Why the folder couldn't be read, if it couldn't.
     pub problem: Option<String>,
+    /// The path being typed, if one is.
+    pub typed: Option<String>,
+    /// There's nothing at the path typed, as found on Enter.
+    pub nothing_there: bool,
     /// The images it lists.
     catalog: Arc<Catalog>,
     /// Filled in on a thread of its own, as reading the files takes a
@@ -105,6 +123,8 @@ impl PartialEq for Picker {
             && self.entries == other.entries
             && self.menu == other.menu
             && self.problem == other.problem
+            && self.typed == other.typed
+            && self.nothing_there == other.nothing_there
             && Arc::ptr_eq(&self.marks, &other.marks)
     }
 }
@@ -122,15 +142,10 @@ impl Picker {
     /// The folder to start in: `remembered` if it's still there, or else
     /// the player's home folder, or else the working folder.
     pub fn start_dir(remembered: Option<&Path>) -> PathBuf {
-        let home = ["HOME", "USERPROFILE"]
-            .into_iter()
-            .filter_map(std::env::var_os)
-            .find(|v| !v.is_empty())
-            .map(PathBuf::from);
         remembered
             .map(Path::to_path_buf)
             .into_iter()
-            .chain(home)
+            .chain(home())
             .find(|d| d.is_dir())
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("."))
@@ -211,6 +226,8 @@ impl Picker {
             entries,
             menu,
             problem,
+            typed: None,
+            nothing_there: false,
             catalog,
             marks,
             marked: 0,
@@ -240,9 +257,13 @@ impl Picker {
         }
     }
 
-    /// Applies one frame of input.
+    /// Applies one frame of input. While a path is being typed, the
+    /// menu waits.
     pub fn update(&mut self, frame: &Frame) -> Option<Picked> {
         self.mark();
+        if self.typed.is_some() {
+            return None;
+        }
         if self.entries.is_empty() {
             // Nothing to choose; only leaving.
             let pressed = frame.pressed;
@@ -269,6 +290,47 @@ impl Picker {
         }
     }
 
+    /// Changes the path being typed; typing or pasting starts one. On
+    /// Enter, a folder opens and a file is picked. A path that isn't
+    /// absolute is taken from the folder shown, a leading `~` stands
+    /// for the player's home folder, and quotes around the path are
+    /// left out.
+    pub fn edit(&mut self, edit: Edit) -> Option<Picked> {
+        self.nothing_there = false;
+        match edit {
+            Edit::Insert(text) => {
+                let line = text.lines().next().unwrap_or_default();
+                let line: String = line.chars().filter(|c| !c.is_control()).collect();
+                // A space alone doesn't start a path.
+                if self.typed.is_some() || !line.trim().is_empty() {
+                    self.typed.get_or_insert_default().push_str(&line);
+                }
+            }
+            Edit::Backspace => {
+                if let Some(typed) = &mut self.typed {
+                    typed.pop();
+                }
+            }
+            Edit::Cancel => self.typed = None,
+            Edit::Enter => {
+                let path = typed_path(self.typed.as_deref()?, &self.dir);
+                let Some(path) = path else {
+                    self.typed = None;
+                    return None;
+                };
+                if path.is_dir() {
+                    *self = Picker::open(&path, self.catalog.clone());
+                } else if path.is_file() {
+                    self.typed = None;
+                    return Some(Picked::File(path));
+                } else {
+                    self.nothing_there = true;
+                }
+            }
+        }
+        None
+    }
+
     pub fn draw(&self, canvas: &mut dyn Surface, centre: i32) {
         draw_text_centred(canvas, centre, 12, "IMPORT A GAME", HEADING);
         draw_text_centred(
@@ -278,10 +340,13 @@ impl Picker {
             "Choose your own copy of a supported game",
             SUBTITLE,
         );
-        let shown = self.dir.display().to_string();
         // The end of a long path says the most.
+        let (shown, color) = match &self.typed {
+            Some(typed) => (format!("{typed}_"), HEADING),
+            None => (self.dir.display().to_string(), TITLE),
+        };
         let tail = fit_end(&shown, WIDTH);
-        draw_text_centred(canvas, centre, 12 + 2 * LINE + 6, &tail, TITLE);
+        draw_text_centred(canvas, centre, 12 + 2 * LINE + 6, &tail, color);
         let top = 12 + 4 * LINE;
         if let Some(problem) = &self.problem {
             paragraph(
@@ -295,9 +360,48 @@ impl Picker {
         if !self.entries.is_empty() {
             self.menu.draw_rows(canvas, centre, top, PICKER_ROWS);
         }
-        let marked = format!("{SUPPORTED}a supported game");
-        draw_text_centred(canvas, centre, VIEW.1 as i32 - 12 - LINE, &marked, SUBTITLE);
+        let (note, color) = match (&self.typed, self.nothing_there) {
+            (Some(_), true) => ("Nothing is there".to_string(), FAILED),
+            (Some(_), false) => (
+                "Enter: go there   Escape: stop typing".to_string(),
+                SUBTITLE,
+            ),
+            (None, _) => (format!("{SUPPORTED}a supported game"), SUBTITLE),
+        };
+        draw_text_centred(canvas, centre, VIEW.1 as i32 - 12 - LINE, &note, color);
     }
+}
+
+/// The player's home folder, if it's known.
+fn home() -> Option<PathBuf> {
+    ["HOME", "USERPROFILE"]
+        .into_iter()
+        .filter_map(std::env::var_os)
+        .find(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Where a path typed in the picker showing `dir` leads, if anywhere.
+fn typed_path(typed: &str, dir: &Path) -> Option<PathBuf> {
+    let mut typed = typed.trim();
+    for quote in ['"', '\''] {
+        if let Some(inner) = typed
+            .strip_prefix(quote)
+            .and_then(|t| t.strip_suffix(quote))
+        {
+            typed = inner;
+        }
+    }
+    if typed.is_empty() {
+        return None;
+    }
+    let path = match typed.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with(['/', '\\']) => {
+            home()?.join(rest.trim_start_matches(['/', '\\']))
+        }
+        _ => PathBuf::from(typed),
+    };
+    Some(dir.join(path))
 }
 
 /// What to do once an import has finished.

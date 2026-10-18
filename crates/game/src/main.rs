@@ -13,9 +13,9 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use clamber_game::{
-    Canvas, Clock, Credits, DEFAULT_CREDITS, DrawList, Feels, Fit, GIF_DELAY, Game, Gpu, Pace,
-    Prefs, SPRITES, Screen, Session, Surface, VIEW, content_dir, display, encode_gif, encode_png,
-    keys, load_game, present, report, rgb,
+    Canvas, Clock, Credits, DEFAULT_CREDITS, DrawList, Edit, Feels, Fit, GIF_DELAY, Game, Gpu,
+    Pace, Prefs, SPRITES, Screen, Session, Surface, VIEW, content_dir, display, encode_gif,
+    encode_png, keys, load_game, present, report, rgb,
 };
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
@@ -26,7 +26,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, KeyEvent, Modifiers, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::{Key as Logical, KeyCode, NamedKey, PhysicalKey};
 use winit::window::{Fullscreen, Window, WindowId};
 
 const USAGE: &str = "\
@@ -213,6 +213,7 @@ fn play(options: Options) -> Result<(), String> {
         #[cfg(feature = "audio")]
         audio,
         held: BTreeSet::new(),
+        typed: BTreeSet::new(),
         modifiers: Modifiers::default(),
         focused: true,
         occluded: false,
@@ -469,6 +470,9 @@ struct App {
     audio: Option<(clamber_audio::Output, clamber_game::Audio)>,
     /// Keys down now, to release them all when the window loses focus.
     held: BTreeSet<Key>,
+    /// Keys down now that went to the path being typed, whose release
+    /// goes there too.
+    typed: BTreeSet<KeyCode>,
     modifiers: Modifiers,
     focused: bool,
     /// The window is hidden behind others or minimized.
@@ -551,6 +555,13 @@ impl App {
         if alt_enter && down {
             return;
         }
+        if down && self.edit(&event) {
+            self.typed.insert(code);
+            return;
+        }
+        if !down && self.typed.remove(&code) {
+            return;
+        }
         if let Some(key) = keys::key(code) {
             if down {
                 self.held.insert(key);
@@ -559,6 +570,49 @@ impl App {
             }
             self.session.handle(Event::Key { key, down });
         }
+    }
+
+    /// Passes a key press that types, pastes or edits a path to the
+    /// game's browser, if that's showing. Returns whether it did.
+    fn edit(&mut self, event: &KeyEvent) -> bool {
+        if !self.session.takes_text() {
+            return false;
+        }
+        let modifiers = self.modifiers.state();
+        let edit = if modifiers.control_key() || modifiers.super_key() {
+            match &event.logical_key {
+                Logical::Character(c) if c.eq_ignore_ascii_case("v") => {
+                    match arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+                        Ok(text) => Edit::Insert(text),
+                        Err(e) => {
+                            report::warn(format!("couldn't paste: {e}"));
+                            return true;
+                        }
+                    }
+                }
+                _ => return false,
+            }
+        } else if self.session.typing() {
+            match &event.logical_key {
+                Logical::Named(NamedKey::Enter) => Edit::Enter,
+                Logical::Named(NamedKey::Escape) => Edit::Cancel,
+                Logical::Named(NamedKey::Backspace) => Edit::Backspace,
+                _ => match &event.text {
+                    Some(text) if !modifiers.alt_key() => Edit::Insert(text.to_string()),
+                    _ => return false,
+                },
+            }
+        } else {
+            match &event.text {
+                // Enter, Escape and the like work the menu.
+                Some(text) if !modifiers.alt_key() && !text.chars().any(char::is_control) => {
+                    Edit::Insert(text.to_string())
+                }
+                _ => return false,
+            }
+        };
+        self.session.edit(edit);
+        true
     }
 
     fn toggle_fullscreen(&mut self) {
@@ -791,6 +845,7 @@ impl ApplicationHandler for App {
                     for key in std::mem::take(&mut self.held) {
                         self.session.handle(Event::Key { key, down: false });
                     }
+                    self.typed.clear();
                     self.modifiers = Modifiers::default();
                     self.session.pause();
                 }

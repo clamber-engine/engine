@@ -149,7 +149,10 @@ own list of folders instead (press Back while the window is open to
 switch to it): Up and Down to move, Pick to open a folder or pick the
 file, Left to go up a folder, and Back to go back. It lists only files
 the size of a supported game, and marks with a star the ones that are
-one. The pack goes into
+one. On a keyboard, you can also type a path there or paste one with
+Ctrl+V, then press Enter to open that folder or import that file
+(Escape stops typing). A path that doesn't start at a drive or `/` is
+taken from the folder shown. The pack goes into
 `%LOCALAPPDATA%\Clamber\packs` on Windows, and
 `~/.local/share/clamber/packs` on Linux; `clamber-import <file>` does
 the same from a command line. A personal import is yours alone: it's

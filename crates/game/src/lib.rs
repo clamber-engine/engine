@@ -91,7 +91,7 @@ pub use feels::Feels;
 pub use game::Game;
 pub use gpu::Gpu;
 pub use hud::draw_hud;
-pub use import::{Games, Importing, Picker};
+pub use import::{Edit, Games, Importing, Picker};
 pub use layers::LayerArt;
 pub use map::{LEVEL_MAP, MapPhase, MapPlay, MapStep};
 pub use menu::{Choice, Menu};
