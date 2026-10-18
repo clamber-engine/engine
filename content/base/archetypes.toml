@@ -242,7 +242,11 @@
 #   running), `crouch` (down held on the ground), `roll`, `jump` (for the
 #   first `jump_early` frames of a jump, counting the one it starts on),
 #   and `air` (the rest of a jump, or in the air another way, and for the
-#   first `land_hold` frames after landing, counting the landing). In the
+#   first `land_hold` frames after landing, counting the landing, or
+#   `land_ran` with Action and a direction held on the landing frame; left
+#   out, `land_hold`; `land_drop = [px, frames]` adds that many frames
+#   after landing more than so many px below where the player went into
+#   the air). In the
 #   air after `jump`, `air_below = [[vy, below], ...]` lifts the lowest
 #   `below`: the first pair whose `vy` is at least the player's vertical
 #   speed gives it, past them all it's `air`'s. Only the character under
@@ -1031,7 +1035,13 @@ jump = [-15, 21, -8, 40]
 air = [-15, 18, 13, 57]
 air_below = []
 jump_early = 6
+# After a jump's landing the jump ranges hold to L + 3, to L with Action
+# and a direction held through it, and a frame longer onto a floor 176 px
+# lower (bunches.md, "Landing"). The spec measured only the same floor
+# and 176 px lower; more than 64 px lower is Clamber's own cut.
 land_hold = 4
+land_ran = 1
+land_drop = [64, 1]
 
 # A letter of the level's word (spec/behavior/letters.md): entities set
 # which with `letter`, from 1 to the preset's `letter_count`. It's
@@ -1063,6 +1073,8 @@ air = [-15, 18, 13, 57]
 air_below = []
 jump_early = 6
 land_hold = 4
+land_ran = 1
+land_drop = [64, 1]
 
 # A golden figure (spec/behavior/figure.md): taken, it adds one to the
 # relic count (the spec's figure count) and nothing to the collectible

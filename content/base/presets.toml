@@ -47,6 +47,9 @@ crouch_up_holds = 0
 crouch_turn_lock = 0
 crouch_takeoff_cancel = 0
 crouch_in_air = 0
+crouch_land_wait = 0
+crouch_jump_press = 0
+action_jump_press = 0
 turn_time = 0
 short_turn_speed = 0
 stride_steps = 0
@@ -173,6 +176,8 @@ hurt_jump_time = 0
 hurt_jump_lift = 0
 hurt_fidget_width = 0
 hurt_fidget_offset = 0
+hurt_crouch_width = 0
+hurt_crouch_offset = 0
 hurt_air_width = 0
 hurt_air_offset = 0
 hurt_land_hold = 0
@@ -520,7 +525,10 @@ air_acceleration = 0.09375
 # the ground misses the small walker and still meets the others. In the fidget
 # pose (frames 239 to 418 of standing, and every 457 frames again, as in
 # ball-contact.md) the hurt box is 17 wide, 9.5 behind, which gives that
-# pose's hurt ranges for all three walkers. The roll's attack box (22
+# pose's hurt ranges for all three walkers. In the crouching pose (from
+# the first frame Down is held to U + 8, walker-contact.md, "Crouching")
+# it is 18 wide, 3 ahead: 3 px further in front and 9 px less behind.
+# The roll's attack box (22
 # wide, 4 behind), checked against walkers before they move as the bounce
 # box is, gives rolling-into-walkers.md's defeat ranges at the end of the
 # frame for walkers walking at full speed, and by the way a walker faced
@@ -542,6 +550,13 @@ speed_response = 0.125
 crouch_start = 2
 crouch_min = 13
 crouch_recovery = 10
+# No crouch starts before L + 2, nor on a Jump press, and taking off ends
+# one; an Action press with the Jump press starts nothing, or a crouch on
+# P + 1 with Down held there (air-control.md, "Action and Down around
+# take-off and landing"; jump-input.md, "Crouching").
+crouch_land_wait = 2
+crouch_jump_press = 1
+action_jump_press = 1
 turn_time = 8
 stride_steps = 20
 walk_stride = 0.375
@@ -677,6 +692,8 @@ hurt_jump_time = 6
 hurt_jump_lift = 21
 hurt_fidget_width = 17
 hurt_fidget_offset = -9.5
+hurt_crouch_width = 18
+hurt_crouch_offset = 3
 hurt_air_width = 21
 hurt_air_offset = -1.5
 hurt_land_hold = 3

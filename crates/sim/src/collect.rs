@@ -856,7 +856,10 @@ pub(crate) fn span(reach: &Reach, player: &Player, crouch_start: u8) -> Span {
     if !player.grounded() {
         return air(reach, player.vel.y);
     }
-    if player.since_land.is_some_and(|n| n < reach.land_hold) {
+    if player
+        .since_land
+        .is_some_and(|n| n < land_hold(reach, player))
+    {
         return reach.air;
     }
     if player.state == State::Roll || player.roll.is_some() {
@@ -869,6 +872,22 @@ pub(crate) fn span(reach: &Reach, player: &Player, crouch_start: u8) -> Span {
         State::Idle | State::GroundAction => reach.stand,
         _ => reach.walk,
     }
+}
+
+/// How many frames from the landing frame on `player` keeps the `air`
+/// offsets after its last landing.
+fn land_hold(reach: &Reach, player: &Player) -> u8 {
+    let clock = &player.pose;
+    let hold = if clock.landed_running {
+        reach.land_ran
+    } else {
+        reach.land_hold
+    };
+    let more = reach
+        .land_drop
+        .filter(|&(below, _)| clock.drop > Fixed::from_int(below))
+        .map_or(0, |(_, more)| more);
+    hold.saturating_add(more)
 }
 
 /// `air`, with its lowest `below` lifted for the vertical speed `vy`.

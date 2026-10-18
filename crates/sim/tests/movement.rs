@@ -4509,3 +4509,126 @@ fn classic_jumps_at_a_ledge_without_a_face() {
     let (_, got, _, _) = off(Some(l), 1);
     assert_eq!((got[1], got[2] - got[1]), (3.28125, 0.44140625));
 }
+
+#[test]
+fn classic_down_around_a_landing() {
+    // spec/behavior/air-control.md, "Action and Down around take-off and
+    // landing": walking at +2, Jump pressed on frame 60 and held (T = 61,
+    // L = 110), Down held from frame 62 to 115. The crouch starts on
+    // L + 2.
+    let (r, d) = (Action::Right, Action::Down);
+    let down_to = |last: usize| {
+        let mut w = classic_walking();
+        play(&mut w, 70, move |f| {
+            let frame = f + 60;
+            let mut keys = vec![r, Action::Jump];
+            if (62..=last).contains(&frame) {
+                keys.push(d);
+            }
+            keys
+        })
+    };
+    let rows = down_to(115);
+    assert_eq!(frames_with(&rows, Event::JumpStart), [1]);
+    assert_eq!(frames_with(&rows, Event::Land), [50]);
+    let vx: Vec<f64> = rows[50..56].iter().map(|row| row.vx).collect();
+    assert_eq!(vx, [2.0, 2.0, 2.0, 1.75, 1.53125, 1.33984375]);
+    // Down released on 111: no crouch.
+    let rows = down_to(111);
+    assert!(rows[50..].iter().all(|row| row.vx == 2.0));
+    // Down in the air changes nothing.
+    let mut w = classic_walking();
+    let plain = play(&mut w, 51, |_| vec![r, Action::Jump]);
+    let rows = down_to(115);
+    for (n, (a, b)) in plain.iter().zip(&rows).enumerate() {
+        assert_eq!((a.x, a.y, a.vx, a.vy), (b.x, b.y, b.vx, b.vy), "row {n}");
+        assert_eq!(a.facing, b.facing, "row {n}");
+    }
+}
+
+#[test]
+fn classic_action_on_the_take_off_frame() {
+    // spec/behavior/air-control.md, "Jump distances": standing, Right and
+    // Action held from T (an Action press on T) start no roll; the speed
+    // rule starts on T.
+    let (r, a) = (Action::Right, Action::Action);
+    let rows = classic_air_jump(classic_clear(), &[], &[r, a], &[r, a]);
+    assert_eq!(rows[1].vx, 0.375);
+    assert_eq!(rows.last().unwrap().x - rows[1].x, 128.37109375);
+    assert!(rows.iter().all(|row| row.state != State::Roll));
+    assert!(frames_with(&rows, Event::RollStart).is_empty());
+    // Action pressed on P together with Jump, walking: an ordinary jump,
+    // with Down or without.
+    for on_p in [&[r, a][..], &[r, a, Action::Down]] {
+        let rows = classic_air_jump(classic_walking(), on_p, &[r], &[r]);
+        assert!(frames_with(&rows, Event::RollStart).is_empty(), "{on_p:?}");
+        assert!(
+            rows.iter()
+                .all(|row| !matches!(row.state, State::Roll | State::GroundAction)),
+            "{on_p:?}"
+        );
+    }
+}
+
+/// Classic 1 walking at +2, then `held` on P, P + 1, ... with Right held
+/// throughout, then Right alone.
+fn classic_crouch_jump(held: &[&[Action]], n: usize) -> (Play, Vec<Row>) {
+    let mut w = classic_walking();
+    let held: Vec<Vec<Action>> = held.iter().map(|keys| keys.to_vec()).collect();
+    let rows = play(&mut w, n, |f| {
+        let mut keys = held.get(f).cloned().unwrap_or_default();
+        keys.push(Action::Right);
+        keys
+    });
+    (w, rows)
+}
+
+#[test]
+fn classic_jumping_from_a_crouch() {
+    // spec/behavior/jump-input.md, "Crouching": the example. Jump, Action
+    // and Down pressed on frame 30 (row 0), Action and Down released
+    // after frame 31, Jump held on.
+    let (j, a, d) = (Action::Jump, Action::Action, Action::Down);
+    let (_, rows) = classic_crouch_jump(&[&[j, a, d], &[j, a, d], &[j], &[j], &[j]], 5);
+    let vx: Vec<i64> = rows[..4]
+        .iter()
+        .map(|row| (row.vx * 256.0) as i64)
+        .collect();
+    assert_eq!(vx, [544, 572, 501, 502]);
+    assert_eq!(frames_with(&rows, Event::JumpStart), [3]);
+    assert!(rows[3].grounded);
+    assert!(!rows[4].grounded);
+
+    // The table, P on row 0.
+    let jump_start = |held: &[&[Action]]| {
+        let (w, rows) = classic_crouch_jump(held, 30);
+        (frames_with(&rows, Event::JumpStart), w)
+    };
+    assert_eq!(jump_start(&[&[j, a], &[j, d], &[j]]).0, [3]);
+    for held in [&[&[j, a][..], &[j, d]][..], &[&[j, a], &[d]]] {
+        let (starts, _) = jump_start(held);
+        assert!(starts.is_empty(), "{held:?}");
+        // The crouch lasts at least to P + 13.
+        let (mut w, _) = classic_crouch_jump(held, 14);
+        assert!(w.player.crouch.held > 0, "{held:?}");
+        hold(&mut w, &[Action::Right], 1);
+        assert_eq!(w.player.crouch.held, 0, "{held:?}");
+    }
+    assert_eq!(jump_start(&[&[j, a, d], &[j]]).0, [1]);
+    assert_eq!(jump_start(&[&[j, d], &[j, a, d], &[j]]).0, [1]);
+
+    // A press on any frame of a crouch jumps on P + 1, Down held or not;
+    // so does one on U to U + 9.
+    let (down, press_down, press_jump) = ([d], [j, d], [j]);
+    for press in [1, 5, 12, 13, 20, 22] {
+        let mut held: Vec<&[Action]> = vec![&down; 3];
+        held.resize(press, &[]);
+        held.push(&press_down);
+        held.push(&press_jump);
+        let (starts, _) = jump_start(&held);
+        assert_eq!(starts, [press + 1], "press on {press}");
+    }
+    // A press on the first frame Down is held starts no crouch.
+    let (_, rows) = classic_crouch_jump(&[&[j, d], &[]], 2);
+    assert_eq!(frames_with(&rows, Event::JumpStart), [1]);
+}

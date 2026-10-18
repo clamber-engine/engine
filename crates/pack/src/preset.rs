@@ -332,6 +332,9 @@ mod tests {
                     | Param::CrouchTurnLock
                     | Param::CrouchTakeoffCancel
                     | Param::CrouchInAir
+                    | Param::CrouchLandWait
+                    | Param::CrouchJumpPress
+                    | Param::ActionJumpPress
                     | Param::TurnTime
                     | Param::ShortTurnSpeed
                     | Param::StrideSteps
@@ -460,6 +463,8 @@ mod tests {
                     | Param::HurtJumpLift
                     | Param::HurtFidgetWidth
                     | Param::HurtFidgetOffset
+                    | Param::HurtCrouchWidth
+                    | Param::HurtCrouchOffset
                     | Param::HurtAirWidth
                     | Param::HurtAirOffset
                     | Param::HurtLandHold

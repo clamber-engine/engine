@@ -168,6 +168,12 @@ pub struct Player {
     /// The player left the ground during the ground action, and hasn't
     /// been on the ground since the frame after landing.
     pub action_fall: bool,
+    /// Action was pressed with Jump on the ground on the last frame
+    /// (`action_jump_press`).
+    pub action_with_jump: bool,
+    /// That press made a crouch on the last frame instead of a jump: Jump
+    /// held on this one counts as a press.
+    pub jump_again: bool,
     /// Frames of swapping left.
     pub swap: u8,
     /// Frames left that the player is held still after a bounce.
@@ -367,6 +373,8 @@ impl Player {
             takeoff_rolled: false,
             action_jump: false,
             action_fall: false,
+            action_with_jump: false,
+            jump_again: false,
             swap: 0,
             frozen: 0,
             crouch: Crouch::default(),
@@ -1053,12 +1061,20 @@ impl Player {
         let delay = frames(physics[Param::JumpDelay]);
         self.jump_buffer
             .set_window(frames(physics[Param::JumpBuffer]).max(delay));
-        self.jump_buffer.update(pressed(Action::Jump));
-        if pressed(Action::Jump) {
+        // With `action_jump_press`, Jump held on the frame after a crouch
+        // that an Action press with Jump started counts as a press.
+        let jump_press =
+            pressed(Action::Jump) || (std::mem::take(&mut self.jump_again) && held(Action::Jump));
+        let action_jump_press = physics[Param::ActionJumpPress] > Fixed::ZERO;
+        let now_with_jump =
+            action_jump_press && jump_press && pressed(Action::Action) && self.grounded();
+        let with_jump = std::mem::replace(&mut self.action_with_jump, now_with_jump);
+        self.jump_buffer.update(jump_press);
+        if jump_press {
             self.jump_needs_hold = false;
         }
         self.jump_held_since_press =
-            pressed(Action::Jump) || (self.jump_held_since_press && held(Action::Jump));
+            jump_press || (self.jump_held_since_press && held(Action::Jump));
         self.jump_hold &= held(Action::Jump);
         self.face_press &= held(Action::Jump);
         if self.takeoff {
@@ -1154,7 +1170,8 @@ impl Player {
             self.remember_roll_press(input, physics);
             self.roll_after_throw(input, physics);
         }
-        if busy.no_roll || acting.is_some() {
+        // Nor does an Action press with Jump (`action_jump_press`).
+        if busy.no_roll || acting.is_some() || self.action_with_jump {
             self.roll_press = None;
         }
 
@@ -1247,7 +1264,15 @@ impl Player {
         // A jump that waited to take off in a timed roll, or the stop
         // after one, ends it once this frame has moved.
         let mut takeoff_ends_roll = false;
-        let starts = can_jump && self.jump_buffer.take();
+        // An Action press with Jump on the last frame, and Down held on
+        // this one: a crouch starts here instead of the jump.
+        let crouch_instead = with_jump && down && can_jump;
+        if crouch_instead {
+            self.jump_buffer.take();
+            self.jump_again = true;
+            self.crouch.held = 0;
+        }
+        let starts = can_jump && !crouch_instead && self.jump_buffer.take();
         if let Some(on) = on_top.filter(|_| spring_jump) {
             self.jump_buffer.take();
             if self.state == State::Roll {
@@ -1373,6 +1398,7 @@ impl Player {
             && self.roll.is_none()
             && self.roll_stop == 0
             && !events.contains(&Event::JumpStart)
+            && !self.action_with_jump
         {
             self.vel.x = Fixed::ZERO;
             // Not on a face, where the press is as without Down.
@@ -1439,9 +1465,15 @@ impl Player {
         let rolling = self.state == State::Roll;
 
         // The ground action stands the player up, and down held during it
-        // only counts from the frame after it's over.
-        let crouching = if acting.is_some() {
-            self.crouch = Crouch::default();
+        // only counts from the frame after it's over. With
+        // `crouch_jump_press`, so does taking off.
+        let crouch_jump_press = physics[Param::CrouchJumpPress] > Fixed::ZERO;
+        let took_off = crouch_jump_press && !crouch_in_air && events.contains(&Event::JumpStart);
+        let crouching = if acting.is_some() || took_off {
+            self.crouch = Crouch {
+                turn_lock: self.crouch.turn_lock,
+                ..Crouch::default()
+            };
             false
         } else {
             // With `crouch_in_air`, a crouch goes on in a fall off a ledge.
@@ -1449,9 +1481,16 @@ impl Player {
             // Down doesn't count on the frame after a hop's landing.
             let hop_landed = matches!(self.gait, Gait::Landing(l) if l.bounce && l.frame == 0)
                 || (self.action_fall && self.grounded());
+            // Nor before `crouch_land_wait` frames after a landing.
+            let land_wait = frames(physics[Param::CrouchLandWait]);
+            let just_landed = self
+                .since_land
+                .is_some_and(|n| n.saturating_add(1) < land_wait);
+            // Nor on a Jump press on the first frame Down is held.
+            let press_first = crouch_jump_press && jump_press && self.crouch.held == 0;
             self.crouch.update(
-                down && !busy.no_crouch,
-                (self.grounded() || in_fall) && !rolling && !hop_landed,
+                down && !busy.no_crouch && !press_first,
+                (self.grounded() || in_fall) && !rolling && !hop_landed && !just_landed,
                 physics,
             )
         };

@@ -940,7 +940,10 @@ pub struct Reach {
     /// The first `jump_early` frames of a jump, from the one it starts on.
     pub jump: Span,
     /// The rest of a jump, other times in the air, and the first
-    /// `land_hold` frames after landing.
+    /// `land_hold` frames after landing (`land_ran` with Action and a
+    /// direction held on the landing frame), counting the landing frame,
+    /// and `land_drop`'s frames more after landing that far below where
+    /// the player went into the air.
     pub air: Span,
     /// In the air after `jump`, the lowest `below` while rising: the
     /// first `(vy, below)` whose `vy` is at least the player's vertical
@@ -950,6 +953,10 @@ pub struct Reach {
     pub air_steps: u8,
     pub jump_early: u8,
     pub land_hold: u8,
+    pub land_ran: u8,
+    /// More than this many px lower, so many frames more. `None`: no
+    /// landing is longer.
+    pub land_drop: Option<(i32, u8)>,
 }
 
 /// The most `air_below` steps a [`Reach`] can have.
@@ -3321,6 +3328,8 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         "air_below",
         "jump_early",
         "land_hold",
+        "land_ran",
+        "land_drop",
     ];
     if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
         return Err(format!("{path}.{key}: no such value"));
@@ -3381,6 +3390,28 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         }
         air_below[i] = (vy, whole(below, &format!("{at}[1]"))?);
     }
+    let land_hold = frames("land_hold")?;
+    let land_ran = match table.get("land_ran") {
+        Some(_) => frames("land_ran")?,
+        None => land_hold,
+    };
+    let land_drop = match table.get("land_drop") {
+        None => None,
+        Some(Value::Array(pair)) if pair.len() == 2 => {
+            let at = format!("{path}.land_drop");
+            let below = whole(&pair[0], &format!("{at}[0]"))?;
+            let more = match &pair[1] {
+                Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => *n as u8,
+                _ => {
+                    return Err(format!(
+                        "{at}[1]: expected a whole number of frames, 0 to 255"
+                    ));
+                }
+            };
+            Some((below, more))
+        }
+        Some(_) => return Err(format!("{path}.land_drop: expected [px, frames]")),
+    };
     Ok(Reach {
         stand: span("stand")?,
         walk: span("walk")?,
@@ -3391,7 +3422,9 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         air_below,
         air_steps: steps.len() as u8,
         jump_early: frames("jump_early")?,
-        land_hold: frames("land_hold")?,
+        land_hold,
+        land_ran,
+        land_drop,
     })
 }
 

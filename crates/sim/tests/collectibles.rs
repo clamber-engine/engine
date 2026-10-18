@@ -326,6 +326,96 @@ fn a_bunch_is_taken_in_a_jump_from_six_steps_on_with_one_range() {
     check_jump("cluster", 4, bunch_ranges);
 }
 
+/// Classic 1 on flat ground at `F` up to x = 700 and, with `drop`, a
+/// floor 176 px lower beyond it (else the same floor on), the player at
+/// (500, `F`), and bunches at `at`.
+fn ledge_world(drop: bool, at: &[(i32, i32)]) -> World {
+    let lower = if drop { F + 176 } else { F };
+    let mut src = format!(
+        r#"
+        format = 1
+        name = "ledge"
+        size = [3000, 800]
+        start = [500, {F}]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, {F}, 700, 400]
+
+        [[collision]]
+        shape = "rect"
+        rect = [700, {lower}, 2300, 200]
+        "#
+    );
+    for (x, y) in at {
+        src += &format!("\n[[entities]]\ntype = \"cluster\"\nat = [{x}, {y}]\n");
+    }
+    let level = Arc::new(Level::from_toml_str(&src, "ledge").unwrap());
+    World::new(level, Arc::new(generic_feel("classic-1").unwrap()))
+}
+
+/// Checks that a bunch placed anywhere around where a jump facing right
+/// with `keys` lands is taken on the first step whose ranges hold it,
+/// with the jump's ranges up to `hold` steps after the landing step
+/// (bunches.md, "Landing").
+fn check_landing(drop: bool, keys: &[Vec<Action>], hold: usize) {
+    let mut play = Play::new(ledge_world(drop, &[]));
+    let rows: Vec<Row> = keys.iter().map(|k| play.step(k)).collect();
+    let start = rows
+        .iter()
+        .position(|r| r.events.contains(&Event::JumpStart))
+        .unwrap();
+    let land = rows
+        .iter()
+        .position(|r| r.events.contains(&Event::Land))
+        .unwrap();
+    assert!(rows[land..].iter().all(|r| r.ground));
+    let ranges = |n: usize| -> [i32; 4] {
+        const STAND: [i32; 4] = [-15, 21, -8, 40];
+        const LATE: [i32; 4] = [-15, 18, 13, 57];
+        if (start + 6..land + hold).contains(&n) {
+            LATE
+        } else {
+            STAND
+        }
+    };
+    let (xl, fl) = (rows[land].x, rows[land].feet);
+    for past in -30..30 {
+        for below in [-9, -8, 12, 13, 40, 41, 50, 57, 58] {
+            let at = (xl - past, fl - below);
+            let want = rows.iter().enumerate().position(|(n, row)| {
+                let [i0, i1, d0, d1] = ranges(n);
+                let (i, d) = (row.x - at.0, row.feet - at.1);
+                (i0..=i1).contains(&i) && (d0..=d1).contains(&d)
+            });
+            let mut play = Play::new(ledge_world(drop, &[at]));
+            let got = keys.iter().position(|k| !play.step(k).taken.is_empty());
+            assert_eq!(got, want, "I = {past}, D = {below} from the landing");
+        }
+    }
+}
+
+/// `before` steps of `moving`, then Jump with `moving` until landing and
+/// beyond.
+fn jump_on(moving: &[Action], before: usize) -> Vec<Vec<Action>> {
+    let mut keys = vec![moving.to_vec(); before];
+    keys.extend(vec![[moving, &[Jump]].concat(); 100]);
+    keys
+}
+
+#[test]
+fn a_bunch_landing_keeps_the_jump_ranges_while_the_airborne_pose_goes_on() {
+    use Action::{Action as Act, Right};
+    // Walking right off the ledge onto the floor 176 px lower: L + 4.
+    check_landing(true, &jump_on(&[Right], 60), 5);
+    // Running on with Action and Right held through the landing: up to
+    // L, or L + 1 onto the lower floor.
+    check_landing(false, &jump_on(&[Right, Act], 60), 1);
+    check_landing(true, &jump_on(&[Right, Act], 60), 2);
+    // Walking right onto the same floor: L + 3.
+    check_landing(false, &jump_on(&[Right], 60), 4);
+}
+
 #[test]
 fn only_the_character_under_control_takes_collectibles() {
     // The other character starts with the player, and stays when the

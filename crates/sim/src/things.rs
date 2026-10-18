@@ -1458,8 +1458,10 @@ fn strike(
 /// The enemy that hurts the player on the next step, if any: one its
 /// hurt box touches now, on whole pixels. The box is `hurt_width` wide,
 /// centred `hurt_offset` in front of the player, or `hurt_fidget_width`
-/// and `hurt_fidget_offset` in the fidget pose, or `hurt_air_width` and
-/// `hurt_air_offset` in the airborne pose ([`pose::hurt_pose`]), and
+/// and `hurt_fidget_offset` in the fidget pose, `hurt_crouch_width` and
+/// `hurt_crouch_offset` in the crouching pose ([`pose::hurt_crouching`]),
+/// or `hurt_air_width` and `hurt_air_offset` in the airborne pose
+/// ([`pose::hurt_pose`]), and
 /// reaches from the top of the body to the feet, or to `hurt_jump_lift`
 /// (or the walker's own) above them while the airborne pose lifts it. A
 /// rolling player isn't hurt, nor one in the first `roll_stop_guard`
@@ -1482,6 +1484,14 @@ fn hurt_ahead(world: &World, physics: &Physics) -> Option<usize> {
     let (airborne, lifted) = pose::hurt_pose(player, physics);
     let (width, offset) = if airborne && physics[Param::HurtAirWidth] > Fixed::ZERO {
         (physics[Param::HurtAirWidth], physics[Param::HurtAirOffset])
+    } else if !airborne
+        && physics[Param::HurtCrouchWidth] > Fixed::ZERO
+        && pose::hurt_crouching(player)
+    {
+        (
+            physics[Param::HurtCrouchWidth],
+            physics[Param::HurtCrouchOffset],
+        )
     } else if fidget {
         (
             physics[Param::HurtFidgetWidth],

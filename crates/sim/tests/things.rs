@@ -1181,6 +1181,109 @@ fn classic_fidget_pose_is_on_frames_239_to_418_and_696_to_875() {
     }
 }
 
+/// Whether a classic-1 player standing `i` px from a still walker, made
+/// by `walker`, with Down first held on the first frame, is hurt by it on
+/// the second frame and not the first.
+fn classic_crouch_hurt_at(
+    walker: fn(&str, &str, &str) -> String,
+    i: i32,
+    facing: Facing,
+    heading: &str,
+) -> bool {
+    let mut w = world_on("classic-1", [300 + i, 400], &walker("300", "0", heading));
+    w.player.facing = facing;
+    let first = hold(&mut w, Action::Down.into(), 1);
+    assert!(!first.events.contains(&Event::Hurt));
+    let second = hold(&mut w, Action::Down.into(), 1);
+    second.events.contains(&Event::Hurt)
+}
+
+#[test]
+fn classic_crouching_pose_shifts_the_hurt_range() {
+    // walker-contact.md, "Crouching": facing right, the low end 3 px
+    // lower and the high end 9 px lower; facing left, 9 and 3 px higher.
+    // Down first held on H − 1 already counts.
+    type Walker = fn(&str, &str, &str) -> String;
+    let table: [(Walker, Facing, &str, i32, i32); 12] = [
+        (small_walker, Facing::Right, "left", -22, 15),
+        (small_walker, Facing::Right, "right", -21, 16),
+        (small_walker, Facing::Left, "left", -16, 21),
+        (small_walker, Facing::Left, "right", -15, 22),
+        (medium_walker, Facing::Right, "left", -29, 13),
+        (medium_walker, Facing::Right, "right", -19, 23),
+        (medium_walker, Facing::Left, "left", -23, 19),
+        (medium_walker, Facing::Left, "right", -13, 29),
+        (large_walker, Facing::Right, "left", -25, 18),
+        (large_walker, Facing::Right, "right", -24, 19),
+        (large_walker, Facing::Left, "left", -19, 24),
+        (large_walker, Facing::Left, "right", -18, 25),
+    ];
+    for (n, (walker, facing, heading, low, high)) in table.into_iter().enumerate() {
+        for (i, hurt) in [
+            (low - 1, false),
+            (low, true),
+            (high, true),
+            (high + 1, false),
+        ] {
+            assert_eq!(
+                classic_crouch_hurt_at(walker, i, facing, heading),
+                hurt,
+                "row {n}: I = {i}, facing {facing:?}, heading {heading}"
+            );
+        }
+    }
+}
+
+/// The frame a small walker heading left at full speed, at 123.25 at the
+/// end of frame 40, hurts a player facing right at 100.5 who holds Down
+/// on the frames `down` says (walker-contact.md, the crouching example;
+/// here 200 px further right).
+fn classic_crouching_example(down: impl Fn(usize) -> bool) -> Option<usize> {
+    let mut w = world_on(
+        "classic-1",
+        [300, 400],
+        &small_walker("363.25", "1", "left"),
+    );
+    w.player.pos.x = fx(300.5);
+    w.player.facing = Facing::Right;
+    let mut previous = Actions::NONE;
+    for frame in 1..=50 {
+        let held = if down(frame) {
+            Action::Down.into()
+        } else {
+            Actions::NONE
+        };
+        step(&mut w, &InputFrame::single(Frame::after(previous, held)));
+        previous = held;
+        if frame == 40 {
+            assert_eq!(w.things[0].pos.x, fx(323.25));
+        }
+        if w.events.contains(&Event::Hurt) {
+            return Some(frame);
+        }
+    }
+    None
+}
+
+#[test]
+fn classic_crouching_follows_the_worked_example() {
+    // Crouching since frame 1: hurt on 42. Upright: on 45.
+    assert_eq!(classic_crouching_example(|_| true), Some(42));
+    assert_eq!(classic_crouching_example(|_| false), Some(45));
+    // Down released on frame 32 (U = 32): upright at the end of frame 41
+    // (U + 9), hurt on 45. Released on 33, frame 41 is U + 8, still
+    // crouching.
+    assert_eq!(classic_crouching_example(|f| f < 32), Some(45));
+    assert_eq!(classic_crouching_example(|f| f < 33), Some(42));
+    // A one-frame press on frame 30 lasts 13 frames (U = 43): crouching
+    // through the frames that count.
+    assert_eq!(classic_crouching_example(|f| f == 30), Some(42));
+    // Down first held on H − 1 (frame 41) counts; on H (frame 42)
+    // doesn't, and the crouch is reached on the frame after.
+    assert_eq!(classic_crouching_example(|f| f >= 41), Some(42));
+    assert_eq!(classic_crouching_example(|f| f >= 42), Some(43));
+}
+
 #[test]
 fn classic_medium_walker_from_behind_follows_the_worked_example() {
     // A player facing right at x 120.25 and a medium walker heading right

@@ -152,6 +152,19 @@ params! {
     /// it does, and for `coyote_time` frames after it ends. A jump's
     /// take-off ends it. 0: a crouch ends on leaving the ground.
     CrouchInAir => "crouch_in_air",
+    /// After a landing, Down starts no crouch before this many frames
+    /// after the landing frame (2: from the second frame after it). 0:
+    /// from the landing frame. Whole frames.
+    CrouchLandWait => "crouch_land_wait",
+    /// Above 0, a Jump press on the first frame Down is held starts no
+    /// crouch, and a jump's take-off ends a crouch going on, so the
+    /// take-off frame has the jump's target.
+    CrouchJumpPress => "crouch_jump_press",
+    /// Above 0, an Action press together with a Jump press on the ground
+    /// starts no roll and no ground action. With Down held on the next
+    /// frame, that frame starts a crouch instead of the jump, and Jump
+    /// held on the frame after counts as a new press there.
+    ActionJumpPress => "action_jump_press",
     /// Turning around on the ground takes this many frames, and facing
     /// changes halfway through. A turn, once started, finishes. 0: facing
     /// follows the direction held at once. Whole frames.
@@ -747,6 +760,15 @@ params! {
     /// How far the middle of the fidget pose's hurt box is in front of
     /// the player's position, px. Negative is behind.
     HurtFidgetOffset => "hurt_fidget_offset",
+    /// Above 0, in the crouching pose the hurt box is this wide instead
+    /// of `hurt_width`, its middle `hurt_crouch_offset` in front of the
+    /// player's position. The pose lasts from the first frame Down is
+    /// held on the ground to the one before the last frame of getting
+    /// up (`crouch_recovery`). 0: crouching has the usual hurt box.
+    HurtCrouchWidth => "hurt_crouch_width",
+    /// How far the middle of the crouching pose's hurt box is in front
+    /// of the player's position, px. Negative is behind.
+    HurtCrouchOffset => "hurt_crouch_offset",
     /// A player standing still takes the fidget pose this many frames
     /// into standing, counting the first frame of standing as 0. Whole
     /// frames.

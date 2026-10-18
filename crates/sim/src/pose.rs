@@ -120,6 +120,10 @@ pub struct PoseClock {
     /// Frames Jump was held in the last jump, from the one it started
     /// on, while it went on in the air.
     pub jump_held: u8,
+    /// Where the feet were when the player last went into the air.
+    pub from: Fixed,
+    /// How far below that it landed the last time; negative is above.
+    pub drop: Fixed,
 }
 
 impl Default for PoseClock {
@@ -135,6 +139,8 @@ impl Default for PoseClock {
             running: false,
             upright_fall: false,
             jump_held: 0,
+            from: Fixed::ZERO,
+            drop: Fixed::ZERO,
         }
     }
 }
@@ -160,6 +166,7 @@ pub(crate) fn note(player: &mut Player, events: &[Event], physics: &Physics) {
         clock.since_land = None;
         clock.upright_fall = false;
         clock.jump_held = 0;
+        clock.from = player.pos.y;
     } else if !grounded {
         if clock.since_land.is_some() {
             clock.air = Air::Fall;
@@ -170,7 +177,9 @@ pub(crate) fn note(player: &mut Player, events: &[Event], physics: &Physics) {
     } else {
         if clock.since_land.is_none() {
             clock.landed_running = player.ran;
+            clock.drop = player.pos.y - clock.from;
         }
+        clock.from = player.pos.y;
         clock.since_land = Some(clock.since_land.map_or(0, |n| n.saturating_add(1)));
     }
     if clock.since_land.is_none() && clock.air != Air::Fall && player.jump_hold {
@@ -320,6 +329,20 @@ pub fn hurt_pose(player: &Player, physics: &Physics) -> (bool, bool) {
         (frames(Param::HurtLandHold), frames(Param::HurtLandLift))
     };
     (n <= hold, n < lifted)
+}
+
+/// Whether `player` has the crouching pose for the preset's hurt box at
+/// the end of the last step (spec/behavior/walker-contact.md,
+/// "Crouching"): on the ground, from the first frame Down is held, while
+/// it crouches, and while it gets up but for the last frame of getting
+/// up (`crouch_recovery`), whose end is U + 8 for title-1's 10 frames.
+/// Engine choice: the ground action ends the pose at once, as it does
+/// the crouch.
+pub fn hurt_crouching(player: &Player) -> bool {
+    player.grounded()
+        && player.jump_age.is_none()
+        && player.ground_action.is_none()
+        && (player.crouch.held > 0 || player.crouch.rising > 0)
 }
 
 /// Whether a player with `clock` is in the fidget pose at the end of the
