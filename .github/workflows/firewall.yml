@@ -13,18 +13,18 @@ concurrency:
 
 jobs:
   firewall:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: No ROM images
         run: ci/forbid-roms.sh
       - name: Taint lint
         run: ci/taint-lint.sh
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # spec is private, so the submodule is fetched with a read-only
       # deploy key on clamber-engine/spec.
@@ -63,7 +63,7 @@ jobs:
       contents: read
       id-token: write # Azure login for code signing, without a stored secret
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check for the game crate
         id: game
         shell: bash
@@ -114,7 +114,7 @@ jobs:
           [ -f content/base/CREDITS.md ] && cp content/base/CREDITS.md dist/clamber/ || true
       - name: Upload
         if: steps.game.outputs.exists == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clamber-windows
           path: dist/clamber
@@ -123,13 +123,13 @@ jobs:
   # Screenshots and a gameplay GIF of the newest main, published to the
   # `media` branch for the README, once tools/capture.sh exists.
   media:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'push'
     needs: [firewall, test]
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check for the capture script
         id: capture
         run: |
