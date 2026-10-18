@@ -192,8 +192,10 @@ pub enum Phase {
     /// A stinger swaying around its start, with its vertical speed and
     /// its target speeds (see [`stinger`](crate::stinger)).
     Swaying { vy: Fixed, tx: Fixed, ty: Fixed },
-    /// A keg the player broke, gone for the rest of the visit (see
-    /// [`keg`](crate::keg)).
+    /// Gone for the rest of the visit: a keg the player broke (see
+    /// [`keg`](crate::keg)), or an extra-life item removed without being
+    /// taken. It doesn't appear with the view again until play comes
+    /// back to the level (see [`World::coming_back_from`]).
     Broken,
     /// A hidden object's item in the air, moving at `vy` down and its
     /// `vx` across, after `wait` more steps (see

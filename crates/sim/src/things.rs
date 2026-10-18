@@ -574,8 +574,8 @@ fn advance(
 /// Moves a rising collectible on a step: `n` steps after the one it
 /// appeared on at level y `from`, its speed up is `n` times `rise`, so
 /// it has risen `rise` times n (n + 1) / 2 (extra-lives.md, "Rising").
-/// It's gone for good on the first step that would take it to the
-/// level's top or above it.
+/// It's gone for the rest of the visit on the first step that would take
+/// it to the level's top or above it.
 fn rise_from(thing: &mut Thing, from: Fixed, rise: Fixed) {
     let n = i64::from(thing.clock);
     thing.clock = thing.clock.saturating_add(1);
@@ -586,7 +586,7 @@ fn rise_from(thing: &mut Thing, from: Fixed, rise: Fixed) {
     );
     if y <= Fixed::ZERO {
         thing.active = false;
-        thing.phase = Phase::Gone;
+        thing.phase = Phase::Broken;
     } else {
         thing.pos.y = y;
     }

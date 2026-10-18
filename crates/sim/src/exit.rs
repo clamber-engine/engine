@@ -71,11 +71,12 @@ use crate::collect;
 use crate::columns;
 use crate::flow::{FlowEvent, Outcome};
 use crate::follow::{self, Lead};
+use crate::hidden;
 use crate::loss;
 use crate::player::{Crouch, Facing, Player, State, frames};
 use crate::things;
 use crate::view::{self, Begin};
-use crate::world::{Event, Phase, World};
+use crate::world::{Event, Phase, Thing, World};
 
 /// The kind of entity that takes the lead out of the area.
 pub const EXIT: &str = "exit";
@@ -122,9 +123,12 @@ impl World {
     /// last of them as `latest`. It begins as [`World::arriving`] has it,
     /// [`carrying`](World::carrying) what `latest` carries, and with the
     /// restart points reached as this world had them. Things gone for
-    /// good here stay gone: collectibles that are there `once` or `kept`,
-    /// and kegs broken. Everything else is there again, as at the level's
-    /// start.
+    /// good here stay gone ([`gone_for_good`]): collectibles that are
+    /// there `once` or `kept` once taken, kegs broken, hidden objects set
+    /// off, with the item each released wherever it is, crates holding an
+    /// animal once broken, with the animal, and objects holding the
+    /// missing character once broken. Everything else is there again, as
+    /// at the level's start.
     ///
     /// # Panics
     ///
@@ -133,11 +137,18 @@ impl World {
         let mut world =
             World::arriving(self.level.clone(), self.feel.clone(), arrival).carrying(latest);
         world.flow.checkpoints = self.flow.checkpoints.clone();
-        for (new, old) in world.things.iter_mut().zip(&self.things) {
-            let keg = matches!(old.archetype.map(|a| a.behavior), Some(Behavior::Keg(_)));
-            if old.phase == Phase::Gone || (keg && old.phase == Phase::Broken) {
+        for ((new, old), entity) in world
+            .things
+            .iter_mut()
+            .zip(&self.things)
+            .zip(&self.level.entities)
+        {
+            if gone_for_good(old, entity) {
                 new.active = false;
-                new.phase = old.phase;
+                new.phase = match old.phase {
+                    Phase::Broken => Phase::Broken,
+                    _ => Phase::Gone,
+                };
             }
         }
         world
@@ -184,6 +195,35 @@ impl World {
 
 /// Starts the walk-out if an exit takes over the lead at the end of this
 /// step.
+/// Whether `thing`, as play left the level, stays gone when it comes
+/// back (exits.md, "Coming back to the level").
+///
+/// A hidden object is gone once set off, whatever became of its item
+/// (`entity` is the level's entry for `thing`), an animal crate once
+/// broken, whatever became of the animal, and an object holding the
+/// missing character once it broke, in the hands or thrown.
+///
+/// Engine choices where the spec says nothing: an extra-life item that
+/// rose away or was removed with the view without being taken is there
+/// again. An animal still ridden isn't counted, as an exit doesn't take
+/// over a rider.
+fn gone_for_good(thing: &Thing, entity: &Entity) -> bool {
+    if thing.phase == Phase::Gone {
+        return true;
+    }
+    if entity.kind == hidden::HIDDEN {
+        return thing.kind != hidden::HIDDEN || thing.phase != Phase::Ready;
+    }
+    match thing.archetype.map(|a| a.behavior) {
+        Some(Behavior::Keg(_)) => thing.phase == Phase::Broken,
+        Some(Behavior::Hutch(_)) => !matches!(thing.phase, Phase::Ready | Phase::Ridden),
+        Some(Behavior::Carry {
+            holder: Some(_), ..
+        }) => !thing.active && matches!(thing.phase, Phase::Thrown(_) | Phase::Held),
+        _ => false,
+    }
+}
+
 pub(crate) fn take_over(world: &mut World) {
     let physics = world.player_physics();
     let player = &world.player;

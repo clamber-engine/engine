@@ -745,7 +745,7 @@ fn walkers_by(world: &mut World, physics: &Physics, (left, top): (i64, i64), app
             }
             Behavior::Collect { once: true, .. } if !appear && thing.active && !start_near => {
                 thing.active = false;
-                thing.phase = Phase::Gone;
+                thing.phase = Phase::Broken;
                 removed(thing.index);
             }
             // A knocked-out one leaves by its own rule instead.

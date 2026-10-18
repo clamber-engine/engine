@@ -126,7 +126,7 @@ fn a_rising_item_is_gone_on_the_first_frame_it_would_reach_the_top() {
     assert!(y > Fixed::from_int(1) && y < Fixed::from_int(2), "{y:?}");
     step_keys(&mut w, &[]);
     assert!(!w.things[0].active);
-    assert_eq!(w.things[0].phase, Phase::Gone);
+    assert_eq!(w.things[0].phase, Phase::Broken);
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn an_item_that_leaves_the_window_untaken_never_comes_back() {
         }
     }
     assert!(removed.is_some(), "never removed");
-    assert_eq!(w.things[0].phase, Phase::Gone);
+    assert_eq!(w.things[0].phase, Phase::Broken);
     for _ in 0..600 {
         step_keys(&mut w, &[Right]);
         assert!(!w.things[0].active);

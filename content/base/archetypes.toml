@@ -1021,7 +1021,9 @@ land_hold = 0
 # An extra-life item (spec/behavior/extra-lives.md): taken, it gives
 # one more life, or more with `lives`; with `rise = 0.00390625` (1/256
 # px a frame), it rises as the spec's rising kinds do. It appears with
-# the view and doesn't come back once it's gone. The ranges are
+# the view and doesn't come back once it's gone. Taken, it stays gone
+# when play comes back to the level from another area
+# (spec/behavior/exits.md); not taken, it's there again. The ranges are
 # extra-lives.md's: the standing ones for the first six frames of a
 # jump, and facing left they're measured from 3 px left of it.
 # Falling without a jump, landing and the second character weren't
