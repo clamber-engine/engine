@@ -107,7 +107,9 @@ pub enum Behavior {
     /// `lives` more lives. Above 0, `rise` is how much its speed up grows
     /// each frame, from 0 on the frame it appears; it's gone once it
     /// would reach the level's top. With a view, one that's there `once`
-    /// appears with the view and is gone for good when it's removed.
+    /// appears with the view and is removed past either edge of the
+    /// window; removed, it doesn't appear again until play comes back
+    /// after a lost life (with `resume_afresh`) or to the level.
     /// One that's `kept` is gone for good when it's taken: it stays gone
     /// when play comes back to the level from another area.
     Collect {

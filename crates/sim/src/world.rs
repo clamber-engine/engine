@@ -205,7 +205,8 @@ pub enum Phase {
     /// Gone for the rest of the visit: a keg the player broke (see
     /// [`keg`](crate::keg)), or an extra-life item removed without being
     /// taken. It doesn't appear with the view again until play comes
-    /// back to the level (see [`World::coming_back_from`]).
+    /// back to the level (see [`World::coming_back_from`]); an item
+    /// also after a lost life, with `resume_afresh`.
     Broken,
     /// A hidden object's item in the air, moving at `vy` down and its
     /// `vx` across, after `wait` more steps (see

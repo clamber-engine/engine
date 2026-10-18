@@ -21,6 +21,11 @@ const RISE: &str = "rise = 0.00390625";
 /// A level with the player standing at (`X`, `F`) and an extra-life item
 /// at each of `at`, with `params`.
 fn world(at: &[(i32, i32)], params: &str) -> World {
+    world_with(at, params, "")
+}
+
+/// [`world`], with the entities in `more` after the items.
+fn world_with(at: &[(i32, i32)], params: &str, more: &str) -> World {
     let mut src = format!(
         r#"
         format = 1
@@ -38,6 +43,7 @@ fn world(at: &[(i32, i32)], params: &str) -> World {
             "\n[[entities]]\ntype = \"heart\"\nat = [{x}, {y}]\nparams = {{ {params} }}\n"
         );
     }
+    src += more;
     let level = Arc::new(Level::from_toml_str(&src, "hearts").unwrap());
     let world = World::new(level, Arc::new(generic_feel("classic-1").unwrap()));
     assert!(world.player.grounded());
@@ -200,6 +206,121 @@ fn an_item_that_leaves_the_window_untaken_never_comes_back() {
         assert!(!w.things[0].active);
     }
     assert!(w.player.pos.x > Fixed::from_int(X + 150));
+}
+
+#[test]
+fn an_item_goes_away_past_the_window_s_left_edge() {
+    // extra-lives.md, "Going away untaken": there on every frame that
+    // starts with the view's position V at x + 31 or less, removed on
+    // the first that starts with it further right, and not there again
+    // when the view comes back over it. Out of reach above the floor.
+    let x = X - 100;
+    for params in ["", RISE] {
+        let mut w = world(&[(x, F - 200)], params);
+        assert!(w.things[0].active, "{params}");
+        let mut removed = false;
+        for _ in 0..300 {
+            let v = w.view.unwrap().x();
+            step_keys(&mut w, &[Right]);
+            assert_eq!(w.things[0].active, v <= i64::from(x) + 31, "V {v} {params}");
+            if !w.things[0].active {
+                removed = true;
+                break;
+            }
+        }
+        assert!(removed, "never removed {params}");
+        assert_eq!(w.things[0].phase, Phase::Broken);
+        for _ in 0..400 {
+            step_keys(&mut w, &[Left]);
+            assert!(!w.things[0].active, "{params}");
+        }
+        assert!(w.player.pos.x < Fixed::from_int(x));
+    }
+}
+
+/// A still walker at level x `at`, to be knocked out by.
+fn walker(at: i32) -> String {
+    format!("\n[[entities]]\ntype = \"crawler\"\nat = [{at}, {F}]\nparams = {{ speed = 0 }}\n")
+}
+
+/// Walks right into the walker and waits for play to come back after
+/// the knock-out.
+fn knocked_out(w: &mut World) {
+    let mut hit = false;
+    for _ in 0..600 {
+        step_keys(w, if hit { &[] } else { &[Right] });
+        hit |= w.flow.events.contains(&FlowEvent::Die);
+        if w.flow.events.contains(&FlowEvent::Respawn) {
+            assert!(hit, "came back after the hit");
+            return;
+        }
+    }
+    panic!("never came back");
+}
+
+#[test]
+fn an_item_gone_past_the_left_edge_is_there_again_after_a_knock_out() {
+    // restart-barrel.md, "Extra-life items that went away untaken", for
+    // an item that stays where it's placed and a rising one: gone past
+    // the left edge, there again on resuming at the level's start, and
+    // taking it gives its lives.
+    let x = X - 40;
+    for params in ["lives = 2", "lives = 2, rise = 0.00390625"] {
+        let mut w = world_with(&[(x, F)], params, &walker(X + 400));
+        assert!(w.things[0].active, "{params}");
+        knocked_out(&mut w);
+        assert_eq!(w.player.pos, w.level.start);
+        let lives = w.flow.lives;
+        assert_eq!(lives, START_LIVES - 1, "{params}");
+        let thing = &w.things[0];
+        assert!(thing.active, "there again {params}");
+        assert_eq!(thing.phase, Phase::Ready);
+        assert_eq!(thing.pos, w.level.entities[0].at);
+        let mut taken = false;
+        for _ in 0..60 {
+            taken |= step_keys(&mut w, &[Left]);
+        }
+        assert!(taken, "{params}");
+        assert_eq!(w.flow.lives, lives + 2, "{params}");
+    }
+}
+
+#[test]
+fn a_rising_item_that_rose_out_untaken_is_there_again_after_a_knock_out() {
+    // restart-barrel.md, "Extra-life items that went away untaken": at
+    // the level's start and at a restart point, it appears when its
+    // entry is in the window and rises as on a first visit.
+    let at = (X + 100, F - 200);
+    for barrel in [None, Some(X + 200)] {
+        let more = walker(X + 400)
+            + &barrel.map_or(String::new(), |b| {
+                format!("\n[[entities]]\ntype = \"keg\"\nat = [{b}, {}]\n", F - 9)
+            });
+        let mut w = world_with(&[at], RISE, &more);
+        while w.things[0].active {
+            step_keys(&mut w, &[]);
+        }
+        assert_eq!(w.things[0].phase, Phase::Broken);
+        knocked_out(&mut w);
+        if barrel.is_some() {
+            assert_eq!(w.flow.checkpoints, [2], "restart point reached");
+            assert_ne!(w.player.pos, w.level.start);
+        }
+        let thing = &w.things[0];
+        assert!(thing.active, "there again {barrel:?}");
+        assert_eq!(thing.pos, w.level.entities[0].at);
+        // Everything waits while the player is in the barrel; from its
+        // first move it rises as on a first visit.
+        let mut risen = Vec::new();
+        for _ in 0..200 {
+            step_keys(&mut w, &[]);
+            risen.push(Fixed::from_int(at.1) - w.things[0].pos.y);
+        }
+        let first = risen.iter().position(|&r| r > Fixed::ZERO).unwrap() - 1;
+        let px = |n: i64| Fixed::from_bits((n << 32) / 256);
+        let got = [0, 1, 2, 10].map(|n| risen[first + n]);
+        assert_eq!(got, [0, 1, 3, 55].map(px), "{barrel:?}");
+    }
 }
 
 #[test]
