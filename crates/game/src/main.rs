@@ -51,8 +51,10 @@ feature), music plays on the title screen and in the level, with loops
 and volumes from the content folder's base/music.toml, and effects from
 its base/sounds.toml.
 
-  Z, Space       jump; pick in menus
-  Enter, Escape  pause; back in menus
+  Z, Space       jump
+  Escape         pause; back in menus
+  Enter          pick in menus
+  Arrow keys     move; move through menus
   F1             collision and region view
   F11, Alt+Enter fullscreen
 

@@ -16,7 +16,6 @@ use clamber_input::{Action, Device, Event, Frame, Input, Settings};
 use clamber_level::Arrival;
 use clamber_sim::{InputFrame, Outcome, World};
 
-use crate::camera::VIEW;
 use crate::canvas::{Color, rgb};
 use crate::controls::{Controls, Request};
 use crate::credits::Credits;
@@ -30,6 +29,7 @@ use crate::map::{MapPlay, MapStep};
 use crate::menu::{Choice, Menu};
 use crate::panel::draw_panel;
 use crate::prefs::{BUNDLED, Prefs, Volume};
+use crate::prompts::{Hint, draw_hints};
 use crate::report;
 use crate::sound::{Cue, cues};
 use crate::surface::Surface;
@@ -287,14 +287,22 @@ impl Session {
         }
     }
 
-    /// Ends a logic frame of device input and steps with it.
+    /// Ends a logic frame of device input and steps with it: with the
+    /// players' game controls in play and on the level map, and with the
+    /// menu controls on the other screens.
     pub fn tick(&mut self) {
         let players = self.input.tick();
-        self.step(&InputFrame { players });
+        if matches!(self.screen, Screen::Playing | Screen::Map) {
+            self.step(&InputFrame { players });
+        } else {
+            self.step(&InputFrame::single(self.input.menu()));
+        }
     }
 
     /// Advances one logic frame: plays the level, or works the menu
-    /// that's showing.
+    /// that's showing. A menu takes its input as neutral actions: the
+    /// directions move, Jump confirms and Pause goes back (see
+    /// [`Input::menu`]).
     pub fn step(&mut self, input: &InputFrame) {
         self.cues.clear();
         if self.screen == Screen::Playing {
@@ -1018,6 +1026,45 @@ impl Session {
         canvas.shade(DIM, 160);
 
         let centre = canvas.view().0 as i32 / 2;
+        self.draw_screen(canvas, centre);
+        let hints = self.hints();
+        let style = self.input.pad_style(0);
+        draw_hints(canvas, centre, self.device, style, &hints);
+    }
+
+    /// What the menu controls do on the screen showing, for the row of
+    /// hints along the bottom.
+    fn hints(&self) -> Vec<Hint<'static>> {
+        const SELECT: Hint = (&[Action::Jump], "select");
+        const BACK: Hint = (&[Action::Pause], "back");
+        match &self.screen {
+            Screen::Playing | Screen::Map => vec![],
+            Screen::Controls(..) if self.input.remapping().is_some() => vec![],
+            Screen::Controls(..) | Screen::Movement(..) | Screen::Options(..) => {
+                vec![SELECT, BACK]
+            }
+            Screen::Games(..) => vec![SELECT, BACK],
+            Screen::Credits(scroll, _) => {
+                let lines = self.credits.wrapped(CREDITS_WIDTH).len();
+                let more = *scroll > 0 || lines > scroll + CREDITS_ROWS;
+                let scroll = (&[Action::Up, Action::Down][..], "scroll");
+                if more { vec![scroll, BACK] } else { vec![BACK] }
+            }
+            Screen::Choosing(_) => vec![(&[Action::Pause], "browse in the game instead")],
+            Screen::Picker(..) => vec![
+                (&[Action::Jump], "open"),
+                (&[Action::Left], "up a folder"),
+                BACK,
+            ],
+            Screen::Importing(importing, _) if importing.menu.is_some() => vec![SELECT],
+            Screen::Importing(..) => vec![],
+            Screen::Paused(_) => vec![SELECT, (&[Action::Pause], "resume")],
+            Screen::Title(_) | Screen::Complete(_) | Screen::GameOver(_) => vec![SELECT],
+        }
+    }
+
+    /// Draws the screen showing over the game, but for its hints.
+    fn draw_screen(&self, canvas: &mut dyn Surface, centre: i32) {
         let (menu, top) = match &self.screen {
             Screen::Playing | Screen::Map => return,
             Screen::Controls(controls, _) => {
@@ -1119,7 +1166,7 @@ impl Session {
         );
     }
 
-    /// The credits from line `scroll`, and a hint when there are more.
+    /// The credits from line `scroll`.
     fn draw_credits(&self, canvas: &mut dyn Surface, scroll: usize, centre: i32) {
         draw_text_centred(canvas, centre, 14, "CREDITS", HEADING);
         let lines = self.credits.wrapped(CREDITS_WIDTH);
@@ -1133,13 +1180,6 @@ impl Session {
             let y = CREDITS_TOP + row as i32 * LINE;
             draw_text(canvas, left, y, &line.text, color);
         }
-        let more_above = scroll > 0;
-        let more_below = lines.len() > scroll + CREDITS_ROWS;
-        let hint = match (more_above, more_below) {
-            (false, false) => "Jump: back",
-            _ => "Up/Down: scroll   Jump: back",
-        };
-        draw_text_centred(canvas, centre, VIEW.1 as i32 - 14, hint, SUBTITLE);
     }
 
     /// The level's time and what was collected, centred on `centre_x`.
@@ -1179,8 +1219,6 @@ fn draw_choosing(canvas: &mut dyn Surface, centre: i32) {
     for (i, line) in lines.into_iter().enumerate() {
         draw_text_centred(canvas, centre, 40 + (2 + i as i32) * LINE, line, SUBTITLE);
     }
-    let hint = "Pause: browse in the game instead";
-    draw_text_centred(canvas, centre, VIEW.1 as i32 - 12, hint, SUBTITLE);
 }
 
 fn options_items(prefs: &Prefs, widescreen: Widescreen) -> Vec<(String, Setting)> {
@@ -1253,6 +1291,8 @@ mod tests {
     use clamber_level::Level;
     use clamber_sim::{World, generic_feel};
 
+    use crate::camera::VIEW;
+    use crate::canvas::Canvas;
     use crate::map::{LEVEL_MAP, MapPhase};
 
     use super::*;
@@ -1309,6 +1349,133 @@ mod tests {
         s.step(&press(Action::Up));
         s.step(&press(Action::Jump));
         assert!(s.quit);
+    }
+
+    /// Presses and lets go of `key` over two ticks.
+    fn tap(s: &mut Session, key: Key) {
+        s.handle(Event::Key { key, down: true });
+        s.tick();
+        s.handle(Event::Key { key, down: false });
+        s.tick();
+    }
+
+    fn tap_pad(s: &mut Session, input: clamber_input::PadInput) {
+        let pad = clamber_input::PadId(0);
+        s.handle(Event::PadButton {
+            pad,
+            input,
+            down: true,
+        });
+        s.tick();
+        s.handle(Event::PadButton {
+            pad,
+            input,
+            down: false,
+        });
+        s.tick();
+    }
+
+    #[test]
+    fn menus_take_enter_and_escape_and_not_space() {
+        let mut s = session(LEVEL);
+        tap(&mut s, Key::Space);
+        tap(&mut s, Key::KeyZ);
+        assert!(matches!(s.screen, Screen::Title(_)), "jump keys do nothing");
+        tap(&mut s, Key::Enter);
+        assert_eq!(s.screen, Screen::Playing);
+        tap(&mut s, Key::Enter);
+        assert_eq!(s.screen, Screen::Playing, "Enter doesn't pause");
+        tap(&mut s, Key::Escape);
+        assert!(matches!(s.screen, Screen::Paused(_)));
+        tap(&mut s, Key::Space);
+        assert!(matches!(s.screen, Screen::Paused(_)));
+        tap(&mut s, Key::Escape);
+        assert_eq!(s.screen, Screen::Playing, "Escape closes it again");
+
+        // Pause, then Options and back with Escape, then resume with Enter.
+        tap(&mut s, Key::Escape);
+        while !matches!(&s.screen, Screen::Paused(m) if m.current() == Item::Options) {
+            tap(&mut s, Key::ArrowDown);
+        }
+        tap(&mut s, Key::NumpadEnter);
+        assert!(matches!(s.screen, Screen::Options(..)));
+        tap(&mut s, Key::Escape);
+        assert!(matches!(s.screen, Screen::Paused(_)));
+        while !matches!(&s.screen, Screen::Paused(m) if m.current() == Item::Resume) {
+            tap(&mut s, Key::ArrowUp);
+        }
+        tap(&mut s, Key::Enter);
+        assert_eq!(s.screen, Screen::Playing);
+    }
+
+    #[test]
+    fn menus_take_the_pads_bottom_and_right_buttons_and_start() {
+        use clamber_input::PadInput as P;
+        let mut s = session(LEVEL);
+        s.handle(Event::PadConnected(clamber_input::PadId(0)));
+        tap_pad(&mut s, P::South);
+        assert_eq!(s.screen, Screen::Playing);
+        tap_pad(&mut s, P::East);
+        assert_eq!(
+            s.screen,
+            Screen::Playing,
+            "the right button is tandem in play"
+        );
+        tap_pad(&mut s, P::Start);
+        assert!(matches!(s.screen, Screen::Paused(_)));
+        tap_pad(&mut s, P::Start);
+        assert_eq!(s.screen, Screen::Playing, "Start closes it again");
+        tap_pad(&mut s, P::Start);
+        tap_pad(&mut s, P::East);
+        assert_eq!(s.screen, Screen::Playing, "the right button goes back");
+    }
+
+    #[test]
+    fn remapping_jump_leaves_the_menus_alone() {
+        let mut s = session(LEVEL);
+        while !matches!(&s.screen, Screen::Title(m) if m.current() == Item::Controls) {
+            tap(&mut s, Key::ArrowDown);
+        }
+        tap(&mut s, Key::Enter);
+        assert!(matches!(s.screen, Screen::Controls(..)));
+        // Jump's row, then remap it to Enter.
+        while !matches!(&s.screen, Screen::Controls(c, _) if c.row() == crate::controls::Row::Action(Action::Jump))
+        {
+            tap(&mut s, Key::ArrowDown);
+        }
+        tap(&mut s, Key::Enter);
+        assert!(s.input.remapping().is_some());
+        tap(&mut s, Key::Enter);
+        assert!(s.input.remapping().is_none());
+        let bindings = &s.input.settings().players[0];
+        assert_eq!(bindings.key_action(Key::Enter), Some(Action::Jump));
+        assert_eq!(bindings.key_action(Key::Space), None);
+        // Enter still confirms and Space still does nothing in menus.
+        tap(&mut s, Key::Space);
+        assert!(s.input.remapping().is_none());
+        tap(&mut s, Key::Escape);
+        assert!(matches!(s.screen, Screen::Title(_)));
+    }
+
+    #[test]
+    fn hints_show_the_menu_controls_in_use() {
+        let mut s = session(LEVEL);
+        let draw = |s: &Session| {
+            let mut canvas = Canvas::new(VIEW.0, VIEW.1);
+            s.draw(&mut canvas, 1.0);
+            canvas
+        };
+        let keys = draw(&s);
+        s.handle(Event::PadButton {
+            pad: clamber_input::PadId(0),
+            input: clamber_input::PadInput::North,
+            down: true,
+        });
+        assert_ne!(draw(&s), keys, "pad buttons instead of keys");
+        assert_eq!(s.hints().len(), 1);
+        tap(&mut s, Key::Escape);
+        tap_pad(&mut s, clamber_input::PadInput::South);
+        assert!(s.hints().is_empty(), "none in play");
     }
 
     /// Goes from the selected item of a menu to the controls screen.

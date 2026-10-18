@@ -5,6 +5,9 @@
 //! [`Frame`]s, which depend on held actions alone, so recorded input
 //! replays exactly. Its [`JumpBuffer`] works from those frames too.
 //!
+//! Menus have fixed controls of their own ([`Input::menu`]), apart from
+//! the game's bindings.
+//!
 //! Bindings are per player and remappable ([`Input::begin_remap`]); they
 //! are stored as TOML ([`Settings`]), with the defaults in
 //! `content/base/input.toml`.
@@ -26,5 +29,5 @@ pub use buffer::JumpBuffer;
 pub use device::{Axis, Device, Event, Key, PadId, PadInput, PadStyle};
 #[cfg(feature = "gamepad")]
 pub use gamepad::Gamepads;
-pub use router::{Input, Remap, Remapped};
+pub use router::{Input, Remap, Remapped, menu_action_for_key, menu_action_for_pad, menu_inputs};
 pub use settings::{MAX_PLAYERS, PlayerBindings, Settings, SettingsError};

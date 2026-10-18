@@ -9,6 +9,11 @@
 # layout and Clamber's own movements share it: bottom jumps, left is
 # action, right is tandem, Select swaps and Start pauses. The top button
 # and the shoulders are left free.
+#
+# These are the game's controls only. Menus have fixed controls of their
+# own that these don't change: the arrow keys, Enter to confirm and Escape
+# to go back; on a pad, the D-pad or left stick, the bottom button to
+# confirm and the right one or Start to go back.
 
 # Frames a jump press stays buffered, so pressing jump just before landing
 # still jumps. 0 turns buffering off.
@@ -28,7 +33,7 @@ jump = ["KeyZ", "Space"]
 action = ["KeyX"]
 swap = ["KeyC"]
 tandem = ["KeyV"]
-pause = ["Enter", "Escape"]
+pause = ["Escape"]
 
 [player.pad]
 left = ["DPadLeft", "LeftStickLeft"]

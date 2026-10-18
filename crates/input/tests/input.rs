@@ -1,5 +1,6 @@
 use clamber_input::{
     Action, Actions, Axis, Device, Event, Input, Key, PadId, PadInput, PadStyle, Settings,
+    menu_inputs,
 };
 
 fn key(key: Key, down: bool) -> Event {
@@ -284,6 +285,90 @@ fn remap_pad_waits_for_that_device() {
         input.settings().players[0].pad_action(PadInput::RightTrigger),
         None
     );
+}
+
+#[test]
+fn menus_have_their_own_keys() {
+    let mut input = Input::new(Settings::builtin());
+    let menu = |input: &mut Input, k: Key| {
+        input.handle(key(k, true));
+        input.tick();
+        input.handle(key(k, false));
+        let held = input.menu().held;
+        input.tick();
+        held
+    };
+    assert_eq!(menu(&mut input, Key::Enter), Action::Jump.into());
+    assert_eq!(menu(&mut input, Key::NumpadEnter), Action::Jump.into());
+    assert_eq!(menu(&mut input, Key::Escape), Action::Pause.into());
+    assert_eq!(menu(&mut input, Key::ArrowDown), Action::Down.into());
+    // Space and Z jump in the game, but do nothing in menus.
+    assert!(menu(&mut input, Key::Space).is_empty());
+    assert!(menu(&mut input, Key::KeyZ).is_empty());
+
+    // Enter doesn't pause the game; Escape does.
+    input.handle(key(Key::Enter, true));
+    assert!(input.tick()[0].held.is_empty());
+    input.handle(key(Key::Escape, true));
+    assert_eq!(input.tick()[0].pressed, Action::Pause.into());
+    assert_eq!(input.menu().pressed, Action::Pause.into());
+    assert_eq!(input.menu().held, acts(&[Action::Jump, Action::Pause]));
+}
+
+#[test]
+fn menus_have_their_own_pad_buttons() {
+    let mut input = Input::new(Settings::builtin());
+    input.set_active_players(2);
+    input.handle(Event::PadConnected(PadId(0)));
+    input.handle(Event::PadConnected(PadId(1)));
+    // Either pad works the menus.
+    for (pad, b, action) in [
+        (0, PadInput::South, Action::Jump),
+        (1, PadInput::East, Action::Pause),
+        (0, PadInput::Start, Action::Pause),
+        (1, PadInput::DPadUp, Action::Up),
+    ] {
+        input.handle(button(pad, b, true));
+        input.tick();
+        assert_eq!(input.menu().pressed, action.into(), "{b:?}");
+        input.handle(button(pad, b, false));
+        input.tick();
+    }
+    input.handle(button(0, PadInput::West, true));
+    input.tick();
+    assert!(input.menu().held.is_empty());
+    assert_eq!(menu_inputs(Action::Pause, Device::Pad), ["East", "Start"]);
+    assert_eq!(
+        menu_inputs(Action::Jump, Device::Keyboard),
+        ["Enter", "NumpadEnter"]
+    );
+}
+
+#[test]
+fn remapping_leaves_the_menu_controls_alone() {
+    let mut input = Input::new(Settings::builtin());
+    input.begin_remap(0, Action::Jump, Device::Keyboard);
+    // The press that completes a remap isn't menu input either.
+    input.handle(key(Key::Enter, true)).unwrap();
+    input.tick();
+    assert!(input.menu().held.is_empty());
+    assert_eq!(
+        input.settings().players[0].key_action(Key::Enter),
+        Some(Action::Jump)
+    );
+    input.handle(key(Key::Enter, false));
+    input.tick();
+    input.handle(key(Key::Enter, true));
+    let game = input.tick()[0];
+    assert_eq!(game.pressed, Action::Jump.into());
+    assert_eq!(input.menu().pressed, Action::Jump.into());
+
+    input.begin_remap(0, Action::Pause, Device::Keyboard);
+    input.handle(key(Key::KeyP, true)).unwrap();
+    input.handle(key(Key::Escape, true));
+    let game = input.tick()[0];
+    assert!(!game.held.contains(Action::Pause));
+    assert!(input.menu().pressed.contains(Action::Pause));
 }
 
 #[test]

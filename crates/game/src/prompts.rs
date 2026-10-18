@@ -6,13 +6,14 @@
 
 use std::sync::OnceLock;
 
-use clamber_input::{Key, PadInput, PadStyle};
+use clamber_input::{Action, Device, Key, PadInput, PadStyle, menu_inputs};
 
+use crate::camera::VIEW;
 use crate::canvas::{Color, rgb};
 use crate::icons::UiArt;
 use crate::panel::draw_sliced;
 use crate::surface::Surface;
-use crate::text::{draw_label, label_width};
+use crate::text::{GLYPH, draw_label, draw_text, label_width, text_size};
 
 const SHEET: &str = include_str!("../../../content/base/ui/prompts.json");
 const IMAGE: &[u8] = include_bytes!("../../../content/base/ui/prompts.png");
@@ -30,6 +31,14 @@ const STICK: f32 = 0.45;
 const KEY_PAD: f32 = 1.5;
 /// Between prompts in a row, in view units.
 pub const GAP: f32 = 1.5;
+
+/// Between a hint's prompts and its words, and between hints, in view
+/// units.
+const HINT_WORDS: f32 = 3.0;
+const HINT_GAP: f32 = 12.0;
+/// The top of the hints' words, up from the bottom of the view.
+pub const HINTS_UP: i32 = 12;
+const HINT: Color = rgb(0xa8, 0xb0, 0xbc);
 
 const ON_KEY: Color = rgb(0x2a, 0x2e, 0x36);
 const ON_PAD: Color = rgb(0xf4, 0xf0, 0xe8);
@@ -192,6 +201,46 @@ pub fn draw_prompt(surface: &mut dyn Surface, name: &str, style: PadStyle, at: (
     prompt.width()
 }
 
+/// One hint in a row of them: menu actions, shown as the controls that
+/// do them, and what they do.
+pub type Hint<'a> = (&'a [Action], &'a str);
+
+/// The first input that does `action` in menus on `device`.
+fn menu_input(action: Action, device: Device) -> &'static str {
+    menu_inputs(action, device)[0]
+}
+
+/// Draws a row of hints along the bottom of the view, centred on
+/// `centre_x`, with the menu controls of `device`, whose pads are of
+/// `style`.
+pub fn draw_hints(
+    surface: &mut dyn Surface,
+    centre_x: i32,
+    device: Device,
+    style: PadStyle,
+    hints: &[Hint],
+) {
+    let width_of = |(actions, words): &Hint| {
+        let prompts: f32 = actions
+            .iter()
+            .map(|&a| prompt_width(menu_input(a, device), style) + GAP)
+            .sum();
+        prompts - GAP + HINT_WORDS + text_size(words).0 as f32
+    };
+    let width = hints.iter().map(|h| width_of(h) + HINT_GAP).sum::<f32>() - HINT_GAP;
+    let top = VIEW.1 as i32 - HINTS_UP;
+    let middle = top as f32 + GLYPH.1 as f32 / 2.0;
+    let mut x = centre_x as f32 - width / 2.0;
+    for (actions, words) in hints {
+        for &action in *actions {
+            x += draw_prompt(surface, menu_input(action, device), style, (x, middle)) + GAP;
+        }
+        x += HINT_WORDS - GAP;
+        draw_text(surface, x.round() as i32, top, words, HINT);
+        x += text_size(words).0 as f32 + HINT_GAP;
+    }
+}
+
 /// A short, readable label for an input's settings-file name:
 /// `KeyZ` is `Z`, `DPadLeft` is `DPAD LEFT`, `LeftStickUp` is
 /// `L STICK UP`.
@@ -249,6 +298,25 @@ mod tests {
         for key in Key::ALL {
             assert!(prompt_width(key.name(), PadStyle::Letters) > 4.0, "{key:?}");
         }
+    }
+
+    #[test]
+    fn hints_show_the_device_in_use() {
+        let draw = |device, style| {
+            let mut canvas = Canvas::scaled(VIEW, 2);
+            canvas.clear(BG);
+            let hints: [Hint; 2] = [(&[Action::Jump], "select"), (&[Action::Pause], "back")];
+            draw_hints(&mut canvas, VIEW.0 as i32 / 2, device, style, &hints);
+            canvas
+        };
+        let keys = draw(Device::Keyboard, PadStyle::Letters);
+        let letters = draw(Device::Pad, PadStyle::Letters);
+        let shapes = draw(Device::Pad, PadStyle::Shapes);
+        assert_ne!(keys, letters);
+        assert_ne!(letters, shapes);
+        // Along the bottom only.
+        let drawn = keys.pixels.iter().position(|&p| p != BG).unwrap();
+        assert!(drawn / keys.width as usize > (VIEW.1 as usize - 20) * 2);
     }
 
     #[test]

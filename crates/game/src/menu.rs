@@ -1,6 +1,8 @@
 //! A list of choices navigated with neutral actions, so the same menu
 //! works from a keyboard or a gamepad alone: Up and Down move the
-//! selection (wrapping around), Jump confirms and Pause goes back.
+//! selection (wrapping around), Jump confirms and Pause goes back. The
+//! session gives menus the menu controls (`Input::menu`): Enter confirms
+//! and Escape goes back, not the game's jump and pause.
 //! Unavailable items can be selected, so they can be read, but not
 //! picked.
 //!

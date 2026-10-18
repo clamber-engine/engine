@@ -297,8 +297,6 @@ impl Picker {
         }
         let marked = format!("{SUPPORTED}a supported game");
         draw_text_centred(canvas, centre, VIEW.1 as i32 - 12 - LINE, &marked, SUBTITLE);
-        let hint = "Jump: open   Left: up a folder   Pause: back";
-        draw_text_centred(canvas, centre, VIEW.1 as i32 - 12, hint, SUBTITLE);
     }
 }
 

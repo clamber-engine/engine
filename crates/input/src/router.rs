@@ -22,6 +22,8 @@ pub struct Input {
     pads: BTreeMap<PadId, Latch<PadInput>>,
     owners: [Option<PadId>; MAX_PLAYERS],
     previous: [Actions; MAX_PLAYERS],
+    /// The menu input of the last frame.
+    menu: Frame,
     remap: Option<Remap>,
     styles: BTreeMap<PadId, PadStyle>,
     /// The pad pressed last.
@@ -110,6 +112,7 @@ impl Input {
             pads: BTreeMap::new(),
             owners: [None; MAX_PLAYERS],
             previous: [Actions::NONE; MAX_PLAYERS],
+            menu: Frame::default(),
             remap: None,
             styles: BTreeMap::new(),
             last_pad: None,
@@ -238,11 +241,33 @@ impl Input {
             *frame = Frame::after(self.previous[player], held);
             self.previous[player] = held;
         }
+        self.menu = Frame::after(self.menu.held, self.menu_held());
         self.keys.end_frame();
         for pad in self.pads.values_mut() {
             pad.end_frame();
         }
         frames
+    }
+
+    /// The menu input of the frame [`tick`](Input::tick) last ended.
+    ///
+    /// Menus have controls of their own, the same for everyone and not
+    /// remappable, so changing the game's bindings never changes how
+    /// menus work. They come as neutral actions: the directions move,
+    /// Jump confirms and Pause goes back. See [`menu_action_for_key`]
+    /// and [`menu_action_for_pad`].
+    pub fn menu(&self) -> Frame {
+        self.menu
+    }
+
+    fn menu_held(&self) -> Actions {
+        let from_keys = self.keys.active().filter_map(menu_action_for_key);
+        let from_pads = self
+            .pads
+            .values()
+            .flat_map(|pad| pad.active())
+            .filter_map(menu_action_for_pad);
+        from_keys.chain(from_pads).collect()
     }
 
     fn held(&self, player: usize) -> Actions {
@@ -308,6 +333,55 @@ impl Input {
             input: input.name(),
             swapped_with,
         })
+    }
+}
+
+/// What a key does in menus: the arrow keys move, Enter confirms (as
+/// Jump) and Escape goes back (as Pause). Space and every other key do
+/// nothing there.
+pub fn menu_action_for_key(key: Key) -> Option<Action> {
+    Some(match key {
+        Key::ArrowLeft => Action::Left,
+        Key::ArrowRight => Action::Right,
+        Key::ArrowUp => Action::Up,
+        Key::ArrowDown => Action::Down,
+        Key::Enter | Key::NumpadEnter => Action::Jump,
+        Key::Escape => Action::Pause,
+        _ => return None,
+    })
+}
+
+/// What a gamepad control does in menus: the D-pad and left stick move,
+/// the bottom face button confirms (as Jump), and the right face button
+/// and Start go back (as Pause), so Start closes the pause menu it
+/// opened.
+pub fn menu_action_for_pad(input: PadInput) -> Option<Action> {
+    use PadInput as P;
+    Some(match input {
+        P::DPadLeft | P::LeftStickLeft => Action::Left,
+        P::DPadRight | P::LeftStickRight => Action::Right,
+        P::DPadUp | P::LeftStickUp => Action::Up,
+        P::DPadDown | P::LeftStickDown => Action::Down,
+        P::South => Action::Jump,
+        P::East | P::Start => Action::Pause,
+        _ => return None,
+    })
+}
+
+/// The inputs that do `action` in menus on `device`, by settings-file
+/// name, for showing them.
+pub fn menu_inputs(action: Action, device: Device) -> Vec<&'static str> {
+    match device {
+        Device::Keyboard => Key::ALL
+            .iter()
+            .filter(|&&k| menu_action_for_key(k) == Some(action))
+            .map(|k| k.name())
+            .collect(),
+        Device::Pad => PadInput::ALL
+            .iter()
+            .filter(|&&i| menu_action_for_pad(i) == Some(action))
+            .map(|i| i.name())
+            .collect(),
     }
 }
 

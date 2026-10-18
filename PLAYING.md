@@ -36,16 +36,29 @@ The game starts at the title screen. Pick **Start** to play.
 | | Keyboard | Gamepad |
 |---|---|---|
 | Move | Arrow keys | D-pad or left stick |
-| Jump; pick in menus | Z or Space | Bottom face button (A on Xbox, Cross on PlayStation) |
+| Jump | Z or Space | Bottom face button (A on Xbox, Cross on PlayStation) |
 | Action: run (hold) and roll | X | Left face button (X on Xbox, Square on PlayStation) |
 | Swap characters | C | Select (View on Xbox, Share on PlayStation) |
 | Tandem | V | Right face button (B on Xbox, Circle on PlayStation) |
-| Pause; back in menus | Enter or Escape | Start |
+| Pause | Escape | Start |
 | Collision and region view | F1 | |
 | Fullscreen | F11 or Alt+Enter | |
 
 The gamepad layout is the classic titles' own. The top face button and
 the shoulders do nothing.
+
+Menus have controls of their own, which the controls screen doesn't
+change. The bottom of each menu shows them, as keys or as the buttons of
+the gamepad you used last:
+
+| In menus | Keyboard | Gamepad |
+|---|---|---|
+| Move through the menu | Arrow keys | D-pad or left stick |
+| Pick | Enter | Bottom face button |
+| Back | Escape | Right face button, or Start |
+
+Space does nothing in menus. Escape or Start closes the pause menu
+again.
 
 **Rolling** depends on the movement picked (below):
 
@@ -91,14 +104,14 @@ as `input.toml`, and the game starts with it next time.
 **Options** on the title or pause screen turns fullscreen and vsync on
 and off, and sets the music and effects volumes. Vsync is on to start
 with, so the picture doesn't tear; with it off, the game draws up to 240
-frames a second. On a volume, Left turns it down and Right or Jump turns
-it up, in steps of 10%; Jump at 100% goes back to silent. All of these,
+frames a second. On a volume, Left turns it down and Right or Pick turns
+it up, in steps of 10%; Pick at 100% goes back to silent. All of these,
 and the window's size, are saved to `prefs.toml` too. The game pauses when its
 window loses focus.
 
 **Widescreen** on the options screen sets how the game being played
 shows a classic movement's view, which is narrower than a wide window.
-Each game has its own setting; Left, and Right or Jump, go through the
+Each game has its own setting; Left, and Right or Pick, go through the
 modes:
 
 - **Original activation**, where imported games start: the window shows
@@ -132,9 +145,9 @@ supported game into a personal pack for Clamber to play. Choose the file
 in the window that opens; it starts in the folder you imported from last
 time. You can also drop the file onto Clamber's window, from any screen.
 If you're using a gamepad, or the window doesn't open, Clamber shows its
-own list of folders instead (press pause while the window is open to
-switch to it): Up and Down to move, Jump to open a folder or pick the
-file, Left to go up a folder, and pause to go back. It lists only files
+own list of folders instead (press Back while the window is open to
+switch to it): Up and Down to move, Pick to open a folder or pick the
+file, Left to go up a folder, and Back to go back. It lists only files
 the size of a supported game, and marks with a star the ones that are
 one. The pack goes into
 `%LOCALAPPDATA%\Clamber\packs` on Windows, and

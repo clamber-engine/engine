@@ -3,8 +3,9 @@
 //!
 //! It works from a keyboard or a gamepad alone. Up and Down pick a row,
 //! Left and Right pick the player (on the top row) or the device column,
-//! Jump starts a remap, resets or saves, and Pause goes back. While a
-//! remap waits for its press, Pause on the other device cancels it, and
+//! Jump starts a remap, resets or saves, and Pause goes back, all as menu
+//! controls (see `Input::menu`), which remapping doesn't change. While a
+//! remap waits for its press, going back on the other device cancels it, and
 //! so does waiting [`TIMEOUT`] frames, since every key on the device
 //! being remapped binds.
 
@@ -309,7 +310,7 @@ impl Controls {
             let text = format!("Press {what} for {}", remap.action);
             draw_text_centred(canvas, centre_x, y, &text, WAITING);
             let left = TIMEOUT.saturating_sub(self.waited).div_ceil(60);
-            let text = format!("Cancels in {left}s, or press pause on {other}");
+            let text = format!("Cancels in {left}s, or go back on {other}");
             draw_text_centred(canvas, centre_x, y + LINE, &text, LABEL);
         } else if let Some((text, color)) = &self.status {
             draw_text_centred(canvas, centre_x, y, text, *color);
