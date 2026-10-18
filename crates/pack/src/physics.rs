@@ -64,7 +64,8 @@ params! {
     /// Above 0, with `face_slope` and `slope_piece`, a falling body whose
     /// column is in a sloped piece of ground lands when it ends a frame
     /// this far above the ground or less, and is placed on it. Elsewhere
-    /// `landing_reach` applies.
+    /// `landing_reach` applies. With `swim_ground_below`, a sinking
+    /// swimmer lands from this far above a sloped piece too.
     SlopeLandingReach => "slope_landing_reach",
     /// The ground is made of pieces this many columns wide, the first
     /// starting at x = 0. A piece is sloped if the floor climbs or falls
@@ -1610,6 +1611,20 @@ params! {
     SwimTurnStrokeFree10 => "swim_turn_stroke_free_10",
     /// ... on frame 11. Whole frames.
     SwimTurnStrokeFree11 => "swim_turn_stroke_free_11",
+    /// 1: a swimmer meets the ground by the ground below its point, the
+    /// whole px of `x` and of `y` (swimming.md, "Walls, floors and
+    /// ceilings (`title-2`)"). Moving across into ground up to
+    /// `swim_step` above that point is a step, deeper is a wall that drops
+    /// the fraction of `x`; landing puts `y` on the surface, from
+    /// `slope_landing_reach` above it on a sloped piece; rising into
+    /// ground that isn't one-way is a bump; nothing pushes the swimmer
+    /// down. 0: the Classic 1 rules, with `swim_ceiling_gap` and
+    /// `swim_left_edge`.
+    SwimGroundBelow => "swim_ground_below",
+    /// Above 0, with a view, a swimmer's `x` is held at least this far
+    /// inside each side of the picture, its fraction and speed kept.
+    /// 0: the picture doesn't hold a swimmer. Whole px.
+    SwimScreenMargin => "swim_screen_margin",
 }
 
 impl Param {

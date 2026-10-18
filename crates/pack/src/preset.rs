@@ -710,6 +710,8 @@ mod tests {
                     | Param::SwimTurnStrokeFree9
                     | Param::SwimTurnStrokeFree10
                     | Param::SwimTurnStrokeFree11
+                    | Param::SwimGroundBelow
+                    | Param::SwimScreenMargin
             );
             assert!(world[p] > Fixed::ZERO || off, "{p}");
         }

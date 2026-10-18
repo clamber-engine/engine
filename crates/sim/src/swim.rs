@@ -22,6 +22,14 @@
 //! Rising into ground stops the rise, and sinking onto a floor rests on
 //! it.
 //!
+//! With `swim_ground_below` the ground acts instead by the ground below
+//! the whole px of the position, as in Classic 2: up to `swim_step` above
+//! it is a step, deeper a wall that drops the fraction of `x`; landing
+//! puts the feet on the surface, from `slope_landing_reach` above it on a
+//! sloped piece; rising into ground that isn't one-way is a bump; and
+//! nothing pushes the swimmer down. `swim_screen_margin` holds it inside
+//! the picture.
+//!
 //! In a trace (`swimming.md`, "In a trace") every swimming frame is
 //! `swim`, a stroke is `stroke`, and coming onto and leaving the floor
 //! without a stroke are `land` and `leave_ground`.
@@ -135,6 +143,54 @@ fn floor_between(level: &Level, column: i64, from: i64, to: i64) -> Option<(Fixe
         .map(|s| (s.top, s.collider))
 }
 
+/// The ground below a swimmer's point (swimming.md, "Walls, floors and
+/// ceilings (`title-2`)").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Below {
+    /// The surface's line, whole px: above the feet line if the point is
+    /// in the ground.
+    line: i64,
+    collider: usize,
+    /// Passable from below.
+    one_way: bool,
+}
+
+/// The ground below the point in `column` with its feet on line `feet`:
+/// if the pixel row just above the feet line is in the ground, its top,
+/// reaching up through ground on it; otherwise the nearest top at the
+/// feet line or below.
+fn below(level: &Level, column: i64, feet: i64) -> Option<Below> {
+    let (row_top, row_bottom) = (px(feet - 1), px(feet));
+    let mut spans = columns::spans(level, column);
+    spans.sort_by_key(|s| (s.top, s.bottom));
+    let at = spans
+        .iter()
+        .find(|s| s.top < s.bottom && s.top < row_bottom && s.bottom > row_top);
+    let found = match at {
+        Some(&at) => {
+            let mut top = at;
+            while let Some(&s) = spans
+                .iter()
+                .find(|s| s.top < top.top && s.bottom >= top.top)
+            {
+                top = s;
+            }
+            top
+        }
+        None => *spans.iter().find(|s| s.top >= row_bottom)?,
+    };
+    Some(Below {
+        line: found.top.floor(),
+        collider: found.collider,
+        one_way: found.one_way,
+    })
+}
+
+/// `v` with its whole px part `n`, its fraction kept.
+fn with_whole(v: Fixed, n: i64) -> Fixed {
+    px(n) + (v - px(v.floor()))
+}
+
 impl Player {
     /// Whether the player at `pos` in `level` is in water.
     pub(crate) fn in_water(level: &Level, pos: clamber_level::Vec2) -> bool {
@@ -148,6 +204,7 @@ impl Player {
         physics: &Physics,
         input: &Frame,
         dir: i32,
+        picture: Option<i64>,
         events: &mut Vec<Event>,
     ) {
         let held = |a| input.held.contains(a);
@@ -192,6 +249,115 @@ impl Player {
             self.vel.y = self.vel.y.min(limit);
         }
 
+        let was_on_floor = self.swim_floor;
+        let stopped = if physics[Param::SwimGroundBelow] > Fixed::ZERO {
+            self.swim_by_ground_below(level, physics, picture)
+        } else {
+            self.swim_by_depth(level, physics)
+        };
+
+        if self.swim_floor && !was_on_floor {
+            events.push(Event::Land);
+        } else if was_on_floor && !self.swim_floor && !stroke {
+            events.push(Event::LeaveGround);
+        }
+
+        if physics[Param::SwimTurnFace] > Fixed::ZERO {
+            self.swim_turn(physics, dir, stroke, events);
+        } else if !stopped && dir != 0 {
+            let facing = if dir < 0 { Facing::Left } else { Facing::Right };
+            if facing != self.facing {
+                self.facing = facing;
+                events.push(Event::Turn);
+            }
+        }
+    }
+
+    /// Moves a swimmer by its speeds against the ground below its point,
+    /// then holds it inside the picture whose left edge is at `picture`.
+    /// Returns whether it was stopped across, by a wall.
+    fn swim_by_ground_below(
+        &mut self,
+        level: &Level,
+        physics: &Physics,
+        picture: Option<i64>,
+    ) -> bool {
+        // Across, by the ground at the point the move would reach.
+        let mut stopped = false;
+        let feet = self.pos.y.floor();
+        let to = self.pos.x + self.vel.x;
+        match below(level, column(to), feet) {
+            Some(g) if feet - g.line > physics[Param::SwimStep].floor() => {
+                self.pos.x = px(self.pos.x.floor());
+                self.vel.x = Fixed::ZERO;
+                stopped = true;
+                self.touched.push(g.collider);
+            }
+            Some(g) if feet > g.line => {
+                self.pos.x = to;
+                self.pos.y = with_whole(self.pos.y, g.line);
+                self.touched.push(g.collider);
+            }
+            _ => self.pos.x = to,
+        }
+
+        // Up and down.
+        let was_on_floor = std::mem::take(&mut self.swim_floor);
+        let before = self.pos.y.floor();
+        self.pos.y += self.vel.y;
+        let (x, feet) = (column(self.pos.x), self.pos.y.floor());
+        let g = below(level, x, feet);
+        if !self.vel.y.is_negative() {
+            let reach = match physics[Param::SlopePiece].floor() {
+                piece if piece > 0 => g.map_or(0, |g| {
+                    let slope = physics[Param::FaceSlope];
+                    match columns::sloped(level, x, px(g.line), slope, piece) {
+                        true => physics[Param::SlopeLandingReach].floor(),
+                        false => 0,
+                    }
+                }),
+                _ => 0,
+            };
+            match g {
+                Some(g) if feet >= g.line - reach => {
+                    self.pos.y = px(g.line);
+                    self.vel.y = Fixed::ZERO;
+                    self.swim_floor = true;
+                    self.touched.push(g.collider);
+                }
+                _ if was_on_floor => {
+                    let leave = physics[Param::SwimLeaveSpeed];
+                    if leave > Fixed::ZERO {
+                        self.vel.y = leave;
+                    }
+                }
+                _ => {}
+            }
+        } else if let Some(g) = g.filter(|g| feet > g.line && !g.one_way) {
+            // A bump: back to the whole px it rose from, the fraction of
+            // the move kept.
+            self.pos.y = with_whole(self.pos.y, before);
+            self.vel.y = Fixed::ZERO;
+            self.touched.push(g.collider);
+        }
+
+        // Held inside the picture.
+        let margin = physics[Param::SwimScreenMargin].floor();
+        if let Some(left) = picture.filter(|_| margin > 0) {
+            let right = left + physics[Param::ViewWidth].floor() - margin;
+            let x = self.pos.x.floor();
+            if x < left + margin {
+                self.pos.x = with_whole(self.pos.x, left + margin);
+            } else if x > right {
+                self.pos.x = with_whole(self.pos.x, right);
+            }
+        }
+        stopped
+    }
+
+    /// Moves a swimmer by its speeds against the ground by how deep its
+    /// point is in it. Returns whether it was stopped across.
+    fn swim_by_depth(&mut self, level: &Level, physics: &Physics) -> bool {
         // The left edge.
         let mut stopped = false;
         if self.vel.x.is_negative() && column(self.pos.x) < physics[Param::SwimLeftEdge].floor() {
@@ -264,22 +430,7 @@ impl Player {
                 self.touched.push(d.collider);
             }
         }
-
-        if self.swim_floor && !was_on_floor {
-            events.push(Event::Land);
-        } else if was_on_floor && !self.swim_floor && !stroke {
-            events.push(Event::LeaveGround);
-        }
-
-        if physics[Param::SwimTurnFace] > Fixed::ZERO {
-            self.swim_turn(physics, dir, stroke, events);
-        } else if !stopped && dir != 0 {
-            let facing = if dir < 0 { Facing::Left } else { Facing::Right };
-            if facing != self.facing {
-                self.facing = facing;
-                events.push(Event::Turn);
-            }
-        }
+        stopped
     }
 
     /// One frame of a swimmer's facing by turns, with `dir` the direction

@@ -1348,11 +1348,13 @@ fn advance(world: &mut World, input: &InputFrame) {
             carry::before(world, &input.players[0]);
             // After a swap, the physics are the new player's.
             let physics = world.player_physics();
+            let picture = world.view.map(|v| v.x());
             world.player.update(
                 &world.level,
                 &world.feel,
                 &physics,
                 &input.players[0],
+                picture,
                 &mut world.events,
             );
             rope::catch(world);

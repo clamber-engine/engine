@@ -941,13 +941,15 @@ impl Player {
 
     /// Advances the player one step under `physics`, the physics in
     /// effect where it is. `feel` says which characters there are and
-    /// what each can do.
+    /// what each can do. `picture` is the level `x` of the picture's left
+    /// edge, whole px, if there's a view.
     pub fn update(
         &mut self,
         level: &Level,
         feel: &Feel,
         physics: &Physics,
         input: &Frame,
+        picture: Option<i64>,
         events: &mut Vec<Event>,
     ) {
         self.touched.clear();
@@ -996,7 +998,7 @@ impl Player {
             return;
         }
         if Player::in_water(level, self.pos) {
-            self.swim(level, physics, input, held_dir, events);
+            self.swim(level, physics, input, held_dir, picture, events);
             return;
         }
         if self.state == State::Swim {
