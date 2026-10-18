@@ -544,22 +544,24 @@ mod tests {
     fn draws_bindings_and_the_wait() {
         let mut input = input();
         let mut controls = Controls::new();
-        let mut canvas = Canvas::new(384, 216);
+        let mut canvas = Canvas::scaled((384, 216), 4);
         controls.draw(&mut canvas, 192, &input);
         assert!(canvas.pixels.contains(&MARKER));
         let before = canvas.clone();
 
         controls.update(&press(Action::Jump), &mut input);
         controls.update(&idle(), &mut input);
-        let mut canvas = Canvas::new(384, 216);
+        let mut canvas = Canvas::scaled((384, 216), 4);
         controls.draw(&mut canvas, 192, &input);
         assert_ne!(canvas, before);
 
-        let mut expected = Canvas::new(384, 216);
+        let mut expected = Canvas::scaled((384, 216), 4);
         let prompt = "Press a key for left";
         let y = TOP + 2 * LINE + (ROWS.len() as i32 + 1) * PITCH + LINE / 2;
         draw_text_centred(&mut expected, 192, y, prompt, WAITING);
-        let row = |c: &Canvas| c.pixels[(y * 384) as usize..((y + LINE) * 384) as usize].to_vec();
+        let rows = |y: i32| (y * 4 * 384 * 4) as usize;
+        // Short of the next line, whose outline reaches up into this one.
+        let row = |c: &Canvas| c.pixels[rows(y)..rows(y + LINE - 1)].to_vec();
         assert_eq!(row(&canvas), row(&expected));
     }
 }

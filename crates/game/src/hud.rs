@@ -167,7 +167,7 @@ mod tests {
     }
 
     fn drawn(world: &World) -> Canvas {
-        let mut canvas = Canvas::new(120, 24);
+        let mut canvas = Canvas::scaled((120, 24), 4);
         draw_hud(&mut canvas, world);
         canvas
     }
@@ -184,7 +184,7 @@ mod tests {
         world.flow.gems += 10;
         world.flow.hits_taken = 1;
         let after = drawn(&world);
-        let mut expected = Canvas::new(120, 24);
+        let mut expected = Canvas::scaled((120, 24), 4);
         draw_text(&mut expected, MARGIN, MARGIN, "♥", LIFE);
         draw_text(&mut expected, MARGIN + 7, MARGIN, "2", COUNT);
         draw_text(&mut expected, MARGIN + 23, MARGIN, "◆", GEM);
@@ -292,7 +292,12 @@ mod tests {
         );
         world.flow.relics = 1;
         let canvas = drawn(&world);
-        let mut expected = canvas.clone();
+        let mut expected = Canvas::scaled((120, 24), 4);
+        draw_text(&mut expected, MARGIN, MARGIN, "♥", LIFE);
+        draw_text(&mut expected, MARGIN + 7, MARGIN, "3", COUNT);
+        draw_text(&mut expected, MARGIN + 23, MARGIN, "◆", GEM);
+        draw_text(&mut expected, MARGIN + 30, MARGIN, "0", COUNT);
+        draw_text(&mut expected, MARGIN + 46, MARGIN, "●●●", HIT_POINT);
         // Relic icon after "♥3", "◆0" and three hit points.
         let x = MARGIN + 7 + 6 + GAP + 7 + 6 + GAP + 3 * 6 + 1 + GAP;
         draw_text(&mut expected, x, MARGIN, "★", RELIC_ICON);

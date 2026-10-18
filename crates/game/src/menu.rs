@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn marks_the_selected_item() {
         let mut menu = menu();
-        let mut canvas = Canvas::new(100, 60);
+        let mut canvas = Canvas::scaled((100, 60), 4);
         menu.draw(&mut canvas, 50, 10);
         assert!(canvas.pixels.contains(&SELECTED));
         assert!(canvas.pixels.contains(&MARKER));

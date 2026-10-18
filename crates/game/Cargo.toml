@@ -23,6 +23,7 @@ clamber-sim = { path = "../sim" }
 clamber-sprite = { path = "../sprite" }
 clamber-trace = { path = "../trace" }
 clamber-worldmap = { path = "../worldmap" }
+fontdue = "0.9.4"
 gif = { version = "0.14.2", default-features = false, features = ["std"] }
 png = "0.18.1"
 pollster = "1.0.1"

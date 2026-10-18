@@ -15,3 +15,13 @@ licensed under [CC BY 4.0](../../LICENSE-CC-BY-4.0.txt): credit it as
   `music/desert-theme.mp3`, `music/dungeon-theme.mp3`,
   `music/iceland-theme.mp3`, `music/mushroom-theme.mp3`
 - Changes: renamed; otherwise unmodified.
+
+## Font
+
+**DejaVu Sans Condensed Bold** by **Bitstream** and the **DejaVu fonts**
+team
+- Source: https://dejavu-fonts.github.io/
+- License: Bitstream Vera Fonts licence, in `fonts/LICENSE.txt` (DejaVu
+  changes are in the public domain)
+- Files: `fonts/DejaVuSansCondensed-Bold.ttf`
+- Changes: none.
