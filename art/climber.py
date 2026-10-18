@@ -21,8 +21,10 @@ import clamber_render as cr  # noqa: E402
 FRAME = (32, 40)
 ORIGIN = (16, 38)
 
-# Animations named after the player's states, plus `land` and `hurt`:
-# (name, frames, ticks per frame, passes or None to loop).
+# Animations named after the player's states, plus `land`, `recover` and
+# `hurt`: (name, frames, ticks per frame, passes or None to loop).
+# `recover` plays over the stop after a timed roll, 14 frames on Classic 2
+# and 17 on Classic 1 (roll-speed.md), so it lasts 14 and then holds.
 ANIMATIONS = [
     ("idle", 12, 4, None),
     ("walk", 16, 2, None),
@@ -31,6 +33,7 @@ ANIMATIONS = [
     ("jump", 6, 2, 1),
     ("fall", 8, 3, 1),
     ("land", 6, 2, 1),
+    ("recover", 7, 2, 1),
     ("swap", 5, 2, 1),
     ("hurt", 8, 3, 1),
 ]
@@ -214,6 +217,24 @@ def pose(rig, name, i, count):
         rig.turn("hips", -10 * k)
         legs(rig, 30 * k, 20 * k, 50 * k, 45 * k)
         arms(rig, 20 + 30 * k, -10 + 30 * k)
+    elif name == "recover":
+        # out of the roll's tuck into a crouch with the arms out, then
+        # up onto the feet; the last frame is the idle pose's first
+        u = i / (count - 1)
+        if i == count - 1:
+            pose(rig, "idle", 0, 12)
+            return
+        a = ease(min(1.0, u * 2))
+        b = ease(max(0.0, (u - 0.4) / 0.6))
+        rig.turn("hips", -35 * (1 - a))
+        rig.turn("chest", -55 + 40 * a + 15 * b)
+        rig.turn("head", -40 + 46 * a - 6 * b)
+        rig.squash("hips", 0.06 * a * (1 - b))
+        legs(rig, 110 - 65 * a - 42 * b, 100 - 65 * a - 38 * b,
+             135 - 55 * a - 80 * b, 130 - 55 * a - 75 * b)
+        arms(rig, 95 - 25 * a - 66 * b, 80 - 100 * a + 18 * b)
+        blink(rig, 0.6 * (1 - a))
+        rig.ground()
     elif name == "swap":
         # a twirl on the spot
         rig.turn("root", 360 * ease(t), axis=(0, 0, 1))

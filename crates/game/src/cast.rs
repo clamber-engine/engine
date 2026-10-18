@@ -6,7 +6,8 @@
 //! carries on while it stays the same and starts over when it changes.
 //!
 //! The player's animations are named after its states, with `hurt` while
-//! it's losing a life. Sprites face right and are mirrored to face left.
+//! it's losing a life, `recover` while it's held still after a roll, and
+//! `land` while it stands after a landing ([`player_animation`]). Sprites face right and are mirrored to face left.
 //! A character in roster slot `n` past the first uses the sheet's `n`th
 //! named palette or variant image, in name order, if it has one. Entities play their
 //! sheet's first animation, except a reached checkpoint, which plays
@@ -18,7 +19,9 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use clamber_sim::{Behavior, CHECKPOINT, Facing, Outcome, Phase, State, Thing, World, spring_top};
+use clamber_sim::{
+    Behavior, CHECKPOINT, Event, Facing, Outcome, Phase, State, Thing, World, spring_top,
+};
 use clamber_sprite::{Playback, SpriteSheet};
 
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
@@ -200,6 +203,13 @@ impl Cast {
             .unwrap_or(0)
     }
 
+    /// Whether `pose` is partway through the animation called `name` in
+    /// `id`'s sheet.
+    fn playing(&self, id: Option<SheetId>, pose: &Pose, name: &str) -> bool {
+        id.and_then(|id| self.bank.sheet(id).animations.get(pose.animation))
+            .is_some_and(|animation| animation.name == name && !pose.playback.finished())
+    }
+
     /// Moves `pose` on a logic frame, onto `animation` of `id`'s sheet.
     fn advance(&self, pose: &mut Pose, id: Option<SheetId>, animation: usize) {
         if pose.animation != animation {
@@ -246,7 +256,7 @@ impl Poses {
             leaving: Pose::default(),
             things: vec![Pose::default(); world.things.len()],
         };
-        poses.player.animation = cast.animation(cast.player, Some(player_animation(world)));
+        poses.player.animation = cast.animation(cast.player, Some(player_animation(world, false)));
         poses.other.animation = cast.animation(cast.player, Some(other_animation(world)));
         poses.leaving.animation = cast.animation(cast.player, Some(leaving_animation(world)));
         for (pose, thing) in poses.things.iter_mut().zip(&world.things) {
@@ -259,7 +269,8 @@ impl Poses {
     /// Moves every pose on a logic frame, for `world` as it is now.
     pub fn update(&mut self, cast: &Cast, world: &World) {
         let id = cast.player;
-        let animation = cast.animation(id, Some(player_animation(world)));
+        let landing = cast.playing(id, &self.player, LAND);
+        let animation = cast.animation(id, Some(player_animation(world, landing)));
         cast.advance(&mut self.player, id, animation);
         let animation = cast.animation(id, Some(other_animation(world)));
         cast.advance(&mut self.other, id, animation);
@@ -274,14 +285,24 @@ impl Poses {
     }
 }
 
+/// The player's animation after a landing.
+const LAND: &str = "land";
+
 /// The player's animation: its state's, `jump` while bouncing, `fall`
 /// while swimming (there's no swimming art yet), or `hurt` while losing
-/// a life.
-fn player_animation(world: &World) -> &'static str {
-    match (world.flow.outcome, world.player.state) {
+/// a life. So that a freeze never looks like the player has stopped
+/// responding, it plays `recover` on the ground through the stop after a
+/// timed roll (`roll_stop_time`), and `land` from a landing while it
+/// stands, until `land` has played through (`landing` says it's still
+/// playing). A sheet without these plays its first animation instead.
+fn player_animation(world: &World, landing: bool) -> &'static str {
+    let player = &world.player;
+    match (world.flow.outcome, player.state) {
         (Outcome::Dying(_) | Outcome::GameOver, _) => "hurt",
         (_, State::Bounce) => "jump",
         (_, State::Swim) => "fall",
+        (_, State::Idle | State::Walk) if player.roll_stop > 0 => "recover",
+        (_, State::Idle) if landing || world.events.contains(&Event::Land) => LAND,
         (_, state) => state.name(),
     }
 }
@@ -510,6 +531,68 @@ mod tests {
         world.flow.outcome = Outcome::Dying(10);
         poses.update(&cast, &world);
         assert_eq!(player_pixels(&cast, &world, &poses.player)[0], B);
+    }
+
+    /// The test cast with its `walk` animation renamed `name`.
+    fn cast_with(name: &str) -> Cast {
+        let mut sheet = sheet();
+        sheet.sheet.animations[1].name = name.into();
+        Cast::new(vec![(PLAYER.to_string(), sheet)])
+    }
+
+    #[test]
+    fn recovers_through_the_stop_after_a_roll() {
+        let recovering = cast_with("recover");
+        let mut world = world();
+        let mut poses = Poses::new(&recovering, &world);
+        world.player.roll_stop = 1;
+        poses.update(&recovering, &world);
+        assert_eq!(player_pixels(&recovering, &world, &poses.player)[0], B);
+        // Sliding in the stop too.
+        world.player.state = State::Walk;
+        poses.update(&recovering, &world);
+        assert_eq!(player_pixels(&recovering, &world, &poses.player)[0], B);
+        world.player.roll_stop = 0;
+        poses.update(&recovering, &world);
+        assert_eq!(player_pixels(&recovering, &world, &poses.player)[0], R);
+        // Not in the air, nor without the art.
+        world.player.roll_stop = 1;
+        world.player.state = State::Fall;
+        assert_eq!(player_animation(&world, false), "fall");
+        world.player.state = State::Idle;
+        let mut poses = Poses::new(&cast(), &world);
+        poses.update(&cast(), &world);
+        assert_eq!(poses.player.animation, 0, "the first animation");
+    }
+
+    #[test]
+    fn lands_while_standing_until_it_has_played() {
+        let mut sheet = sheet();
+        sheet.sheet.animations[1].name = LAND.into();
+        sheet.sheet.animations[1].repeat = Some(1);
+        let cast = Cast::new(vec![(PLAYER.to_string(), sheet)]);
+        let mut world = world();
+        let mut poses = Poses::new(&cast, &world);
+        world.events.push(Event::Land);
+        poses.update(&cast, &world);
+        world.events.clear();
+        let mut shown = Vec::new();
+        for _ in 0..4 {
+            shown.push(player_pixels(&cast, &world, &poses.player)[0]);
+            poses.update(&cast, &world);
+        }
+        assert_eq!(
+            shown,
+            [B, B, B, R],
+            "`land` through its last frame, then idle"
+        );
+        // Walking off cuts it short.
+        world.events.push(Event::Land);
+        poses.update(&cast, &world);
+        world.events.clear();
+        world.player.state = State::Walk;
+        poses.update(&cast, &world);
+        assert_eq!(player_animation(&world, true), "walk");
     }
 
     #[test]

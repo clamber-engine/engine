@@ -1749,9 +1749,170 @@
       "ticks": 2
     },
     {
-      "filename": "player swap 0",
+      "filename": "player recover 0",
       "frame": {
         "x": 978,
+        "y": 544,
+        "w": 102,
+        "h": 97
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 95,
+        "w": 102,
+        "h": 97
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "player recover 1",
+      "frame": {
+        "x": 1082,
+        "y": 544,
+        "w": 110,
+        "h": 103
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 89,
+        "w": 110,
+        "h": 103
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "player recover 2",
+      "frame": {
+        "x": 1194,
+        "y": 544,
+        "w": 106,
+        "h": 144
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 27,
+        "y": 48,
+        "w": 106,
+        "h": 144
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "player recover 3",
+      "frame": {
+        "x": 1302,
+        "y": 544,
+        "w": 92,
+        "h": 162
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 34,
+        "y": 30,
+        "w": 92,
+        "h": 162
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "player recover 4",
+      "frame": {
+        "x": 1396,
+        "y": 544,
+        "w": 88,
+        "h": 168
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 36,
+        "y": 24,
+        "w": 88,
+        "h": 168
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "player recover 5",
+      "frame": {
+        "x": 1486,
+        "y": 544,
+        "w": 84,
+        "h": 172
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 38,
+        "y": 20,
+        "w": 84,
+        "h": 172
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "player recover 6",
+      "frame": {
+        "x": 1572,
+        "y": 544,
+        "w": 82,
+        "h": 172
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 35,
+        "y": 21,
+        "w": 82,
+        "h": 172
+      },
+      "sourceSize": {
+        "w": 160,
+        "h": 200
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "player swap 0",
+      "frame": {
+        "x": 1656,
         "y": 544,
         "w": 97,
         "h": 173
@@ -1774,7 +1935,7 @@
     {
       "filename": "player swap 1",
       "frame": {
-        "x": 1077,
+        "x": 1755,
         "y": 544,
         "w": 79,
         "h": 178
@@ -1797,7 +1958,7 @@
     {
       "filename": "player swap 2",
       "frame": {
-        "x": 1158,
+        "x": 1836,
         "y": 544,
         "w": 83,
         "h": 181
@@ -1820,7 +1981,7 @@
     {
       "filename": "player swap 3",
       "frame": {
-        "x": 1243,
+        "x": 1921,
         "y": 544,
         "w": 85,
         "h": 181
@@ -1843,8 +2004,8 @@
     {
       "filename": "player swap 4",
       "frame": {
-        "x": 1330,
-        "y": 544,
+        "x": 2,
+        "y": 727,
         "w": 81,
         "h": 178
       },
@@ -1866,8 +2027,8 @@
     {
       "filename": "player hurt 0",
       "frame": {
-        "x": 1413,
-        "y": 544,
+        "x": 85,
+        "y": 727,
         "w": 82,
         "h": 174
       },
@@ -1889,8 +2050,8 @@
     {
       "filename": "player hurt 1",
       "frame": {
-        "x": 1497,
-        "y": 544,
+        "x": 169,
+        "y": 727,
         "w": 82,
         "h": 173
       },
@@ -1912,8 +2073,8 @@
     {
       "filename": "player hurt 2",
       "frame": {
-        "x": 1581,
-        "y": 544,
+        "x": 253,
+        "y": 727,
         "w": 93,
         "h": 169
       },
@@ -1935,8 +2096,8 @@
     {
       "filename": "player hurt 3",
       "frame": {
-        "x": 1676,
-        "y": 544,
+        "x": 348,
+        "y": 727,
         "w": 87,
         "h": 161
       },
@@ -1958,8 +2119,8 @@
     {
       "filename": "player hurt 4",
       "frame": {
-        "x": 1765,
-        "y": 544,
+        "x": 437,
+        "y": 727,
         "w": 92,
         "h": 157
       },
@@ -1981,8 +2142,8 @@
     {
       "filename": "player hurt 5",
       "frame": {
-        "x": 1859,
-        "y": 544,
+        "x": 531,
+        "y": 727,
         "w": 91,
         "h": 159
       },
@@ -2004,8 +2165,8 @@
     {
       "filename": "player hurt 6",
       "frame": {
-        "x": 1952,
-        "y": 544,
+        "x": 624,
+        "y": 727,
         "w": 89,
         "h": 159
       },
@@ -2027,7 +2188,7 @@
     {
       "filename": "player hurt 7",
       "frame": {
-        "x": 2,
+        "x": 715,
         "y": 727,
         "w": 88,
         "h": 161
@@ -2053,8 +2214,8 @@
     "image": "player.png",
     "format": "RGBA8888",
     "size": {
-      "w": 2043,
-      "h": 890
+      "w": 2027,
+      "h": 907
     },
     "scale": "1",
     "frameTags": [
@@ -2104,16 +2265,23 @@
         "repeat": "1"
       },
       {
-        "name": "swap",
+        "name": "recover",
         "from": 76,
-        "to": 80,
+        "to": 82,
+        "direction": "forward",
+        "repeat": "1"
+      },
+      {
+        "name": "swap",
+        "from": 83,
+        "to": 87,
         "direction": "forward",
         "repeat": "1"
       },
       {
         "name": "hurt",
-        "from": 81,
-        "to": 88,
+        "from": 88,
+        "to": 95,
         "direction": "forward",
         "repeat": "1"
       }
@@ -2809,6 +2977,69 @@
           {
             "frame": 76,
             "bounds": {
+              "x": 31,
+              "y": 97,
+              "w": 98,
+              "h": 94
+            }
+          },
+          {
+            "frame": 77,
+            "bounds": {
+              "x": 27,
+              "y": 90,
+              "w": 104,
+              "h": 101
+            }
+          },
+          {
+            "frame": 78,
+            "bounds": {
+              "x": 29,
+              "y": 53,
+              "w": 102,
+              "h": 138
+            }
+          },
+          {
+            "frame": 79,
+            "bounds": {
+              "x": 36,
+              "y": 42,
+              "w": 88,
+              "h": 149
+            }
+          },
+          {
+            "frame": 80,
+            "bounds": {
+              "x": 38,
+              "y": 35,
+              "w": 84,
+              "h": 156
+            }
+          },
+          {
+            "frame": 81,
+            "bounds": {
+              "x": 40,
+              "y": 31,
+              "w": 80,
+              "h": 160
+            }
+          },
+          {
+            "frame": 82,
+            "bounds": {
+              "x": 37,
+              "y": 32,
+              "w": 78,
+              "h": 160
+            }
+          },
+          {
+            "frame": 83,
+            "bounds": {
               "x": 37,
               "y": 31,
               "w": 94,
@@ -2816,7 +3047,7 @@
             }
           },
           {
-            "frame": 77,
+            "frame": 84,
             "bounds": {
               "x": 41,
               "y": 26,
@@ -2825,7 +3056,7 @@
             }
           },
           {
-            "frame": 78,
+            "frame": 85,
             "bounds": {
               "x": 40,
               "y": 24,
@@ -2834,7 +3065,7 @@
             }
           },
           {
-            "frame": 79,
+            "frame": 86,
             "bounds": {
               "x": 35,
               "y": 24,
@@ -2843,7 +3074,7 @@
             }
           },
           {
-            "frame": 80,
+            "frame": 87,
             "bounds": {
               "x": 48,
               "y": 26,
@@ -2852,7 +3083,7 @@
             }
           },
           {
-            "frame": 81,
+            "frame": 88,
             "bounds": {
               "x": 37,
               "y": 31,
@@ -2861,7 +3092,7 @@
             }
           },
           {
-            "frame": 82,
+            "frame": 89,
             "bounds": {
               "x": 36,
               "y": 31,
@@ -2870,7 +3101,7 @@
             }
           },
           {
-            "frame": 83,
+            "frame": 90,
             "bounds": {
               "x": 34,
               "y": 32,
@@ -2879,7 +3110,7 @@
             }
           },
           {
-            "frame": 84,
+            "frame": 91,
             "bounds": {
               "x": 25,
               "y": 35,
@@ -2888,7 +3119,7 @@
             }
           },
           {
-            "frame": 85,
+            "frame": 92,
             "bounds": {
               "x": 22,
               "y": 36,
@@ -2897,7 +3128,7 @@
             }
           },
           {
-            "frame": 86,
+            "frame": 93,
             "bounds": {
               "x": 23,
               "y": 36,
@@ -2906,7 +3137,7 @@
             }
           },
           {
-            "frame": 87,
+            "frame": 94,
             "bounds": {
               "x": 24,
               "y": 36,
@@ -2915,7 +3146,7 @@
             }
           },
           {
-            "frame": 88,
+            "frame": 95,
             "bounds": {
               "x": 25,
               "y": 35,

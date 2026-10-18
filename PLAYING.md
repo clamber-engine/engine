@@ -54,7 +54,9 @@ the shoulders do nothing.
   press it again. Holding Down when you press Action starts the ground
   action instead, except with the second character, which rolls. Press
   Action just before
-  landing and keep it held to roll as you land.
+  landing and keep it held to roll as you land. A fast roll, or one
+  without a direction held, ends with the climber getting back on their
+  feet for a moment, and you can't move until they're up.
 - **Default, Snappy and Floaty:** hold Down and Action together while
   moving. Keep a direction held and the roll carries on into a run
   (Action held) or a walk once it slows down; let go and it slows to a
