@@ -154,8 +154,12 @@ Ctrl+V, then press Enter to open that folder or import that file
 (Escape stops typing). A path that doesn't start at a drive or `/` is
 taken from the folder shown. The pack goes into
 `%LOCALAPPDATA%\Clamber\packs` on Windows, and
-`~/.local/share/clamber/packs` on Linux; `clamber-import <file>` does
-the same from a command line. A personal import is yours alone: it's
+`~/.local/share/clamber/packs` on Linux. After each import, Clamber
+writes a report on it to `import-report.txt` in that folder (the screen
+shows where) and replaces the one from the import before. It has only
+counts, steps and states, nothing from the game itself, so it's safe to
+share. `clamber-import <file>` does the same from a command line, and
+writes the report only if asked to, with `--import-report <file>`. A personal import is yours alone: it's
 marked as one wherever it's shown, and Clamber won't export it or
 capture it for sharing. This version recognizes the one game image
 it supports (with or without a copier header) and converts its first

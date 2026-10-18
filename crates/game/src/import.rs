@@ -620,9 +620,7 @@ impl Importing {
                 for line in skipped_summary(&imported.skipped) {
                     y = paragraph(canvas, centre, y + LINE, &line, SUBTITLE);
                 }
-                if !imported.skipped.is_empty() {
-                    self.draw_report(canvas, centre, y + LINE);
-                }
+                self.draw_report(canvas, centre, y + LINE);
             }
             Some(Err(e)) => {
                 heading(canvas, "CAN'T IMPORT", FAILED);
