@@ -179,6 +179,8 @@ fn imported_scene(name: &str) -> (Level, std::path::PathBuf) {
             file: "scene".into(),
             name: "made-up scene".into(),
             parts: parts(),
+            kinds: vec![],
+            settings: vec![],
         })],
     };
     let dir = std::env::temp_dir().join(format!("clamber-scene-{name}-{}", std::process::id()));

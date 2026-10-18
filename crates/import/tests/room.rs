@@ -152,6 +152,8 @@ fn imported_room(name: &str) -> (Level, std::path::PathBuf) {
             file: "room".into(),
             name: "made-up room".into(),
             parts: parts(),
+            kinds: vec![],
+            settings: vec![],
         })],
     };
     let dir = std::env::temp_dir().join(format!("clamber-room-{name}-{}", std::process::id()));

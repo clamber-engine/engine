@@ -5,19 +5,21 @@
 //! `spec/formats/placements.md`, `spec/formats/collectibles.md`,
 //! `spec/formats/level-start.md`,
 //! `spec/formats/view-limits.md`, `spec/formats/sound.md` and `spec/formats/songs.md`.
+//! The level is played to its end as `spec/behavior/level-end.md` says.
 
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use clamber_import::{
-    BANK_SIZE, Below, Catalog, CollectibleParts, Ground, Image, ImportError, Importer, Known,
-    Layout, LevelDecoder, LevelParts, LevelSong, Location, NIBBLE_HEADER, Optional, PackedGround,
-    SECOND_WALL_RETURN_ARRIVAL, Scenery, import_report, installed, skipped_summary,
+    BANK_SIZE, Below, Catalog, CollectibleParts, END, Ground, Image, ImportError, Importer, Kind,
+    KindRow, Known, Layout, LevelDecoder, LevelParts, LevelSong, Location, NIBBLE_HEADER, Optional,
+    PackedGround, SECOND_WALL_RETURN_ARRIVAL, Scenery, WALKER, candidate, import_report, installed,
+    skipped_summary,
 };
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Fixed, Level, Vec2};
-use clamber_sim::{InputFrame, World, generic_feel, step};
+use clamber_sim::{Event, InputFrame, Outcome, World, generic_feel, step};
 
 const COLUMNS: usize = 20;
 const BANK: u8 = 0xC1;
@@ -88,10 +90,38 @@ fn entries(words: &[[u16; 4]]) -> Vec<u8> {
         .collect()
 }
 
-/// A placement list: an object at x 200, 40 above the bottom edge, then
-/// a group at x 300 whose members are listed at 0x7208, then the end.
+/// Where the placement references in [`kinds`] lead.
+const WALKER_REFERENCE: u16 = 0x7300;
+const END_REFERENCE: u16 = 0x7380;
+
+/// A placement list: an object at x 200, 40 above the bottom edge, a
+/// walker on the floor at x 260, a group at x 300 whose members are
+/// listed at 0x7208, an end marker on the higher floor at x 520, then the
+/// end.
 fn placement_list() -> Vec<u8> {
-    entries(&[[1, 200, 40, 0x7100], [5, 300, 0, 0x7200], [0; 4]])
+    entries(&[
+        [1, 200, 40, 0x7100],
+        [1, 260, 31, WALKER_REFERENCE],
+        [5, 300, 0, 0x7200],
+        [2, 520, 39, END_REFERENCE],
+        [0; 4],
+    ])
+}
+
+/// Made-up kind fingerprint rows for the made-up image: [`WALKER_REFERENCE`]
+/// in the second bank block places a small walker, and [`END_REFERENCE`] there
+/// the level's end marker. No row matches the other references.
+fn kinds(image: &Image) -> Vec<KindRow> {
+    [
+        (WALKER_REFERENCE, Kind::SmallWalker),
+        (END_REFERENCE, Kind::EndMarker),
+    ]
+    .into_iter()
+    .map(|(reference, kind)| KindRow {
+        fingerprint: candidate(image.bytes(), reference, 1).unwrap(),
+        kind,
+    })
+    .collect()
 }
 
 /// The group's one member, an object at x 320, 64 above the bottom edge.
@@ -262,12 +292,12 @@ fn image_with_song(song: Vec<u8>) -> Image {
 }
 
 fn importer() -> Importer {
-    importer_for(&image())
+    importer_for(&image(), vec![])
 }
 
 /// An importer that knows `image` as `title-9` and has the level's
-/// decoder.
-fn importer_for(image: &Image) -> Importer {
+/// decoder, which looks placement references up in `kinds`.
+fn importer_for(image: &Image, kinds: Vec<KindRow>) -> Importer {
     Importer {
         catalog: Catalog {
             known: vec![Known {
@@ -282,6 +312,8 @@ fn importer_for(image: &Image) -> Importer {
             file: "first".into(),
             name: "made-up level".into(),
             parts: parts(),
+            kinds,
+            settings: vec![],
         })],
     }
 }
@@ -297,8 +329,13 @@ fn scratch(name: &str) -> PathBuf {
 /// Imports the made-up image and loads its level back from the pack,
 /// with the pack's levels folder.
 fn imported_level(name: &str) -> (Level, PathBuf) {
+    imported_level_by(name, importer())
+}
+
+/// [`imported_level`], imported by `importer`.
+fn imported_level_by(name: &str, importer: Importer) -> (Level, PathBuf) {
     let packs = scratch(name).join("packs");
-    let imported = importer().import(&image(), &packs, false).unwrap();
+    let imported = importer.import(&image(), &packs, false).unwrap();
     assert_eq!(imported.decoded, ["made-up level"]);
     let (packs, problems) = installed(&packs);
     assert!(problems.is_empty(), "{problems:?}");
@@ -368,7 +405,7 @@ fn a_song_that_cant_be_converted_is_skipped() {
     song[4 + 19] = 60;
     let image = image_with_song(song);
     let packs = scratch("skipped").join("packs");
-    let result = importer_for(&image).import(&image, &packs, false);
+    let result = importer_for(&image, vec![]).import(&image, &packs, false);
     let imported = result.as_ref().unwrap();
     assert_eq!(imported.decoded, ["made-up level"]);
     let [skipped] = &imported.skipped[..] else {
@@ -408,13 +445,15 @@ fn places_the_objects_in_the_placement_list() {
         placed,
         [
             ("placed-7100", Vec2::ints(200, 472)),
+            ("placed-7300", Vec2::ints(260, 481)),
             ("placed-7180", Vec2::ints(320, 448)),
+            ("placed-7380", Vec2::ints(520, 473)),
             ("spark", Vec2::ints(112, 465)),
             ("spark", Vec2::ints(120, 465)),
         ]
     );
-    let member = &level.entities[1].params;
-    assert_eq!(member["group"].as_integer(), Some(2));
+    let member = &level.entities[2].params;
+    assert_eq!(member["group"].as_integer(), Some(3));
 }
 
 /// The view-limit record gives the level-wide camera limits across, and
@@ -452,6 +491,8 @@ fn refuses_parts_past_the_end_of_the_image() {
         file: "first".into(),
         name: "made-up level".into(),
         parts: parts(),
+        kinds: vec![],
+        settings: vec![],
     };
     decoder.parts.grid = Location::new(BANK, 0xFF00);
     let err = decoder.level(&image()).unwrap_err();
@@ -467,6 +508,8 @@ fn without_a_start_record_the_start_is_on_the_ground_at_the_left() {
         file: "first".into(),
         name: "made-up level".into(),
         parts: parts(),
+        kinds: vec![],
+        settings: vec![],
     };
     decoder.parts.start = None;
     let (level, ..) = decoder.level(&image()).unwrap();
@@ -486,6 +529,8 @@ fn the_second_wall_return_record_is_an_arrival_dropping_in() {
         file: "first".into(),
         name: "made-up level".into(),
         parts: parts(),
+        kinds: vec![],
+        settings: vec![],
     };
     let (level, ..) = decoder.level(&image()).unwrap();
     assert!(level.arrivals.iter().all(|a| !a.drop));
@@ -547,6 +592,61 @@ fn the_player_takes_the_imported_collectibles() {
     }
     assert!(world.player.pos.x.floor() > 140);
     assert_eq!(world.flow.gems, 2);
+}
+
+/// The whole level played from its start to its end on `classic-1`,
+/// with the walker and the end marker placed by their kind rows and a
+/// recorded input script: the player walks right, hops onto the walker
+/// and bounces off it, walks on up the slope and past the end marker, and
+/// the level is complete after the walk-out and the fade
+/// (`spec/behavior/level-end.md`).
+#[test]
+fn the_player_plays_the_imported_level_to_its_end() {
+    let image = image();
+    let (level, _) = imported_level_by("plays", importer_for(&image, kinds(&image)));
+    let placed = |name: &str| {
+        level
+            .entities
+            .iter()
+            .filter(|e| e.kind == name)
+            .map(|e| e.at)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(placed(WALKER), [Vec2::ints(260, 481)]);
+    assert_eq!(placed(END), [Vec2::ints(520, 473)]);
+    let mut world = World::new(
+        Arc::new(level),
+        Arc::new(generic_feel("classic-1").unwrap()),
+    );
+    let (right, jump) = (Action::Right, Action::Jump);
+    let script: &[(usize, &[Action])] = &[(64, &[right]), (1, &[right, jump]), (300, &[right])];
+    let mut held = Actions::NONE;
+    let (mut bounced, mut passed) = (None, None);
+    for keys in script
+        .iter()
+        .flat_map(|&(frames, keys)| std::iter::repeat_n(keys, frames))
+    {
+        let keys: Actions = keys.iter().copied().collect();
+        step(&mut world, &InputFrame::single(Frame::after(held, keys)));
+        held = keys;
+        assert!(
+            matches!(world.flow.outcome, Outcome::Playing | Outcome::Complete),
+            "frame {}: {:?}",
+            world.frame,
+            world.flow.outcome
+        );
+        if world.events.contains(&Event::Bounce) {
+            bounced.get_or_insert(world.frame);
+        }
+        if world.ending.is_some() && passed.is_none() {
+            passed = Some(world.player.pos.x.floor());
+        }
+    }
+    assert!(bounced.is_some(), "the player never bounced");
+    let walker = world.things.iter().find(|t| t.kind == WALKER).unwrap();
+    assert!(!walker.active, "the bounced walker is gone");
+    assert!(passed.is_some_and(|x| x >= 520), "passed at {passed:?}");
+    assert_eq!(world.flow.outcome, Outcome::Complete);
 }
 
 /// Packs `data` as literals, 15 bytes to a command

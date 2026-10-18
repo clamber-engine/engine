@@ -383,6 +383,8 @@ impl Importer {
                         file: file.to_string(),
                         name: name.to_string(),
                         parts,
+                        kinds: kind_rows(&known.title),
+                        settings: settings_rows(&known.title),
                     }));
                 }
             }

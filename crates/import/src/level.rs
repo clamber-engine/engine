@@ -21,9 +21,9 @@ use clamber_level::{
 
 use crate::{
     BANK_SIZE, Background, COLUMN_BANDS, Collectibles, Decoder, END, EXIT, GridPicture, Ground,
-    Image, KEG, Known, LEVELS, Layout, LevelSong, Location, Optional, PackWriter, PaletteSet,
-    Pictures, Placements, ROOM_ENTRANCE, ScreenMap, Skipped, StartRecord, TileSet, VIEW_HEIGHT,
-    VIEW_WIDTH, ViewLimits, WALL_EXIT, WALL_RETURN, kind_rows, object_of, settings_rows, unpack,
+    Image, KEG, KindRow, Known, LEVELS, Layout, LevelSong, Location, Optional, PackWriter,
+    PaletteSet, Pictures, Placements, ROOM_ENTRANCE, ScreenMap, SettingsRow, Skipped, StartRecord,
+    TileSet, VIEW_HEIGHT, VIEW_WIDTH, ViewLimits, WALL_EXIT, WALL_RETURN, object_of, unpack,
     unpack_nibbles,
 };
 
@@ -358,6 +358,10 @@ pub struct LevelDecoder {
     /// The level's name, shown to the player.
     pub name: String,
     pub parts: LevelParts,
+    /// The kind fingerprint rows its placement references are looked up
+    /// in, and the settings rows for their objects.
+    pub kinds: Vec<KindRow>,
+    pub settings: Vec<SettingsRow>,
 }
 
 impl LevelDecoder {
@@ -641,8 +645,8 @@ impl LevelDecoder {
     }
 
     /// The objects in the placement list at `list`, for a level whose
-    /// bottom edge is at `bottom`, with their kinds where `title`'s kind
-    /// fingerprint rows give them and their settings, and the list's
+    /// bottom edge is at `bottom`, with their kinds where the decoder's
+    /// kind fingerprint rows give them and their settings, and the list's
     /// sections if it has them.
     fn objects(
         &self,
@@ -652,9 +656,7 @@ impl LevelDecoder {
     ) -> Result<(Vec<Entity>, Vec<Section>), String> {
         let placements = Placements::read(bank_of(image, list), list.address)
             .map_err(|e| format!("the level's placement list: {e}"))?;
-        let rows = kind_rows(&self.title);
-        let settings = settings_rows(&self.title);
-        let kind = |reference| object_of(image.bytes(), reference, &rows, &settings);
+        let kind = |reference| object_of(image.bytes(), reference, &self.kinds, &self.settings);
         Ok(placements.objects(bottom, kind))
     }
 }
