@@ -79,6 +79,11 @@ name = "out-of-the-spring"
 at = [300, 480]
 entrance = "spring-a"
 
+[[arrivals]]
+name = "from-above"
+at = [300, 100]
+drop = true
+
 [[entities]]
 type = "spring"
 id = "spring-a"

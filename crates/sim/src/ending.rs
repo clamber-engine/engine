@@ -96,6 +96,9 @@ impl World {
         if let Some(fade) = self.walking_in_brightness() {
             return fade;
         }
+        if let Some(fade) = self.dropping_in_brightness() {
+            return fade;
+        }
         if let Some(fade) = self.leaving_brightness() {
             return fade;
         }

@@ -13,7 +13,7 @@ use std::sync::Arc;
 use clamber_import::{
     BANK_SIZE, Below, Catalog, CollectibleParts, Ground, Image, ImportError, Importer, Known,
     Layout, LevelDecoder, LevelParts, LevelSong, Location, NIBBLE_HEADER, Optional, PackedGround,
-    Scenery, import_report, installed, skipped_summary,
+    SECOND_WALL_RETURN_ARRIVAL, Scenery, import_report, installed, skipped_summary,
 };
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Fixed, Level, Vec2};
@@ -154,6 +154,7 @@ fn parts() -> LevelParts {
         scene_return: None,
         room_return: None,
         wall_return: None,
+        second_wall_return: None,
         room: None,
         back_to: None,
         scene: None,
@@ -473,6 +474,28 @@ fn without_a_start_record_the_start_is_on_the_ground_at_the_left() {
     decoder.parts.start = Some(Location::new(BANK, 0xFFFE));
     let err = decoder.level(&image()).unwrap_err();
     assert!(err.contains("start record"), "{err}");
+}
+
+/// wall-exits.md: coming back from the area behind the second wall exit,
+/// the lead drops in at the second wall-return record's point (here the
+/// start record's).
+#[test]
+fn the_second_wall_return_record_is_an_arrival_dropping_in() {
+    let mut decoder = LevelDecoder {
+        title: "title-9".into(),
+        file: "first".into(),
+        name: "made-up level".into(),
+        parts: parts(),
+    };
+    let (level, ..) = decoder.level(&image()).unwrap();
+    assert!(level.arrivals.iter().all(|a| !a.drop));
+    decoder.parts.second_wall_return = decoder.parts.start;
+    let (level, ..) = decoder.level(&image()).unwrap();
+    let arrival = level.arrival(SECOND_WALL_RETURN_ARRIVAL).unwrap();
+    assert_eq!(arrival.at, Vec2::ints(24, 481));
+    assert!(arrival.drop && arrival.walk.is_none() && arrival.entrance.is_none());
+    let again = Level::from_toml_str(&level.to_toml_string(), "again").unwrap();
+    assert_eq!(again.arrival(SECOND_WALL_RETURN_ARRIVAL), Some(arrival));
 }
 
 /// Walking right across the whole level on `classic-1`, the player is

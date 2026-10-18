@@ -196,6 +196,10 @@ fn reads_arrivals() {
     assert!(nobody.contains("arrivals[0].entrance: no entity has the id `door`"));
     let both = arrival("name = \"a\"\nat = [0, 0]\nwalk = \"left\"\nentrance = \"door\"");
     assert!(both.contains("arrivals[0].entrance"));
+    assert!(l.arrival("from-above").unwrap().drop);
+    assert!(!out.drop);
+    let walks = arrival("name = \"a\"\nat = [0, 0]\nwalk = \"left\"\ndrop = true");
+    assert!(walks.contains("arrivals[0].drop"));
 }
 
 #[test]

@@ -135,6 +135,7 @@ fn back_at(world: &World, at: i32) -> World {
         at: Vec2::ints(at, F),
         walk: None,
         entrance: None,
+        drop: false,
     };
     world.coming_back(&arrival)
 }

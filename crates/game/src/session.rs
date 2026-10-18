@@ -868,6 +868,7 @@ impl Session {
                 at: level.start,
                 walk: None,
                 entrance: None,
+                drop: false,
             },
         };
         let world = match back {

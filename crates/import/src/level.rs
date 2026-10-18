@@ -83,6 +83,9 @@ pub struct LevelParts {
     /// area its first wall exit leads to, out of its wall-return
     /// entrance.
     pub wall_return: Option<Location>,
+    /// The second wall-return record, if play comes back to the level
+    /// after the area its second wall exit leads to, dropping in.
+    pub second_wall_return: Option<Location>,
     /// The file name, without `.level`, of the area the upper exit leads
     /// to, if that's imported too: play comes into it at [`FROM_LEVEL`].
     /// Without it the exit leads straight to [`ROOM_RETURN`].
@@ -196,6 +199,10 @@ pub const ROOM_RETURN: &str = "from-room";
 /// first wall exit leads to.
 pub const WALL_RETURN_ARRIVAL: &str = "from-wall";
 
+/// The arrival play comes back to the first level at after the area its
+/// second wall exit leads to.
+pub const SECOND_WALL_RETURN_ARRIVAL: &str = "from-second-wall";
+
 /// The arrival play comes into an area at from the level it was entered
 /// from, as into the first level's room.
 pub const FROM_LEVEL: &str = "from-level";
@@ -259,17 +266,25 @@ fn scene_of(level: &str) -> Scene {
     }
 }
 
-/// Has the first wall exit in `entities`, the one furthest left, lead to
-/// [`WALL_RETURN_ARRIVAL`]: wall-exits.md has play come back to the level
-/// there after the area behind it. That area isn't imported, so the wall
-/// exit leads straight back.
-fn lead_wall_exit(entities: &mut [Entity]) {
-    let first = entities
+/// Has the wall exits in `entities`, from left to right, lead to
+/// [`WALL_RETURN_ARRIVAL`] if `first` and [`SECOND_WALL_RETURN_ARRIVAL`]
+/// if `second`: wall-exits.md has play come back to the level there
+/// after the area behind each. Those areas aren't imported, so the wall
+/// exits lead straight back.
+fn lead_wall_exits(entities: &mut [Entity], first: bool, second: bool) {
+    let mut walls: Vec<_> = entities
         .iter_mut()
         .filter(|e| e.kind == WALL_EXIT)
-        .min_by_key(|e| e.at.x);
-    if let Some(wall) = first {
-        lead(wall, None, WALL_RETURN_ARRIVAL);
+        .collect();
+    walls.sort_by_key(|e| e.at.x);
+    let arrivals = [
+        first.then_some(WALL_RETURN_ARRIVAL),
+        second.then_some(SECOND_WALL_RETURN_ARRIVAL),
+    ];
+    for (wall, arrival) in walls.into_iter().zip(arrivals) {
+        if let Some(arrival) = arrival {
+            lead(wall, None, arrival);
+        }
     }
 }
 
@@ -520,6 +535,7 @@ impl LevelDecoder {
                 at: level.start,
                 walk: Some(walk),
                 entrance: None,
+                drop: false,
             });
         }
         let returns = [
@@ -540,11 +556,15 @@ impl LevelDecoder {
                     at: Vec2::new(px(x), px(y)),
                     walk,
                     entrance: return_entrance(name, &level.entities),
+                    drop: false,
                 });
             }
         }
         // wall-exits.md: thrown out of the wall-return entrance from the
-        // record's point, where the level has both.
+        // record's point, where the level has both, and dropping in at
+        // the second record's point, into the barrel there.
+        let px = |n: i64| Fixed::from_int(i32::try_from(n).expect("a level fits in i32"));
+        let mut first = false;
         if let Some(at) = p.wall_return
             && level
                 .entities
@@ -552,15 +572,26 @@ impl LevelDecoder {
                 .any(|e| e.id.as_deref() == Some(WALL_RETURN))
         {
             let (x, y) = record("wall-return", at)?;
-            let px = |n: i64| Fixed::from_int(i32::try_from(n).expect("a level fits in i32"));
             level.arrivals.push(Arrival {
                 name: WALL_RETURN_ARRIVAL.into(),
                 at: Vec2::new(px(x), px(y)),
                 walk: None,
                 entrance: Some(WALL_RETURN.into()),
+                drop: false,
             });
-            lead_wall_exit(&mut level.entities);
+            first = true;
         }
+        if let Some(at) = p.second_wall_return {
+            let (x, y) = record("second wall-return", at)?;
+            level.arrivals.push(Arrival {
+                name: SECOND_WALL_RETURN_ARRIVAL.into(),
+                at: Vec2::new(px(x), px(y)),
+                walk: None,
+                entrance: None,
+                drop: true,
+            });
+        }
+        lead_wall_exits(&mut level.entities, first, p.second_wall_return.is_some());
         lead_exits(
             &mut level.entities,
             p.scene_return.is_some(),
@@ -698,27 +729,42 @@ mod tests {
         assert_eq!(return_entrance(ROOM_RETURN, &both[..1]), None);
     }
 
-    /// wall-exits.md: the first wall exit is the one further left.
+    /// wall-exits.md: the first wall exit is the one further left, the
+    /// second the one further right.
     #[test]
-    fn the_first_wall_exit_leads_back_to_the_wall_return() {
+    fn the_wall_exits_lead_back_to_their_returns() {
         let entity = |kind: &str, x| Entity {
             kind: kind.into(),
             id: None,
             at: Vec2::ints(x, 300),
             params: Default::default(),
         };
-        let mut entities = [
+        let entities = [
             entity(WALL_EXIT, 900),
             entity(EXIT, 100),
             entity(WALL_EXIT, 400),
         ];
-        lead_wall_exit(&mut entities);
-        let leads: Vec<_> = entities
-            .iter()
-            .map(|e| e.params.get("arrival").and_then(|v| v.as_str()))
-            .collect();
-        assert_eq!(leads, [None, None, Some(WALL_RETURN_ARRIVAL)]);
-        assert!(entities.iter().all(|e| !e.params.contains_key("area")));
+        let leads = |first, second| {
+            let mut entities = entities.clone();
+            lead_wall_exits(&mut entities, first, second);
+            assert!(entities.iter().all(|e| !e.params.contains_key("area")));
+            entities
+                .iter()
+                .map(|e| {
+                    e.params
+                        .get("arrival")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_owned)
+                })
+                .collect::<Vec<_>>()
+        };
+        let (one, two) = (
+            Some(WALL_RETURN_ARRIVAL.to_owned()),
+            Some(SECOND_WALL_RETURN_ARRIVAL.to_owned()),
+        );
+        assert_eq!(leads(true, false), [None, None, one.clone()]);
+        assert_eq!(leads(false, true), [two.clone(), None, None]);
+        assert_eq!(leads(true, true), [two, None, one]);
     }
 
     #[test]

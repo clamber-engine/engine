@@ -68,6 +68,7 @@ mod collect;
 mod columns;
 mod critter;
 mod dimming;
+mod drop_in;
 mod ending;
 mod entrance;
 mod exit;

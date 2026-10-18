@@ -53,8 +53,8 @@ pub struct Level {
 }
 
 /// A way play comes into a level from another area: where the lead
-/// character is, at its feet, and whether the characters walk in or come
-/// out of an entrance.
+/// character is, at its feet, and whether the characters walk in, come
+/// out of an entrance or drop in.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Arrival {
     /// What exits that lead here call it, unique in the level.
@@ -68,6 +68,9 @@ pub struct Arrival {
     /// level's start out of its entrance, if they don't come out of that
     /// one. An entrance an arrival names isn't the level's own.
     pub entrance: Option<String>,
+    /// The lead comes in in the air at `at` and falls from there, out of
+    /// no entrance; it can't walk in or name one.
+    pub drop: bool,
 }
 
 impl Level {
@@ -528,6 +531,8 @@ struct ArrivalFile {
     at: [N; 2],
     walk: Option<String>,
     entrance: Option<String>,
+    #[serde(default)]
+    drop: bool,
 }
 
 #[derive(Deserialize)]
@@ -809,11 +814,18 @@ impl Reader<'_> {
                         "the characters walk in, so they can't come out of an entrance",
                     ));
                 }
+                if a.drop && (walk.is_some() || a.entrance.is_some()) {
+                    return Err(self.err(
+                        &format!("{path}.drop"),
+                        "the lead drops in, so it can't walk in or come out of an entrance",
+                    ));
+                }
                 Ok(Arrival {
                     name: a.name,
                     at,
                     walk,
                     entrance: a.entrance,
+                    drop: a.drop,
                 })
             })
             .collect::<Result<_, _>>()?;
@@ -1482,6 +1494,9 @@ impl Level {
             }
             if let Some(id) = &a.entrance {
                 at.insert("entrance".into(), Value::String(id.clone()));
+            }
+            if a.drop {
+                at.insert("drop".into(), Value::Boolean(true));
             }
             Value::Table(at)
         });

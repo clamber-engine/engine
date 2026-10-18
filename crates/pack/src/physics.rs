@@ -1372,8 +1372,8 @@ params! {
     WalkInAhead => "walk_in_ahead",
     /// How far behind the lead the other character walks in. Whole px.
     WalkInOther => "walk_in_other",
-    /// The picture fades in from black a step every this many frames.
-    /// Whole frames.
+    /// The picture fades in from black a step every this many frames,
+    /// as the characters walk in or the lead drops in. Whole frames.
     WalkInFadeStep => "walk_in_fade_step",
     /// How many steps that fade takes to full brightness.
     WalkInFadeSteps => "walk_in_fade_steps",

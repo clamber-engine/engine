@@ -65,7 +65,7 @@ pub use kinds::{
 };
 pub use level::{
     CollectibleParts, FROM_LEVEL, LevelDecoder, LevelParts, PackedGround, ROOM_RETURN,
-    SCENE_RETURN, Scenery, WALL_RETURN_ARRIVAL, water,
+    SCENE_RETURN, SECOND_WALL_RETURN_ARRIVAL, Scenery, WALL_RETURN_ARRIVAL, water,
 };
 pub use level_map::{
     APPEARANCE_OFFSET, CORNER_SIZE, Direction, FIRST_CORNER, LAST_CORNER, LEVEL_MAP, LevelMap,

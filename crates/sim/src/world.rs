@@ -13,6 +13,7 @@ use crate::archetype::{
 use crate::carry::{self, Flight};
 use crate::collect;
 use crate::dimming::{self, Dimming};
+use crate::drop_in;
 use crate::ending::{self, Ending};
 use crate::entrance::{self, Entering};
 use crate::exit::{self, Leaving};
@@ -281,6 +282,9 @@ pub struct World {
     /// The characters walking into the area, when it began at an arrival
     /// they walk in by, until the picture has faded in.
     pub walking_in: Option<WalkingIn>,
+    /// The lead dropped into the area, at an arrival it drops in by,
+    /// until the picture has faded in.
+    pub dropping_in: bool,
     /// The things out of the area on its frame 0 as the characters walk
     /// in, there again from frame 1.
     pub waiting: Vec<usize>,
@@ -308,12 +312,12 @@ impl World {
     /// archetype in the built-in [`Archetypes`].
     pub fn try_new(level: Arc<Level>, feel: Arc<Feel>) -> Result<World, ArchetypeError> {
         let start = level.start;
-        World::begin(level, feel, start, None, None)
+        World::begin(level, feel, start, None, None, false)
     }
 
     /// The level as play comes into it at `arrival`: the characters walk
-    /// in to its point if it says they do, and the level begins there as
-    /// at its start otherwise.
+    /// in to its point or the lead drops in there if it says so, and the
+    /// level begins there as at its start otherwise.
     ///
     /// # Panics
     ///
@@ -332,23 +336,27 @@ impl World {
         assert!(!feel.roster.is_empty(), "a world needs a character");
         let walk = WalkingIn::of(arrival, &feel.world);
         let inside = arrival.entrance.as_deref();
-        World::begin(level, feel, arrival.at, walk, inside)
+        World::begin(level, feel, arrival.at, walk, inside, arrival.drop)
     }
 
     /// The level beginning with the lead at `start`, or walking in to it,
-    /// or inside the entrance with the id `inside`.
+    /// or inside the entrance with the id `inside`, or dropping in at it.
     fn begin(
         level: Arc<Level>,
         feel: Arc<Feel>,
         start: Vec2,
         walk: Option<WalkingIn>,
         inside: Option<&str>,
+        drop: bool,
     ) -> Result<World, ArchetypeError> {
         assert!(!feel.roster.is_empty(), "a world needs a character");
         let mut player = Player::new(&level, start);
         if let Some(walk) = walk {
             player.pos = walk.lead_at(0, &feel.world);
             player.facing = walk.facing;
+        }
+        if drop {
+            player.facing = Facing::Right;
         }
         // Both characters start where play starts (following.md).
         let other = (feel.roster.len() > 1 && feel.world[Param::SwapMoves] > Fixed::ZERO)
@@ -368,7 +376,10 @@ impl World {
         // A level with an entrance begins as an area does (view.md, "When
         // an area begins"), and so does one walked into; the view starts
         // settled on the lead otherwise. Walking in, the entrance is gone.
-        let mut entering = entrance::begin(&level, &things, inside);
+        // Dropping in, no entrance acts.
+        let mut entering = (!drop)
+            .then(|| entrance::begin(&level, &things, inside))
+            .flatten();
         if walk.is_some()
             && let Some(e) = entering.take()
         {
@@ -388,7 +399,7 @@ impl World {
             }
         }
         let view = view::enabled(&physics).then(|| {
-            if entering.is_some() || walk.is_some() {
+            if entering.is_some() || walk.is_some() || drop {
                 View::begun(&player, &level, &physics)
             } else {
                 View::settled(&player, &level, &physics)
@@ -437,6 +448,7 @@ impl World {
             bursts: Vec::new(),
             entering,
             walking_in: walk,
+            dropping_in: drop,
             waiting: Vec::new(),
             pause: 0,
         })
@@ -1242,6 +1254,11 @@ pub fn step(world: &mut World, input: &InputFrame) {
         world.frame += 1;
         return;
     }
+    if drop_in::hold(world) {
+        // Everything waits on the frame the lead drops in.
+        world.frame += 1;
+        return;
+    }
     let walking = walk_in::hold(world);
     if scene::hold(world, walking) || walking {
         // Everything waits while the characters walk in, and in a scene.
@@ -1336,6 +1353,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
     view::update(world, begin);
     carry::after(world, &input.players[0]);
     keg::after(world);
+    drop_in::after(world);
     collect::update(world, true, start_view);
     let landed = world.events.contains(&Event::Land);
     world.recent.note(&input.players[0], landed);

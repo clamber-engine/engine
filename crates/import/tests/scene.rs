@@ -55,6 +55,7 @@ fn parts() -> LevelParts {
         scene_return: None,
         room_return: None,
         wall_return: None,
+        second_wall_return: None,
         room: None,
         back_to: None,
         scene: None,

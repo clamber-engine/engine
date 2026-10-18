@@ -90,6 +90,7 @@ fn back_at(world: &World, at: i32) -> World {
         at: Vec2::ints(at, F),
         walk: None,
         entrance: None,
+        drop: false,
     };
     world.coming_back(&arrival)
 }
@@ -224,6 +225,7 @@ fn back_from_another_area_the_level_is_as_it_was_left_with_what_play_carried() {
         at: Vec2::ints(1200, F),
         walk: None,
         entrance: None,
+        drop: false,
     };
     let after = before.coming_back_from(&arrival, &room);
     assert_eq!(after.level.name, "coming-back");
