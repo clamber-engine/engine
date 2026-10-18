@@ -1298,6 +1298,58 @@ params! {
     /// The sway takes this many steps per logic frame, counting the
     /// frames the view holds still. Steps per frame.
     ViewSwayRate => "view_sway_rate",
+    /// Above 0, the view follows vertically by pull and goal too (see
+    /// `clamber_sim::View`): its usual pull is the gap to its aim divided
+    /// by this. Whole frames.
+    ViewPullShareY => "view_pull_share_y",
+    /// The most the usual pull changes the vertical speed by in a frame.
+    /// px/frame.
+    ViewPullMaxY => "view_pull_max_y",
+    /// The usual lag divisor (as `view_lag_share`). Whole frames.
+    ViewLagShareY => "view_lag_share_y",
+    /// `view_pull_share_y` at the medium rates. Whole frames.
+    ViewPullShareYMedium => "view_pull_share_y_medium",
+    /// `view_pull_max_y` at the medium rates. px/frame.
+    ViewPullMaxYMedium => "view_pull_max_y_medium",
+    /// `view_lag_share_y` at the medium rates. Whole frames.
+    ViewLagShareYMedium => "view_lag_share_y_medium",
+    /// `view_pull_share_y` at the quick rates. Whole frames.
+    ViewPullShareYQuick => "view_pull_share_y_quick",
+    /// `view_pull_max_y` at the quick rates. px/frame.
+    ViewPullMaxYQuick => "view_pull_max_y_quick",
+    /// `view_lag_share_y` at the quick rates. Whole frames.
+    ViewLagShareYQuick => "view_lag_share_y_quick",
+    /// Following vertically by pull and goal, with the feet between
+    /// `view_quick_fall_below` and `view_quick_below` rows down the
+    /// view, the medium rates apply once they moved down more than this
+    /// since the frame before. Whole px.
+    ViewMediumFall => "view_medium_fall",
+    /// Following vertically by pull and goal, while the aim moves up
+    /// above the view's top, the usual rates apply with the feet this
+    /// many rows down the view or more, and the quick ones otherwise.
+    /// Whole px.
+    ViewRiseRows => "view_rise_rows",
+    /// With no ground in reach, the view following vertically by pull
+    /// and goal aims this far above the feet once that's above where it
+    /// last aimed by the ground... Whole px.
+    ViewRise => "view_rise",
+    /// ... and this far above them once that's below it. In between, it
+    /// keeps its aim. Whole px.
+    ViewFall => "view_fall",
+    /// The most the view moves vertically in a frame by pull and goal.
+    /// px.
+    ViewMoveMaxY => "view_move_max_y",
+    /// The vertical sway, where the camera rule says `sway`, takes this
+    /// many steps per logic frame (see `view_sway`). Steps per frame.
+    ViewSwayRateY => "view_sway_rate_y",
+    /// ... starting this many steps in when the view begins. Steps.
+    ViewSwayPhaseY => "view_sway_phase_y",
+    /// The bands of `view_band` start this far below the level's top.
+    /// Whole px.
+    ViewBandOffset => "view_band_offset",
+    /// Feet at or above the first band's top count as in this band.
+    /// Whole bands.
+    ViewBandAbove => "view_band_above",
     /// A walker's start is near the view from this far left of the view's
     /// left edge. Whole px.
     AppearLeft => "appear_left",

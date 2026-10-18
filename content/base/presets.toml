@@ -339,6 +339,24 @@ view_lag_share = 0
 view_lag_min = 0
 view_sway = 0
 view_sway_rate = 0
+view_pull_share_y = 0
+view_pull_max_y = 0
+view_lag_share_y = 0
+view_pull_share_y_medium = 0
+view_pull_max_y_medium = 0
+view_lag_share_y_medium = 0
+view_pull_share_y_quick = 0
+view_pull_max_y_quick = 0
+view_lag_share_y_quick = 0
+view_medium_fall = 0
+view_rise_rows = 0
+view_rise = 0
+view_fall = 0
+view_move_max_y = 0
+view_sway_rate_y = 0
+view_sway_phase_y = 0
+view_band_offset = 0
+view_band_above = 0
 appear_left = 0
 appear_right = 0
 appear_above = 0
@@ -1069,8 +1087,9 @@ ground_action_time = 0
 # facing right and 128 px behind one facing left, and holds still for 2
 # frames after a defeat. Where the level's camera says `sway`, as the
 # first level's does, it aims up to 15 px further left, by a step of 1
-# px every 8 frames. The view doesn't move vertically. walker-view.md covers `title-1` only, so
-# things don't appear by the view (`appear_by_view` 0).
+# px every 8 frames. It follows vertically too (see below).
+# walker-view.md covers `title-1` only, so things don't appear by the
+# view (`appear_by_view` 0).
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."
@@ -1184,6 +1203,45 @@ view_lag_min = 0.03125
 view_sway = 15
 view_sway_rate = 0.125
 view_hold = 2
+# The view's vertical motion (view-vertical.md, "In `title-2`"): it
+# aims 156 px above the ground below in reach, which is at or below the
+# feet and at most two 32 px bands under theirs, counted from line 1 of
+# the grid at level y 257 (feet at 256 or above are in band 15). Out of
+# reach it aims 64 px above the feet rising and 200 falling, and holds
+# its aim in between. It follows by pull and goal with three rate sets
+# (pull divisor, pull limit 64, 192 or 576/256 px, lag divisor): quick
+# with the feet in row 216 or below, or in the 24 rows above them while
+# they move down 8 px or more a frame, and medium there from 3 px. It
+# moves at most 8 px a frame. It sways too: 3 steps every 16 logic
+# frames, lined up with the horizontal sway so that it reaches step 5 6
+# frames after the view begins. With the aim moving up above the view's
+# top and the feet in its top 32 rows, the spec saw quick rates once;
+# the engine uses them there.
+view_height = 224
+view_feet = 156
+view_band = 32
+view_reach = 2
+view_band_offset = 256
+view_band_above = 15
+view_rise = 64
+view_fall = 200
+view_pull_share_y = 32
+view_pull_max_y = 0.25
+view_lag_share_y = 16
+view_pull_share_y_medium = 8
+view_pull_max_y_medium = 0.75
+view_lag_share_y_medium = 8
+view_pull_share_y_quick = 4
+view_pull_max_y_quick = 2.25
+view_lag_share_y_quick = 4
+view_quick_below = 216
+view_quick_fall_below = 192
+view_quick_fall = 7
+view_medium_fall = 2
+view_rise_rows = 32
+view_move_max_y = 8
+view_sway_rate_y = 0.1875
+view_sway_phase_y = 3.875
 
 [presets.classic-3]
 label = "Classic 3"

@@ -622,6 +622,24 @@ mod tests {
                     | Param::ViewLagMin
                     | Param::ViewSway
                     | Param::ViewSwayRate
+                    | Param::ViewPullShareY
+                    | Param::ViewPullMaxY
+                    | Param::ViewLagShareY
+                    | Param::ViewPullShareYMedium
+                    | Param::ViewPullMaxYMedium
+                    | Param::ViewLagShareYMedium
+                    | Param::ViewPullShareYQuick
+                    | Param::ViewPullMaxYQuick
+                    | Param::ViewLagShareYQuick
+                    | Param::ViewMediumFall
+                    | Param::ViewRiseRows
+                    | Param::ViewRise
+                    | Param::ViewFall
+                    | Param::ViewMoveMaxY
+                    | Param::ViewSwayRateY
+                    | Param::ViewSwayPhaseY
+                    | Param::ViewBandOffset
+                    | Param::ViewBandAbove
                     | Param::AppearLeft
                     | Param::AppearRight
                     | Param::AppearAbove
