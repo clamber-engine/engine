@@ -8,7 +8,9 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_pack::Fixed;
-use clamber_sim::{Event, Facing, InputFrame, Phase, State, World, generic_feel, step};
+use clamber_sim::{
+    Event, Facing, FlowEvent, InputFrame, Phase, START_LIVES, State, World, generic_feel, step,
+};
 
 fn f(v: f64) -> Fixed {
     Fixed::from_f64(v).unwrap()
@@ -435,5 +437,65 @@ fn a_knocked_out_thrower_leaves_by_the_balls_edges() {
     for _ in 0..100 {
         play.step(&[Action::Left]);
         assert!(!play.world.things[0].active);
+    }
+}
+
+impl Play {
+    /// Knocks the player out and waits for play to resume.
+    fn resume(&mut self) {
+        self.world.player.hurt_ahead = Some(0);
+        for _ in 0..600 {
+            self.step(&[]);
+            if self.world.flow.events.contains(&FlowEvent::Respawn) {
+                assert!(self.world.flow.lives < START_LIVES);
+                return;
+            }
+        }
+        panic!("play never resumed");
+    }
+
+    /// Whether the thrower is at its place, not knocked out.
+    fn thrower_back(&self, y: i32) -> bool {
+        let thrower = &self.world.things[0];
+        thrower.active && thrower.phase == Phase::Ready && thrower.pos == Vec2::ints(1000, y)
+    }
+}
+
+/// thrower-contact.md, "The knocked-out thrower", and restart-barrel.md,
+/// "What is there again after a knock-out": a thrower knocked out by a
+/// bounce or a roll, falling or already removed, is at its place again
+/// once play resumes after the player's knock-out.
+#[test]
+fn a_thrower_knocked_out_by_a_bounce_or_a_roll_is_there_after_a_knock_out() {
+    for wait in [5, 200] {
+        let mut play = Play::new(900, 200);
+        play.settle();
+        fall_into(
+            &mut play,
+            Vec2::new(f(1032.0), f(179.0)),
+            0.5,
+            Facing::Right,
+        );
+        play.step(&[]);
+        assert!(play.knocked_out(), "bounced on");
+        for _ in 0..wait {
+            play.step(&[]);
+        }
+        play.resume();
+        play.step(&[]);
+        assert!(play.thrower_back(200), "after a bounce, {wait} frames on");
+
+        let mut play = Play::new(900, 380);
+        play.settle();
+        play.roll_to_frame_5(Action::Right);
+        play.world.player.pos.x = f(1000.0);
+        play.step(&[Action::Right]);
+        assert!(play.knocked_out(), "rolled into");
+        for _ in 0..wait {
+            play.step(&[]);
+        }
+        play.resume();
+        play.step(&[]);
+        assert!(play.thrower_back(380), "after a roll, {wait} frames on");
     }
 }

@@ -24,7 +24,11 @@
 //! (`knockout_hold`), and no ball is thrown, so all of them go on that
 //! many frames late (thrower.md, "While the player is knocked out"). The
 //! view still makes a thrower that isn't knocked out appear and leave
-//! then, which the spec doesn't cover. A thrower with a [`ThrowerContact`](crate::ThrowerContact)
+//! then, which the spec doesn't cover. While a character is lost,
+//! nothing stops: they go on as without the hit, and leave by the
+//! view of each frame (thrower.md, "While a character is lost"). A
+//! thrower knocked out is there again after the player's knock-out, as
+//! everything is (see [`flow`](crate::flow)). A thrower with a [`ThrowerContact`](crate::ThrowerContact)
 //! hurts the player as [`thrower_hurt_ahead`] says, and is bounced on as
 //! [`bounced_on`] says and rolled into as [`rolled_into`] says, which
 //! knock it out (spec/behavior/thrower-contact.md). Knocked out, it

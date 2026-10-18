@@ -1,12 +1,14 @@
 //! Throwers and their balls in Classic 1 (spec/behavior/thrower.md).
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
-use clamber_pack::Fixed;
+use clamber_pack::{CharacterFeel, Fixed, Param, Presets};
 use clamber_sim::{
-    BALL, FlowEvent, InputFrame, Phase, START_LIVES, Thing, World, generic_feel, step,
+    BALL, Facing, FlowEvent, InputFrame, Other, Phase, START_LIVES, Thing, World, generic_feel,
+    step,
 };
 
 fn f(v: f64) -> Fixed {
@@ -457,4 +459,89 @@ fn a_placed_ball_appears_again_only_after_a_knock_out() {
     assert!(resumed, "play resumed");
     assert!(play.world.flow.lives < START_LIVES);
     assert_eq!(appears(&mut play), first, "the same position again");
+}
+
+/// [`world`] with both characters: the other one stands at `other`.
+fn pair(start: i32, other: i32, more: &str) -> World {
+    let world = world(start, more);
+    let mut feel = (*world.feel).clone();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: BTreeMap::new(),
+    });
+    // The other character stands where it's put.
+    feel.world.set(Param::FollowTrail, Fixed::ZERO);
+    let mut world = World::new(world.level.clone(), Arc::new(feel));
+    let lead = world.player.pos;
+    world.other = Some(Other::new(1, Vec2::ints(other, 381), Facing::Right, lead));
+    world
+}
+
+/// Plays `world` for `before` steps, then hits the player on H with the
+/// other character there in one copy, and not in the other. Checks that
+/// a character is lost and no life, and that on H and the `after` frames
+/// from there the thrower and the balls are the same in both runs, but
+/// for the ones each run's own view removed. Returns how many of those
+/// frames had something to compare, and on how many of them the two
+/// runs had exactly the same.
+fn as_without_the_loss(mut world: World, before: u32, after: u32) -> (usize, usize) {
+    let still = InputFrame::single(Frame::default());
+    for _ in 0..before {
+        step(&mut world, &still);
+    }
+    let mut free = world.clone();
+    world.player.hurt_ahead = Some(0);
+    let (mut compared, mut same) = (0, 0);
+    for n in 0..=after {
+        step(&mut world, &still);
+        step(&mut free, &still);
+        if n == 0 {
+            assert!(world.losing(), "a character is lost on H");
+        }
+        assert!(world.player.knockout.is_none(), "H + {n}: not knocked out");
+        assert!(free.player.knockout.is_none(), "the other run isn't hit");
+        assert_eq!(world.flow.lives, START_LIVES);
+        let (lost, kept) = (moving(&world), moving(&free));
+        assert!(agree(&lost, &kept), "H + {n}: {lost:?} {kept:?}");
+        compared += usize::from(!lost.is_empty() && !kept.is_empty());
+        same += usize::from(!lost.is_empty() && lost == kept);
+    }
+    (compared, same)
+}
+
+/// thrower.md, "While a character is lost": nothing stops. The thrower
+/// and every ball go on from H as without the hit, throws on the usual
+/// frames included.
+#[test]
+fn the_thrower_and_its_balls_go_on_while_a_character_is_lost() {
+    // A ball in the air on H (thrown up on 2), and throws due on 33 and
+    // 144 after the hit on 25.
+    let world = pair(1070, 1040, &thrower(1000, 300));
+    let (compared, same) = as_without_the_loss(world, 24, 160);
+    assert!(compared > 150 && same > 150, "{compared} {same}");
+}
+
+/// The same for a ball placed in the level that is there on H.
+#[test]
+fn a_placed_ball_goes_on_while_a_character_is_lost() {
+    let ball = "[[entities]]\ntype = \"ball\"\nat = [1040, 300]\n\
+        params = { velocity = [-1.171875, -3] }\n";
+    let world = pair(1070, 1100, &format!("{}{ball}", thrower(1000, 300)));
+    let (compared, same) = as_without_the_loss(world, 5, 80);
+    assert!(compared > 70 && same > 70, "{compared} {same}");
+}
+
+/// The same for a thrower already knocked out and falling, whether by a
+/// bounce or, still holding, by a roll or the ground action.
+#[test]
+fn a_falling_thrower_goes_on_while_a_character_is_lost() {
+    for hold in [0, 3, 10] {
+        let mut w = pair(1070, 1040, &thrower(1000, 300));
+        for _ in 0..5 {
+            step(&mut w, &InputFrame::single(Frame::default()));
+        }
+        w.things[0].phase = Phase::Falling { vy: f(-6.0), hold };
+        let (compared, same) = as_without_the_loss(w, 3, 60);
+        assert!(compared > 20 && same > 20, "hold {hold}: {compared} {same}");
+    }
 }
