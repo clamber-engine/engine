@@ -11,14 +11,14 @@
 use clamber_input::{Action, Device, Frame, Input, MAX_PLAYERS, Remapped, Settings};
 
 use crate::canvas::{Color, rgb};
+use crate::panel::{draw_cursor, draw_highlight, draw_panel};
 use crate::surface::Surface;
-use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred, text_size};
+use crate::text::{GLYPH, LINE, draw_text, draw_text_centred, text_size};
 
 const HEADING: Color = rgb(0xf4, 0xf0, 0xe8);
 const LABEL: Color = rgb(0xa8, 0xb0, 0xbc);
 const ITEM: Color = rgb(0xa8, 0xb0, 0xbc);
 const SELECTED: Color = rgb(0xf4, 0xf0, 0xe8);
-const MARKER: Color = rgb(0xf0, 0xc8, 0x40);
 const WAITING: Color = rgb(0xf0, 0xc8, 0x40);
 const DONE: Color = rgb(0x6c, 0xd4, 0x8a);
 const FAILED: Color = rgb(0xe8, 0x50, 0x60);
@@ -36,6 +36,13 @@ const PAD_X: i32 = 182;
 const KEYS_CHARS: usize = 16;
 const PAD_CHARS: usize = 32;
 const TOP: i32 = 8;
+/// The panel behind the rows, as left, top, right and bottom edges: the
+/// view's width, from just above the first row to just below the last.
+const PANEL: [f32; 4] = [1.0, 20.0, 383.0, 182.0];
+/// The highlight's ends, across the selected row.
+const HIGHLIGHT: (f32, f32) = (6.0, 376.0);
+/// From the left of what's selected to the cursor's middle.
+const CURSOR_LEFT: f32 = 9.0;
 
 /// A row on the screen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,6 +95,8 @@ pub struct Controls {
     waited: u32,
     /// The last thing that happened, shown at the bottom.
     status: Option<(String, Color)>,
+    /// Frames it's been updated for, which time the cursor's turn.
+    age: u32,
 }
 
 impl Default for Controls {
@@ -106,6 +115,7 @@ impl Controls {
             device: Device::Keyboard,
             waited: 0,
             status: None,
+            age: 0,
         }
     }
 
@@ -121,6 +131,7 @@ impl Controls {
     /// Applies one frame of input, starting and cancelling remaps on
     /// `input`.
     pub fn update(&mut self, frame: &Frame, input: &mut Input) -> Option<Request> {
+        self.age = self.age.wrapping_add(1);
         let pressed = frame.pressed;
         if let Some(remap) = input.remapping() {
             self.waited += 1;
@@ -212,18 +223,28 @@ impl Controls {
         draw_text_centred(canvas, centre_x, TOP, "CONTROLS", HEADING);
         let bindings = &input.settings().players[self.player];
         let remap = input.remapping();
+        draw_panel(canvas, PANEL, 255);
         let mut y = TOP + 2 * LINE;
         for (i, &row) in ROWS.iter().enumerate() {
             let selected = i == self.row;
             let color = if selected { SELECTED } else { ITEM };
+            let (row_y, age) = (y, self.age);
+            let cursor = move |canvas: &mut dyn Surface, left: i32| {
+                let middle = row_y as f32 + GLYPH.1 as f32 / 2.0;
+                draw_cursor(canvas, (left as f32 - CURSOR_LEFT, middle), age);
+            };
+            if selected {
+                let (left, right) = HIGHLIGHT;
+                let bar = [left, y as f32 - 2.0, right, (y + GLYPH.1) as f32 + 2.0];
+                draw_highlight(canvas, bar, 200);
+            }
             match row {
                 Row::Player => {
                     // The arrows say Left and Right change it.
                     let text = format!("< PLAYER {} >", self.player + 1);
                     draw_text_centred(canvas, centre_x, y, &text, color);
                     if selected {
-                        let left = centre_x - text_size(&text).0 / 2;
-                        draw_text(canvas, left - 2 * ADVANCE, y, ">", MARKER);
+                        cursor(canvas, centre_x - text_size(&text).0 / 2);
                     }
                     y += PITCH;
                     draw_text(canvas, KEYS_X, y, "KEYBOARD", LABEL);
@@ -246,7 +267,7 @@ impl Controls {
                             (fit(&names, chars), if picked { SELECTED } else { ITEM })
                         };
                         if selected && device == self.device {
-                            draw_text(canvas, x - 2 * ADVANCE, y, ">", MARKER);
+                            cursor(canvas, x);
                         }
                         draw_text(canvas, x, y, &text, cell);
                     }
@@ -256,7 +277,7 @@ impl Controls {
                 Row::Back => draw_text(canvas, ACTION_X, y, "Back", color),
             }
             if selected && matches!(row, Row::Reset | Row::Save | Row::Back) {
-                draw_text(canvas, ACTION_X - 2 * ADVANCE, y, ">", MARKER);
+                cursor(canvas, ACTION_X);
             }
             y += PITCH;
         }
@@ -546,7 +567,7 @@ mod tests {
         let mut controls = Controls::new();
         let mut canvas = Canvas::scaled((384, 216), 4);
         controls.draw(&mut canvas, 192, &input);
-        assert!(canvas.pixels.contains(&MARKER));
+        assert!(canvas.pixels.contains(&SELECTED));
         let before = canvas.clone();
 
         controls.update(&press(Action::Jump), &mut input);

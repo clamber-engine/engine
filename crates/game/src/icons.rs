@@ -5,7 +5,7 @@
 
 use std::sync::{Arc, OnceLock};
 
-use clamber_sprite::{Sheet, SpriteSheet, decode_png};
+use clamber_sprite::{Frame, Rect, Sheet, SpriteSheet, decode_png};
 
 use crate::surface::{Flip, Quad, Surface, Texture};
 
@@ -38,52 +38,69 @@ impl Icon {
     }
 }
 
-struct Icons {
-    sheet: Sheet,
-    texture: Arc<Texture>,
+/// A sheet of pre-rendered UI art and its texture, drawn unlit.
+pub(crate) struct UiArt {
+    pub sheet: Sheet,
+    pub texture: Arc<Texture>,
 }
 
-fn icons() -> &'static Icons {
-    static ICONS: OnceLock<Icons> = OnceLock::new();
-    ICONS.get_or_init(|| {
-        let sheet = Sheet::from_json_str(SHEET, "ui/hud.json").expect("the HUD sheet reads");
-        let image = decode_png(IMAGE).expect("the HUD image decodes");
-        let sprite = SpriteSheet::new(sheet, image).expect("the HUD image fits its sheet");
-        Icons {
+impl UiArt {
+    /// Reads the sheet `json` (named `name`, for errors) and its image
+    /// `png`, both built into the game.
+    pub fn load(json: &str, png: &[u8], name: &str) -> UiArt {
+        let sheet = Sheet::from_json_str(json, name).expect("a UI sheet reads");
+        let image = decode_png(png).expect("a UI image decodes");
+        let sprite = SpriteSheet::new(sheet, image).expect("a UI image fits its sheet");
+        UiArt {
             texture: Texture::new(sprite.image.to_rgba(), sprite.sheet.pixel_art),
             sheet: sprite.sheet,
         }
-    })
+    }
+
+    /// The frames of the animation `name`.
+    pub fn frames(&self, name: &str) -> impl Iterator<Item = &Frame> {
+        let animation = self
+            .sheet
+            .animation(name)
+            .unwrap_or_else(|| panic!("{name} is in its UI sheet"));
+        animation.frames.iter().map(|&i| &self.sheet.frames[i])
+    }
+
+    /// Draws the part `src` of the sheet's image at `dst` (left, top,
+    /// right and bottom, in view units).
+    pub fn draw(&self, surface: &mut dyn Surface, src: Rect, dst: [f32; 4], opacity: u8) {
+        surface.quad(&Quad {
+            texture: self.texture.clone(),
+            src,
+            dst,
+            flip: Flip::default(),
+            flash: None,
+            opacity,
+            lean: 0.0,
+            normals: None,
+        });
+    }
+}
+
+fn icons() -> &'static UiArt {
+    static ICONS: OnceLock<UiArt> = OnceLock::new();
+    ICONS.get_or_init(|| UiArt::load(SHEET, IMAGE, "ui/hud.json"))
 }
 
 /// Draws `icon` to fit the square `size` units across with its top left
 /// at `(x, y)`, centred in it as it was rendered.
 pub fn draw_icon(surface: &mut dyn Surface, icon: Icon, (x, y): (f32, f32), size: f32) {
     let icons = icons();
-    let animation = icons
-        .sheet
-        .animation(icon.name())
-        .expect("every icon is in the HUD sheet");
-    let frame = &icons.sheet.frames[animation.frames[0]];
+    let frame = icons
+        .frames(icon.name())
+        .next()
+        .expect("an icon has a frame");
     // View units per texel.
     let k = size / (FRAME * icons.sheet.scale as f32);
     let left = x + size / 2.0 + frame.offset.0 as f32 * k;
     let top = y + size / 2.0 + frame.offset.1 as f32 * k;
-    surface.quad(&Quad {
-        texture: icons.texture.clone(),
-        src: frame.rect,
-        dst: [
-            left,
-            top,
-            left + frame.rect.w as f32 * k,
-            top + frame.rect.h as f32 * k,
-        ],
-        flip: Flip::default(),
-        flash: None,
-        opacity: 255,
-        lean: 0.0,
-        normals: None,
-    });
+    let (w, h) = (frame.rect.w as f32 * k, frame.rect.h as f32 * k);
+    icons.draw(surface, frame.rect, [left, top, left + w, top + h], 255);
 }
 
 #[cfg(test)]

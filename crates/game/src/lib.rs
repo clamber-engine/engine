@@ -61,6 +61,7 @@ mod layers;
 mod map;
 mod menu;
 mod music;
+mod panel;
 mod prefs;
 pub mod report;
 mod session;

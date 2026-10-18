@@ -28,6 +28,7 @@ use crate::icons::Icon;
 use crate::import::{After, Games, Importing, PERSONAL, Pick, Picked, Picker};
 use crate::map::{MapPlay, MapStep};
 use crate::menu::{Choice, Menu};
+use crate::panel::draw_panel;
 use crate::prefs::{BUNDLED, Prefs, Volume};
 use crate::report;
 use crate::sound::{Cue, cues};
@@ -1112,6 +1113,10 @@ impl Session {
         draw_text_centred(canvas, centre, 14, "CREDITS", HEADING);
         let lines = self.credits.wrapped(CREDITS_WIDTH);
         let left = centre - (CREDITS_WIDTH as i32 * ADVANCE) / 2;
+        let bottom = CREDITS_TOP + CREDITS_ROWS as i32 * LINE;
+        let (l, r) = (left - 8, centre + (centre - left) + 8);
+        let panel = [l, CREDITS_TOP - 7, r, bottom + 3];
+        draw_panel(canvas, panel.map(|e| e as f32), 255);
         for (row, line) in lines.iter().skip(scroll).take(CREDITS_ROWS).enumerate() {
             let color = if line.heading { TITLE } else { HEADING };
             let y = CREDITS_TOP + row as i32 * LINE;
