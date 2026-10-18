@@ -89,8 +89,9 @@ pub use sound::{
     read_list, read_samples, read_set, read_song, song_samples,
 };
 pub use sprites::{
-    Form, Frame, FrameTable, Header, LAST_SHORT, Mirror, Picture, Piece, Runs, SheetFiles, Size,
-    SpritePalette, TABLE_ENTRY_SIZE, TableEntry, read_frames, sprite_sheet,
+    Form, Frame, FrameTable, HASHED_OPAQUE, Header, LAST_SHORT, Mirror, Picture, Piece, Runs,
+    SheetFiles, Size, SpritePalette, TABLE_ENTRY_SIZE, TableEntry, find_pictures, read_frames,
+    sprite_sheet,
 };
 
 pub use view_limits::{VIEW_HEIGHT, VIEW_WIDTH, VerticalLimit, ViewLimits};

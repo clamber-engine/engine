@@ -1,19 +1,20 @@
 //! Sprite frames (`spec/formats/sprites.md`): the frame table, short and
 //! full frames, their pieces and sheet tiles, the pictures they make,
-//! mirrored or not, and sprite palettes, turned into a Clamber sprite
-//! sheet.
+//! mirrored or not, their picture hashes, and sprite palettes, turned
+//! into a Clamber sprite sheet.
 //!
 //! A frame's origin is the sheet frame's origin, so the engine's
 //! mirroring about the origin is the format's. Which frames each object
 //! shows, which palette it uses, and where its origin goes against its
 //! position belong to the object, not the sheet.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use clamber_sprite::{IndexImage, Palette, Rect, encode_indexed_png, pack};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
-use crate::{Location, TILE, TileSet, rgb};
+use crate::{Location, Sha256Hash, TILE, TileSet, rgb};
 
 /// Bytes in a frame table entry.
 pub const TABLE_ENTRY_SIZE: usize = 4;
@@ -26,6 +27,10 @@ const SHEET_COLUMNS: u16 = 16;
 
 /// Bytes in a four-plane tile.
 const TILE_BYTES: usize = 32;
+
+/// The fewest opaque pixels a full frame's picture has to be named by its
+/// picture hash.
+pub const HASHED_OPAQUE: usize = 32;
 
 /// Where a sheet's frames put their origin in the untrimmed frame: past
 /// the farthest a piece can be left of or above it.
@@ -370,6 +375,19 @@ impl Frame {
         })
     }
 
+    /// The frame's picture hash ("Picture hashes"): `None` for a short
+    /// frame or one with fewer than [`HASHED_OPAQUE`] opaque pixels.
+    pub fn picture_hash(&self) -> Option<Sha256Hash> {
+        if self.form != Form::Full {
+            return None;
+        }
+        let picture = self.picture(None, Mirror::default()).ok()?;
+        if picture.opaque() < HASHED_OPAQUE {
+            return None;
+        }
+        Some(Sha256Hash(Sha256::digest(picture.hash_input()?).into()))
+    }
+
     /// The pieces' extent from the origin: left, top, right and bottom
     /// edges, right and bottom exclusive.
     fn bounds(&self) -> Option<(i32, i32, i32, i32)> {
@@ -390,6 +408,38 @@ pub struct Picture {
     pub x: i32,
     pub y: i32,
     pub pixels: IndexImage,
+}
+
+impl Picture {
+    /// How many of its pixels are opaque.
+    pub fn opaque(&self) -> usize {
+        let (w, h) = (self.pixels.width, self.pixels.height);
+        (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .filter(|&(x, y)| self.pixels.get(x, y) != 0)
+            .count()
+    }
+
+    /// The bytes its picture hash is worked out from ("Picture hashes"):
+    /// the box of its opaque pixels from the origin, then a colour number
+    /// per pixel of the box. `None` when no pixel is opaque.
+    pub fn hash_input(&self) -> Option<Vec<u8>> {
+        let (w, h) = (self.pixels.width, self.pixels.height);
+        let opaque = |x, y| self.pixels.get(x, y) != 0;
+        let rows: Vec<u32> = (0..h).filter(|&y| (0..w).any(|x| opaque(x, y))).collect();
+        let cols: Vec<u32> = (0..w).filter(|&x| (0..h).any(|y| opaque(x, y))).collect();
+        let (&top, &bottom) = (rows.first()?, rows.last()?);
+        let (&left, &right) = (cols.first()?, cols.last()?);
+        let mut bytes = Vec::new();
+        bytes.extend((self.x + left as i32).to_le_bytes()[..2].iter());
+        bytes.extend((self.y + top as i32).to_le_bytes()[..2].iter());
+        bytes.extend((right - left + 1).to_le_bytes()[..2].iter());
+        bytes.extend((bottom - top + 1).to_le_bytes()[..2].iter());
+        for y in top..=bottom {
+            bytes.extend((left..=right).map(|x| self.pixels.get(x, y)));
+        }
+        Some(bytes)
+    }
 }
 
 /// A sprite palette: colours 1 to 15 of a palette row.
@@ -537,6 +587,34 @@ pub fn read_frames<'a>(
         frames.insert(number, Frame::read(number, bytes)?);
     }
     Ok(frames)
+}
+
+/// Which frame has each picture hash in `wanted`, looking through every
+/// full frame of `table` ("Picture hashes"). Of frames with the same
+/// picture, the first is kept. A frame that can't be read has no hash, so
+/// one bad frame doesn't keep the others from being found.
+pub fn find_pictures<'a>(
+    table: &FrameTable,
+    wanted: &HashSet<Sha256Hash>,
+    bank_at: impl Fn(Location) -> Option<&'a [u8]>,
+) -> HashMap<Sha256Hash, u16> {
+    let mut found = HashMap::new();
+    let last = u16::try_from(table.len()).unwrap_or(u16::MAX);
+    for number in LAST_SHORT + 1..last {
+        let Some(bytes) = table.entry(number).and_then(|e| bank_at(e.location)) else {
+            continue;
+        };
+        let Some(hash) = Frame::read(number, bytes)
+            .ok()
+            .and_then(|f| f.picture_hash())
+        else {
+            continue;
+        };
+        if wanted.contains(&hash) {
+            found.entry(hash).or_insert(number);
+        }
+    }
+    found
 }
 
 #[cfg(test)]
@@ -948,6 +1026,96 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn picture_hashes_match_the_spec_vectors() {
+        let frames = frames();
+        let rows = rows("hashes.tsv");
+        assert_eq!(rows.len(), 3);
+        for row in rows {
+            let [frame, left, top, width, height, opaque, bytes, sha] = &row[..] else {
+                panic!("bad row {row:?}");
+            };
+            let frame = &frames[&num(frame)];
+            let picture = frame.picture(None, Mirror::default()).unwrap();
+            assert_eq!(picture.opaque(), num::<usize>(opaque), "{row:?}");
+            let input = picture.hash_input().unwrap();
+            assert_eq!(input.len(), num::<usize>(bytes), "{row:?}");
+            let i16_at = |i: usize| i16::from_le_bytes([input[i], input[i + 1]]);
+            let u16_at = |i: usize| u16::from_le_bytes([input[i], input[i + 1]]);
+            assert_eq!(i16_at(0), num::<i16>(left), "{row:?}");
+            assert_eq!(i16_at(2), num::<i16>(top), "{row:?}");
+            assert_eq!(u16_at(4), num::<u16>(width), "{row:?}");
+            assert_eq!(u16_at(6), num::<u16>(height), "{row:?}");
+            assert_eq!(frame.picture_hash(), Sha256Hash::from_hex(sha), "{row:?}");
+        }
+    }
+
+    #[test]
+    fn hash_input_matches_the_spec_vector() {
+        let want: Vec<u8> = hex_lines("hash-input-35.hex")
+            .into_iter()
+            .flat_map(|(_, b)| b)
+            .collect();
+        let picture = frames()[&35].picture(None, Mirror::default()).unwrap();
+        assert_eq!(picture.hash_input().unwrap(), want);
+    }
+
+    #[test]
+    fn hash_input_matches_the_spec_example() {
+        // Colour 3 at (-1, -2) and colour 5 at (0, -1), in a picture
+        // reaching past them.
+        let mut pixels = IndexImage::new(4, 4);
+        pixels.set(1, 0, 3);
+        pixels.set(2, 1, 5);
+        let picture = Picture {
+            x: -2,
+            y: -2,
+            pixels,
+        };
+        assert_eq!(
+            picture.hash_input().unwrap(),
+            [0xff, 0xff, 0xfe, 0xff, 2, 0, 2, 0, 3, 0, 0, 5]
+        );
+        assert_eq!(picture.opaque(), 2);
+        let empty = Picture {
+            x: 0,
+            y: 0,
+            pixels: IndexImage::new(3, 3),
+        };
+        assert_eq!(empty.hash_input(), None);
+    }
+
+    #[test]
+    fn only_full_frames_with_enough_opaque_pixels_have_hashes() {
+        let frames = frames();
+        assert_eq!(frames[&5].picture_hash(), None);
+        // A full frame with one small piece of 4 opaque pixels.
+        let mut bytes = vec![0, 1, 0, 0, 0, 1, 0, 0, 128, 128];
+        let mut tile = [0u8; TILE_BYTES];
+        tile[0] = 0xF0;
+        bytes.extend(tile);
+        let few = Frame::read(40, &bytes).unwrap();
+        assert_eq!(few.picture(None, Mirror::default()).unwrap().opaque(), 4);
+        assert_eq!(few.picture_hash(), None);
+    }
+
+    #[test]
+    fn pictures_are_found_by_hash() {
+        let (image, table) = image();
+        let frames = frames();
+        let hashes: Vec<Sha256Hash> = [35, 37]
+            .iter()
+            .map(|n| frames[n].picture_hash().unwrap())
+            .collect();
+        let missing = Sha256Hash([7; 32]);
+        let wanted: HashSet<_> = hashes.iter().copied().chain([missing]).collect();
+        let found = find_pictures(&table, &wanted, |l| image.at(l));
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[&hashes[0]], 35);
+        assert_eq!(found[&hashes[1]], 37);
+        assert!(!found.contains_key(&missing));
     }
 
     #[test]
