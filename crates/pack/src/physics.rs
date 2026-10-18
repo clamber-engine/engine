@@ -1169,6 +1169,10 @@ params! {
     /// Frames the view holds still, counting the frame, when the player
     /// defeats an enemy by bouncing or rolling. Whole frames.
     ViewHold => "view_hold",
+    /// Frames the view holds still, counting the hit frame, when the
+    /// player is knocked out: it keeps where it was at the end of the
+    /// frame before the hit, across and down. Whole frames.
+    ViewKnockoutHold => "view_knockout_hold",
     /// Above 0, the view aims 1 px further left while the player's `x`
     /// rounded down is less than this less the speed part of its aim
     /// (`view_lead_speed`). Whole px.

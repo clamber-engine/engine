@@ -346,9 +346,14 @@ fn ten_frames_late(mut world: World, before: u32, after: u32) -> usize {
     assert!(world.player.knockout.is_some(), "knocked out on H");
     assert_eq!(moving(&world), moving(&free), "H as without the hit");
     let at_h = moving(&world);
+    let view_at_h = world.view;
     for n in 1..=10 {
         step(&mut world, &still);
         assert_eq!(moving(&world), at_h, "H + {n} unchanged");
+        if n < 10 {
+            // So nothing can be outside the window then that wasn't on H.
+            assert_eq!(world.view, view_at_h, "H + {n}: the view is still");
+        }
     }
     let mut compared = 0;
     for n in 1..=after {
@@ -402,6 +407,83 @@ fn a_falling_thrower_goes_on_10_frames_late_after_a_knock_out() {
     };
     let compared = ten_frames_late(w, 3, 40);
     assert!(compared > 10, "{compared}");
+}
+
+/// view.md and view-vertical.md, "Frames on which the view stays
+/// still": when the player is knocked out on H, the view keeps where it
+/// was at the end of H - 1 on H to H + 9, across and down, though it
+/// would have moved on H without the hit, and moves again on H + 10.
+#[test]
+fn the_view_holds_still_from_a_knock_out_for_ten_frames() {
+    let mut play = Play::new(world(400, ""));
+    for _ in 0..40 {
+        play.step(&[Action::Right]);
+    }
+    // Put the view behind and above its aims at the end of H - 1.
+    let mut view = play.world.view.unwrap();
+    view.left -= f(40.0);
+    view.top -= f(40.0);
+    play.world.view = Some(view);
+    let mut free = play.world.clone();
+    step(
+        &mut free,
+        &InputFrame::single(Frame::after(play.held, play.held)),
+    );
+    let moved = free.view.unwrap();
+    assert!(moved.left != view.left && moved.top != view.top);
+
+    play.world.player.hurt_ahead = Some(0);
+    for n in 0..=9 {
+        play.step(&[Action::Right]);
+        assert!(play.world.player.knockout.is_some());
+        assert_eq!(play.world.view, Some(view), "H + {n}");
+    }
+    play.step(&[Action::Right]);
+    let moved = play.world.view.unwrap();
+    assert!(moved.left != view.left && moved.top != view.top, "H + 10");
+}
+
+/// The frame a placed ball at x 700 appears on, walking right from 200
+/// with a hit on `hit` if any, within `steps`; with the start-of-frame
+/// view's left edge then and on the frame before.
+fn appears_walking(hit: Option<u32>, steps: u32) -> Option<(u32, i64, i64)> {
+    let ball = "[[entities]]\ntype = \"ball\"\nat = [700, 300]\n\
+        params = { velocity = [-1.171875, -3] }\n";
+    let mut play = Play::new(world(200, ball));
+    let mut before = play.world.view.unwrap().x();
+    for frame in 0..steps {
+        if hit == Some(frame) {
+            play.world.player.hurt_ahead = Some(0);
+        }
+        let left = play.world.view.unwrap().x();
+        play.step(&[Action::Right]);
+        let b = &play.world.things[0];
+        if b.active {
+            assert_eq!(b.pos.x, f(700.0) - f(1.171875), "one frame on");
+            return Some((frame, left, before));
+        }
+        before = left;
+    }
+    None
+}
+
+/// thrower.md, "While the player is knocked out": a placed ball that
+/// isn't there on H appears by the usual rule with the view at the start
+/// of each frame, so not before H + 11, and only if the view comes far
+/// enough; when it does it's one frame on and not held.
+#[test]
+fn a_placed_ball_appears_after_a_knock_out_only_once_the_view_moves() {
+    let (on, ..) = appears_walking(None, 400).expect("appears without a hit");
+    let mut seen = 0;
+    for early in 1..=12 {
+        let h = on - early;
+        if let Some((frame, left, before)) = appears_walking(Some(h), on + 80) {
+            assert!(frame >= h + 11, "{early} early: H + {}", frame - h);
+            assert!(700 - left <= 288 && 700 - before > 288);
+            seen += 1;
+        }
+    }
+    assert!(seen > 0);
 }
 
 /// thrower.md, "Balls placed in a level": a placed ball appears only

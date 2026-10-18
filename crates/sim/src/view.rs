@@ -18,6 +18,8 @@
 //! - On a step on which the player defeats an enemy by bouncing or
 //!   rolling, and for `view_hold` steps in all counting that one, the
 //!   view doesn't move.
+//! - When the player is knocked out, for `view_knockout_hold` steps
+//!   counting the hit frame, the view doesn't move either.
 //! - With `view_near_left` above 0, while the player's `x` rounded down
 //!   is less than it less the speed part, the target is 1 px further
 //!   left.
@@ -50,7 +52,8 @@
 //!   quickly (`view_share_y_quick`, `view_speed_share_y_quick`) when the
 //!   feet are low in the view, when they're fairly low and falling fast,
 //!   or where the camera rule says `quick`.
-//! - It holds still with the horizontal motion after a defeat.
+//! - It holds still with the horizontal motion after a defeat and in a
+//!   knock-out.
 //! - With `view_shake_count` above 0, a ground action makes it shake:
 //!   from `view_shake_delay` frames after the press frame, every
 //!   `view_shake_period` frames, an offset is added to its top after it
@@ -213,6 +216,10 @@ impl View {
         }
         if self.hold > 0 {
             self.hold -= 1;
+            return;
+        }
+        let knocked = u16::from(frames(physics[Param::ViewKnockoutHold]));
+        if player.knockout.is_some_and(|k| k.frame < knocked) {
             return;
         }
         if vertical(physics) {

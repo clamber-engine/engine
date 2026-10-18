@@ -304,6 +304,7 @@ view_lead_speed = 0
 view_share = 0
 view_speed_share = 0
 view_hold = 0
+view_knockout_hold = 0
 view_near_left = 0
 view_begin_back = 0
 view_begin_back_far = 0
@@ -795,6 +796,9 @@ view_lead_speed = 24
 view_share = 32
 view_speed_share = 8
 view_hold = 2
+# The view and its vertical motion hold still on the hit frame of a
+# knock-out and the 9 after it (view.md).
+view_knockout_hold = 10
 # Near the level's left end the view aims 1 px further left (view.md).
 view_near_left = 128
 # When an area begins (view.md): the view starts 79 left of the lead,

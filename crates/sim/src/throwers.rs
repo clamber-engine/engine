@@ -22,9 +22,11 @@
 //! (whether by a bounce, a roll or the ground action), and
 //! every ball stop on the frames the player holds still after the hit
 //! (`knockout_hold`), and no ball is thrown, so all of them go on that
-//! many frames late (thrower.md, "While the player is knocked out"). The
-//! view still makes a thrower that isn't knocked out appear and leave
-//! then, which the spec doesn't cover. While a character is lost,
+//! many frames late (thrower.md, "While the player is knocked out").
+//! With `view_knockout_hold`, the view doesn't move from the hit until
+//! just before they go on, so none appears or leaves then, and a placed
+//! ball that wasn't there on the hit frame appears by the usual rule from
+//! the frame they go on at the earliest. While a character is lost,
 //! nothing stops: they go on as without the hit, and leave by the
 //! view of each frame (thrower.md, "While a character is lost"). A
 //! thrower knocked out is there again after the player's knock-out, as
