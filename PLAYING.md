@@ -56,7 +56,9 @@ the shoulders do nothing.
   Action just before
   landing and keep it held to roll as you land.
 - **Default, Snappy and Floaty:** hold Down and Action together while
-  moving.
+  moving. Keep a direction held and the roll carries on into a run
+  (Action held) or a walk once it slows down; let go and it slows to a
+  stop.
 
 **Swap** and **Tandem** only matter with two characters, in Classic 1:
 both swap the characters. Tandem only counts on the frame you press it,

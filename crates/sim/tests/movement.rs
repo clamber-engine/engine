@@ -359,6 +359,66 @@ fn pressing_against_a_roll_brakes_it_and_keeps_facing() {
 }
 
 #[test]
+fn a_roll_with_a_direction_held_flows_into_moving() {
+    // Clamber's own presets: a roll with its direction held ends at
+    // `roll_flow_speed` and carries on from that speed, running with
+    // Action held and walking without.
+    use Action::{Action as A, Down as D, Right as R};
+    for name in ["default", "snappy", "floaty"] {
+        let feel = generic_feel(name).unwrap();
+        let flow = feel.world[Param::RollFlowSpeed];
+        for (keys, cap, state) in [
+            (vec![R, A], feel.world[Param::TopSpeed], State::Run),
+            (vec![R], feel.world[Param::WalkSpeed], State::Walk),
+        ] {
+            let mut w = Play::new(feel.clone());
+            hold(&mut w, &[R, A], 60);
+            hold(&mut w, &[R, A, D], 1);
+            let steps = hold(&mut w, &keys, 150);
+            let end = first(&steps, Event::RollEnd).unwrap();
+            assert!(steps[..end].iter().all(|s| s.state == State::Roll));
+            assert!(
+                steps[end..].iter().all(|s| s.state == state),
+                "{name} {keys:?}"
+            );
+            assert_eq!(all_events(&steps), [Event::RollEnd], "{name} {keys:?}");
+            assert_eq!(w.player.vel.x, cap, "{name} {keys:?}");
+
+            // and from the speed it ended at, without stopping first
+            let mut w = Play::new(feel.clone());
+            hold(&mut w, &[R, A], 60);
+            hold(&mut w, &[R, A, D], 1);
+            hold(&mut w, &keys, end + 1);
+            assert!(w.player.vel.x >= flow - feel.world[Param::RollFriction]);
+            assert!(w.player.vel.x <= flow);
+            // A roll can start again straight away.
+            let steps = hold(&mut w, &[R, A, D], 1);
+            assert_eq!(steps[0].events, [Event::RollStart], "{name} {keys:?}");
+        }
+    }
+}
+
+#[test]
+fn classic_rolls_ignore_roll_flow_speed() {
+    // A timed roll (Classic 1) ends as spec/behavior/roll-speed.md says,
+    // with or without `roll_flow_speed`.
+    use Action::{Action as A, Right as R};
+    let run = |flow: f64| {
+        let mut feel = generic_feel("classic-1").unwrap();
+        feel.world
+            .set(Param::RollFlowSpeed, Fixed::from_f64(flow).unwrap());
+        let mut w = Play::new(feel);
+        play(&mut w, 60, |f| if f == 0 { vec![A] } else { vec![A, R] })
+            .iter()
+            .map(|r| (r.state, r.events.clone(), r.x, r.vx))
+            .collect::<Vec<_>>()
+    };
+    let rows = run(0.0);
+    assert!(rows.iter().any(|r| r.1.contains(&Event::RollEnd)));
+    assert_eq!(rows, run(2.5));
+}
+
+#[test]
 fn no_roll_when_standing_still_or_without_the_ability() {
     let mut w = world();
     let steps = hold(&mut w, &[Action::Down, Action::Action], 10);

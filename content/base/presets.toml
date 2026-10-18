@@ -88,6 +88,7 @@ takeoff_wait = 0
 roll_friction = 0.03125
 roll_deceleration = 0.125
 roll_min_speed = 0.75
+roll_flow_speed = 2.5
 roll_time = 0
 roll_speed = 0
 roll_slow_speed = 0

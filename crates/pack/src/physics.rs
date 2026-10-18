@@ -323,6 +323,11 @@ params! {
     RollDeceleration => "roll_deceleration",
     /// A roll needs at least this speed to start, and ends below it.
     RollMinSpeed => "roll_min_speed",
+    /// Above 0, a roll that isn't timed also ends on the frame it slows
+    /// from above this speed to it or below with a direction held the way
+    /// it rolls, and the player walks or runs on from there. A roll that
+    /// starts no faster, or with 0, rolls on until `roll_min_speed`.
+    RollFlowSpeed => "roll_flow_speed",
     /// Above 0, rolls are timed: an action press on the ground starts one
     /// (unless down is held), whatever the speed, and it ends this many
     /// frames later, or this many frames after landing if it went off a

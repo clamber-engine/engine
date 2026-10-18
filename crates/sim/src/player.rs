@@ -688,6 +688,19 @@ impl Player {
         (held > Fixed::ZERO && light).then_some(held)
     }
 
+    /// Whether a roll that isn't timed hands over to walking or running:
+    /// with `dir` held the way it rolls, on the frame it slows from above
+    /// `roll_flow_speed` (`before`) to it or below. One that starts no
+    /// faster rolls on to `roll_min_speed`.
+    fn rolls_into_moving(&self, before: Fixed, dir: i32, physics: &Physics) -> bool {
+        let flow = physics[Param::RollFlowSpeed];
+        flow > Fixed::ZERO
+            && dir != 0
+            && self.vel.x * Fixed::from_int(dir) > Fixed::ZERO
+            && before.abs() > flow
+            && self.vel.x.abs() <= flow
+    }
+
     /// Ends the timed roll under way or the stop after one, with any
     /// boost waiting.
     fn end_roll(&mut self) {
@@ -1864,7 +1877,11 @@ impl Player {
             if self.grounded() && !events.contains(&Event::Land) {
                 self.air_stopped = false;
             }
-        } else if rolling && (!self.grounded() || self.vel.x.abs() < physics[Param::RollMinSpeed]) {
+        } else if rolling
+            && (!self.grounded()
+                || self.vel.x.abs() < physics[Param::RollMinSpeed]
+                || self.rolls_into_moving(start_vx, held_dir, physics))
+        {
             events.push(Event::RollEnd);
         }
         if self.roll_stop == 0 {
