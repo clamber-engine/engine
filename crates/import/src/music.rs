@@ -4,9 +4,10 @@
 //! `spec/formats/echo.md`), with the samples in place while it plays
 //! (`spec/formats/sound.md`, "Which samples a song has").
 //!
-//! The spec doesn't cover noise yet: a voice with noise on is silent.
-//! Nor does it say on which output a value handed between two steps
+//! The spec doesn't say on which output a value handed between two steps
 //! first counts; here it counts from the first output after the step.
+//! Nor does it cover the noise register's value when a song starts; here
+//! each song starts it as the emulation measured did.
 
 use crate::songs::{CHANNELS, GAIN, Player, Step};
 use crate::sound::{Loop, Read, Sample, read_samples, read_song, song_samples};
@@ -433,11 +434,13 @@ fn hand(mixer: &mut Mixer, step: &Step) {
     mixer.echo.feedback = settings.echo_feedback;
     mixer.echo.filter = settings.echo_filter;
     mixer.echo.writing = settings.echo_writing;
+    mixer.noise_rate = settings.noise_rate;
     for (voice, s) in mixer.voices.iter_mut().zip(&step.voices) {
         voice.echo = s.echo;
         voice.sample = s.voice.sample;
         voice.pitch = s.voice.pitch;
-        voice.volume = if s.noise { [0, 0] } else { s.voice.volume };
+        voice.noise = s.noise;
+        voice.volume = s.voice.volume;
         voice.envelope.set(s.voice.envelope, GAIN);
         if s.released {
             voice.envelope.release();
@@ -694,15 +697,43 @@ mod tests {
     }
 
     #[test]
-    fn samples_not_in_place_and_noise_are_silent() {
+    fn samples_not_in_place_are_silent() {
         let song = looping_song();
         let music = render(&song, &[]).unwrap();
         assert!(music.frames.iter().all(|f| *f == [0, 0]));
+    }
 
-        let mut track = SETUP.to_vec();
-        track.extend([26, 165, 4, 0]);
-        let music = render(&self::song(128, &track), &[level_sample()]).unwrap();
-        assert!(music.frames.iter().all(|f| *f == [0, 0]));
+    #[test]
+    fn a_voice_with_noise_on_sounds_the_noise_register() {
+        let notes = |commands: &[u8]| {
+            let mut track = SETUP.to_vec();
+            track.extend(commands);
+            track.extend([165, 4, 0]);
+            render(&self::song(128, &track), &[level_sample()]).unwrap()
+        };
+        let sample = notes(&[]);
+        // Rate 0: the register keeps its value, so the sound is steady,
+        // and not the sample's.
+        let steady = notes(&[26]);
+        let heard = |music: &Music| -> Vec<[i16; 2]> {
+            music
+                .frames
+                .iter()
+                .copied()
+                .filter(|f| *f != [0, 0])
+                .collect()
+        };
+        let steady = heard(&steady);
+        assert!(!steady.is_empty());
+        assert_ne!(steady, heard(&sample));
+        let full = steady.iter().max_by_key(|f| f[0].unsigned_abs()).unwrap();
+        assert!(full[0] < -30_000, "{full:?}");
+        // Rate 31: a step on every output.
+        let stepping = heard(&notes(&[25, 31, 26]));
+        assert!(stepping.iter().any(|f| f[0] > 0));
+        assert!(stepping.iter().any(|f| f[0] < 0));
+        // Noise off again plays the sample.
+        assert_eq!(heard(&notes(&[25, 31, 26, 27])), heard(&sample));
     }
 
     #[test]

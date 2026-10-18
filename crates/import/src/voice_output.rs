@@ -2,16 +2,15 @@
 //! become the audio the console plays. Each [`VoiceOutput`] plays its notes'
 //! sample points at its pitch, blends them, and scales the blend by its
 //! level ([`Envelope`]); a [`Mixer`] adds the voices up with their
-//! volumes and the main volume, and adds the [`Echo`].
-//!
-//! Noise isn't in the spec yet.
+//! volumes and the main volume, and adds the [`Echo`]. A voice with
+//! noise on uses the mixer's shared noise register in place of its blend.
 
 use std::sync::OnceLock;
 
 use crate::echo::Echo;
 use crate::songs::CHANNELS;
 use crate::sound::{BLOCK_SIZE, BlockHeader, Earlier, STEPS, Sample};
-use crate::voices::Envelope;
+use crate::voices::{Envelope, due};
 
 /// Outputs from the check that takes a start to the new note's first.
 const NOTE_DELAY: u8 = 7;
@@ -21,6 +20,10 @@ const OVERLAP: u8 = 2;
 
 /// Pitches past this play as the pitch less it.
 const PITCH_WRAP: u16 = 16_384;
+
+/// The noise register when a song starts, as in the emulation measured
+/// (`voice-output.md`, "Noise").
+pub const NOISE_START: u16 = 16_384;
 
 /// Fractions of a point a blend's weights are worked out for.
 const FRACTIONS: usize = 256;
@@ -187,6 +190,8 @@ pub struct VoiceOutput {
     pub sample: u8,
     /// The voice also goes into the echo.
     pub echo: bool,
+    /// The voice sounds noise in place of its sample.
+    pub noise: bool,
     note: Option<Note>,
     /// The note a start took, and outputs since the check that took it.
     next: Option<(Note, u8)>,
@@ -200,8 +205,8 @@ impl VoiceOutput {
     }
 
     /// The voice's sound `y` on the output where the shared count is
-    /// `count`, playing `samples`.
-    pub fn output(&mut self, samples: &[Sample], count: u64) -> i32 {
+    /// `count`, playing `samples`, with `noise` the noise value on it.
+    pub fn output(&mut self, samples: &[Sample], count: u64, noise: i32) -> i32 {
         let mut level = self.envelope.output(count);
         if self.envelope.took_start() {
             self.next = Some((Note::new(samples, self.sample), 0));
@@ -227,6 +232,7 @@ impl VoiceOutput {
         let heard = self.levels[0];
         self.levels = [self.levels[1], level];
         match &self.note {
+            Some(_) if self.noise => even((noise * i32::from(heard)) >> 11),
             Some(note) => even((note.blend() * i32::from(heard)) >> 11),
             None => 0,
         }
@@ -241,19 +247,25 @@ pub struct Mixer {
     /// Left and right, as bytes.
     pub main_volume: [u8; 2],
     pub echo: Echo,
+    /// The noise register `R` on the next output, 1 to 32 767.
+    pub noise: u16,
+    /// The noise rate, 0 to 31.
+    pub noise_rate: u8,
     /// The shared count on the next output.
     pub count: u64,
 }
 
 impl Mixer {
     /// Voices that have never started, main volume 0, an echo with delay
-    /// `echo_delay` that adds nothing, and the shared count `count` on
-    /// the first output.
+    /// `echo_delay` that adds nothing, noise rate 0 with the register at
+    /// [`NOISE_START`], and the shared count `count` on the first output.
     pub fn new(count: u64, echo_delay: u8) -> Mixer {
         Mixer {
             voices: Default::default(),
             main_volume: [0, 0],
             echo: Echo::new(echo_delay),
+            noise: NOISE_START,
+            noise_rate: 0,
             count,
         }
     }
@@ -262,8 +274,10 @@ impl Mixer {
     pub fn output(&mut self, samples: &[Sample]) -> [i16; 2] {
         let mut sums = [0; 2];
         let mut echo_input = [0; 2];
+        // 2`R`, wrapped.
+        let noise = i32::from((self.noise << 1) as i16);
         for voice in &mut self.voices {
-            let y = voice.output(samples, self.count);
+            let y = voice.output(samples, self.count, noise);
             for side in 0..2 {
                 let part = (y * signed(voice.volume[side])) >> 7;
                 sums[side] = limit(sums[side] + part);
@@ -271,6 +285,10 @@ impl Mixer {
                     echo_input[side] = limit(echo_input[side] + part);
                 }
             }
+        }
+        if due(self.noise_rate, self.count) {
+            let r = self.noise;
+            self.noise = (r >> 1) | (((r ^ (r >> 1)) & 1) << 14);
         }
         self.count += 1;
         let echo = self.echo.output(echo_input);
@@ -287,9 +305,9 @@ impl Mixer {
 mod tests {
     use super::*;
 
-    fn vector(name: &str) -> String {
+    fn vector(dir: &str, name: &str) -> String {
         let path = format!(
-            "{}/../../spec/vectors/voice-output/{name}",
+            "{}/../../spec/vectors/{dir}/{name}",
             env!("CARGO_MANIFEST_DIR")
         );
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
@@ -313,11 +331,17 @@ mod tests {
     }
 
     /// Runs a row of `cases.tsv`, giving its rows as `outputs.tsv` has
-    /// them.
+    /// them. The noise vectors' rows also have `first_noise`.
     fn run(case: &str) -> Vec<String> {
         let fields: Vec<&str> = case.split('\t').collect();
-        let [name, first, outputs, samples, events] = fields[..] else {
-            panic!("{case}");
+        let (name, first, noise, outputs, samples, events) = match fields[..] {
+            [name, first, outputs, samples, events] => {
+                (name, first, None, outputs, samples, events)
+            }
+            [name, first, noise, outputs, samples, events] => {
+                (name, first, Some(noise), outputs, samples, events)
+            }
+            _ => panic!("{case}"),
         };
         let samples: Vec<Sample> = samples.split(';').map(sample).collect();
         let events: Vec<(u64, Vec<&str>)> = events
@@ -329,14 +353,24 @@ mod tests {
             })
             .collect();
         let mut mixer = Mixer::new(first.parse().unwrap(), 0);
+        if let Some(noise) = noise {
+            mixer.noise = noise.parse().unwrap();
+        }
         let mut rows = Vec::new();
         for k in 0..outputs.parse().unwrap() {
             for (_, event) in events.iter().filter(|(at, _)| *at == k) {
                 let number = |i: usize| event[i].parse::<u16>().unwrap();
                 let byte = |i: usize| event[i].parse::<u8>().unwrap();
-                if event[0] == "main" {
-                    mixer.main_volume = [byte(1), byte(2)];
-                    continue;
+                match event[..] {
+                    ["main", ..] => {
+                        mixer.main_volume = [byte(1), byte(2)];
+                        continue;
+                    }
+                    ["noise", "rate", _] => {
+                        mixer.noise_rate = byte(2);
+                        continue;
+                    }
+                    _ => {}
                 }
                 let n: usize = event[0].strip_prefix('v').unwrap().parse().unwrap();
                 let voice = &mut mixer.voices[n];
@@ -347,6 +381,7 @@ mod tests {
                     "env" => voice.envelope.set([byte(2), byte(3)], byte(4)),
                     "start" => voice.envelope.start(),
                     "release" => voice.envelope.release(),
+                    "noise" => voice.noise = event[2] == "on",
                     other => panic!("unknown event {other}"),
                 }
             }
@@ -356,16 +391,16 @@ mod tests {
         rows
     }
 
-    #[test]
-    fn outputs_match_the_spec_vectors() {
-        let expected: Vec<String> = vector("outputs.tsv")
+    /// Runs every case in `spec/vectors/<dir>/` against its outputs.
+    fn check_vectors(dir: &str) {
+        let expected: Vec<String> = vector(dir, "outputs.tsv")
             .lines()
             .skip(1)
             .filter(|l| !l.is_empty())
             .map(str::to_string)
             .collect();
         let mut rows = Vec::new();
-        for case in vector("cases.tsv")
+        for case in vector(dir, "cases.tsv")
             .lines()
             .skip(1)
             .filter(|l| !l.is_empty())
@@ -376,6 +411,30 @@ mod tests {
         for (row, expected) in rows.iter().zip(&expected) {
             assert_eq!(row, expected);
         }
+    }
+
+    #[test]
+    fn outputs_match_the_spec_vectors() {
+        check_vectors("voice-output");
+    }
+
+    #[test]
+    fn noise_matches_the_spec_vectors() {
+        check_vectors("noise");
+    }
+
+    #[test]
+    fn the_noise_register_goes_through_every_value() {
+        let mut mixer = Mixer::new(0, 0);
+        mixer.noise_rate = 31;
+        let mut seen = vec![false; 32_768];
+        for _ in 0..32_767 {
+            assert!(!seen[usize::from(mixer.noise)]);
+            seen[usize::from(mixer.noise)] = true;
+            mixer.output(&[]);
+        }
+        assert_eq!(mixer.noise, NOISE_START);
+        assert!(!seen[0]);
     }
 
     #[test]
