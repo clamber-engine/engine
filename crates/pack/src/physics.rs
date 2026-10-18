@@ -1269,6 +1269,14 @@ params! {
     ViewLagShare => "view_lag_share",
     /// See `view_lag_share`. px.
     ViewLagMin => "view_lag_min",
+    /// Where the level's camera rule says `sway`, the view following by
+    /// pull and goal aims up to this much further left, a whole number of
+    /// px going up from 0 to this and back down, each value taken twice
+    /// in a row (see `clamber_sim::View`). Whole px.
+    ViewSway => "view_sway",
+    /// The sway takes this many steps per logic frame, counting the
+    /// frames the view holds still. Steps per frame.
+    ViewSwayRate => "view_sway_rate",
     /// A walker's start is near the view from this far left of the view's
     /// left edge. Whole px.
     AppearLeft => "appear_left",

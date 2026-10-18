@@ -19,7 +19,8 @@
 //!   from visuals
 //! - **regions**: areas with water, wind, darkness, physics overrides and
 //!   camera rules
-//! - **camera** rules for the whole level: limits and look-ahead
+//! - **camera** rules for the whole level: limits, look-ahead and a
+//!   swaying view
 //! - **music**: a track to play, with optional loop points
 //! - **scene**: optionally, that the area plays by itself and ends on
 //!   its own, and where play goes on after it ([`Scene`])

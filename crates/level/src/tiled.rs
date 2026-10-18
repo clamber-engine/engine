@@ -24,16 +24,17 @@
 //!     (float, sets it) or `physics.<param>.scale` (float, scales it), and
 //!     camera rules `camera.lock_x`, `camera.lock_y`,
 //!     `camera.look_ahead_x`/`_y` (float), `camera.limits` (bool: limit
-//!     the camera to this region's bounds) and `camera.quick` (bool).
+//!     the camera to this region's bounds), `camera.quick` and
+//!     `camera.sway` (bool).
 //!   - `start`: where the lead character starts (exactly one).
 //!   - anything else is an entity of that type, placed at the object's
 //!     position (bottom-left for tile objects, as Tiled draws them), with
 //!     its name as id and its properties (plus `width` and `height`, if it
 //!     has a size) as parameters.
 //!   - objects without a class on a layer named `collision` are `solid`.
-//! - Map properties `name` and `camera.look_ahead_x`/`_y` set the level's
-//!   name and look-ahead, and `music` (a file, relative to the map) its
-//!   music.
+//! - Map properties `name`, `camera.look_ahead_x`/`_y` and `camera.sway`
+//!   (bool) set the level's name, look-ahead and sway, and `music` (a
+//!   file, relative to the map) its music.
 
 use std::path::Path;
 
@@ -268,6 +269,9 @@ pub fn import(
     let mut camera = Table::new();
     if let Some(look) = pair_prop(&props, "camera.look_ahead_x", "camera.look_ahead_y") {
         camera.insert("look_ahead".into(), floats(&look));
+    }
+    if let Some(sway) = props.get("camera.sway") {
+        camera.insert("sway".into(), sway.clone());
     }
     if !camera.is_empty() {
         level.insert("camera".into(), Value::Table(camera));
@@ -553,7 +557,7 @@ impl Out<'_> {
                             t.insert("darkness".into(), value.clone());
                         }
                         "wind_x" | "wind_y" => {}
-                        "camera.lock_x" | "camera.lock_y" | "camera.quick" => {
+                        "camera.lock_x" | "camera.lock_y" | "camera.quick" | "camera.sway" => {
                             camera.insert(key["camera.".len()..].into(), value.clone());
                         }
                         "camera.look_ahead_x" | "camera.look_ahead_y" => {}

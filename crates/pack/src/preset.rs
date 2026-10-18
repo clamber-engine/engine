@@ -616,6 +616,8 @@ mod tests {
                     | Param::ViewLagKeep
                     | Param::ViewLagShare
                     | Param::ViewLagMin
+                    | Param::ViewSway
+                    | Param::ViewSwayRate
                     | Param::AppearLeft
                     | Param::AppearRight
                     | Param::AppearAbove

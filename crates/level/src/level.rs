@@ -357,6 +357,9 @@ pub struct CameraRule {
     /// its usual ones. It's also kept inside `limits` vertically, or the
     /// level's bounds without them.
     pub quick: Option<bool>,
+    /// The simulated view of a preset with `view_sway` above 0 sways
+    /// across (`clamber_sim::View`).
+    pub sway: Option<bool>,
 }
 
 impl CameraRule {
@@ -368,6 +371,7 @@ impl CameraRule {
             lock_y: other.lock_y.or(self.lock_y),
             look_ahead: other.look_ahead.or(self.look_ahead),
             quick: other.quick.or(self.quick),
+            sway: other.sway.or(self.sway),
         }
     }
 }
@@ -725,6 +729,7 @@ struct CameraFile {
     lock_y: Option<N>,
     look_ahead: Option<[N; 2]>,
     quick: Option<bool>,
+    sway: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -1366,6 +1371,7 @@ impl Reader<'_> {
             lock_y: c.lock_y.map(|n| n.0),
             look_ahead: c.look_ahead.map(v2),
             quick: c.quick,
+            sway: c.sway,
         })
     }
 }
@@ -1467,6 +1473,9 @@ fn camera_table(c: &CameraRule) -> Table {
     }
     if let Some(q) = c.quick {
         t.insert("quick".into(), Value::Boolean(q));
+    }
+    if let Some(s) = c.sway {
+        t.insert("sway".into(), Value::Boolean(s));
     }
     t
 }

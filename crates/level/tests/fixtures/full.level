@@ -6,6 +6,7 @@ start = [40, 500]
 
 [camera]
 look_ahead = [48, 0]
+sway = true
 
 [music]
 file = "music/everything.ogg"

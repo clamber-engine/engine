@@ -333,6 +333,8 @@ view_pull_max = 0
 view_lag_keep = 0
 view_lag_share = 0
 view_lag_min = 0
+view_sway = 0
+view_sway_rate = 0
 appear_left = 0
 appear_right = 0
 appear_above = 0
@@ -1061,8 +1063,9 @@ ground_action_time = 0
 # running; otherwise it goes on where it was. The view (view.md, "In
 # `title-2`") follows across by pull and goal, 56 px behind a player
 # facing right and 128 px behind one facing left, and holds still for 2
-# frames after a defeat. The first level's sway isn't in yet, and the
-# view doesn't move vertically. walker-view.md covers `title-1` only, so
+# frames after a defeat. Where the level's camera says `sway`, as the
+# first level's does, it aims up to 15 px further left, by a step of 1
+# px every 8 frames. The view doesn't move vertically. walker-view.md covers `title-1` only, so
 # things don't appear by the view (`appear_by_view` 0).
 [presets.classic-2]
 label = "Classic 2"
@@ -1170,6 +1173,8 @@ view_pull_max = 0.375
 view_lag_keep = 0.125
 view_lag_share = 16
 view_lag_min = 0.03125
+view_sway = 15
+view_sway_rate = 0.125
 view_hold = 2
 
 [presets.classic-3]

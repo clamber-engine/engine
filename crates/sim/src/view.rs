@@ -30,7 +30,13 @@
 //! aim by a limited amount each step and held to how far the aim moved
 //! plus part of the lag behind the step before's aim, and it settles
 //! exactly on the aim. On the steps it holds still after a defeat, the
-//! aim is still taken.
+//! aim is still taken. Where the level's camera rule says `sway`, it
+//! aims up to `view_sway` px further left: a whole number of px that
+//! takes `view_sway_rate` steps per logic frame, counting the frames the
+//! view holds still, going up from 0 to `view_sway` and back down to 0
+//! with each value taken twice in a row ([`View::sway`]). The count
+//! starts with the view when an area begins and goes on through a
+//! restart (the engine's choice).
 //!
 //! With `view_begin_back` above 0, the view starts when an area begins
 //! on the target of a lead standing still with `view_begin_back` in
@@ -150,6 +156,8 @@ pub struct View {
     /// Where the left edge aimed on the step before, when it follows by
     /// pull and goal.
     pub aim: Fixed,
+    /// Logic frames counted since the view began, for its sway.
+    pub frames: u32,
 }
 
 impl View {
@@ -187,6 +195,7 @@ impl View {
             gap: Fixed::ZERO,
             shake: None,
             ends: ends(level, physics),
+            frames: 0,
         }
     }
 
@@ -215,6 +224,7 @@ impl View {
         defeated: bool,
         begin: Begin,
     ) {
+        self.frames = self.frames.wrapping_add(1);
         self.shake = if player.ground_action.is_some_and(|a| a.frame == 0) {
             Some(0)
         } else {
@@ -235,7 +245,7 @@ impl View {
         if self.hold > 0 {
             self.hold -= 1;
             if pulled {
-                self.aim = to_grain(target(player, physics, None));
+                self.aim = self.pull_aim(player, level, physics);
             }
             return;
         }
@@ -247,7 +257,7 @@ impl View {
             self.follow_y(player, level, physics);
         }
         if pulled {
-            self.pull(player, physics);
+            self.pull(player, level, physics);
             return;
         }
         let gap = target(player, physics, begin.back) - self.left;
@@ -267,7 +277,7 @@ impl View {
     /// `view_pull_share` above 0. Everything is in [`POS_GRAIN`]s:
     ///
     /// 1. The aim is `view_back` (`view_back_left` facing left) left of
-    ///    the player.
+    ///    the player, and the [sway](View::sway) further left.
     /// 2. The pull is the gap from the left edge to the aim divided by
     ///    `view_pull_share`, rounded down, kept within `view_pull_max`
     ///    either way.
@@ -281,10 +291,10 @@ impl View {
     ///    way from the goal (0 counting as forward), or kept from going
     ///    past the goal if not.
     /// 6. The left edge moves by the speed.
-    fn pull(&mut self, player: &Player, physics: &Physics) {
+    fn pull(&mut self, player: &Player, level: &Level, physics: &Physics) {
         let grain = POS_GRAIN.to_bits();
         let units = |v: Fixed| v.to_bits().div_euclid(grain);
-        let aim = units(to_grain(target(player, physics, None)));
+        let aim = units(self.pull_aim(player, level, physics));
         let left = units(self.left);
         let before = units(self.aim);
         let most = units(physics[Param::ViewPullMax]);
@@ -319,6 +329,30 @@ impl View {
         self.speed = Fixed::from_bits(speed * grain);
         self.left += self.speed;
         self.aim = Fixed::from_bits(aim * grain);
+    }
+
+    /// Where the left edge aims for `player` when it follows by pull and
+    /// goal, kept to [`POS_GRAIN`].
+    fn pull_aim(&self, player: &Player, level: &Level, physics: &Physics) -> Fixed {
+        let sway = i32::try_from(self.sway(player, level, physics)).unwrap_or(0);
+        to_grain(target(player, physics, None)) - Fixed::from_int(sway)
+    }
+
+    /// How much further left the view aims for its sway on this frame,
+    /// whole px: 0 unless `view_sway` is above 0 and the camera rule for
+    /// `player` says `sway`. The [`frames`](View::frames) counted make
+    /// `view_sway_rate` steps per frame, rounded down; step `k` of each
+    /// 2 × (`view_sway` + 1) is `k` on the way up and then counts back
+    /// down, so 0 and `view_sway` each last two steps.
+    pub fn sway(&self, player: &Player, level: &Level, physics: &Physics) -> i64 {
+        let most = physics[Param::ViewSway].floor();
+        if most <= 0 || level.camera_at(player.pos).sway != Some(true) {
+            return 0;
+        }
+        let rate = i128::from(physics[Param::ViewSwayRate].to_bits());
+        let steps = (i128::from(self.frames) * rate) >> FRAC_BITS;
+        let k = i64::try_from(steps.rem_euclid(i128::from(2 * (most + 1)))).unwrap_or(0);
+        if k <= most { k } else { 2 * most + 1 - k }
     }
 
     /// One step of following `player` vertically.
@@ -554,12 +588,15 @@ pub(crate) fn update(world: &mut World, begin: Begin) {
 }
 
 /// Settles the view on the player again, if there is one, as when it
-/// comes back after losing a life. Sections begin again from there, as
-/// at the start of an area (the engine's choice).
+/// comes back after losing a life; its sway's count goes on. Sections
+/// begin again from there, as at the start of an area (the engine's
+/// choice).
 pub(crate) fn restart(world: &mut World) {
     let physics = world.player_physics();
     if let Some(view) = &mut world.view {
+        let frames = view.frames;
         *view = View::settled(&world.player, &world.level, &physics);
+        view.frames = frames;
         if let Some(placing) = &mut world.placing {
             placing.opening = Opening::begin(&placing.placed.sections, view.y());
         }
@@ -1387,6 +1424,65 @@ mod tests {
             Begin::default(),
         );
         assert!(view.left > left);
+    }
+
+    /// The sway on `classic-2` with `level`'s camera saying `sway`: each
+    /// 8 frames it takes the next of 0 to 15, 15 to 0, so it repeats
+    /// every 256 frames.
+    fn swayed(frame: u32) -> f64 {
+        let k = (frame / 8) % 32;
+        f64::from(if k < 16 { k } else { 31 - k })
+    }
+
+    fn swaying() -> Level {
+        Level::from_toml_str(
+            "format = 1\nsize = [4000, 2000]\nstart = [0, 0]\n[camera]\nsway = true",
+            "t",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn title_2_sways_where_the_level_says() {
+        // view.md, "The aim (`title-2`)": `sway` px further left, up from
+        // 0 to 15 and back down a step every 8 logic frames, 0 and 15
+        // taken twice.
+        let physics = physics_2();
+        let sways = swaying();
+        let still = player(1000.0, 0.0, Facing::Right);
+        let mut view = View::settled(&still, &sways, &physics);
+        for f in 1..=600 {
+            view.follow(&still, &sways, &physics, false, Begin::default());
+            assert_eq!(view.aim, fx(944.0 - swayed(f)), "frame {f}");
+            // Standing still, it drifts within the sway.
+            assert!(view.left <= fx(944.0) && view.left >= fx(929.0));
+        }
+        // Settled off the sway's level, it stays on the aim.
+        let mut flat = View::settled(&still, &level(), &physics);
+        for _ in 0..300 {
+            flat.follow(&still, &level(), &physics, false, Begin::default());
+            assert_eq!((flat.left, flat.aim), (fx(944.0), fx(944.0)));
+        }
+    }
+
+    #[test]
+    fn title_2_sways_on_through_the_frames_it_holds_still() {
+        // The sway's steps go on through a bounce's frozen frames, and the
+        // aim taken on them has it.
+        let physics = physics_2();
+        let sways = swaying();
+        let still = player(1000.0, 0.0, Facing::Right);
+        let mut view = View::settled(&still, &sways, &physics);
+        for _ in 0..7 {
+            view.follow(&still, &sways, &physics, false, Begin::default());
+        }
+        let left = view.left;
+        view.follow(&still, &sways, &physics, true, Begin::default());
+        assert_eq!((view.left, view.aim), (left, fx(943.0)));
+        for f in 9..=16 {
+            view.follow(&still, &sways, &physics, false, Begin::default());
+            assert_eq!(view.aim, fx(944.0 - swayed(f)), "frame {f}");
+        }
     }
 
     /// A player at 1000 with its feet at `feet`, falling at `vy`, on the

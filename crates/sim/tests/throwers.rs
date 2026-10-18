@@ -7,9 +7,15 @@ use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Fixed, Param, Presets};
 use clamber_sim::{
-    BALL, Facing, FlowEvent, InputFrame, Other, Phase, START_LIVES, Thing, World, generic_feel,
-    step,
+    BALL, Facing, FlowEvent, InputFrame, Other, Phase, START_LIVES, Thing, View, World,
+    generic_feel, step,
 };
+
+/// `view` without the frames it has counted, which go on while it holds
+/// still.
+fn held(view: Option<View>) -> Option<View> {
+    view.map(|v| View { frames: 0, ..v })
+}
 
 fn f(v: f64) -> Fixed {
     Fixed::from_f64(v).unwrap()
@@ -352,7 +358,11 @@ fn ten_frames_late(mut world: World, before: u32, after: u32) -> usize {
         assert_eq!(moving(&world), at_h, "H + {n} unchanged");
         if n < 10 {
             // So nothing can be outside the window then that wasn't on H.
-            assert_eq!(world.view, view_at_h, "H + {n}: the view is still");
+            assert_eq!(
+                held(world.view),
+                held(view_at_h),
+                "H + {n}: the view is still"
+            );
         }
     }
     let mut compared = 0;
@@ -436,7 +446,7 @@ fn the_view_holds_still_from_a_knock_out_for_ten_frames() {
     for n in 0..=9 {
         play.step(&[Action::Right]);
         assert!(play.world.player.knockout.is_some());
-        assert_eq!(play.world.view, Some(view), "H + {n}");
+        assert_eq!(held(play.world.view), held(Some(view)), "H + {n}");
     }
     play.step(&[Action::Right]);
     let moved = play.world.view.unwrap();
