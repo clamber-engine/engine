@@ -29,8 +29,10 @@
 //! Engine choices where the spec says nothing: the marker can't be
 //! passed while the player is hurt, knocked out, swapping or losing a
 //! character; during the walk-out things go on moving but don't touch
-//! the characters, nothing is collected, and an object in the hands
-//! stays there; the other character goes on following.
+//! the characters, nothing is collected, and without a `let_go_speed` an
+//! object in the hands stays there; the other character goes on
+//! following. With one, it's let go on the walk-out's first step
+//! ([`carry`]).
 
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame};
@@ -168,6 +170,8 @@ pub(crate) fn step(world: &mut World) {
         Some(f) => Some(f.saturating_add(1)),
         None => ending.due.then_some(0),
     };
+    // What moves during the step sees which step of the walk-out it is.
+    world.ending = Some(ending);
     let previous = world.player.pos;
     walk(&mut world.player, &ending, &physics, &mut world.events);
     things::update(world, previous, false);

@@ -23,7 +23,11 @@
 //!   ([`fall_away`]). A holder moves from the next frame, other objects
 //!   once the player does, `knockout_hold` frames after the hit.
 //!   Without a view it's removed once below the level, which the spec
-//!   doesn't cover.
+//!   doesn't cover. One still in the hands on the walk-out's first step
+//!   after the end marker is let go then the same way, moving from the
+//!   next, as `spec/behavior/level-end.md` ("An object in the lead's
+//!   hands") describes, and is also removed at `end_let_go_right` and
+//!   `end_let_go_above`.
 //!
 //! Thrown, it bounces on the floor and then rolls along it, breaks
 //! against faces and walls, and hits walkers, as
@@ -126,16 +130,24 @@ pub(crate) fn after(world: &mut World, input: &Frame) {
         world.player.pick = moving_into(world, input, &physics);
         return;
     };
-    if !can_hold(world) {
+    // With a `let_go_speed`, an object still in the hands on the
+    // walk-out's first step is let go then.
+    let let_go_speed = physics[Param::LetGoSpeed] > Fixed::ZERO;
+    let walking_out = world.ending.is_some_and(|e| e.frame >= 1) && let_go_speed;
+    if !can_hold(world) || walking_out {
         world.player.hands = None;
         let facing = world.player.facing;
-        let let_go = world.player.knockout.is_some() && physics[Param::LetGoSpeed] > Fixed::ZERO;
+        let let_go = (world.player.knockout.is_some() || walking_out) && let_go_speed;
         let thing = &mut world.things[hands.thing];
         if thing.phase == Phase::Held {
             if let_go {
                 let held = frames(physics[Param::KnockoutHold]).saturating_sub(1);
                 let holds_character = thing.archetype.as_ref().and_then(holder).is_some();
-                let wait = if holds_character { 0 } else { held };
+                let wait = if holds_character || walking_out {
+                    0
+                } else {
+                    held
+                };
                 let ahead = match facing {
                     Facing::Left => -physics[Param::LetGoSpeed],
                     Facing::Right => physics[Param::LetGoSpeed],
@@ -326,19 +338,22 @@ pub(crate) fn fly(
     false
 }
 
-/// One frame of an object let go at a knock-out: after its wait, it
-/// falls by `throw_gravity` up to `throw_max_fall` and moves by its
-/// speeds, through everything. It's removed once left of the level, or
-/// with `picture`, where the view was at the start of the step, once its
-/// `y` rounded down is at the bottom of the window objects appear in
-/// (`appear_below` below the picture) or below; without one, once it's
-/// below the level.
+/// One frame of an object let go at a knock-out or the level end: after
+/// its wait, it falls by `throw_gravity` up to `throw_max_fall` and moves
+/// by its speeds, through everything. It's removed once left of the
+/// level, or with `picture`, where the view was at the start of the step,
+/// once its `y` rounded down is at the bottom of the window objects
+/// appear in (`appear_below` below the picture) or below; without one,
+/// once it's below the level. During the walk-out (`ending`), it's also
+/// removed once `end_let_go_right` right of the picture's left edge or
+/// `end_let_go_above` above its top.
 pub(crate) fn fall_away(
     level: &Level,
     thing: &mut Thing,
     size: Vec2,
     physics: &Physics,
     picture: Option<Picture>,
+    ending: bool,
 ) {
     let Phase::LetGo { vy, wait } = thing.phase else {
         return;
@@ -351,8 +366,15 @@ pub(crate) fn fall_away(
     thing.pos = Vec2::new(thing.pos.x + thing.vx, thing.pos.y + vy);
     thing.phase = Phase::LetGo { vy, wait: 0 };
     let depth = physics[Param::ViewHeight].floor() + physics[Param::AppearBelow].floor();
+    let (right, above) = match ending {
+        true => (
+            physics[Param::EndLetGoRight].floor(),
+            physics[Param::EndLetGoAbove].floor(),
+        ),
+        false => (0, 0),
+    };
     let below = match picture {
-        Some(picture) => picture.below(thing.pos, depth),
+        Some(picture) => picture.below(thing.pos, depth) || picture.beyond(thing.pos, right, above),
         None => thing.pos.y - size.y > level.size.y,
     };
     if thing.pos.x < Fixed::ZERO || below {

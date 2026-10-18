@@ -258,6 +258,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     }
     // Balls leave by where the view was at the start of the step.
     let picture = world.view.map(|v| Picture::of(v, &physics));
+    let ending = world.ending.is_some();
     let mut freed = Vec::new();
     for thing in world.things.iter_mut().filter(|t| t.active) {
         let enemy = thing.archetype.is_some_and(|a| a.behavior.is_enemy());
@@ -287,7 +288,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         }
         let moves = if catch_up && enemy { wait + 1 } else { 1 };
         for _ in 0..moves {
-            if advance(&world.level, thing, &physics, picture) {
+            if advance(&world.level, thing, &physics, picture, ending) {
                 freed.push(thing.pos);
             }
         }
@@ -379,9 +380,16 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     hurt_by
 }
 
-/// Moves a thing one step. Returns whether it was an object holding the
-/// missing character that broke.
-fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<Picture>) -> bool {
+/// Moves a thing one step, `ending` during the walk-out after the end
+/// marker. Returns whether it was an object holding the missing
+/// character that broke.
+fn advance(
+    level: &Level,
+    thing: &mut Thing,
+    physics: &Physics,
+    picture: Option<Picture>,
+    ending: bool,
+) -> bool {
     let Some(archetype) = thing.archetype else {
         return false;
     };
@@ -452,7 +460,7 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
             return false;
         }
         Phase::LetGo { .. } => {
-            carry::fall_away(level, thing, archetype.size, physics, picture);
+            carry::fall_away(level, thing, archetype.size, physics, picture, ending);
             return false;
         }
         Phase::Flying { .. } => {

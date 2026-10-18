@@ -336,6 +336,8 @@ end_rise = 0
 end_fade_at = 0
 end_fade_time = 0
 end_fade_step = 0
+end_let_go_right = 0
+end_let_go_above = 0
 end_onward_fade_from = 0
 end_onward_hold = 0
 exit_walk_speed = 0
@@ -827,6 +829,12 @@ end_rise = 0.125
 end_fade_at = 240
 end_fade_time = 28
 end_fade_step = 2
+# An object still in the lead's hands is let go on the walk-out's first
+# frame (level-end.md, "An object in the lead's hands"). Besides the
+# knock-out's edges, it's removed 289 or more right of the view's left
+# edge or 33 or more above its top.
+end_let_go_right = 289
+end_let_go_above = 33
 # An end marker leading back to the level, as in the first level's room
 # (level-end.md, "In the first level's room"): the walk-out's first frame
 # doesn't count for the fade's start, and the picture stays black one

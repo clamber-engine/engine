@@ -114,6 +114,12 @@ fn walking_right_passes_the_marker_on_the_first_frame_at_or_right_of_it() {
 fn the_walk_out_and_the_fade() {
     let mut play = Play::new(world("classic-1", 900, (1000, 449), ""));
     assert!(play.until_passed(&[R], 200));
+    walks_out_and_fades(play);
+}
+
+/// From the end of `n`: the lead's walk-out and the fade, frame by frame,
+/// as "The walk-out" and "The fade" give them.
+fn walks_out_and_fades(mut play: Play) {
     let at = play.world.player.pos;
     let view = play.world.view.unwrap().x();
     let full = (15, 15);
@@ -162,6 +168,42 @@ fn the_walk_out_and_the_fade() {
     assert_eq!(play.world.flow.outcome, Outcome::Complete);
     assert!(play.world.flow.events.contains(&FlowEvent::Complete));
     assert_eq!(play.world.brightness(), (0, 15));
+}
+
+/// The first character following the second, which leads.
+fn second_leading(start: i32, marker: (i32, i32)) -> World {
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: BTreeMap::new(),
+    });
+    let w = world("classic-1", start, marker, "");
+    let mut w = World::new(w.level.clone(), Arc::new(feel));
+    w.player.character = 1;
+    if let Some(other) = &mut w.other {
+        other.character = 0;
+    }
+    w
+}
+
+/// "The second character leading": the walk-out is the same frame for
+/// frame, at 2 px a frame although the second character walks faster.
+#[test]
+fn with_the_second_character_leading_the_walk_out_is_the_same() {
+    let mut play = Play::new(second_leading(900, (1000, 449)));
+    assert!(play.until_passed(&[R], 200));
+    assert_eq!(play.world.player.vel.x, f(2.25), "it walks faster on n");
+    walks_out_and_fades(play);
+}
+
+/// ... and Right held together with Down passes the marker then too.
+#[test]
+fn with_the_second_character_leading_right_with_down_passes() {
+    let mut play = Play::new(second_leading(1010, (1000, 449)));
+    play.hold(&[], 10);
+    assert!(!play.passed());
+    play.step(&[R, Action::Down]);
+    assert!(play.passed());
 }
 
 #[test]

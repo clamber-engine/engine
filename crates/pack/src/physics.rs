@@ -1282,6 +1282,13 @@ params! {
     /// ... and the area's last frame comes this many after the one the
     /// level's would be, black too. Whole frames.
     EndOnwardHold => "end_onward_hold",
+    /// Above 0, an object let go of at the start of the walk-out (see
+    /// `let_go_speed`) is also removed once its `x`, rounded down, is
+    /// this far right of the view's left edge or further. Whole px.
+    EndLetGoRight => "end_let_go_right",
+    /// Above 0, ... or once its `y`, rounded down, is this far above the
+    /// view's top or further. Whole px.
+    EndLetGoAbove => "end_let_go_above",
     /// Above 0, a level's `exit` entities take the lead out of the area
     /// (see `clamber_sim::Leaving`), and it walks out at this speed.
     /// px/frame.

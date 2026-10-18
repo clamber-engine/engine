@@ -94,6 +94,16 @@ impl Picture {
     pub(crate) fn below(self, pos: Vec2, depth: i64) -> bool {
         self.height != 0 && pos.y.floor() - self.top >= depth
     }
+
+    /// Whether `pos`, rounded down, is `right` or more right of the
+    /// picture's left edge, or `above` or more above its top. An edge of
+    /// 0 is never passed, nor is the top with a view that doesn't move
+    /// vertically.
+    pub(crate) fn beyond(self, pos: Vec2, right: i64, above: i64) -> bool {
+        let past_right = right > 0 && pos.x.floor() - self.left >= right;
+        let past_top = above > 0 && self.height != 0 && self.top - pos.y.floor() >= above;
+        past_right || past_top
+    }
 }
 
 /// Throws a ball for every throw due this step from a thrower in the

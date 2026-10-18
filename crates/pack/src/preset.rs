@@ -622,6 +622,8 @@ mod tests {
                     | Param::EndFadeStep
                     | Param::EndOnwardFadeFrom
                     | Param::EndOnwardHold
+                    | Param::EndLetGoRight
+                    | Param::EndLetGoAbove
                     | Param::ExitWalkSpeed
                     | Param::ExitReach
                     | Param::ExitReachRoll
