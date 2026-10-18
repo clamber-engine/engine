@@ -108,6 +108,10 @@ pub struct LevelParts {
     pub view_limits: Option<Location>,
     /// The level's song, if it has its music.
     pub song: Option<LevelSong>,
+    /// Whether the rightmost of the level's extra-life items giving 3
+    /// lives is late, as the right one of the first level's two is
+    /// (`extra-lives.md`, "Late items").
+    pub late_life_item: bool,
 }
 
 /// Where a level's single collectibles are in an image
@@ -336,6 +340,21 @@ fn restart_at(entities: &mut [Entity], (x, y): (i64, i64)) {
     }
 }
 
+/// Makes the rightmost extra-life item giving 3 lives in `entities` late.
+fn late_life_item(entities: &mut [Entity]) {
+    let three = |e: &&mut Entity| {
+        e.kind == "heart" && e.params.get("lives") == Some(&toml::Value::Integer(3))
+    };
+    if let Some(item) = entities
+        .iter_mut()
+        .filter(three)
+        .max_by_key(|e| e.at.x.floor())
+    {
+        item.params
+            .insert("late".into(), toml::Value::Boolean(true));
+    }
+}
+
 /// Where a level's ground is in an image whose maps are packed, as in
 /// `title-2`: the level's grid is `columns` map columns from map column
 /// `first_column` of the packed map, with types 0 to `types` − 1.
@@ -549,6 +568,9 @@ impl LevelDecoder {
         }
         if let Some(at) = p.restart {
             restart_at(&mut level.entities, record("restart", at)?);
+        }
+        if p.late_life_item {
+            late_life_item(&mut level.entities);
         }
         if let Some(walk) = p.walk_in {
             level.arrivals.push(Arrival {
@@ -870,6 +892,33 @@ mod tests {
             panic!("not a keg");
         };
         assert_eq!(keg.restart, Vec2::ints(40, -30));
+    }
+
+    #[test]
+    fn the_rightmost_extra_life_item_giving_three_is_late() {
+        let heart = |x, lives: i64| {
+            let (_, mut params) = crate::Kind::ExtraLife(1).entity();
+            params.insert("lives".into(), toml::Value::Integer(lives));
+            Entity {
+                kind: "heart".into(),
+                id: None,
+                at: Vec2::ints(x, 400),
+                params,
+            }
+        };
+        let mut entities = [heart(500, 3), heart(900, 3), heart(1200, 1)];
+        late_life_item(&mut entities);
+        let late = |e: &Entity| e.params.get("late").and_then(toml::Value::as_bool);
+        assert_eq!(entities.each_ref().map(late), [None, Some(true), None]);
+        let item = clamber_sim::Archetypes::builtin()
+            .resolve(&entities[1], "test", "heart")
+            .unwrap()
+            .unwrap();
+        let clamber_sim::Behavior::Collect { late, lives, .. } = item.behavior else {
+            panic!("not a collectible");
+        };
+        assert!(late);
+        assert_eq!(lives, 3);
     }
 
     /// placements.md, "In lists with sections": in the underwater levels'

@@ -377,8 +377,11 @@ fn a_lives_display_at_rest_stays_until_the_burst() {
     // 14 frames after it started.
     let mut w = walked_into(62);
     w.flow.lives = 7;
-    w.flow.lives_step = Some(clamber_sim::LivesStep {
-        at: 0,
+    w.flow.gains.push(clamber_sim::LivesGain {
+        at: 1,
+        held: (1, 1),
+        counts: 1,
+        step: None,
         before: 6,
         after: 7,
     });

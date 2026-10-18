@@ -568,21 +568,19 @@ mod tests {
                     | Param::LetterEndLivesIn
                     | Param::LetterEndLivesOut
                     | Param::LetterEndLivesEnd
+                    | Param::LetterEndLivesHeld
                     | Param::CountShowFor
                     | Param::CountX
                     | Param::CountY
                     | Param::CountDigitX
                     | Param::CountDigitGap
-                    | Param::LivesIn
                     | Param::LivesSlide
-                    | Param::LivesOut
                     | Param::LivesY
                     | Param::LivesRise
                     | Param::LivesGone
                     | Param::LivesSpeed
                     | Param::LivesX
                     | Param::LivesDigitGap
-                    | Param::LivesChange
                     | Param::LifeItemLivesIn
                     | Param::LifeItemLivesArrive
                     | Param::LifeItemLivesStep

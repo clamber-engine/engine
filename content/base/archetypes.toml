@@ -295,7 +295,9 @@
 #   frame it isn't near; removed or risen out, it doesn't come back.
 #   With `kept = true`, taken, it stays gone when play comes back to the
 #   level from another area (an exit's `arrival`); otherwise it's there
-#   again then, as at the level's start.
+#   again then, as at the level's start. With `late = true`, taken, it
+#   acts on the lives display as if taken a frame later: the display
+#   comes in, holds its steps and counts its lives from then.
 # - `hutch`: a crate holding an animal. It stands on its position and
 #   never moves; walking, running or rolling through it does nothing.
 #   Offsets from it are whole px, ends included: `across`, the player's

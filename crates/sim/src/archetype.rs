@@ -111,7 +111,8 @@ pub enum Behavior {
     /// window; removed, it doesn't appear again until play comes back
     /// after a lost life (with `resume_afresh`) or to the level.
     /// One that's `kept` is gone for good when it's taken: it stays gone
-    /// when play comes back to the level from another area.
+    /// when play comes back to the level from another area. One that's
+    /// `late` acts on the lives display as if taken a frame later.
     Collect {
         worth: u8,
         release_every: u8,
@@ -135,6 +136,7 @@ pub enum Behavior {
         rise: Fixed,
         once: bool,
         kept: bool,
+        late: bool,
     },
     /// Sits where it's placed and throws a [`BALL`](crate::BALL) on each
     /// of its first `throw_count` `throws`, `from` its position, on that
@@ -1634,6 +1636,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "rise",
             "once",
             "kept",
+            "late",
         ],
         _ => return Err(format!("{path}.behavior: unknown behavior `{behavior}`")),
     };
@@ -1926,6 +1929,11 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 Some(Value::Boolean(true)) => true,
                 Some(_) => return Err(format!("{path}.kept: expected true or false")),
             };
+            let late = match table.get("late") {
+                None | Some(Value::Boolean(false)) => false,
+                Some(Value::Boolean(true)) => true,
+                Some(_) => return Err(format!("{path}.late: expected true or false")),
+            };
             let left_shift = match table.get("left_shift") {
                 None => 0,
                 Some(Value::Integer(n)) if i32::try_from(*n).is_ok() => *n as i32,
@@ -1947,6 +1955,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 rise,
                 once,
                 kept,
+                late,
             }
         }
         "thrower" => {

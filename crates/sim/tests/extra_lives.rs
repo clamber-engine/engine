@@ -619,3 +619,213 @@ fn a_rising_item_gone_untaken_is_there_again_after_an_exit() {
         assert_eq!(back.flow.lives, lives + 2);
     }
 }
+
+/// The lives display in the picture made on each frame from 0 to
+/// `frames` - 1, with `lives` before, item `i` of `w` put on the player
+/// on frame `take[i]`, and `each` run before every step.
+fn played(
+    w: &mut World,
+    lives: u8,
+    take: &[usize],
+    frames: usize,
+    each: impl Fn(&mut World, usize),
+) -> Vec<Option<(u8, i32)>> {
+    w.flow.lives = lives;
+    let mut shown = Vec::new();
+    for n in 0..frames {
+        for (i, &p) in take.iter().enumerate() {
+            if n == p {
+                w.things[i].pos = w.player.pos;
+            }
+        }
+        each(w, n);
+        step_keys(w, &[]);
+        shown.push(w.lives_display().map(|d| (d.number, d.y)));
+    }
+    shown
+}
+
+/// Items out of the player's reach, each giving 3 lives, with `params`.
+fn far_items(count: i32, params: &str) -> World {
+    let at: Vec<(i32, i32)> = (0..count).map(|i| (X + 60 + 30 * i, F - 200)).collect();
+    world(&at, &format!("lives = 3, {params}"))
+}
+
+#[test]
+fn a_late_item_counts_as_taken_a_frame_later() {
+    // extra-lives.md, "Late items": the example, with Clamber's arrival
+    // 34 frames after the pickup. The lives go up on the pickup.
+    let mut w = far_items(1, "late = true");
+    let shown = played(&mut w, 11, &[457], 700, |w, n| {
+        if n == 458 {
+            assert_eq!(w.flow.lives, 14);
+        }
+    });
+    assert_eq!(shown[464], None);
+    assert_eq!(shown[465], Some((11, -12)));
+    assert_eq!(shown[471], Some((11, 10)));
+    assert_eq!(steps(&shown, 465), [502, 518, 534]);
+    assert_eq!(shown[534 + 121], Some((14, 10)));
+    assert_eq!(shown[534 + 122], Some((14, 6)));
+
+    // Not late, it comes in and steps a frame earlier.
+    let mut w = far_items(1, "late = false");
+    let shown = played(&mut w, 11, &[457], 600, |_, _| {});
+    assert_eq!(shown[464], Some((11, -12)));
+    assert_eq!(steps(&shown, 464), [501, 517, 533]);
+}
+
+#[test]
+fn a_late_item_taken_with_another_holds_a_frame_later() {
+    // Taken together, the late one's arrival is a frame after the
+    // other's: the steps start 10 frames after that.
+    let mut w = world_with(
+        &[(X + 60, F - 200)],
+        "lives = 3",
+        &format!(
+            "\n[[entities]]\ntype = \"heart\"\nat = [{}, {}]\nparams = {{ lives = 3, late = true }}\n",
+            X + 90,
+            F - 200
+        ),
+    );
+    let shown = played(&mut w, 5, &[100, 100], 500, |_, _| {});
+    assert_eq!(shown[107], Some((5, -12)));
+    assert_eq!(steps(&shown, 107), [145, 161, 177, 193, 209, 225]);
+}
+
+#[test]
+fn three_items_follow_the_same_rules() {
+    // extra-lives.md, "Several items": the third holds 200 to 233.
+    let mut w = far_items(3, "");
+    let shown = played(&mut w, 5, &[100, 145, 200], 600, |_, _| {});
+    assert_eq!(
+        steps(&shown, 107),
+        [144, 194, 244, 260, 276, 292, 308, 324, 340]
+    );
+    assert_eq!(shown[340], Some((14, 10)));
+    assert_eq!(shown[340 + 121], Some((14, 10)));
+    assert_eq!(shown[340 + 122], Some((14, 6)));
+}
+
+/// Before the step on frame `s`, the number shown goes from 99 to 0 on
+/// it, with one more life.
+fn reach_100(w: &mut World, n: usize, s: usize) {
+    if n == s {
+        (w.flow.shown, w.flow.gems) = (99, 0);
+        w.flow.lives += 1;
+    }
+}
+
+#[test]
+fn the_count_reaching_100_after_an_item_steps_by_its_rules() {
+    // extra-lives.md, "The count reaching 100": the item taken on 147
+    // steps on 191, 207 and 223 (E).
+    let mut w = far_items(1, "");
+    let shown = played(&mut w, 5, &[147], 500, |w, n| reach_100(w, n, 224));
+    // Later, with the number at y 10: the step comes on S + 12.
+    assert_eq!(steps(&shown, 154), [191, 207, 223, 236]);
+    assert_eq!(shown[236], Some((9, 10)));
+    assert_eq!(shown[236 + 121], Some((9, 10)));
+    assert_eq!(shown[236 + 122], Some((9, 6)));
+    assert_eq!(shown[236 + 128], None);
+
+    // On E: as an item taken on E + 1 with its arrival then.
+    let mut w = far_items(1, "");
+    let shown = played(&mut w, 5, &[147], 500, |w, n| reach_100(w, n, 223));
+    assert_eq!(steps(&shown, 154), [191, 207, 223, 224]);
+
+    // On E + 121: it doesn't move up on E + 122.
+    let mut w = far_items(1, "");
+    let shown = played(&mut w, 5, &[147], 500, |w, n| reach_100(w, n, 223 + 121));
+    assert_eq!(shown[223 + 122], Some((8, 10)));
+    assert_eq!(steps(&shown, 154), [191, 207, 223, 223 + 121 + 12]);
+
+    // While it moves up, on E + 122: back at 10 on S + 1, the step on
+    // S + 12.
+    let s = 223 + 122;
+    let mut w = far_items(1, "");
+    let shown = played(&mut w, 5, &[147], 500, |w, n| reach_100(w, n, s));
+    assert_eq!(shown[s], Some((8, 6)));
+    assert_eq!(shown[s + 1], Some((8, 10)));
+    assert_eq!(steps(&shown, 154), [191, 207, 223, s + 12]);
+
+    // On E + 131: a new display.
+    let s = 223 + 131;
+    let mut w = far_items(1, "");
+    let shown = played(&mut w, 5, &[147], 600, |w, n| reach_100(w, n, s));
+    assert_eq!(shown[s + 7], None);
+    assert_eq!(shown[s + 8], Some((8, -12)));
+    assert_eq!(steps(&shown, s + 8), [s + 25]);
+}
+
+#[test]
+fn the_count_reaching_100_before_an_item_steps_by_its_rules() {
+    // The count's display comes in on S + 8 to S + 14 and steps on
+    // S + 25 (E); the item taken on E + 1 steps on its arrival.
+    let mut w = far_items(1, "");
+    let shown = played(&mut w, 5, &[147], 500, |w, n| reach_100(w, n, 121));
+    assert_eq!(shown[128], None);
+    assert_eq!(shown[129], Some((5, -12)));
+    assert_eq!(shown[135], Some((5, 10)));
+    assert_eq!(steps(&shown, 129), [146, 181, 197, 213]);
+    assert_eq!(shown[213], Some((9, 10)));
+}
+
+/// Before the step on frame `j`, letter 1 joins letters 2, 3 and 4.
+fn last_letter(w: &mut World, n: usize, j: usize) {
+    if n == j {
+        w.flow.letters = 0b1110;
+        w.flow.joining.push((j as u32, 1));
+    }
+}
+
+#[test]
+fn the_four_letter_ending_holds_the_items_steps() {
+    // extra-lives.md, "The four-letter ending": J = 500, G = 663. The
+    // spec's example, with Clamber's arrival 34 frames after the pickup:
+    // taken on 506, its image arrives on 540.
+    let mut w = far_items(1, "");
+    let shown = played(&mut w, 5, &[506], 900, |w, n| last_letter(w, n, 500));
+    assert_eq!(w.flow.lives, 9);
+    assert_eq!(shown[506], None);
+    assert_eq!(shown[507], Some((5, -12)));
+    assert_eq!(shown[513], Some((5, 10)));
+    assert_eq!(steps(&shown, 507), [550, 663, 679, 695]);
+    assert_eq!(shown[695 + 121], Some((9, 10)));
+    assert_eq!(shown[695 + 122], Some((9, 6)));
+    assert_eq!(shown[695 + 128], None);
+
+    // Its image arriving while held: the steps start on G.
+    let mut w = far_items(1, "");
+    let shown = played(&mut w, 5, &[566], 900, |w, n| last_letter(w, n, 500));
+    assert_eq!(steps(&shown, 507), [663, 679, 695, 711]);
+}
+
+#[test]
+fn the_four_letter_ending_steps_on_g_with_or_without_items() {
+    // No item: the step comes on G, and the number moves up from
+    // G + 122.
+    let mut w = far_items(1, "");
+    let shown = played(&mut w, 5, &[], 900, |w, n| last_letter(w, n, 500));
+    assert_eq!(steps(&shown, 507), [663]);
+    assert_eq!(shown[662], Some((5, 10)));
+    assert_eq!(shown[663 + 121], Some((6, 10)));
+    assert_eq!(shown[663 + 122], Some((6, 6)));
+
+    // Taken before J, its steps over by J + 65: one more on G, and at
+    // 10 up to G + 121.
+    let mut w = far_items(1, "");
+    let shown = played(&mut w, 5, &[400], 900, |w, n| last_letter(w, n, 500));
+    assert_eq!(steps(&shown, 407), [444, 460, 476, 663]);
+    assert!(shown[413..=663 + 121].iter().all(|d| d.unwrap().1 == 10));
+    assert_eq!(shown[663 + 122], Some((9, 6)));
+
+    // Taken on G + 1: its first step on its arrival. Taken later: 10
+    // frames after.
+    let mut w = far_items(1, "");
+    let shown = played(&mut w, 5, &[664], 900, |w, n| last_letter(w, n, 500));
+    assert_eq!(steps(&shown, 507), [663, 698, 714, 730]);
+    let mut w = far_items(1, "");
+    let shown = played(&mut w, 5, &[670], 900, |w, n| last_letter(w, n, 500));
+    assert_eq!(steps(&shown, 507), [663, 714, 730, 746]);
+}

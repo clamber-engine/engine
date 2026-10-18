@@ -197,6 +197,7 @@ fn parts() -> LevelParts {
             song_table: Location::new(BANK, 0x8040),
             song: 0,
         }),
+        late_life_item: false,
     }
 }
 

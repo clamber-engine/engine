@@ -285,21 +285,19 @@ letter_end_least = 0
 letter_end_lives_in = 0
 letter_end_lives_out = 0
 letter_end_lives_end = 0
+letter_end_lives_held = 0
 count_show_for = 0
 count_x = 0
 count_y = 0
 count_digit_x = 0
 count_digit_gap = 0
-lives_in = 0
 lives_slide = 0
-lives_out = 0
 lives_y = 0
 lives_rise = 0
 lives_gone = 0
 lives_speed = 0
 lives_x = 0
 lives_digit_gap = 0
-lives_change = 0
 life_item_lives_in = 0
 life_item_lives_arrive = 0
 life_item_lives_step = 0
@@ -810,9 +808,13 @@ count_life = 100
 # blink off 8 frames and on 8, four times from J + 1, and from J + 67
 # (letter 1), 24 apart, move right toward x 192 an eighth of the
 # distance left a frame, at least half a px; the letter taken last does
-# all of it a frame late. The lives display comes in from J + 7, shows
-# the new number from the first frame letter 4 is gone (G), slides
-# back up from G + 122 and is gone for good from G + 131.
+# all of it a frame late. The ending's life acts on the lives display
+# as an extra-life item taken on J (below): its steps are held from
+# J + 66 until the first frame letter 4 is gone (G), and the new number
+# comes on the first frame from G not held (extra-lives.md, "The
+# four-letter ending"). With a knock-out the display comes in from
+# J + 7, shows the new number from G, slides back up from G + 122 and
+# is gone for good from G + 131 (letters.md).
 letter_count = 4
 letter_row_in = 2
 letter_row_slide = 8
@@ -833,31 +835,30 @@ letter_end_least = 0.5
 letter_end_lives_in = 7
 letter_end_lives_out = 122
 letter_end_lives_end = 131
+letter_end_lives_held = 66
 # The count display (count-display.md): shown while a pickup waits for
 # its steps and up to 59 frames after the latest one. The image's top
 # left is at (16, 8), the digits at x 32 and 40, y 8. When the count
 # reaches 100 the lives number, at x 220 (two digits at 215 and 225),
-# is first drawn 8 frames after that step at y -12, slides down 4 px a
-# frame, is at 10 from 14 frames after, and slides back up from 147
-# after, last drawn at -14. It shows the new number from 25 frames
-# after.
+# comes in as for an extra-life item (below) taken on the frame after
+# that step whose image is there at once: at y -12 from 8 frames after
+# the step, sliding down 4 px a frame, showing the new number from 25
+# frames after it and sliding back up from 147 after, last drawn at -14
+# (extra-lives.md, "The count reaching 100").
 count_show_for = 59
 count_x = 16
 count_y = 8
 count_digit_x = 32
 count_digit_gap = 8
-lives_in = 8
 lives_slide = 6
-lives_out = 147
 lives_y = 10
 lives_rise = 22
 lives_gone = 24
 lives_speed = 4
 lives_x = 220
 lives_digit_gap = 10
-lives_change = 25
 # After an extra-life item (extra-lives.md) the lives number comes in
-# the same way from 7 frames after it's taken. Each item's image reaches
+# from 7 frames after it's taken. Each item's image reaches
 # the display A frames after it's taken, and the frames before are held
 # ("Several items"): the number steps up by one on the 10th frame not
 # held after the first one on which it's below the lives, then every 16

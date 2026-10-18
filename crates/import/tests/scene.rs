@@ -62,6 +62,7 @@ fn parts() -> LevelParts {
         scene_of: Some("level-1"),
         view_limits: Some(Location::new(BANK, 0xA300)),
         song: None,
+        late_life_item: false,
     }
 }
 

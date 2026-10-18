@@ -43,7 +43,7 @@ use clamber_pack::Param;
 
 use crate::archetype::Behavior;
 use crate::collect::{
-    self, LetterEnd, LetterShow, LivesStep, LostLife, Pickup, Release, RelicFlight,
+    self, LetterEnd, LetterShow, LivesGain, LostLife, Pickup, Release, RelicFlight,
 };
 use crate::hits;
 use crate::keg;
@@ -166,13 +166,10 @@ pub struct Flow {
     pub last_step: Option<u32>,
     /// Pickups still owed steps of `shown`, in the order they were taken.
     pub pickups: Vec<Pickup>,
-    /// The step `shown` last went from `count_life` less one to 0 on,
-    /// for the lives display.
-    pub lives_step: Option<LivesStep>,
-    /// The collectibles giving lives taken since the lives display for
-    /// them last started, in the order they were taken, for the lives
-    /// display.
-    pub life_items: Vec<LivesStep>,
+    /// The lives gained since the lives display last started, for it:
+    /// by collectibles giving lives, by `shown` going from `count_life`
+    /// less one to 0, and by the letter row's ending.
+    pub gains: Vec<LivesGain>,
     /// The last life lost, for the lives display, until play comes
     /// back.
     pub lost: Option<LostLife>,

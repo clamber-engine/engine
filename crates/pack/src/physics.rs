@@ -1109,17 +1109,26 @@ params! {
     LetterEndApproach => "letter_end_approach",
     /// See `letter_end_approach`. px.
     LetterEndLeast => "letter_end_least",
-    /// With an ending, the lives display is first drawn this many
-    /// frames after the join, sliding in as from `lives_in`. Whole
-    /// frames.
+    /// With an ending and a knock-out, the lives display is first drawn
+    /// this many frames after the join, sliding in as the lives display
+    /// does. Whole frames.
     LetterEndLivesIn => "letter_end_lives_in",
-    /// With an ending, the lives display shows the new number from the
-    /// first frame the last letter of the word is gone, and slides back
-    /// up from this many frames after that. Whole frames.
+    /// With an ending and a knock-out, the lives display shows the new
+    /// number from the first frame the last letter of the word is gone,
+    /// and slides back up from this many frames after that. Whole
+    /// frames.
     LetterEndLivesOut => "letter_end_lives_out",
-    /// With an ending, the lives display is gone for good this many
-    /// frames after it first shows the new number. Whole frames.
+    /// With an ending and a knock-out, the lives display is gone for
+    /// good this many frames after it first shows the new number. Whole
+    /// frames.
     LetterEndLivesEnd => "letter_end_lives_end",
+    /// With an ending, the ending's life acts on the lives display as a
+    /// collectible giving a life taken on the join, holding its steps
+    /// from this many frames after the join until the first frame the
+    /// last letter of the word is gone. The display steps up to it on the
+    /// first frame from then that isn't held, and doesn't slide back up
+    /// before. Whole frames.
+    LetterEndLivesHeld => "letter_end_lives_held",
     /// Above 0, the world has a count display (see
     /// `clamber_sim::World::count_display`): the number shown follows the
     /// collectible count one step a frame, and the display is shown while
@@ -1137,18 +1146,10 @@ params! {
     CountDigitX => "count_digit_x",
     /// Each digit is this far right of the one before. Whole px.
     CountDigitGap => "count_digit_gap",
-    /// With a count display, when the number shown goes from
-    /// `count_life` less one to 0 the lives display is first drawn this
-    /// many frames after that step. Whole frames.
-    LivesIn => "lives_in",
     /// Frames the lives display slides in for, as the letter row does
     /// with `letter_row_slide`, by `lives_y`, `lives_rise` and
     /// `lives_speed`. Whole frames.
     LivesSlide => "lives_slide",
-    /// From this many frames after the step, the lives display slides
-    /// back up, as the letter row does from `letter_row_out`. Whole
-    /// frames.
-    LivesOut => "lives_out",
     /// Where the top of the lives number is while it's shown, px below
     /// the picture's top. Whole px.
     LivesY => "lives_y",
@@ -1157,7 +1158,7 @@ params! {
     /// Sliding back up, the lives display is last drawn on the frame it's
     /// this many px above `lives_y` or less. Whole px.
     LivesGone => "lives_gone",
-    /// See `lives_slide` and `lives_out`. Whole px.
+    /// See `lives_slide`. Whole px.
     LivesSpeed => "lives_speed",
     /// The left edge of the lives number's digit, px right of the
     /// picture's left edge. Whole px.
@@ -1166,13 +1167,11 @@ params! {
     /// right of the one before, the digits centred on where a single one
     /// would be. Whole px.
     LivesDigitGap => "lives_digit_gap",
-    /// The lives display shows the lives before the new one until this
-    /// many frames after the step, and the new number from then on. Whole
-    /// frames.
-    LivesChange => "lives_change",
     /// After a collectible giving `lives` is taken, the lives display is
-    /// first drawn this many frames after, sliding in as from `lives_in`.
-    /// Whole frames.
+    /// first drawn this many frames after, sliding in for `lives_slide`
+    /// frames. The number shown going from `count_life` less one to 0
+    /// acts on it as such a collectible taken on the next frame whose
+    /// image is there at once. Whole frames.
     LifeItemLivesIn => "life_item_lives_in",
     /// A taken collectible giving `lives` holds the lives display's steps
     /// from the frame it's taken until this many frames after, when its
@@ -1194,7 +1193,7 @@ params! {
     LifeItemLivesEnd => "life_item_lives_end",
     /// Above 0, after a hit that costs a life the lives display is first
     /// drawn this many frames after the hit, sliding in as from
-    /// `lives_in`, with the lives before the loss. 0: no display for a
+    /// `life_item_lives_in`, with the lives before the loss. 0: no display for a
     /// lost life. Whole frames.
     LostLivesIn => "lost_lives_in",
     /// The same after falling out of the level, from the frame the

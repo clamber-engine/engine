@@ -252,6 +252,9 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
             song_table: at(Data::SongTable)?,
             song: 0,
         }),
+        // `extra-lives.md`, "Late items": of its two `extra-life-3`
+        // items, the right one.
+        late_life_item: true,
     })
 }
 
@@ -295,6 +298,7 @@ pub fn first_room(title: &str) -> Option<LevelParts> {
         scene_of: None,
         view_limits: None,
         song: None,
+        late_life_item: false,
     })
 }
 
@@ -340,6 +344,7 @@ pub fn first_scene(title: &str) -> Option<LevelParts> {
         scene_of: Some(FIRST_LEVEL),
         view_limits: Some(at(Data::SceneViewLimits)?),
         song: None,
+        late_life_item: false,
     })
 }
 
