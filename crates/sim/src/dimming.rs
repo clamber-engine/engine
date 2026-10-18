@@ -64,7 +64,7 @@ pub(crate) fn start(world: &mut World) {
     let Some(left) = world.view.map(|v| v.x()) else {
         return;
     };
-    let physics = world.player_physics();
+    let (left, physics) = view::window(&world.level, &world.feel, left, &world.player_physics());
     let near = world
         .level
         .entities

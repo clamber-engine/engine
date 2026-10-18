@@ -74,7 +74,7 @@ use std::collections::{HashMap, HashSet};
 
 use clamber_fixed::{FRAC_BITS, Fixed};
 use clamber_level::{Dir, Level, Rect, Vec2};
-use clamber_pack::{Param, Physics};
+use clamber_pack::{Feel, Param, Physics};
 
 use crate::archetype::Behavior;
 use crate::dimming::DIM;
@@ -465,6 +465,44 @@ pub(crate) fn restart(world: &mut World) {
     }
 }
 
+/// The window things come and go by while the picture's left edge is at
+/// `left` (whole px), as its left edge and `physics` with its width for
+/// `view_width`. That's the picture itself, unless the feel has a wider
+/// [`window`](Feel::window) (wide activation): then it's that wide,
+/// centred on the picture as [`World::view_middle`] has it, and kept
+/// inside the level-wide camera limits (the level's bounds without
+/// them), or centred on them if it doesn't fit. The game draws the
+/// window there ([`World::window`]), so nothing pops in.
+///
+/// Everything that appears, is removed or leaves by the view goes by
+/// this window: walkers and the other things appearing and being
+/// removed, placed objects' sections, dimming starting, and thrown
+/// objects, balls and things falling out leaving. The picture's own
+/// left edge still keeps the player inside the level's ends
+/// ([`stops`]), and collectibles' arrival is timed by it.
+pub(crate) fn window(level: &Level, feel: &Feel, left: i64, physics: &Physics) -> (i64, Physics) {
+    let picture = physics[Param::ViewWidth].floor();
+    let Some(width) = feel
+        .window
+        .map(i64::from)
+        .filter(|&w| picture > 0 && w > picture)
+    else {
+        return (left, *physics);
+    };
+    let (start, len) = match level.camera.rule.limits {
+        Some(limits) => (limits.x.floor(), limits.w.floor()),
+        None => (0, level.size.x.floor()),
+    };
+    let left = if len <= width {
+        start + (len - width).div_euclid(2)
+    } else {
+        (left + picture / 2 - width / 2).clamp(start, start + len - width)
+    };
+    let mut physics = *physics;
+    physics.set(Param::ViewWidth, Fixed::from_int(width as i32));
+    (left, physics)
+}
+
 /// Whether a walker starting at `start` (whole px) is near a view whose
 /// left edge is at `left` (whole px). The window never reaches left of
 /// level x 1: while it would, it stays where it is with its left end
@@ -487,7 +525,7 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 }
 
 /// Walkers appearing and being removed with the view, by where its left
-/// edge was at the start of the step, `left`:
+/// edge was at the start of the step, `left` (by the [`window`] there):
 ///
 /// - Before things move (`appear`), each walker that isn't in the level
 ///   and hasn't been defeated appears if its start is near the view: at
@@ -563,9 +601,9 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 /// that doesn't comes up again later. They are removed as they would be otherwise, and can then
 /// appear again. Things that aren't removed by the view stay gone once
 /// they leave by their own rule.
-pub(crate) fn walkers(world: &mut World, at: (i64, i64), appear: bool) {
-    let physics = world.player_physics();
-    walkers_by(world, &physics, at, appear);
+pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) {
+    let (left, physics) = window(&world.level, &world.feel, left, &world.player_physics());
+    walkers_by(world, &physics, (left, top), appear);
 }
 
 /// The things that aren't in the level but would appear at their start,

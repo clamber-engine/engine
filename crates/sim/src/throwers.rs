@@ -43,7 +43,7 @@
 
 use clamber_fixed::Fixed;
 use clamber_level::{Level, Vec2};
-use clamber_pack::{Param, Physics};
+use clamber_pack::{Feel, Param, Physics};
 
 use crate::archetype::{Archetypes, Ball, Behavior};
 use crate::columns;
@@ -70,9 +70,14 @@ pub(crate) struct Picture {
 }
 
 impl Picture {
-    pub(crate) fn of(view: View, physics: &Physics) -> Picture {
+    /// The picture as things leave it: as wide as the [`window`] around
+    /// it, and there.
+    ///
+    /// [`window`]: crate::view::window
+    pub(crate) fn of(view: View, level: &Level, feel: &Feel, physics: &Physics) -> Picture {
+        let (left, physics) = crate::view::window(level, feel, view.x(), physics);
         Picture {
-            left: view.x(),
+            left,
             top: view.y(),
             width: physics[Param::ViewWidth].floor(),
             height: physics[Param::ViewHeight].floor(),

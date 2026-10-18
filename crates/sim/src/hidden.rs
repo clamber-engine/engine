@@ -56,6 +56,7 @@ use crate::archetype::{Archetypes, Behavior, Hidden, within};
 use crate::columns;
 use crate::player::{State, ceil, frames};
 use crate::sections::Window;
+use crate::view;
 use crate::world::{Phase, Thing, World};
 
 /// The kind of entity a hidden object is.
@@ -235,8 +236,14 @@ fn become_item(thing: &mut Thing, hidden: &Hidden) {
 /// standing, once they're outside the window placed objects appear in.
 /// They don't come back.
 pub(crate) fn leave(world: &mut World, physics: &Physics) {
-    let window = Window::of(physics);
-    let left = world.view.map(|v| v.x());
+    let (left, physics) = match world.view {
+        Some(v) => {
+            let (left, physics) = view::window(&world.level, &world.feel, v.x(), physics);
+            (Some(left), physics)
+        }
+        None => (None, *physics),
+    };
+    let window = Window::of(&physics);
     let bottom = world.level.size.y;
     for thing in world.things.iter_mut().filter(|t| t.active) {
         let released = thing.kind != HIDDEN

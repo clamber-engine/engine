@@ -376,7 +376,8 @@ impl World {
             Some(Placing::begin(Arc::new(placed), v.y()))
         });
         if let Some(v) = view {
-            let present = view::at_start(&things, &level, v.x(), &physics);
+            let (left, physics) = view::window(&level, &feel, v.x(), &physics);
+            let present = view::at_start(&things, &level, left, &physics);
             for (thing, present) in things.iter_mut().zip(present) {
                 thing.active &= present;
             }
@@ -452,6 +453,20 @@ impl World {
         let view = self.view?;
         let half = self.feel.world[Param::ViewWidth].floor() / 2;
         Some(Fixed::from_int((view.x() + half) as i32))
+    }
+
+    /// Where the window things come and go by is, as its left edge and
+    /// width in whole px, if there's a view and the feel has a
+    /// [`window`](Feel::window) wider than it (wide activation). A game
+    /// that shows more than the view draws this much of the level, here,
+    /// so nothing pops in.
+    pub fn window(&self) -> Option<(i64, i64)> {
+        let view = self.view?;
+        let physics = self.feel.world;
+        let picture = physics[Param::ViewWidth].floor();
+        let (left, physics) = view::window(&self.level, &self.feel, view.x(), &physics);
+        let width = physics[Param::ViewWidth].floor();
+        (width > picture).then_some((left, width))
     }
 
     /// The level `y` of the middle of the view, with its top edge
@@ -1302,6 +1317,7 @@ pub fn generic_feel(preset: &str) -> Option<Feel> {
             physics: world,
             abilities: BTreeMap::from([(ROLL.to_string(), BTreeMap::new())]),
         }],
+        window: None,
     })
 }
 

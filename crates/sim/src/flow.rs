@@ -274,8 +274,8 @@ pub(crate) fn afresh(world: &mut World) {
     let Some(v) = world.view else {
         return;
     };
-    let physics = world.player_physics();
-    let present = view::at_start(&world.things, &level, v.x(), &physics);
+    let (left, physics) = view::window(&level, &world.feel, v.x(), &world.player_physics());
+    let present = view::at_start(&world.things, &level, left, &physics);
     for ((thing, present), fresh) in world.things.iter_mut().zip(present).zip(&fresh) {
         thing.active &= present || !fresh;
     }

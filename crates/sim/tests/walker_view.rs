@@ -399,3 +399,44 @@ fn a_wider_view_would_bring_in_a_group_whole() {
     group_step_at(&mut w, 300);
     assert_eq!(would_appear(&w, 568, 400), [1000.0, 1040.0, 1080.0]);
 }
+
+/// `world`, its feel played in a window 400 px wide (wide activation).
+fn widened(world: World) -> World {
+    let mut feel = (*world.feel).clone();
+    feel.window = Some(400);
+    World::new(world.level.clone(), Arc::new(feel))
+}
+
+#[test]
+fn in_a_wider_window_walkers_appear_and_are_removed_by_it() {
+    // The window is centred on the picture, 72 px further left: it's
+    // near the walker from a picture at 640, where one 256 px wide
+    // would be from 712.
+    let mut w = widened(world("left", 0));
+    assert_eq!(step_at(&mut w, 639), None);
+    assert!(step_at(&mut w, 640).is_some());
+    // walker-view.md's second example, with the window's left edge in
+    // place of the view's: removed with the window at 1032, so the
+    // picture 72 px right of it.
+    w.things[0].pos.x = fx(880.5);
+    w.things[0].vx = fx(-1.0);
+    assert_eq!(step_at(&mut w, 1032), Some(879.5), "start near: stays");
+    assert_eq!(step_at(&mut w, 1103), Some(878.5), "start near: stays");
+    assert_eq!(step_at(&mut w, 1104), None, "both hold: removed");
+}
+
+#[test]
+fn a_wider_window_is_kept_inside_the_level() {
+    let mut w = widened(world("left", 0));
+    let mut at = |left| {
+        w.view = Some(View {
+            left: Fixed::from_int(left),
+            ..View::default()
+        });
+        w.window()
+    };
+    assert_eq!(at(2000), Some((1928, 400)), "centred on the picture");
+    assert_eq!(at(0), Some((0, 400)), "at the left end");
+    assert_eq!(at(3800), Some((3600, 400)), "at the right end");
+    assert_eq!(world("left", 0).window(), None, "none in the picture");
+}

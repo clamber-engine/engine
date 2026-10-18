@@ -20,7 +20,7 @@ use crate::camera::VIEW;
 use crate::canvas::{Color, rgb};
 use crate::controls::{Controls, Request};
 use crate::credits::Credits;
-use crate::display::{Look, made};
+use crate::display::Look;
 use crate::feels::Feels;
 use crate::game::Game;
 use crate::hud::{COUNT, GEM, RELIC_ICON, relic_total};
@@ -639,7 +639,8 @@ impl Session {
             widescreen: self.widescreen_for(pack),
             ..pack.map_or(Look::RENDERED, |p| Look::of(&p.manifest))
         };
-        let mut game = load_game(path, &sprites, self.game.world.feel.clone())?.with_look(look);
+        let feel = look.feel(&self.game.world.feel);
+        let mut game = load_game(path, &sprites, feel)?.with_look(look);
         game.debug |= self.game.debug;
         Ok(game)
     }
@@ -893,10 +894,6 @@ impl Session {
                     let mode = self.widescreen();
                     let y = 80 + menu.height() + 2 * LINE;
                     draw_text_centred(canvas, centre, y, about_widescreen(mode), SUBTITLE);
-                    if !made(mode) {
-                        let not_yet = "Not made yet: plays in original framing";
-                        draw_text_centred(canvas, centre, y + LINE, not_yet, SUBTITLE);
-                    }
                 }
                 return;
             }
@@ -1390,9 +1387,12 @@ mod tests {
         let mut s = session(LEVEL);
         s.screen = Screen::Playing;
         assert_eq!(s.look(), Look::RENDERED, "no view of its own");
+        s.game.set_widescreen(Widescreen::OriginalFraming);
+        assert_eq!(s.look().view, VIEW, "still no view of its own");
         s.game.set_feel(generic_feel("classic-1").unwrap());
         let framed = Look {
             view: (256, VIEW.1),
+            widescreen: Widescreen::OriginalFraming,
             ..Look::RENDERED
         };
         assert_eq!(s.look(), framed);
@@ -1454,8 +1454,8 @@ mod tests {
         s.step(&press(Action::Left));
         assert_eq!(s.widescreen(), Widescreen::WideActivation);
         assert_eq!(Prefs::load(&path), s.prefs);
-        // Wide activation isn't made yet, so it's framed.
-        assert_eq!(s.game.shown().view, (256, VIEW.1));
+        assert_eq!(s.game.shown().view, VIEW, "the whole window");
+        assert_eq!(s.game.world.feel.window, Some(VIEW.0), "things go by it");
         std::fs::remove_dir_all(dir).unwrap();
 
         // Another game has its own.

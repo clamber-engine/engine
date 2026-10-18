@@ -1,10 +1,11 @@
 //! The window's size and how often it's drawn: the parts of showing the
 //! game that don't need a window, so they can be tested.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use clamber_import::{Manifest, Widescreen};
-use clamber_pack::Param;
+use clamber_pack::{Feel, Param};
 use clamber_sim::World;
 
 use crate::camera::VIEW;
@@ -127,7 +128,7 @@ impl Look {
         let width = world
             .view
             .map(|_| world.feel.world[Param::ViewWidth].floor());
-        match (in_effect(self.widescreen), width) {
+        match (self.widescreen, width) {
             (Widescreen::OriginalFraming, Some(width)) if width > 0 => Look {
                 view: (self.view.0.min(width as u32), self.view.1),
                 ..self
@@ -135,22 +136,31 @@ impl Look {
             _ => self,
         }
     }
-}
 
-/// Whether the engine can play in `mode` yet. Wide activation needs a
-/// wider window for things to appear in (#235); until it's made, games
-/// set to it play in original framing, so nothing pops in.
-pub fn made(mode: Widescreen) -> bool {
-    mode != Widescreen::WideActivation
-}
+    /// The window things appear, act and are removed by when `feel` is
+    /// played with this look ([`Feel::window`]): in wide activation, as
+    /// wide as this look's view, if the movement has a view of its own
+    /// and that's narrower. It's fixed by the look, so it doesn't change
+    /// when the window on screen is resized.
+    pub fn window(self, feel: &Feel) -> Option<u32> {
+        let picture = feel.world[Param::ViewWidth].floor();
+        (self.widescreen == Widescreen::WideActivation
+            && picture > 0
+            && i64::from(self.view.0) > picture)
+            .then_some(self.view.0)
+    }
 
-/// The mode a game set to `mode` plays in: `mode` itself, once it's
-/// [`made`], and original framing until then.
-pub fn in_effect(mode: Widescreen) -> Widescreen {
-    if made(mode) {
-        mode
-    } else {
-        Widescreen::OriginalFraming
+    /// `feel` with the window this look plays it in.
+    pub fn feel(self, feel: &Arc<Feel>) -> Arc<Feel> {
+        let window = self.window(feel);
+        if feel.window == window {
+            feel.clone()
+        } else {
+            Arc::new(Feel {
+                window,
+                ..Feel::clone(feel)
+            })
+        }
     }
 }
 

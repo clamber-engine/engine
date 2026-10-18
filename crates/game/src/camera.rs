@@ -4,7 +4,9 @@
 //! never read by the simulation, so it works in floats. When the world
 //! has a view of its own ([`World::view_middle`]), the camera centres on
 //! it across instead of following the player itself, and up and down too
-//! when that view moves vertically ([`World::view_middle_y`]).
+//! when that view moves vertically ([`World::view_middle_y`]). With a
+//! window wider than that view that things go by ([`World::window`]),
+//! it shows exactly that window across.
 
 use clamber_level::{CameraRule, Fixed, Level, Rect, Vec2};
 use clamber_sim::{Facing, HEIGHT, World};
@@ -61,7 +63,7 @@ impl Camera {
         let rule = rule_at(world);
         let look = (look_target(world, &rule).0, 0.0);
         let free = across(world, offset(focus(world), look));
-        let centre = apply(&rule, &world.level, free, view);
+        let centre = windowed(world, apply(&rule, &world.level, free, view));
         Camera {
             centre,
             previous: centre,
@@ -98,7 +100,7 @@ impl Camera {
         let free = (wanted.0, self.follow_y);
         let centre = apply(&self.rule, &world.level, free, self.view);
 
-        self.centre = match &mut self.leaving {
+        let centre = match &mut self.leaving {
             Some((old, frame)) => {
                 *frame += 1;
                 let t = ease(*frame as f64 / TRANSITION_FRAMES as f64);
@@ -110,6 +112,7 @@ impl Camera {
             }
             None => centre,
         };
+        self.centre = windowed(world, centre);
     }
 
     /// The view's top-left corner in world units, `alpha` of the way from
@@ -135,6 +138,16 @@ fn across(world: &World, free: (f64, f64)) -> (f64, f64) {
     let x = world.view_middle().map_or(free.0, Fixed::to_f64);
     let y = world.view_middle_y().map_or(free.1, Fixed::to_f64);
     (x, y)
+}
+
+/// `centre` with the middle of the world's window across, if it has
+/// one ([`World::window`]): things appear, act and are removed by that
+/// window, so it's drawn exactly where it is.
+fn windowed(world: &World, centre: (f64, f64)) -> (f64, f64) {
+    match world.window() {
+        Some((left, width)) => (left as f64 + width as f64 / 2.0, centre.1),
+        None => centre,
+    }
 }
 
 fn rule_at(world: &World) -> CameraRule {

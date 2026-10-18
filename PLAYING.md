@@ -83,15 +83,21 @@ modes:
   where they were, and fade in where they start if the window still
   shows that. The counters and lives stay over the original view's
   width, in the middle of the window.
-- **Wide activation**, where Clamber's own game starts: things appear
-  and act across the whole window, coming in from outside it. Play goes
-  differently from the original.
+- **Wide activation**, where Clamber's own game starts: things appear,
+  act and are removed across the whole window, coming in from outside
+  it, and balls and thrown things leave by its edges. Play goes
+  differently from the original. At the level's ends the window stops
+  at the level's edge, but you're still stopped where the original
+  view would stop you. The counters and lives stay as in original
+  activation.
 - **Original framing**: only the original view's width is shown, with
   borders at the sides, and play goes as it did there.
 
-In every mode, nothing appears out of nowhere inside the window. Wide
-activation isn't finished yet; until it is, a game set to it plays in
-original framing. Movement without a view of its own
+In every mode, nothing appears out of nowhere inside the window. How
+much the window shows is set by the game, not by the window's size:
+resizing the window only scales it, so changing it mid-level changes
+nothing in play. Changing the mode mid-level takes effect from the next
+frame. Movement without a view of its own
 (Default, Snappy, Floaty) fills the window in every mode.
 
 **Import a game…** on the title screen turns your own copy of a

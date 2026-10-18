@@ -14,7 +14,7 @@ use crate::beyond::{Across, Beyond, opacity};
 use crate::camera::{Camera, VIEW, point};
 use crate::canvas::{Canvas, Color, rgb};
 use crate::cast::{Cast, Poses};
-use crate::display::{Look, in_effect};
+use crate::display::Look;
 use crate::hud::{draw_hud, picture_left};
 use crate::layers::LayerArt;
 use crate::surface::{Lighting, PointLight, Surface};
@@ -89,15 +89,22 @@ impl Game {
         }
     }
 
-    /// Draws the game the way `look` says, with a camera to match.
-    pub fn with_look(self, look: Look) -> Game {
-        let mut game = Game {
-            camera: Camera::with_view(&self.world, look.framing(&self.world).view),
-            look,
-            ..self
-        };
-        game.look_beyond();
-        game
+    /// Draws the game the way `look` says, with a camera to match, and
+    /// plays it in the window the look has ([`Look::window`]). A world
+    /// begun without that window goes by it from its next step; to have
+    /// it from the level's start, begin it with [`Look::feel`].
+    pub fn with_look(mut self, look: Look) -> Game {
+        self.look = look;
+        self.settle_look();
+        self
+    }
+
+    /// Plays the world in the window the look has, and settles the
+    /// camera and what's drawn beyond the world's view for the look.
+    fn settle_look(&mut self) {
+        self.world.feel = self.look.feel(&self.world.feel);
+        self.camera = Camera::with_view(&self.world, self.shown().view);
+        self.look_beyond();
     }
 
     /// Where the window and the world's own picture are, while things
@@ -107,7 +114,7 @@ impl Game {
         let view = self.world.view?;
         let picture = self.world.feel.world[Param::ViewWidth].floor();
         let width = i64::from(self.camera.view.0);
-        let wide = in_effect(self.look.widescreen) == Widescreen::OriginalActivation;
+        let wide = self.look.widescreen == Widescreen::OriginalActivation;
         (wide && picture > 0 && width > picture).then(|| Across {
             window: (self.camera.top_left(1.0).0.floor() as i64, width),
             picture: (view.x(), picture),
@@ -133,8 +140,7 @@ impl Game {
     pub fn set_widescreen(&mut self, mode: Widescreen) {
         if self.look.widescreen != mode {
             self.look.widescreen = mode;
-            self.camera = Camera::with_view(&self.world, self.shown().view);
-            self.look_beyond();
+            self.settle_look();
         }
     }
 
@@ -191,7 +197,7 @@ impl Game {
 
     /// Plays `feel` from the start of the level.
     pub fn set_feel(&mut self, feel: Feel) {
-        self.world.feel = Arc::new(feel);
+        self.world.feel = self.look.feel(&Arc::new(feel));
         self.restart();
     }
 
@@ -978,7 +984,13 @@ mod tests {
             at = [600, 400]
             params = { speed = 1, facing = "left", size = [20, 12], offset = 0.5, response = 0.125, turn_delay = 4, appear_wait = 0, defeat_jump = 6, defeat_gravity = 0.4375, defeat_max_fall = 8 }
         "#;
-        let level = Level::from_toml_str(src, "test").unwrap();
+        // More further on, for the view to bring in.
+        let crawler = &src[src.find("[[entities]]").unwrap()..];
+        let mut src = src.to_string();
+        for x in [1500, 2500, 3500] {
+            src.push_str(&crawler.replace("600, 400", &format!("{x}, 400")));
+        }
+        let level = Level::from_toml_str(&src, "test").unwrap();
         let world = World::new(
             Arc::new(level),
             Arc::new(generic_feel("classic-1").unwrap()),
@@ -1025,5 +1037,46 @@ mod tests {
             }
         }
         assert!(game.world.things[0].active, "the view brought it in");
+    }
+
+    #[test]
+    fn wide_activation_brings_things_in_from_outside_the_window() {
+        let mut game = wide(Widescreen::WideActivation);
+        assert_eq!(game.shown().view, (512, 224), "the whole window");
+        assert_eq!(game.world.feel.window, Some(512), "things go by it");
+        game.restart();
+        assert!(game.world.things[0].active, "in the window at the start");
+        // Out of the way of the run.
+        game.world.things[0].active = false;
+        game.world.things[0].phase = clamber_sim::Phase::Gone;
+        let mut held = clamber_input::Actions::NONE;
+        let mut came = 0;
+        for frame in 0..1200 {
+            let before: Vec<bool> = game.world.things.iter().map(|t| t.active).collect();
+            let was_at = game.world.window().map(|(left, _)| left);
+            let now = clamber_input::Action::Right.into();
+            let input = InputFrame::single(clamber_input::Frame::after(held, now));
+            held = now;
+            game.step(&input);
+            let (left, width) = game.world.window().expect("a window");
+            assert_eq!(
+                game.camera.top_left(1.0).0,
+                left as f64,
+                "{frame}: drawn there"
+            );
+            if was_at.is_some_and(|was| (left - was).abs() > 16) {
+                // Coming back after losing a life starts the view
+                // afresh: a cut.
+                continue;
+            }
+            let shown = left as f64..(left + width) as f64;
+            for (thing, was) in game.world.things.iter().zip(before) {
+                if thing.active && !was {
+                    came += 1;
+                    assert!(!shown.contains(&thing.pos.x.to_f64()), "{frame}: popped in");
+                }
+            }
+        }
+        assert!(came > 0, "things came in");
     }
 }

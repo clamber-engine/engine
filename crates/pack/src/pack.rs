@@ -175,6 +175,7 @@ impl Pack {
                 title: preset.title.clone(),
                 world,
                 roster,
+                window: None,
             },
             warnings,
         })
@@ -191,6 +192,12 @@ pub struct Feel {
     pub world: Physics,
     /// By roster slot.
     pub roster: Vec<CharacterFeel>,
+    /// How wide, in whole px, a window wider than the movement's view
+    /// (`view_width`) is that things appear, act and are removed by in
+    /// place of the view, when the game is played in wide activation.
+    /// The engine's own, set by the game for how it's shown: no preset
+    /// sets it, and with none things go by the view.
+    pub window: Option<u32>,
 }
 
 /// One character's resolved movement and abilities. Level regions adjust

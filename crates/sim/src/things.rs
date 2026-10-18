@@ -263,7 +263,9 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         throwers::throw(world);
     }
     // Balls leave by where the view was at the start of the step.
-    let picture = world.view.map(|v| Picture::of(v, &physics));
+    let picture = world
+        .view
+        .map(|v| Picture::of(v, &world.level, &world.feel, &physics));
     let ending = world.ending.is_some();
     let mut freed = Vec::new();
     for thing in world.things.iter_mut().filter(|t| t.active) {
@@ -306,10 +308,10 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     }
     if let Some(view) = world.view {
         // Thrown objects are removed far from the view as walkers are.
-        let left = view.x();
+        let (left, wide) = view::window(&world.level, &world.feel, view.x(), &physics);
         for thing in world.things.iter_mut().filter(|t| t.active) {
             if matches!(thing.phase, Phase::Thrown(f) if f.thrown)
-                && view::far(thing.pos.x.floor(), left, &physics)
+                && view::far(thing.pos.x.floor(), left, &wide)
             {
                 thing.active = false;
             }
