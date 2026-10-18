@@ -73,7 +73,7 @@ pub use level_map::{
 };
 pub use level_start::{START_RECORD_SIZE, StartRecord};
 pub use location::{BANK_SIZE, Location};
-pub use locators::{Data, first_level, first_level_ground, first_room, locate};
+pub use locators::{Data, first_level, first_level_ground, first_room, first_scene, locate};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
 pub use music::{LevelSong, Music, RATE, render};
 pub use nibbles::{NIBBLE_HEADER, unpack_nibbles};
@@ -105,6 +105,10 @@ pub const FIRST_LEVEL: &str = "level-1";
 /// exit leads to. It sorts after [`FIRST_LEVEL`], so the first level is
 /// still a pack's first.
 pub const FIRST_ROOM: &str = "room-1";
+
+/// The file name, without `.level`, of the scene the first level's floor
+/// exit leads to. It sorts after [`FIRST_LEVEL`] too.
+pub const FIRST_SCENE: &str = "scene-1";
 
 /// The folder in a pack that holds its sprite sheets.
 pub const SPRITES: &str = "sprites";
@@ -213,8 +217,8 @@ pub struct Importer {
 
 impl Importer {
     /// The images and decoders this build supports: each supported
-    /// title's first level, the room its upper exit leads to, and its
-    /// level map, where the spec says where their parts are.
+    /// title's first level, the room its upper exit leads to, the scene
+    /// its floor exit leads to, and its level map, where the spec says where their parts are.
     pub fn builtin() -> Importer {
         let catalog = Catalog::builtin();
         let mut decoders: Vec<Box<dyn Decoder>> = Vec::new();
@@ -222,6 +226,11 @@ impl Importer {
             let areas = [
                 (FIRST_LEVEL, "First level", first_level(&known.title)),
                 (FIRST_ROOM, "First level's room", first_room(&known.title)),
+                (
+                    FIRST_SCENE,
+                    "First level's scene",
+                    first_scene(&known.title),
+                ),
             ];
             for (file, name, parts) in areas {
                 if let Some(parts) = parts {

@@ -291,6 +291,47 @@ pub fn first_room(title: &str) -> Option<LevelParts> {
     })
 }
 
+/// The parts of the scene the first level's floor exit leads to, where
+/// the spec gives all of them: the locations from [`locate`], the grid's
+/// 1 528 columns and `N` = 154 from `level-ground.md`, and types 0 to
+/// 435 and front tiles 0 to 43 from `graphics.md` ("The first level's
+/// scene"). The lead walks in leftward (`exits.md`, "The scene"), and it
+/// has no single collectibles (`collectibles.md`), restart or music.
+pub fn first_scene(title: &str) -> Option<LevelParts> {
+    let at = |data| locate(title, data);
+    let (columns, types, pictures, front_count) = match title {
+        "title-1" => (1528, 154, 436, 44),
+        _ => return None,
+    };
+    Some(LevelParts {
+        grid: at(Data::SceneGrid)?,
+        columns,
+        type_table: at(Data::SceneTypeTable)?,
+        types,
+        scenery: Scenery::Scene {
+            tiles: at(Data::ScenePackedTiles)?,
+            palettes: at(Data::ScenePaletteSet)?,
+            picture_table: at(Data::ScenePictureTable)?,
+            pictures,
+            front_tiles: at(Data::SceneFrontTiles)?,
+            front_count,
+            front_map: at(Data::SceneFrontMap)?,
+        },
+        placements: Some(at(Data::ScenePlacementList)?),
+        collectibles: None,
+        start: Some(at(Data::SceneStartRecord)?),
+        walk_in: Some(Dir::Left),
+        restart: None,
+        scene_return: None,
+        room_return: None,
+        wall_return: None,
+        room: None,
+        back_to: None,
+        view_limits: Some(at(Data::SceneViewLimits)?),
+        song: None,
+    })
+}
+
 /// Where the first level's ground of `title` is, for a title whose
 /// levels' ground is in packed maps: `level-ground.md`, "The first
 /// level's data (`title-2`)".
@@ -389,7 +430,15 @@ mod tests {
             .filter(|d| d.applies_to(title_1))
             .map(|d| d.name())
             .collect();
-        assert_eq!(names, ["First level", "First level's room", "Level map"]);
+        assert_eq!(
+            names,
+            [
+                "First level",
+                "First level's room",
+                "First level's scene",
+                "Level map"
+            ]
+        );
     }
 
     #[test]
@@ -435,5 +484,35 @@ mod tests {
         assert!(end(tiles, 32 * split) <= 0x1_0000);
         assert!(end(rest, 32 * (1024 - split)) <= usize::from(map.address));
         assert!(first_room("title-2").is_none());
+    }
+
+    #[test]
+    fn the_first_level_s_scene_is_found_for_title_1_only() {
+        let parts = first_scene("title-1").unwrap();
+        assert_eq!(parts.grid, Location::new(0xDA, 0));
+        assert_eq!((parts.columns, parts.types), (1528, 154));
+        assert_eq!(parts.start, Some(Location::new(0xFC, 0xC03C)));
+        assert_eq!(parts.view_limits, Some(Location::new(0xFC, 0xA5F2)));
+        assert_eq!(parts.walk_in, Some(Dir::Left));
+        let Scenery::Scene {
+            picture_table,
+            pictures,
+            front_tiles,
+            front_count,
+            front_map,
+            ..
+        } = parts.scenery
+        else {
+            panic!("the scene has a front layer");
+        };
+        let end = |at: Location, len: usize| usize::from(at.address) + len;
+        // 32 bytes a column and a picture, 16 a two-plane tile.
+        assert_eq!(end(parts.grid, 32 * parts.columns), 0xBF00);
+        assert!(end(parts.grid, 32 * parts.columns) <= usize::from(picture_table.address));
+        assert!(end(picture_table, 32 * pictures) <= 0x1_0000);
+        assert!(end(front_map, 2048) <= usize::from(front_tiles.address));
+        assert!(end(front_tiles, 16 * front_count) <= 0x1_0000);
+        assert!(end(parts.type_table, 2 * parts.types) <= 0x1_0000);
+        assert!(first_scene("title-2").is_none());
     }
 }

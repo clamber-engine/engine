@@ -1,8 +1,8 @@
 //! A level's background pictures (`spec/formats/graphics.md`): colours
 //! and palette rows, tiles, packed tile data, tile entries, each ground
 //! type's cell picture, and the grid picture made of them, turned into
-//! Clamber level layers drawn from a tileset image; and screen pictures,
-//! drawn as one image.
+//! Clamber level layers drawn from a tileset image; screen pictures,
+//! drawn as one image; and the first level's scene, which has both.
 //!
 //! The grid is the ground grid of `ground.rs`, 16 bands tall, column by
 //! column: a cell's picture comes from the same cell word as its ground.
@@ -24,9 +24,17 @@ const CELL_SQUARES: usize = 4;
 /// Tile entries down a grid picture's column.
 const COLUMN_SQUARES: usize = CELL_SQUARES * COLUMN_BANDS as usize;
 
-/// Grid columns, and bands, that the far layer is made of.
+/// Grid columns, and bands, that the far layer is made of: the grid's
+/// last 16 columns ("The layers"), or the scene's first 8 ("The first
+/// level's scene").
 const FAR_COLUMNS: usize = 16;
+const SCENE_FAR_COLUMNS: usize = 8;
 const FAR_BANDS: usize = 8;
+
+/// Rows between the view's top and the scene's far and front pictures'
+/// top rows ("Where the layers are").
+const SCENE_FAR_ROW: i32 = 5;
+const SCENE_FRONT_ROW: i32 = 1;
 
 /// Tile entries in a screen map, either way.
 const SCREEN_SQUARES: usize = 32;
@@ -76,6 +84,17 @@ impl PaletteSet {
         }
         let [r, g, b] = rgb(self.colour(row, number));
         [r, g, b, 255]
+    }
+
+    /// What a pixel of a two-plane tile shows, of colour `number` (0 to
+    /// 3) in an entry with palette row `row`: colour 4 `row` + `number`
+    /// of the set's 128 ("Colours of two-plane tiles").
+    pub fn two_plane_rgba(&self, row: u8, number: u8) -> Rgba {
+        if number & 3 == 0 {
+            return [0; 4];
+        }
+        let n = 4 * (row & 7) + (number & 3);
+        self.rgba(n / 16, n % 16)
     }
 }
 
@@ -347,10 +366,22 @@ impl ScreenMap {
 
 /// The pixel that `entry` shows at column `x`, row `y` of its square.
 fn shown(tiles: &TileSet, palettes: &PaletteSet, entry: TileEntry, x: u32, y: u32) -> Rgba {
-    let x = if entry.flip_lr() { TILE - 1 - x } else { x };
-    let y = if entry.flip_tb() { TILE - 1 - y } else { y };
+    let (x, y) = flipped(entry, x, y);
     let number = tiles.pixel(entry.tile(), x, y).unwrap_or(0);
     palettes.rgba(entry.palette_row(), number)
+}
+
+/// The pixel of `entry`'s tile shown at column `x`, row `y` of its
+/// square.
+fn flipped(entry: TileEntry, x: u32, y: u32) -> (u32, u32) {
+    let x = if entry.flip_lr() { TILE - 1 - x } else { x };
+    let y = if entry.flip_tb() { TILE - 1 - y } else { y };
+    (x, y)
+}
+
+/// A screen map's squares, row by row.
+fn screen_squares() -> impl Iterator<Item = (usize, usize)> {
+    (0..SCREEN_SQUARES).flat_map(|sy| (0..SCREEN_SQUARES).map(move |sx| (sx, sy)))
 }
 
 /// Squares `squares` of the grid picture's top `bands` bands as an image,
@@ -414,11 +445,100 @@ impl Background {
                 grid.columns
             ));
         }
+        let far = (grid.columns - FAR_COLUMNS) * CELL_SQUARES..grid.width();
+        Background::grid(grid, tiles, palettes, far, Vec2::default(), prefix)
+    }
+
+    /// The first level's scene's layers ("The first level's scene"): the
+    /// far and ground layers as from [`Background::new`], the far picture
+    /// made of the grid's first 8 columns, then the raised tiles of the
+    /// front map, drawn with the two-plane `front_tiles`. `view` is the
+    /// view's top left in the scene, which never moves: the far picture's
+    /// row 5 and the front picture's row 1 are at its top.
+    ///
+    /// The front layer stays fixed on screen. Its tiles that aren't
+    /// raised aren't drawn: the drawing order has none.
+    pub fn scene(
+        grid: &GridPicture,
+        tiles: &TileSet,
+        palettes: &PaletteSet,
+        front: (&ScreenMap, &TileSet),
+        view: Vec2,
+        prefix: &str,
+    ) -> Result<Background, String> {
+        if grid.columns < SCENE_FAR_COLUMNS {
+            return Err(format!(
+                "a grid of {} columns has no far layer, which needs {SCENE_FAR_COLUMNS}",
+                grid.columns
+            ));
+        }
+        let (map, front_tiles) = front;
+        if let Some(entry) = screen_squares()
+            .map(|(sx, sy)| map.entry(sx, sy))
+            .find(|e| e.raised() && usize::from(e.tile()) >= front_tiles.len())
+        {
+            return Err(format!(
+                "the front map shows tile {}, past the {} front tiles",
+                entry.tile(),
+                front_tiles.len()
+            ));
+        }
+        // The far layer scrolls at half speed, as in the first level.
+        let half = Fixed::from_ratio_pow2(1, 1);
+        let far = Vec2::new(
+            view.x * half,
+            view.y * half - Fixed::from_int(SCENE_FAR_ROW),
+        );
+        let squares = 0..SCENE_FAR_COLUMNS * CELL_SQUARES;
+        let mut background = Background::grid(grid, tiles, palettes, squares, far, prefix)?;
+
+        let side = SCREEN_SQUARES as u32 * TILE;
+        let mut image = RgbaImage::new(side, side);
+        for (sx, sy) in screen_squares() {
+            let entry = map.entry(sx, sy);
+            if !entry.raised() {
+                continue;
+            }
+            for y in 0..TILE {
+                for x in 0..TILE {
+                    let (tx, ty) = flipped(entry, x, y);
+                    let number = front_tiles.pixel(entry.tile(), tx, ty).unwrap_or(0);
+                    let p = palettes.two_plane_rgba(entry.palette_row(), number);
+                    image.set(sx as u32 * TILE + x, sy as u32 * TILE + y, p);
+                }
+            }
+        }
+        let path = format!("{prefix}front.png");
+        background.images.insert(path.clone(), encode_png(&image));
+        background.layers.push(layer(
+            "front",
+            Vec2::default(),
+            Vec2::new(Fixed::ZERO, -Fixed::from_int(SCENE_FRONT_ROW)),
+            LayerContent::Image {
+                path,
+                normals: None,
+                repeat_x: false,
+                repeat_y: false,
+            },
+        ));
+        Ok(background)
+    }
+
+    /// The far layer, repeating the grid picture's square columns
+    /// `far` from its top, with its top left at `far_offset` when the
+    /// view's is at the level's origin; then the ground layer.
+    fn grid(
+        grid: &GridPicture,
+        tiles: &TileSet,
+        palettes: &PaletteSet,
+        far: std::ops::Range<usize>,
+        far_offset: Vec2,
+        prefix: &str,
+    ) -> Result<Background, String> {
         let mut images = BTreeMap::new();
         let mut back = Vec::new();
         let mut front = Vec::new();
 
-        let far = (grid.columns - FAR_COLUMNS) * CELL_SQUARES..grid.width();
         for raised in [false, true] {
             let any = far
                 .clone()
@@ -434,7 +554,7 @@ impl Background {
             (if raised { &mut front } else { &mut back }).push(layer(
                 name,
                 Vec2::new(half, half),
-                Vec2::default(),
+                far_offset,
                 LayerContent::Image {
                     path,
                     normals: None,
@@ -543,8 +663,7 @@ impl Background {
         palettes: &PaletteSet,
         prefix: &str,
     ) -> Result<Background, String> {
-        let squares =
-            || (0..SCREEN_SQUARES).flat_map(|sy| (0..SCREEN_SQUARES).map(move |sx| (sx, sy)));
+        let squares = screen_squares;
         if let Some(entry) = squares()
             .map(|(sx, sy)| map.entry(sx, sy))
             .find(|e| usize::from(e.tile()) >= tiles.len())
@@ -1021,6 +1140,118 @@ mod tests {
         let map = ScreenMap::new(&bytes).unwrap();
         let err = Background::screen(&map, &tiles, &palettes, "").unwrap_err();
         assert!(err.contains("tile 4"), "{err}");
+    }
+
+    /// The scene's front layer, every vector entry raised, shows the
+    /// vector pixels: two-plane colours counted through the whole set.
+    #[test]
+    fn the_front_layer_matches_the_spec_vectors() {
+        let mut bytes = hex("front.hex");
+        for b in bytes.iter_mut().skip(1).step_by(2) {
+            *b |= 0x20;
+        }
+        let map = ScreenMap::new(&bytes).unwrap();
+        let front_tiles = TileSet::two_plane(&hex("front-tiles.hex")).unwrap();
+        let (grid, tiles, palettes) = sample(8);
+        let background = Background::scene(
+            &grid,
+            &tiles,
+            &palettes,
+            (&map, &front_tiles),
+            Vec2::default(),
+            "scene-",
+        )
+        .unwrap();
+        let front = rgba(&background.images["scene-front.png"]);
+        assert_eq!((front.width, front.height), (256, 256));
+        let rows = rows("front-pixels.tsv");
+        assert!(rows.len() >= 176);
+        for row in rows {
+            let (x, y): (u32, u32) = (num(&row[0]), num(&row[1]));
+            let want = match row[7].as_str() {
+                "transparent" => [0; 4],
+                hex => {
+                    let [r, g, b] = rgb(u16::from_str_radix(hex, 16).unwrap());
+                    [r, g, b, 255]
+                }
+            };
+            assert_eq!(front.get(x, y), want, "{x},{y}");
+        }
+        assert_eq!(palettes.two_plane_rgba(5, 3), palettes.rgba(1, 7));
+        assert_eq!(palettes.two_plane_rgba(7, 0), [0; 4]);
+    }
+
+    /// "The first level's scene": the far picture is the grid's first 8
+    /// columns, at row 5 of the view's top; the front picture's raised
+    /// tiles, fixed on screen at its row 1, are in front of everything.
+    #[test]
+    fn the_scene_s_layers() {
+        let (grid, tiles, palettes) = sample(17);
+        let mut bytes = hex("front.hex");
+        // Only square 1 raised; the others aren't drawn.
+        for b in bytes.iter_mut().skip(1).step_by(2) {
+            *b &= !0x20;
+        }
+        bytes[3] |= 0x20;
+        let map = ScreenMap::new(&bytes).unwrap();
+        let front_tiles = TileSet::two_plane(&hex("front-tiles.hex")).unwrap();
+        let view = Vec2::ints(33_000, 40);
+        let front = (&map, &front_tiles);
+        let background = Background::scene(&grid, &tiles, &palettes, front, view, "").unwrap();
+        let names: Vec<&str> = background.layers.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["far", "ground", "far-raised", "ground-raised", "front"]
+        );
+        let half = Fixed::from_ratio_pow2(1, 1);
+        for l in &background.layers {
+            assert_eq!(l.depth, Depth::Back);
+            let want = match l.name.as_str() {
+                "far" | "far-raised" => (Vec2::new(half, half), Vec2::ints(16_500, 15)),
+                "front" => (Vec2::default(), Vec2::ints(0, -1)),
+                _ => (Vec2::ints(1, 1), Vec2::ints(0, -1)),
+            };
+            assert_eq!((l.parallax, l.offset), want, "{}", l.name);
+            // On screen: the layer's top left less the view's, scaled.
+            if l.name.starts_with("far") {
+                let at = l.offset.y - view.y * l.parallax.y;
+                assert_eq!(at, Fixed::from_int(-5));
+                assert_eq!((l.offset.x - view.x * l.parallax.x).floor() % 256, 0);
+            }
+        }
+        for (name, raised) in [("far", false), ("far-raised", true)] {
+            let image = rgba(&background.images[&format!("{name}.png")]);
+            assert_eq!((image.width, image.height), (256, 256));
+            for y in 0..256 {
+                for x in 0..256 {
+                    let entry = grid.entry(x as usize / 8, y as usize / 8);
+                    let want = if entry.raised() == raised {
+                        shown(&tiles, &palettes, entry, x % 8, y % 8)
+                    } else {
+                        [0; 4]
+                    };
+                    assert_eq!(image.get(x, y), want, "{name} {x},{y}");
+                }
+            }
+        }
+        let image = rgba(&background.images["front.png"]);
+        // Square 1: tile 0, palette row 1, colour x mod 4.
+        for x in 0..8 {
+            let want = palettes.two_plane_rgba(1, (x % 4) as u8);
+            assert_eq!(image.get(8 + x, 3), want);
+        }
+        assert!(
+            (0..256).all(|y| (0..256).all(|x| (8..16).contains(&x) || image.get(x, y)[3] == 0))
+        );
+
+        // A raised square past the front tiles.
+        bytes[5] |= 0x20;
+        bytes[4] = 4;
+        let map = ScreenMap::new(&bytes).unwrap();
+        let front = (&map, &front_tiles);
+        let err = Background::scene(&grid, &tiles, &palettes, front, view, "").unwrap_err();
+        assert!(err.contains("tile 4, past the 4 front tiles"), "{err}");
+        assert!(Background::scene(&sample(7).0, &tiles, &palettes, front, view, "").is_err());
     }
 
     #[test]

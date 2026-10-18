@@ -35,8 +35,9 @@ const COLUMN_BYTES: usize = 2 * COLUMN_BANDS as usize;
 const PALETTE_SET_BYTES: usize = 256;
 const PICTURE_BYTES: usize = 32;
 
-/// Bytes in a tile stored as it is.
+/// Bytes in a tile stored as it is, and in a two-plane tile.
 const TILE_BYTES: usize = 32;
+const TWO_PLANE_TILE_BYTES: usize = 16;
 
 /// The surface type of an imported level's ground.
 const SURFACE: &str = "normal";
@@ -125,6 +126,21 @@ pub enum Scenery {
         rest: Location,
         map: Location,
         palettes: Location,
+    },
+    /// Layers made from the grid's cells, with the far picture from its
+    /// first columns, and a front layer from a screen map of two-plane
+    /// tiles, as in the first level's scene ("The first level's scene"):
+    /// `tiles`, `palettes`, `picture_table` and `pictures` as for
+    /// [`Scenery::Grid`], then the first `front_count` tiles of the
+    /// front tile set and the front map.
+    Scene {
+        tiles: Location,
+        palettes: Location,
+        picture_table: Location,
+        pictures: usize,
+        front_tiles: Location,
+        front_count: usize,
+        front_map: Location,
     },
 }
 
@@ -310,7 +326,32 @@ impl LevelDecoder {
             grid,
             read("type table", p.type_table, 2 * p.types)?,
         )?;
+        let width = ground.width();
+        let height = ground.bands() * BAND;
+        let limits = match p.view_limits {
+            Some(at) => {
+                let bytes = image.at(at).ok_or_else(|| {
+                    "the level's view-limit record isn't in the image".to_string()
+                })?;
+                Some(ViewLimits::read(bytes)?)
+            }
+            None => None,
+        };
         let prefix = format!("{}-", self.file);
+        let grid_layers = |tiles, palettes, picture_table, pictures: usize| {
+            let packed = image
+                .at(tiles)
+                .ok_or_else(|| "the level's packed tile data isn't in the image".to_string())?;
+            let tiles = TileSet::new(&unpack(packed)?)?;
+            let palettes = PaletteSet::new(read("palette set", palettes, PALETTE_SET_BYTES)?)?;
+            let pictures = Pictures::new(read(
+                "picture table",
+                picture_table,
+                pictures * PICTURE_BYTES,
+            )?)?;
+            let picture = GridPicture::new(grid, &pictures)?;
+            Ok::<_, String>((picture, tiles, palettes))
+        };
         let background = match p.scenery {
             Scenery::Grid {
                 tiles,
@@ -318,18 +359,42 @@ impl LevelDecoder {
                 picture_table,
                 pictures,
             } => {
-                let packed = image
-                    .at(tiles)
-                    .ok_or_else(|| "the level's packed tile data isn't in the image".to_string())?;
-                let tiles = TileSet::new(&unpack(packed)?)?;
-                let palettes = PaletteSet::new(read("palette set", palettes, PALETTE_SET_BYTES)?)?;
-                let pictures = Pictures::new(read(
-                    "picture table",
-                    picture_table,
-                    pictures * PICTURE_BYTES,
-                )?)?;
-                let picture = GridPicture::new(grid, &pictures)?;
+                let (picture, tiles, palettes) =
+                    grid_layers(tiles, palettes, picture_table, pictures)?;
                 Background::new(&picture, &tiles, &palettes, &prefix)?
+            }
+            Scenery::Scene {
+                tiles,
+                palettes,
+                picture_table,
+                pictures,
+                front_tiles,
+                front_count,
+                front_map,
+            } => {
+                let (picture, tiles, palettes) =
+                    grid_layers(tiles, palettes, picture_table, pictures)?;
+                let front_tiles = TileSet::two_plane(read(
+                    "front tile set",
+                    front_tiles,
+                    front_count * TWO_PLANE_TILE_BYTES,
+                )?)?;
+                let map = ScreenMap::new(read("front map", front_map, ScreenMap::BYTES)?)?;
+                // The view's top left: the left limit, and the top of
+                // the first vertical limit, as the scene's are
+                // (`level-ends.md`, "In the first level's scene").
+                let view = limits.as_ref().map_or_else(Vec2::default, |l| {
+                    let top = l.vertical.first().map_or(0, |v| v.top);
+                    Vec2::ints(i32::from(l.left), i32::from(top))
+                });
+                Background::scene(
+                    &picture,
+                    &tiles,
+                    &palettes,
+                    (&map, &front_tiles),
+                    view,
+                    &prefix,
+                )?
             }
             Scenery::Screen {
                 tiles,
@@ -349,8 +414,6 @@ impl LevelDecoder {
         };
         let mut files = background.images;
 
-        let width = ground.width();
-        let height = ground.bands() * BAND;
         let record = |what: &str, at: Location| {
             image
                 .at(at)
@@ -378,11 +441,7 @@ impl LevelDecoder {
         // No format spec says how an image records an area that starts
         // the player riding, so none does.
         level.regions.extend(water(&ground, false));
-        if let Some(at) = p.view_limits {
-            let bytes = image
-                .at(at)
-                .ok_or_else(|| "the level's view-limit record isn't in the image".to_string())?;
-            let limits = ViewLimits::read(bytes)?;
+        if let Some(limits) = limits {
             let regions;
             (level.camera.rule, regions) = limits.camera(width, height);
             level.regions.extend(regions);

@@ -21,7 +21,9 @@ const END: u16 = 0xFFFF;
 /// the level is wider.
 const LAST_END: i64 = 1 << 16;
 
-/// Values from here up aren't covered by the spec.
+/// `top` and `bottom` from here up aren't covered by the spec. `A`, `B`
+/// and `start` can be anything below the end word, as the first level's
+/// scene's are.
 const UNCOVERED: u16 = 0x8000;
 
 /// One vertical limit: from `start` (level x, whole px) to the next
@@ -78,15 +80,13 @@ impl ViewLimits {
 
     /// The format spec's rules, and the values it covers.
     fn check(&self) -> Result<(), String> {
-        let values = self.vertical.iter().flat_map(|v| [v.top, v.bottom]);
-        if [self.left, self.right]
-            .into_iter()
-            .chain(values)
-            .any(|n| n >= UNCOVERED)
-        {
-            return Err("a view limit is 32768 or more, which no spec covers".into());
+        let mut values = self.vertical.iter().flat_map(|v| [v.top, v.bottom]);
+        if values.any(|n| n >= UNCOVERED) {
+            return Err("a view's top limit is 32768 or more, which no spec covers".into());
         }
-        if self.left >= self.right {
+        // The scene's record has `A` = `B` (view-limits.md, "The first
+        // level's scene").
+        if self.left > self.right {
             return Err("the view-limit record's left limit isn't left of its right".into());
         }
         if self.vertical.is_empty() {
@@ -320,7 +320,8 @@ mod tests {
             ViewLimits::read(&bytes)
         };
         assert!(record(&[0, 10, 0, 0, 5, 0, END]).is_ok());
-        assert!(record(&[10, 10, 0, 0, 5, 0, END]).is_err(), "A = B");
+        assert!(record(&[10, 10, 0, 0, 5, 0, END]).is_ok(), "A = B");
+        assert!(record(&[11, 10, 0, 0, 5, 0, END]).is_err(), "A > B");
         assert!(record(&[0, 10, END]).is_err(), "no entries");
         assert!(
             record(&[0, 10, 5, 0, 5, 0, 5, 0, 5, 0, END]).is_err(),
@@ -330,6 +331,13 @@ mod tests {
             record(&[0, 10, 0, 6, 5, 0, END]).is_err(),
             "top below bottom"
         );
-        assert!(record(&[0, 0x8000, 0, 0, 5, 0, END]).is_err(), "B too big");
+        // Unsigned: the scene's record has `A`, `B` and `start` past
+        // 32 768.
+        let scene = record(&[40_000, 40_000, 40_000, 7, 7, 0, END]).unwrap();
+        assert_eq!((scene.left, scene.vertical[0].start), (40_000, 40_000));
+        assert!(
+            record(&[0, 10, 0, 0, 0x8000, 0, END]).is_err(),
+            "bottom too big"
+        );
     }
 }
