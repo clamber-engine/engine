@@ -389,7 +389,7 @@ mod tests {
             .filter(|d| d.applies_to(title_1))
             .map(|d| d.name())
             .collect();
-        assert_eq!(names, ["First level", "First level's room"]);
+        assert_eq!(names, ["First level", "First level's room", "Level map"]);
     }
 
     #[test]

@@ -9,7 +9,7 @@ use serde::de::{self, Deserializer, Visitor};
 use toml::{Table, Value};
 
 use crate::curve;
-use crate::legs::{Dir, Finish, FinishTimes, Legs};
+use crate::legs::{Dir, Finish, FinishTimes, Legs, NewGame};
 use crate::progress::Progress;
 
 pub const FORMAT: u32 = 1;
@@ -76,6 +76,10 @@ pub struct Node {
     pub radius: Fixed,
     pub sprite: Option<String>,
     pub animation: Option<String>,
+    /// Legs maps, level nodes: the direction toward the next level, given
+    /// as if pressed when the map appears after this level is finished
+    /// ([`LegWalker::after_finish`](crate::LegWalker::after_finish)).
+    pub onward: Option<Dir>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -119,6 +123,9 @@ pub struct Path {
     /// Legs maps: the corners walking back passes, when they aren't
     /// `via` reversed.
     pub back_via: Option<Vec<Vec2>>,
+    /// Legs maps: walking back from `to` also needs this, so a path can
+    /// be open one way before the other.
+    pub back_unlock: Option<Condition>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -216,6 +223,15 @@ impl WorldMap {
             && self.node_unlocked(path_.to, p)
     }
 
+    /// Whether a legs map's path can be walked back, from `to` to `from`.
+    pub fn path_open_back(&self, path: usize, p: &Progress) -> bool {
+        self.path_open(path, p)
+            && self.paths[path]
+                .back_unlock
+                .as_ref()
+                .is_none_or(|c| c.holds(p))
+    }
+
     pub fn path_visible(&self, path: usize, p: &Progress) -> bool {
         !self.paths[path].hidden || self.path_open(path, p)
     }
@@ -283,8 +299,14 @@ impl WorldMap {
         (0..self.paths.len()).find_map(|i| {
             let path = &self.paths[i];
             let (to, mut points) = if path.from == node && path.leave.contains(&dir) {
+                if !self.path_open(i, p) {
+                    return None;
+                }
                 (path.to, path.via.clone())
             } else if path.to == node && path.back.contains(&dir) {
+                if !self.path_open_back(i, p) {
+                    return None;
+                }
                 let mut back = path.back_via.clone().unwrap_or_else(|| path.via.clone());
                 if path.back_via.is_none() {
                     back.reverse();
@@ -293,9 +315,6 @@ impl WorldMap {
             } else {
                 return None;
             };
-            if !self.path_open(i, p) {
-                return None;
-            }
             points.push(self.nodes[to].at);
             Some((i, to, points))
         })
@@ -474,6 +493,14 @@ struct LegsFile {
     y_up: bool,
     fade_step: u32,
     finish: Option<FinishFile>,
+    new_game: Option<NewGameFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NewGameFile {
+    walk: u32,
+    toward: String,
 }
 
 #[derive(Deserialize)]
@@ -517,6 +544,7 @@ struct NodeFile {
     radius: Option<N>,
     sprite: Option<String>,
     animation: Option<String>,
+    onward: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -536,6 +564,7 @@ struct PathFile {
     #[serde(default)]
     back: Vec<String>,
     back_via: Option<Vec<[N; 2]>>,
+    back_unlock: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -637,6 +666,11 @@ impl Reader<'_> {
                 radius,
                 sprite: n.sprite.clone(),
                 animation: n.animation.clone(),
+                onward: n
+                    .onward
+                    .as_ref()
+                    .map(|d| self.dir(&format!("{at}.onward"), d))
+                    .transpose()?,
             });
         }
 
@@ -680,6 +714,11 @@ impl Reader<'_> {
                     .back_via
                     .as_ref()
                     .map(|v| v.iter().copied().map(v2).collect()),
+                back_unlock: p
+                    .back_unlock
+                    .as_ref()
+                    .map(|c| self.condition(&format!("{at}.back_unlock"), c, &places))
+                    .transpose()?,
             });
         }
 
@@ -718,13 +757,20 @@ impl Reader<'_> {
         };
         if matches!(mode, Mode::Legs(_)) {
             self.check_legs(&paths, &nodes)?;
-        } else if let Some(i) = paths
-            .iter()
-            .position(|p| !p.leave.is_empty() || !p.back.is_empty() || p.back_via.is_some())
-        {
+        } else if let Some(i) = paths.iter().position(|p| {
+            !p.leave.is_empty()
+                || !p.back.is_empty()
+                || p.back_via.is_some()
+                || p.back_unlock.is_some()
+        }) {
             return Err(self.err(
                 &format!("paths[{i}]"),
-                "leave, back and back_via are only for maps with mode = \"legs\"",
+                "leave, back, back_via and back_unlock are only for maps with mode = \"legs\"",
+            ));
+        } else if let Some(i) = nodes.iter().position(|n| n.onward.is_some()) {
+            return Err(self.err(
+                &format!("nodes[{i}].onward"),
+                "only for maps with mode = \"legs\"",
             ));
         }
         if let Some(start) = &f.start {
@@ -754,11 +800,15 @@ impl Reader<'_> {
         })
     }
 
+    fn dir(&self, at: &str, name: &str) -> Result<Dir, MapError> {
+        Dir::parse(name)
+            .ok_or_else(|| self.err(at, format!("`{name}`; use right, left, up or down")))
+    }
+
     fn dirs(&self, at: &str, names: &[String]) -> Result<Vec<Dir>, MapError> {
         let mut dirs = Vec::new();
         for name in names {
-            let dir = Dir::parse(name)
-                .ok_or_else(|| self.err(at, format!("`{name}`; use right, left, up or down")))?;
+            let dir = self.dir(at, name)?;
             if dirs.contains(&dir) {
                 return Err(self.err(at, format!("`{name}` is listed twice")));
             }
@@ -797,6 +847,13 @@ impl Reader<'_> {
                 }),
                 None => None,
             },
+            new_game: match l.new_game {
+                Some(n) => Some(NewGame {
+                    walk: n.walk,
+                    toward: self.dir("legs.new_game.toward", &n.toward)?,
+                }),
+                None => None,
+            },
         })
     }
 
@@ -819,14 +876,24 @@ impl Reader<'_> {
     /// Every path of a legs map is taken by some direction, and no
     /// direction takes two paths from the same node.
     fn check_legs(&self, paths: &[Path], nodes: &[Node]) -> Result<(), MapError> {
+        if let Some(i) = nodes
+            .iter()
+            .position(|n| n.onward.is_some() && !matches!(n.kind, NodeKind::Level { .. }))
+        {
+            return Err(self.err(&format!("nodes[{i}].onward"), "only for level nodes"));
+        }
         let mut taken = BTreeSet::new();
         for (i, p) in paths.iter().enumerate() {
             let at = format!("paths[{i}]");
             if p.leave.is_empty() && p.back.is_empty() {
                 return Err(self.err(&at, "a legs map's path needs leave or back directions"));
             }
-            if p.one_way && (!p.back.is_empty() || p.back_via.is_some()) {
-                return Err(self.err(&at, "a one-way path can't have back or back_via"));
+            if p.one_way && (!p.back.is_empty() || p.back_via.is_some() || p.back_unlock.is_some())
+            {
+                return Err(self.err(
+                    &at,
+                    "a one-way path can't have back, back_via or back_unlock",
+                ));
             }
             for (node, dirs) in [(p.from, &p.leave), (p.to, &p.back)] {
                 for &dir in dirs {

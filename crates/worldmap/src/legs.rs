@@ -13,11 +13,16 @@
 //! After a level is finished the map appears through
 //! [`LegWalker::after_finish`]: it may hold still for a while, no walk
 //! starts before a gate, and on the gate the direction toward the next
-//! level is given as if just pressed.
+//! level is given as if just pressed. A new game begins with
+//! [`LegWalker::new_game`]: after a while the lead walks off on its own.
+//!
+//! A [`LegsScreen`] runs the walker as the map is shown: entering a warp
+//! to another node of the same map fades out and shows the map again
+//! with the lead there; entering anything else leaves the map.
 
 use clamber_level::{Fixed, Vec2};
 
-use crate::map::WorldMap;
+use crate::map::{NodeKind, WorldMap};
 use crate::progress::Progress;
 
 /// A direction a path can be taken in, in the order they're chosen.
@@ -144,6 +149,17 @@ pub struct Legs {
     /// How the map appears after a level is finished, if it differs from
     /// appearing otherwise.
     pub finish: Option<Finish>,
+    /// How a new game begins, if the lead walks off on its own.
+    pub new_game: Option<NewGame>,
+}
+
+/// A new game: the map appears with the lead at the map's start node, and
+/// on frame `walk` it walks off `toward` with no input. Nothing held or
+/// pressed before then, or on that frame, changes that.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NewGame {
+    pub walk: u32,
+    pub toward: Dir,
 }
 
 /// Full brightness; 0 is black.
@@ -223,6 +239,8 @@ pub struct LegWalker {
     given: Option<(u64, Dir)>,
     /// The frame of the enter press.
     entered: Option<u64>,
+    /// On this frame a walk this way starts, whatever is held or pressed.
+    forced: Option<(u64, Dir)>,
 }
 
 fn axis(v: Vec2, i: usize) -> Fixed {
@@ -263,7 +281,17 @@ impl LegWalker {
             still: (0, 0),
             given: None,
             entered: None,
+            forced: None,
         }
+    }
+
+    /// The lead as the map appears for a new game, at `node` (the map's
+    /// start), walking off as `n` says.
+    pub fn new_game(map: &WorldMap, legs: &Legs, node: usize, n: &NewGame) -> LegWalker {
+        let mut lead = LegWalker::appear(map, legs, node);
+        lead.no_walk_before = u64::from(n.walk);
+        lead.forced = Some((u64::from(n.walk), n.toward));
+        lead
     }
 
     /// The lead as the map appears after the level at `node` is finished,
@@ -363,10 +391,12 @@ impl LegWalker {
             self.remembered_until = frame + u64::from(legs.remember);
         }
         let page = self.page(legs);
+        let forced = self.forced.filter(|&(at, _)| at == frame).map(|(_, d)| d);
 
         if self.walk.is_none()
             && frame >= self.no_walk_before
             && given.is_none()
+            && forced.is_none()
             && new.any(Buttons::ENTER)
         {
             // entering beats any direction
@@ -382,8 +412,8 @@ impl LegWalker {
                 buttons = buttons | self.remembered;
             }
             // a direction without a path blocks those after it
-            if let Some((path, to, points)) = buttons
-                .direction()
+            if let Some((path, to, points)) = forced
+                .or_else(|| buttons.direction())
                 .and_then(|dir| map.leg_route(self.node, dir, p))
             {
                 let mut walk = Walk {
@@ -453,5 +483,100 @@ impl LegWalker {
             Fixed::from_bits((end.y - start.y).to_bits() / frames),
         );
         walk.arrived = [walk.speed.x == Fixed::ZERO, walk.speed.y == Fixed::ZERO];
+    }
+}
+
+/// What a [`LegsScreen`] frame did.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ScreenStep {
+    /// The walker's frame, if it ran one.
+    pub step: Step,
+    /// The map appeared again, the lead at this node, after a warp to it.
+    pub appeared: Option<usize>,
+    /// The map has faded out after this node was entered, and isn't shown
+    /// any more: the caller does what the node is for.
+    pub left: Option<usize>,
+}
+
+/// A legs map as the game shows it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LegsScreen {
+    pub lead: LegWalker,
+    /// Frames still to run after an enter press before the map is gone,
+    /// and the node entered.
+    leaving: Option<(u32, usize)>,
+    left: bool,
+}
+
+impl LegsScreen {
+    /// The screen with `lead` on it.
+    pub fn new(lead: LegWalker) -> LegsScreen {
+        LegsScreen {
+            lead,
+            leaving: None,
+            left: false,
+        }
+    }
+
+    /// A new game on `map`: the lead at the map's start node, walking off
+    /// on its own if the map says so. `None` if the map has no start.
+    pub fn new_game(map: &WorldMap, legs: &Legs) -> Option<LegsScreen> {
+        let node = map.node(map.start.as_deref()?)?;
+        let lead = match &legs.new_game {
+            Some(n) => LegWalker::new_game(map, legs, node, n),
+            None => LegWalker::appear(map, legs, node),
+        };
+        Some(LegsScreen::new(lead))
+    }
+
+    /// Whether the map has faded out after an enter press and is gone.
+    pub fn left(&self) -> bool {
+        self.left
+    }
+
+    /// How bright the map is on the frame last run (see
+    /// [`LegWalker::brightness`]).
+    pub fn brightness(&self, legs: &Legs) -> u32 {
+        if self.left {
+            0
+        } else {
+            self.lead.brightness(legs)
+        }
+    }
+
+    /// Runs a frame with `held` held. After an enter press the map fades
+    /// out; on the frame after its black frames, a warp to a node of this
+    /// map shows the map again with the lead there, as it appears, and
+    /// anything else leaves the map.
+    pub fn step(&mut self, map: &WorldMap, legs: &Legs, p: &Progress, held: Buttons) -> ScreenStep {
+        let mut out = ScreenStep::default();
+        if self.left {
+            return out;
+        }
+        if let Some((0, node)) = self.leaving {
+            self.leaving = None;
+            let here = match &map.nodes[node].kind {
+                NodeKind::Warp { map: m, node: to } if *m == map.id => map.node(to),
+                _ => None,
+            };
+            let Some(to) = here else {
+                self.left = true;
+                out.left = Some(node);
+                return out;
+            };
+            self.lead = LegWalker::appear(map, legs, to);
+            out.appeared = Some(to);
+        }
+        out.step = self.lead.step(map, legs, p, held);
+        if let Some((n, _)) = &mut self.leaving {
+            if !out.step.lag {
+                *n -= 1;
+            }
+        } else if let Some(node) = out.step.entered {
+            // a step of brightness at a time down to black, and one step
+            // black
+            self.leaving = Some((legs.fade_step.max(1) * (FULL + 1) - 1, node));
+        }
+        out
     }
 }

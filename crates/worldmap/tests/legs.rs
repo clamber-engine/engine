@@ -1,14 +1,20 @@
 use clamber_level::{Fixed, Vec2};
 use clamber_worldmap::{
-    Buttons, Dir, FULL, FinishTimes, LegWalker, Legs, Mode, Progress, Step, WorldMap,
+    Buttons, Dir, FULL, FinishTimes, LegWalker, Legs, LegsScreen, Mode, NodeKind, Progress,
+    ScreenStep, Step, WorldMap,
 };
 
 const B: Buttons = Buttons::other(0);
 
 /// A legs map with the given `[legs]` overrides, nodes and paths.
 fn map_with(legs: &str, rest: &str) -> WorldMap {
+    map_starting("a", legs, rest)
+}
+
+/// [`map_with`], starting at `start`.
+fn map_starting(start: &str, legs: &str, rest: &str) -> WorldMap {
     let src = format!(
-        "format = 1\nid = \"m\"\nsize = [1024, 256]\nmode = \"legs\"\nstart = \"a\"\n\
+        "format = 1\nid = \"m\"\nsize = [1024, 256]\nmode = \"legs\"\nstart = \"{start}\"\n\
          [legs]\nleg_frames = 64\nremember = 31\npage_width = 256\npage_wait = 64\n\
          y_up = true\nfade_step = 2\n{legs}\n{rest}"
     );
@@ -607,4 +613,194 @@ fn still_frames_must_end_by_the_gate() {
         "",
     );
     assert!(err.contains("legs.finish.first.still"), "{err}");
+}
+
+/// A new game as in spec/behavior/level-map.md, "A new game": the lead
+/// appears at the start point s and walks Right to the link point k on
+/// its own, in one leg; a press at k shows the map again at the first
+/// level's stop f, whose only path (Down to n) opens when f is cleared.
+fn new_game_map() -> WorldMap {
+    map_starting(
+        "s",
+        "appear_wait = 64\nappear_offset = [8, 0]\n\
+         [legs.new_game]\nwalk = 64\ntoward = \"right\"",
+        "[[nodes]]\nid = \"s\"\nkind = \"waypoint\"\nat = [100, 40]\n\
+         [[nodes]]\nid = \"k\"\nkind = \"warp\"\nmap = \"m\"\nnode = \"f\"\nat = [172, 40]\n\
+         [[nodes]]\nid = \"f\"\nkind = \"level\"\nlevel = \"levels/f.level\"\nat = [60, 200]\n\
+         onward = \"down\"\n\
+         [[nodes]]\nid = \"n\"\nkind = \"waypoint\"\nat = [60, 150]\n\
+         [[paths]]\nfrom = \"s\"\nto = \"k\"\nleave = [\"right\"]\nback = [\"left\"]\n\
+         back_unlock = { flag = \"never\" }\n\
+         [[paths]]\nfrom = \"f\"\nto = \"n\"\nleave = [\"down\"]\nback = [\"up\"]\n\
+         unlock = { cleared = \"f\" }",
+    )
+}
+
+/// Runs a new game on `map` for `frames` frames with `held(frame)`,
+/// returning each frame's step and the brightness after it.
+fn new_game(
+    map: &WorldMap,
+    p: &Progress,
+    frames: u64,
+    held: impl Fn(u64) -> Buttons,
+) -> Vec<(ScreenStep, u32)> {
+    let legs = legs(map);
+    let mut screen = LegsScreen::new_game(map, legs).unwrap();
+    (0..frames)
+        .map(|f| {
+            let step = screen.step(map, legs, p, held(f));
+            (step, screen.brightness(legs))
+        })
+        .collect()
+}
+
+fn node(map: &WorldMap, id: &str) -> usize {
+    map.node(id).unwrap()
+}
+
+/// The example in spec/behavior/level-map.md, "A new game".
+#[test]
+fn the_new_game_example() {
+    let map = new_game_map();
+    let (k, f) = (node(&map, "k"), node(&map, "f"));
+    let frames = new_game(&map, &Progress::default(), 280, |f| match f {
+        100 | 140 | 230 | 240 => JUMP,
+        180..=200 => Buttons::DOWN,
+        _ => Buttons::NONE,
+    });
+    let when = |what: &dyn Fn(&ScreenStep) -> bool| -> Vec<usize> {
+        (0..frames.len()).filter(|&i| what(&frames[i].0)).collect()
+    };
+    assert_eq!(when(&|s| s.step.started.is_some()), [64]);
+    assert_eq!(when(&|s| s.step.arrived == Some(k)), [127]);
+    assert_eq!(when(&|s| s.step.entered.is_some()), [140, 240]);
+    assert_eq!(frames[140].0.step.entered, Some(k));
+    assert_eq!(when(&|s| s.appeared.is_some()), [172]);
+    assert_eq!(frames[172].0.appeared, Some(f));
+    assert_eq!(frames[240].0.step.entered, Some(f));
+    assert_eq!(when(&|s| s.left.is_some()), [272]);
+    assert_eq!(frames[272].0.left, Some(f));
+    assert!(matches!(map.nodes[f].kind, NodeKind::Level { .. }));
+    assert_eq!(map.nodes[f].onward, Some(Dir::Down));
+
+    // Brightness j on 2j and 2j + 1; 15 - j on P + 2j and P + 2j + 1.
+    let light = |f: usize| frames[f].1;
+    assert_eq!(
+        (light(0), light(1), light(2), light(31), light(32)),
+        (0, 0, 1, 15, 15)
+    );
+    assert_eq!(
+        (light(139), light(140), light(141), light(142)),
+        (15, 15, 15, 14)
+    );
+    assert_eq!(
+        (light(168), light(169), light(170), light(171)),
+        (1, 1, 0, 0)
+    );
+    assert_eq!(
+        (light(172), light(173), light(174), light(204)),
+        (0, 0, 1, 15)
+    );
+    assert_eq!((light(269), light(270), light(271)), (1, 0, 0));
+    assert_eq!(light(272), 0);
+}
+
+#[test]
+fn a_new_game_walks_off_whatever_is_held_or_pressed() {
+    let map = new_game_map();
+    let k = node(&map, "k");
+    for held in [
+        Buttons::LEFT,
+        Buttons::UP,
+        JUMP,
+        Buttons::LEFT | JUMP,
+        Buttons::NONE,
+    ] {
+        // held all along, or pressed on the walk's frame or before
+        for (from, to) in [(0, 300), (64, 64), (63, 63), (10, 70)] {
+            let frames = new_game(&map, &Progress::default(), 200, |f| {
+                if (from..=to).contains(&f) {
+                    held
+                } else {
+                    Buttons::NONE
+                }
+            });
+            let started: Vec<usize> = (0..200)
+                .filter(|&f| frames[f].0.step.started.is_some())
+                .collect();
+            assert_eq!(started, [64], "{held:?} {from}..={to}");
+            assert_eq!(frames[127].0.step.arrived, Some(k));
+            let entered: Vec<usize> = (0..200)
+                .filter(|&f| frames[f].0.step.entered.is_some())
+                .collect();
+            // a press kept held from the walk on isn't new at the link point
+            assert_eq!(entered, Vec::<usize>::new(), "{held:?} {from}..={to}");
+        }
+    }
+}
+
+#[test]
+fn a_press_at_the_link_point_counts_from_the_walks_end() {
+    let map = new_game_map();
+    let k = node(&map, "k");
+    // L = 127: presses on L - 1 and L do nothing, L + 1 and L + 2 enter.
+    for (press, enters) in [(126, false), (127, false), (128, true), (129, true)] {
+        let frames = new_game(&map, &Progress::default(), 200, |f| {
+            if f == press { JUMP } else { Buttons::NONE }
+        });
+        let entered = frames.iter().position(|(s, _)| s.step.entered == Some(k));
+        assert_eq!(
+            entered,
+            enters.then_some(press as usize),
+            "press on {press}"
+        );
+    }
+}
+
+#[test]
+fn a_path_can_be_open_one_way_only() {
+    let map = new_game_map();
+    let (s, k, f) = (node(&map, "s"), node(&map, "k"), node(&map, "f"));
+    let mut p = Progress::default();
+    assert!(map.leg_route(s, Dir::Right, &p).is_some());
+    assert_eq!(map.leg_route(k, Dir::Left, &p), None);
+    assert_eq!(map.leg_route(f, Dir::Down, &p), None);
+    p.flags.insert("never".into());
+    assert!(map.leg_route(k, Dir::Left, &p).is_some());
+    p.clear("m:f", "normal");
+    let n = node(&map, "n");
+    assert_eq!(map.leg_route(f, Dir::Down, &p).map(|r| r.1), Some(n));
+    assert_eq!(map.leg_route(n, Dir::Up, &p).map(|r| r.1), Some(f));
+}
+
+#[test]
+fn new_game_and_onward_are_checked() {
+    let path = "[[paths]]\nfrom = \"a\"\nto = \"b\"\nleave = [\"right\"]";
+    assert!(
+        map_err(
+            &format!("{LEGS}\n[legs.new_game]\nwalk = 64\ntoward = \"back\""),
+            path
+        )
+        .contains("legs.new_game.toward")
+    );
+    assert!(
+        map_err(
+            LEGS,
+            &format!("{path}\nback_unlock = {{ flag = \"x\" }}\none_way = true")
+        )
+        .contains("can't have back, back_via or back_unlock")
+    );
+    let onward = "format = 1\nid = \"m\"\nsize = [100, 100]\nmode = \"legs\"\nstart = \"a\"\n\
+         [[nodes]]\nid = \"a\"\nkind = \"waypoint\"\nat = [0, 0]\nonward = \"down\"\n";
+    let err = WorldMap::from_toml_str(&format!("{onward}{LEGS}"), "m.map")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("nodes[0].onward: only for level nodes"),
+        "{err}"
+    );
+    let err = WorldMap::from_toml_str(&onward.replace("mode = \"legs\"\n", ""), "m.map")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("only for maps with mode = \"legs\""), "{err}");
 }

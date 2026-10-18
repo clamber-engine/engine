@@ -68,8 +68,8 @@ pub use level::{
     SCENE_RETURN, Scenery, WALL_RETURN_ARRIVAL, water,
 };
 pub use level_map::{
-    APPEARANCE_OFFSET, CORNER_SIZE, Direction, FIRST_CORNER, LAST_CORNER, LevelMap, Point,
-    TABLE_SIZE, corner_count, is_corner,
+    APPEARANCE_OFFSET, CORNER_SIZE, Direction, FIRST_CORNER, LAST_CORNER, LEVEL_MAP, LevelMap,
+    LevelMapDecoder, Link, MAPS, Point, Rules, StopKind, TABLE_SIZE, corner_count, is_corner,
 };
 pub use level_start::{START_RECORD_SIZE, StartRecord};
 pub use location::{BANK_SIZE, Location};
@@ -213,8 +213,8 @@ pub struct Importer {
 
 impl Importer {
     /// The images and decoders this build supports: each supported
-    /// title's first level, and the room its upper exit leads to, where
-    /// the spec says where their parts are.
+    /// title's first level, the room its upper exit leads to, and its
+    /// level map, where the spec says where their parts are.
     pub fn builtin() -> Importer {
         let catalog = Catalog::builtin();
         let mut decoders: Vec<Box<dyn Decoder>> = Vec::new();
@@ -232,6 +232,12 @@ impl Importer {
                         parts,
                     }));
                 }
+            }
+            if Rules::of(&known.title).is_some() && locate(&known.title, Data::MapPoints).is_some()
+            {
+                decoders.push(Box::new(LevelMapDecoder {
+                    title: known.title.clone(),
+                }));
             }
         }
         Importer { catalog, decoders }

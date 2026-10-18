@@ -24,7 +24,9 @@ mod map;
 mod progress;
 
 pub use curve::{Walker, cosine, distance, length, smooth};
-pub use legs::{Buttons, Dir, FULL, Finish, FinishTimes, LegWalker, Legs, Step};
+pub use legs::{
+    Buttons, Dir, FULL, Finish, FinishTimes, LegWalker, Legs, LegsScreen, NewGame, ScreenStep, Step,
+};
 pub use map::{
     Condition, Decoration, Exit, FORMAT, Free, MapError, Mode, Node, NodeKind, Path, Vehicle,
     WorldMap, check_warps,
