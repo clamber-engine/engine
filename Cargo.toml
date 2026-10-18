@@ -5,3 +5,12 @@ members = ["crates/*"]
 [workspace.package]
 edition = "2024"
 license = "MIT"
+
+# Tests and debug builds run the simulation for many frames; unoptimised
+# code makes them very slow. Light optimisation for our crates keeps
+# debugging usable, and dependencies are fully optimised.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
