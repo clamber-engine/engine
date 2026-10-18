@@ -343,6 +343,17 @@ fn writes_the_level_s_music_with_its_loop() {
     assert!(seam.after < -60.0, "{seam:?}");
 }
 
+/// The import report says how each converted song loops.
+#[test]
+fn the_report_says_how_the_song_loops() {
+    let packs = scratch("loops").join("packs");
+    let result = importer().import(&image(), &packs, false);
+    assert_eq!(result.as_ref().unwrap().notes, ["song 0: loops exactly"]);
+    let report = import_report(&result);
+    assert!(report.contains("\n  song 0: loops exactly\n"), "{report}");
+    assert!(report.contains("Nothing was skipped."), "{report}");
+}
+
 /// A song that can't be converted doesn't stop the import: the level
 /// goes without music of its own, and the import says so, with
 /// diagnostics that don't quote the image.
@@ -455,7 +466,7 @@ fn without_a_start_record_the_start_is_on_the_ground_at_the_left() {
         parts: parts(),
     };
     decoder.parts.start = None;
-    let (level, _, _) = decoder.level(&image()).unwrap();
+    let (level, ..) = decoder.level(&image()).unwrap();
     assert_eq!(level.start, Vec2::ints(16, 481));
     decoder.parts.start = Some(Location::new(BANK, 0xFFFE));
     let err = decoder.level(&image()).unwrap_err();

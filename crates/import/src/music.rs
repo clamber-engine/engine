@@ -74,6 +74,8 @@ pub struct Music {
     pub frames: Vec<[i16; 2]>,
     /// Where it loops, in outputs; `None` for a song that ends.
     pub looping: Option<Loop>,
+    /// How closely it comes back to where its loop starts.
+    pub fit: Fit,
 }
 
 impl Music {
@@ -108,14 +110,41 @@ impl Music {
 enum Shape {
     /// Every track has ended after this many steps.
     Ends(usize),
-    /// After `lead_in` steps, the next `length` steps repeat forever:
-    /// exactly, or only as far as the score goes
-    /// ([`Player::same_score_place`]).
+    /// After `lead_in` steps, the next `length` steps repeat forever, as
+    /// closely as `fit` says.
     Loops {
         lead_in: usize,
         length: usize,
-        exact: bool,
+        fit: Fit,
     },
+}
+
+/// How closely a song's music comes back to where its loop starts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fit {
+    /// Exactly where it was; also for a song that ends.
+    Exact,
+    /// Where it was in the score ([`Player::same_score_place`]), give or
+    /// take a step and the effects' changes.
+    Score,
+    /// The track with the longest loop comes back to where it was in the
+    /// score; tracks whose loops are shorter and don't fit into it jump
+    /// at the seam ([`Player::same_track_place`]).
+    Tracks,
+}
+
+impl Fit {
+    /// How the song loops, for the import report.
+    pub fn describe(self) -> &'static str {
+        match self {
+            Fit::Exact => "loops exactly",
+            Fit::Score => "loops where its score comes back, give or take a step",
+            Fit::Tracks => {
+                "its tracks loop apart; loops on the longest track's loop, \
+                 and the other tracks jump at the seam"
+            }
+        }
+    }
 }
 
 /// Finds the shape of `song` by playing it until it ends or comes back
@@ -123,12 +152,17 @@ enum Shape {
 /// to exactly where it was than to where it was in the score: with a
 /// tempo that doesn't divide 256, the tempo sum only comes back after
 /// several times round, and an effect's counters may never line up with
-/// the notes again. Such a song loops where its score comes back.
+/// the notes again. Such a song loops where its score comes back. And
+/// when its tracks loop with lengths that only fit together after very
+/// many beats, it loops on its longest track's loop.
 fn shape(song: &Song) -> Result<Shape, String> {
     if let Some(shape) = exact_shape(song)? {
         return Ok(shape);
     }
     if let Some(shape) = score_shape(song)? {
+        return Ok(shape);
+    }
+    if let Some(shape) = track_shape(song)? {
         return Ok(shape);
     }
     Err(format!(
@@ -167,7 +201,7 @@ fn exact_shape(song: &Song) -> Result<Option<Shape>, String> {
             return Ok(Some(Shape::Loops {
                 lead_in,
                 length,
-                exact: true,
+                fit: Fit::Exact,
             }));
         }
         if length == power {
@@ -190,18 +224,21 @@ fn to_beat(player: &mut Player) -> Result<Option<usize>, String> {
     Ok(None)
 }
 
-/// The shape of `song` where, on a beat, it comes back to where it was
-/// in the score within [`MAX_STEPS`], as [`exact_shape`] does but a beat
-/// at a time.
-fn score_shape(song: &Song) -> Result<Option<Shape>, String> {
+/// Where, a beat at a time, `song` first comes back to a place `same`
+/// says it was at before within [`MAX_STEPS`], as [`exact_shape`] does
+/// a step at a time: the beat after which the loop starts (from 1), and
+/// the loop's length in beats. `None` if it doesn't, or the song ends.
+fn beat_loop(
+    song: &Song,
+    same: impl Fn(&Player, &Player) -> bool,
+) -> Result<Option<(usize, usize)>, String> {
     let mut first = Player::new(song)?;
-    let Some(first_steps) = to_beat(&mut first)? else {
+    let Some(mut steps) = to_beat(&mut first)? else {
         return Ok(None);
     };
     let mut tortoise = first.clone();
     let mut hare = first.clone();
     let (mut power, mut length) = (1, 0);
-    let mut steps = first_steps;
     loop {
         let Some(n) = to_beat(&mut hare)? else {
             return Ok(None);
@@ -211,7 +248,7 @@ fn score_shape(song: &Song) -> Result<Option<Shape>, String> {
         if steps > MAX_STEPS || hare.ended() {
             return Ok(None);
         }
-        if hare.same_score_place(&tortoise) {
+        if same(&hare, &tortoise) {
             break;
         }
         if length == power {
@@ -220,27 +257,68 @@ fn score_shape(song: &Song) -> Result<Option<Shape>, String> {
             length = 0;
         }
     }
-    // The loop is `length` beats long. It starts at the first beat
-    // whose place in the score comes back `length` beats later; in
-    // steps, it's as long as it is that first time round.
-    let beat = |player: &mut Player| -> Result<usize, String> {
-        to_beat(player)?.ok_or_else(|| "a beat went missing".to_string())
-    };
+    // The loop starts at the first beat whose place comes back `length`
+    // beats later.
     let mut tortoise = first.clone();
     let mut hare = first;
-    let (mut lead_in, mut ahead) = (first_steps, first_steps);
     for _ in 0..length {
-        ahead += beat(&mut hare)?;
+        beat(&mut hare)?;
     }
-    while !hare.same_score_place(&tortoise) {
-        lead_in += beat(&mut tortoise)?;
-        ahead += beat(&mut hare)?;
+    let mut start = 1;
+    while !same(&hare, &tortoise) {
+        beat(&mut tortoise)?;
+        beat(&mut hare)?;
+        start += 1;
     }
-    Ok(Some(Shape::Loops {
+    Ok(Some((start, length)))
+}
+
+/// [`to_beat`] for a song known to have beats.
+fn beat(player: &mut Player) -> Result<usize, String> {
+    to_beat(player)?.ok_or_else(|| "a beat went missing".to_string())
+}
+
+/// The loop that starts after beat `start` and is `length` beats long,
+/// in steps: as long as it is that first time round.
+fn beats_to_steps(song: &Song, start: usize, length: usize, fit: Fit) -> Result<Shape, String> {
+    let mut player = Player::new(song)?;
+    let mut lead_in = 0;
+    for _ in 0..start {
+        lead_in += beat(&mut player)?;
+    }
+    let mut steps = 0;
+    for _ in 0..length {
+        steps += beat(&mut player)?;
+    }
+    Ok(Shape::Loops {
         lead_in,
-        length: ahead - lead_in,
-        exact: false,
-    }))
+        length: steps,
+        fit,
+    })
+}
+
+/// The shape of `song` where, on a beat, it comes back to where it was
+/// in the score within [`MAX_STEPS`].
+fn score_shape(song: &Song) -> Result<Option<Shape>, String> {
+    match beat_loop(song, |a, b| a.same_score_place(b))? {
+        Some((start, length)) => beats_to_steps(song, start, length, Fit::Score).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// The shape of `song` from where its last track to start looping
+/// starts, as long as its longest track's loop, each track's loop found
+/// on its own as in [`score_shape`].
+fn track_shape(song: &Song) -> Result<Option<Shape>, String> {
+    let (mut start, mut length) = (1, 1);
+    for i in 0..CHANNELS {
+        let Some((s, l)) = beat_loop(song, |a, b| a.same_track_place(i, b))? else {
+            return Ok(None);
+        };
+        start = start.max(s);
+        length = length.max(l);
+    }
+    beats_to_steps(song, start, length, Fit::Tracks).map(Some)
 }
 
 /// Counts, step numbers and states for finding out why `song` doesn't
@@ -266,6 +344,7 @@ fn diagnose_for(song: &Song, max_steps: usize) -> Vec<String> {
     };
     shape_line("exactly", exact_shape(song));
     shape_line("in the score", score_shape(song));
+    shape_line("by track", track_shape(song));
 
     let mut player = match Player::new(song) {
         Ok(player) => player,
@@ -376,11 +455,13 @@ fn hand(mixer: &mut Mixer, step: &Step) {
 /// its echo fall silent.
 pub fn render(song: &Song, samples: &[Sample]) -> Result<Music, String> {
     let shape = shape(song)?;
-    let (steps, loop_from) = match shape {
-        Shape::Ends(steps) => (steps, None),
+    let (steps, loop_from, fit) = match shape {
+        Shape::Ends(steps) => (steps, None, Fit::Exact),
         Shape::Loops {
-            lead_in, length, ..
-        } => (lead_in + 2 * length, Some(lead_in + length)),
+            lead_in,
+            length,
+            fit,
+        } => (lead_in + 2 * length, Some(lead_in + length), fit),
     };
     let mut player = Player::new(song)?;
     // The memory starts all 0 when the sound starts; whether a song
@@ -418,7 +499,11 @@ pub fn render(song: &Song, samples: &[Sample]) -> Result<Music, String> {
             None
         }
     };
-    Ok(Music { frames, looping })
+    Ok(Music {
+        frames,
+        looping,
+        fit,
+    })
 }
 
 #[cfg(test)]
@@ -510,25 +595,36 @@ mod tests {
     fn a_song_whose_tempo_sum_comes_back_late_loops_where_its_score_does() {
         let song = round_song(3, &[(200, 201)]);
         assert_eq!(exact_shape(&song).unwrap(), None);
-        let Shape::Loops { length, exact, .. } = shape(&song).unwrap() else {
+        let Shape::Loops { length, fit, .. } = shape(&song).unwrap() else {
             panic!("the song doesn't loop");
         };
-        assert!(!exact);
+        assert_eq!(fit, Fit::Score);
         assert!(length.abs_diff(401 * 256 / 3) <= 1, "{length}");
     }
 
     /// Tracks of 401 and 400 beats only come back together after 160 400
-    /// beats: the song can't be converted, and the diagnostics say which
-    /// parts repeat how often.
+    /// beats, too many to find: the song loops on the longer track's
+    /// loop, and the diagnostics say which parts repeat how often.
     #[test]
-    fn a_song_whose_tracks_loop_apart_fails_and_says_why() {
+    fn a_song_whose_tracks_loop_apart_loops_on_its_longest_track() {
         let song = round_song(128, &[(200, 201), (200, 200)]);
-        let err = shape(&song).unwrap_err();
-        assert!(err.contains("neither ends nor loops"), "{err}");
+        // Beats on every other step; both tracks loop from their first
+        // note, read on step 2.
+        let want = Shape::Loops {
+            lead_in: 2,
+            length: 802,
+            fit: Fit::Tracks,
+        };
+        assert_eq!(shape(&song).unwrap(), want);
+        let music = render(&song, &[level_sample()]).unwrap();
+        assert_eq!(music.fit, Fit::Tracks);
+        assert_eq!(music.looping.unwrap().length, 802 * 400);
+
         let lines = diagnose_for(&song, 4000);
         for line in [
             format!("exactly: doesn't come back within {MAX_STEPS} steps"),
             format!("in the score: doesn't come back within {MAX_STEPS} steps"),
+            "by track: loops every 802 steps from step 2".into(),
             "played 4000 steps, 2000 beats; at most 0 calls deep".into(),
             "ended: channel 2 at step 2, channel 3 at step 2, channel 4 at step 2, \
              channel 5 at step 2, channel 6 at step 2, channel 7 at step 2"
@@ -542,6 +638,22 @@ mod tests {
         ] {
             assert!(lines.contains(&line), "no `{line}` in {lines:#?}");
         }
+    }
+
+    /// A track that raises its transposition by 64 each time round comes
+    /// back to where it was after two times round: notes only use it mod
+    /// 128.
+    #[test]
+    fn a_song_raising_its_transposition_comes_back_when_its_notes_do() {
+        let mut track = SETUP.to_vec();
+        let back = 19 + track.len() as u16;
+        track.extend([20, 64, 165, 2, 3]);
+        track.extend(back.to_le_bytes());
+        let Some(Shape::Loops { length, fit, .. }) = exact_shape(&song(128, &track)).unwrap()
+        else {
+            panic!("the song doesn't loop");
+        };
+        assert_eq!((length, fit), (8, Fit::Exact));
     }
 
     #[test]
@@ -598,6 +710,7 @@ mod tests {
         let music = Music {
             frames: vec![[1, -1], [2, -2]],
             looping: None,
+            fit: Fit::Exact,
         };
         let wav = music.wav();
         assert_eq!(&wav[22..24], &2u16.to_le_bytes());

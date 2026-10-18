@@ -75,7 +75,7 @@ pub use level_start::{START_RECORD_SIZE, StartRecord};
 pub use location::{BANK_SIZE, Location};
 pub use locators::{Data, first_level, first_level_ground, first_room, first_scene, locate};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable, Widescreen};
-pub use music::{LevelSong, Music, RATE, render};
+pub use music::{Fit, LevelSong, Music, RATE, render};
 pub use nibbles::{NIBBLE_HEADER, unpack_nibbles};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements, RECORD_SIZE, Record};
 pub use songs::{
@@ -249,6 +249,9 @@ pub fn import_report(result: &Result<Imported, ImportError>) -> String {
             for decoder in &imported.decoded {
                 out += &format!("  converted the {decoder}\n");
             }
+            for note in &imported.notes {
+                out += &format!("  {note}\n");
+            }
             if imported.skipped.is_empty() {
                 out += "Nothing was skipped.\n";
             }
@@ -278,6 +281,7 @@ pub struct PackWriter {
     dir: PathBuf,
     written: BTreeSet<PathBuf>,
     skipped: Vec<Skipped>,
+    notes: Vec<String>,
 }
 
 impl PackWriter {
@@ -308,6 +312,12 @@ impl PackWriter {
         self.skipped.push(skipped);
     }
 
+    /// Notes something about how a part was converted for the import
+    /// report: counts and states, never quoting the image.
+    pub fn note(&mut self, note: String) {
+        self.notes.push(note);
+    }
+
     /// The files written so far, relative to the pack's folder.
     pub fn files(&self) -> impl Iterator<Item = &Path> {
         self.written.iter().map(PathBuf::as_path)
@@ -325,6 +335,8 @@ pub struct Imported {
     /// The optional parts that couldn't be converted, in the order they
     /// were met.
     pub skipped: Vec<Skipped>,
+    /// Notes on how parts were converted, for the import report.
+    pub notes: Vec<String>,
 }
 
 pub struct Importer {
@@ -434,12 +446,13 @@ impl Importer {
         if result.is_err() {
             let _ = fs::remove_dir_all(&staging);
         }
-        let (manifest, decoded, skipped) = result?;
+        let (manifest, decoded, pack) = result?;
         Ok(Imported {
             manifest,
             dir: dest,
             decoded,
-            skipped,
+            skipped: pack.skipped,
+            notes: pack.notes,
         })
     }
 
@@ -450,11 +463,12 @@ impl Importer {
         known: &Known,
         staging: &Path,
         progress: &mut dyn FnMut(&str),
-    ) -> Result<(Manifest, Vec<String>, Vec<Skipped>), ImportError> {
+    ) -> Result<(Manifest, Vec<String>, PackWriter), ImportError> {
         let mut pack = PackWriter {
             dir: staging.to_path_buf(),
             written: BTreeSet::new(),
             skipped: Vec::new(),
+            notes: Vec::new(),
         };
         let mut decoded = Vec::new();
         for decoder in self.decoders.iter().filter(|d| d.applies_to(known)) {
@@ -482,7 +496,7 @@ impl Importer {
         let path = staging.join(MANIFEST);
         fs::write(&path, manifest.to_toml())
             .map_err(|e| ImportError::Write(format!("{}: {e}", path.display())))?;
-        Ok((manifest, decoded, pack.skipped))
+        Ok((manifest, decoded, pack))
     }
 }
 

@@ -971,6 +971,7 @@ mod tests {
             dir: dir.clone(),
             written: Default::default(),
             skipped: Vec::new(),
+            notes: Vec::new(),
         };
         let decoder = LevelMapDecoder {
             title: "title-1".into(),
@@ -989,6 +990,7 @@ mod tests {
             dir: dir.clone(),
             written: Default::default(),
             skipped: Vec::new(),
+            notes: Vec::new(),
         };
         let err = decoder
             .decode(&Image::new(vec![0; 61 * crate::BANK_SIZE]), &mut pack)

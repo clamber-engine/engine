@@ -459,24 +459,15 @@ impl<'a> Player<'a> {
         self.score() == other.score()
     }
 
+    /// Whether track `i` is at the same place in the score as in
+    /// `other`, as in [`same_score_place`](Player::same_score_place) but
+    /// for that track alone, leaving out the song-wide settings.
+    pub fn same_track_place(&self, i: usize, other: &Player) -> bool {
+        scored(&self.channels[i]) == scored(&other.channels[i])
+    }
+
     fn score(&self) -> (Vec<Channel>, [bool; CHANNELS], Settings, Wide) {
-        let channels = self
-            .channels
-            .iter()
-            .map(|c| {
-                let mut c = c.clone();
-                c.pitch = 0;
-                c.volume = [0, 0];
-                c.slide.countdown = 0;
-                c.slide.made = 0;
-                for swing in [&mut c.vibrato, &mut c.sweep] {
-                    swing.countdown = 0;
-                    swing.left = 0;
-                    swing.off = false;
-                }
-                c
-            })
-            .collect();
+        let channels = self.channels.iter().map(scored).collect();
         let wide = Wide {
             tempo_sum: 0,
             effect_sum: 0,
@@ -950,11 +941,14 @@ impl<'a> Player<'a> {
                 set.main_volume = true;
             }
             18 => self.channels[i].fine = self.take(i, 1)?[0] as i8,
-            19 => self.channels[i].transpose = self.take(i, 1)?[0],
+            // Notes only use the transposition mod 128, so it's kept so:
+            // a track that goes round raising it comes back to where it
+            // was twice as soon.
+            19 => self.channels[i].transpose = self.take(i, 1)?[0] % 128,
             20 => {
                 let t = self.take(i, 1)?[0];
                 let channel = &mut self.channels[i];
-                channel.transpose = channel.transpose.wrapping_add(t);
+                channel.transpose = channel.transpose.wrapping_add(t) % 128;
             }
             21 => {
                 let args = self.take(i, 3)?;
@@ -1043,6 +1037,22 @@ impl<'a> Player<'a> {
         }
         Ok(())
     }
+}
+
+/// `channel` without its effects' counters and what they changed (its
+/// pitch and volume): where it is in the score.
+fn scored(channel: &Channel) -> Channel {
+    let mut c = channel.clone();
+    c.pitch = 0;
+    c.volume = [0, 0];
+    c.slide.countdown = 0;
+    c.slide.made = 0;
+    for swing in [&mut c.vibrato, &mut c.sweep] {
+        swing.countdown = 0;
+        swing.left = 0;
+        swing.off = false;
+    }
+    c
 }
 
 /// Byte `at` of `song`'s data.

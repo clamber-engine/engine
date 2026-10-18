@@ -312,12 +312,13 @@ pub struct LevelDecoder {
 
 impl LevelDecoder {
     /// The level, with its layers' images and its music by path relative
-    /// to it, and the optional parts it goes without.
+    /// to it, the optional parts it goes without, and notes on how parts
+    /// were converted.
     #[allow(clippy::type_complexity)]
     pub fn level(
         &self,
         image: &Image,
-    ) -> Result<(Level, BTreeMap<String, Vec<u8>>, Vec<Skipped>), String> {
+    ) -> Result<(Level, BTreeMap<String, Vec<u8>>, Vec<Skipped>, Vec<String>), String> {
         let p = &self.parts;
         let read = |what: &str, at: Location, len: usize| {
             image
@@ -536,11 +537,19 @@ impl LevelDecoder {
         }
         // Music is optional: a song that can't be converted leaves the
         // level to the game's own music.
-        let mut skipped = Vec::new();
+        let (mut skipped, mut notes) = (Vec::new(), Vec::new());
         if let Some(song) = p.song {
             let read = |at| image.at(at);
             match song.music(read) {
                 Ok(music) => {
+                    notes.push(format!(
+                        "song {}: {}",
+                        song.song,
+                        match music.looping {
+                            Some(_) => music.fit.describe(),
+                            None => "ends",
+                        }
+                    ));
                     let file = format!("{}-music.wav", self.file);
                     level.music = Some(Track {
                         file: file.clone(),
@@ -557,7 +566,7 @@ impl LevelDecoder {
                 }),
             }
         }
-        Ok((level, files, skipped))
+        Ok((level, files, skipped, notes))
     }
 
     /// The objects in the placement list at `list`, for a level whose
@@ -599,9 +608,12 @@ impl Decoder for LevelDecoder {
     }
 
     fn decode(&self, image: &Image, pack: &mut PackWriter) -> Result<(), String> {
-        let (level, files, skipped) = self.level(image)?;
+        let (level, files, skipped, notes) = self.level(image)?;
         for skipped in skipped {
             pack.skip(skipped);
+        }
+        for note in notes {
+            pack.note(note);
         }
         for (path, contents) in files {
             pack.write(&format!("{LEVELS}/{path}"), &contents)?;
