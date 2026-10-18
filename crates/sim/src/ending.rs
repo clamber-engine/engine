@@ -26,9 +26,13 @@
 //! walk-out's first on, and the area's last frame is `end_onward_hold`
 //! after the fade's black one.
 //!
+//! As "Hits and bounces" gives, the marker isn't passed on the frame the
+//! lead is hurt or while it's knocked out, and after losing a character
+//! the other passes it only from its hop's landing; a bounce is a time in
+//! the air, so it passes at the earliest on landing.
+//!
 //! Engine choices where the spec says nothing: the marker can't be
-//! passed while the player is hurt, knocked out, swapping or losing a
-//! character; during the walk-out things go on moving but don't touch
+//! passed while swapping; during the walk-out things go on moving but don't touch
 //! the characters, and without a `let_go_speed` an object in the hands
 //! stays there; the other character goes on following. With one, it's
 //! let go on the walk-out's first step ([`carry`]).

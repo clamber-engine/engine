@@ -46,6 +46,7 @@ fn world(preset: &str, start: i32, marker: (i32, i32), more: &str) -> World {
     World::new(level, Arc::new(generic_feel(preset).unwrap()))
 }
 
+#[derive(Clone)]
 struct Play {
     world: World,
     held: Actions,
@@ -564,4 +565,116 @@ fn during_the_walk_out_a_bunch_is_taken_by_the_standing_ranges() {
     // D 46 to 49 while I is in range: in the jumping row's D, but not
     // the standing row's.
     assert_eq!(bunch_during_the_walk_out(33, 50).0, None);
+}
+
+/// A walker coming left toward a lead standing past the marker.
+const WALKER: &str = "[[entities]]\ntype = \"crawler\"\nat = [1060, 449]\n";
+
+/// The steps after [`Play::new`], with nothing held, until the lead is
+/// hurt: the last of them is the hit frame `H`.
+fn steps_to_hit(play: &Play) -> usize {
+    let mut play = play.clone();
+    (1..400)
+        .find(|_| {
+            play.step(&[]);
+            play.world.events.contains(&Event::Hurt)
+        })
+        .expect("the lead is hurt")
+}
+
+/// "Hits and bounces": Right held from the hit frame `H` on never passes
+/// the marker, though the lead is on the ground past it, for as long as
+/// the knock-out lasts.
+#[test]
+fn right_held_from_the_hit_frame_on_doesnt_pass() {
+    let mut play = Play::new(world("classic-1", 1010, (1000, 449), WALKER));
+    let hit = steps_to_hit(&play);
+    play.hold(&[], hit - 1);
+    let x = play.world.player.pos.x;
+    play.step(&[R]);
+    assert!(play.world.events.contains(&Event::Hurt));
+    assert!(play.world.player.pos.x >= x && play.x() >= 1000);
+    assert!(!play.passed());
+    // Until the knock-out is over and the lead starts again.
+    while play.world.player.knockout.is_some() {
+        play.step(&[R]);
+        assert!(!play.passed(), "frame {}", play.world.frame);
+        assert!(play.world.frame < 1000);
+    }
+}
+
+/// "Hits and bounces": after the lead is hit, the other character can
+/// pass the marker only from its hop's landing, not on its run to the
+/// hit spot past the marker with Right held.
+#[test]
+fn the_other_character_passes_only_from_its_hops_landing() {
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: BTreeMap::new(),
+    });
+    let w = world("classic-1", 1010, (1000, 449), WALKER);
+    let mut play = Play::new(World::new(w.level.clone(), Arc::new(feel)));
+    assert!(play.world.other.is_some());
+    let hit = steps_to_hit(&play);
+    play.hold(&[], hit - 1);
+    play.step(&[R]);
+    assert!(play.world.events.contains(&Event::Hurt) && !play.passed());
+    let mut ran_past = false;
+    let mut hopped = false;
+    for _ in 0..400 {
+        play.step(&[R]);
+        let losing = play.world.losing();
+        let grounded = play.world.player.grounded();
+        ran_past |= losing && grounded && play.x() >= 1000;
+        hopped |= play.world.player.hop.is_some();
+        if play.passed() {
+            assert!(!losing && grounded && hopped);
+            assert!(play.world.events.contains(&Event::Land));
+            assert!(ran_past);
+            return;
+        }
+    }
+    panic!("the other character never passed the marker");
+}
+
+/// "Hits and bounces": no frame of a bounce off a walker passes the
+/// marker, even past it with Right held; the frame the lead lands does.
+#[test]
+fn a_bounce_passes_the_marker_only_on_landing() {
+    let start = Play::new(world("classic-1", 940, (1000, 449), WALKER));
+    let mut bounced_past = 0;
+    for wait in 0..60 {
+        let mut play = start.clone();
+        play.hold(&[R], wait);
+        let mut bounced = false;
+        let mut past = false;
+        for _ in 0..120 {
+            play.step(&[R, J]);
+            if play.world.events.contains(&Event::Bounce) {
+                bounced = true;
+                break;
+            }
+            if play.passed() || play.world.events.contains(&Event::Hurt) {
+                break;
+            }
+        }
+        if !bounced {
+            continue;
+        }
+        assert!(!play.passed());
+        loop {
+            past |= play.x() >= 1000;
+            play.step(&[R]);
+            if play.world.player.grounded() {
+                break;
+            }
+            assert!(!play.passed(), "wait {wait}, frame {}", play.world.frame);
+            assert!(play.world.frame < 1000);
+        }
+        assert!(play.world.events.contains(&Event::Land));
+        assert!(play.x() < 1000 || play.passed(), "wait {wait}");
+        bounced_past += usize::from(past && play.passed());
+    }
+    assert!(bounced_past > 0);
 }
