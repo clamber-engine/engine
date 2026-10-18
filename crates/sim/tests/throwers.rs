@@ -5,7 +5,9 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_pack::Fixed;
-use clamber_sim::{BALL, InputFrame, Phase, START_LIVES, Thing, World, generic_feel, step};
+use clamber_sim::{
+    BALL, FlowEvent, InputFrame, Phase, START_LIVES, Thing, World, generic_feel, step,
+};
 
 fn f(v: f64) -> Fixed {
     Fixed::from_f64(v).unwrap()
@@ -398,4 +400,61 @@ fn a_falling_thrower_goes_on_10_frames_late_after_a_knock_out() {
     };
     let compared = ten_frames_late(w, 3, 40);
     assert!(compared > 10, "{compared}");
+}
+
+/// thrower.md, "Balls placed in a level": a placed ball appears only
+/// once. After it is removed it doesn't come back however the view moves,
+/// past the walker margins on both sides, until play resumes after a
+/// knock-out, when it appears again by the same rule, one frame on and at
+/// the same position.
+#[test]
+fn a_placed_ball_appears_again_only_after_a_knock_out() {
+    let ball = "[[entities]]\ntype = \"ball\"\nat = [900, 300]\n\
+        params = { velocity = [-1.171875, -3] }\n";
+    let mut play = Play::new(world(200, ball));
+    // Walks right until it appears; returns where it first was.
+    let appears = |play: &mut Play| {
+        for _ in 0..600 {
+            play.step(&[Action::Right]);
+            let b = &play.world.things[0];
+            if b.active {
+                return b.pos;
+            }
+        }
+        panic!("never appeared");
+    };
+    let first = appears(&mut play);
+    assert_eq!(first.x, f(900.0) - f(1.171875), "one frame on");
+    let mut removed = false;
+    for _ in 0..600 {
+        play.step(&[Action::Right]);
+        if !play.world.things[0].active {
+            removed = true;
+            break;
+        }
+    }
+    assert!(removed, "left the picture");
+    let mut farthest = (i64::MAX, i64::MIN);
+    for (keys, steps) in [([Action::Right], 300), ([Action::Left], 900)] {
+        for _ in 0..steps {
+            play.step(&keys);
+            assert!(!play.world.things[0].active, "doesn't come back");
+            let x = 900 - play.world.view.unwrap().x();
+            farthest = (farthest.0.min(x), farthest.1.max(x));
+        }
+    }
+    assert!(farthest.0 < -400 && farthest.1 > 400, "{farthest:?}");
+
+    play.world.player.hurt_ahead = Some(0);
+    let mut resumed = false;
+    for _ in 0..600 {
+        play.step(&[]);
+        if play.world.flow.events.contains(&FlowEvent::Respawn) {
+            resumed = true;
+            break;
+        }
+    }
+    assert!(resumed, "play resumed");
+    assert!(play.world.flow.lives < START_LIVES);
+    assert_eq!(appears(&mut play), first, "the same position again");
 }
