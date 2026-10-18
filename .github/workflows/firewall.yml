@@ -58,6 +58,9 @@ jobs:
   windows-build:
     runs-on: windows-latest
     if: github.event_name == 'push'
+    permissions:
+      contents: read
+      id-token: write # Azure login for code signing, without a stored secret
     steps:
       - uses: actions/checkout@v4
       - name: Check for the game crate
@@ -68,6 +71,37 @@ jobs:
       - name: Build
         if: steps.game.outputs.exists == 'true'
         run: cargo build --release --locked -p clamber-game --all-features
+      # Code signing (Azure Trusted Signing) so Windows Smart App Control
+      # accepts the build. Only on main, and only once the certificate
+      # profile is configured in the repository variables.
+      - name: Azure login
+        if: steps.game.outputs.exists == 'true' && github.ref == 'refs/heads/main' && vars.AZURE_SIGNING_PROFILE != ''
+        uses: azure/login@053f7285eb20bf5469ef084617b0b24d3cec53fc # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign
+        if: steps.game.outputs.exists == 'true' && github.ref == 'refs/heads/main' && vars.AZURE_SIGNING_PROFILE != ''
+        uses: azure/artifact-signing-action@208f8af4bf26cf2af8597424e3cb5582801523ba # v2.0.0
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\target\release
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Check the signature
+        if: steps.game.outputs.exists == 'true' && github.ref == 'refs/heads/main' && vars.AZURE_SIGNING_PROFILE != ''
+        shell: pwsh
+        run: |
+          foreach ($f in Get-ChildItem target\release\*.exe) {
+            $s = Get-AuthenticodeSignature $f.FullName
+            "$($f.Name): $($s.Status) $($s.SignerCertificate.Subject)"
+            if ($s.Status -ne 'Valid') { throw "$($f.Name) is not validly signed" }
+          }
       - name: Package
         if: steps.game.outputs.exists == 'true'
         shell: bash
