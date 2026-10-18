@@ -367,6 +367,16 @@ walk_in_fade_steps = 0
 fall_out_depth = 0
 fall_out_time = 0
 resume_afresh = 0
+# Hit points (Clamber's own): a life takes three hits. After a hit that
+# doesn't cost the life, the player is knocked back a little, has control
+# again a fifth of a second later, and blinks, safe from hits, for a
+# second and a half.
+hit_points = 3
+hit_protect_time = 90
+hit_flash_period = 6
+hit_control_wait = 12
+hit_knockback = 2.5
+hit_knockback_rise = 3.5
 dim_steps = 0
 dim_step_time = 0
 dim_delay = 0
@@ -892,6 +902,8 @@ fall_out_time = 96
 # things as at its start, but the restart barrel once broken and, coming
 # back at the restart point, the letters taken.
 resume_afresh = 1
+# Every hit costs the life or the character, as in the spec.
+hit_points = 1
 # The dimming near the first level's end (dimming.md): 32 steps 8 frames
 # apart, the first on a frame at least 4 after the dim entry comes into
 # the window. The spec doesn't say where the 8-frame cycle sits; the
@@ -1031,6 +1043,8 @@ placeholder = true
 title = "title-2"
 
 [presets.classic-2.world]
+# Classic presets keep a hit costing the life.
+hit_points = 1
 jump_delay = 0
 jump_buffer = 15
 jump_buffer_hold = 0
@@ -1125,3 +1139,7 @@ knockout_time = 190
 label = "Classic 3"
 description = "Placeholder: plays like Default until measured values are available."
 placeholder = true
+
+[presets.classic-3.world]
+# Classic presets keep a hit costing the life.
+hit_points = 1

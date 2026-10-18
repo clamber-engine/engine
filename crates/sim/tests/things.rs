@@ -95,6 +95,8 @@ fn touching_an_enemy_costs_a_life() {
         at = [260, 400]
         "#,
     );
+    // On its last hit point (`hit_points.rs` has the others).
+    w.flow.hits_taken = 2;
     let seen = hold(&mut w, Action::Right.into(), 60);
     assert!(seen.events.contains(&Event::Hurt));
     assert_eq!(seen.flow.first(), Some(&FlowEvent::Die));

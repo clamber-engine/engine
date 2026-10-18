@@ -18,6 +18,7 @@ use crate::entrance::{self, Entering};
 use crate::exit::{self, Leaving};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
 use crate::follow::{self, Lead, Mode};
+use crate::hits;
 use crate::join::{self, Join};
 use crate::keg::{self, Burst, Resume};
 use crate::loss::{self, Loss, Lost};
@@ -243,6 +244,9 @@ pub struct World {
     pub view: Option<View>,
     /// What happened during the last step, in order.
     pub events: Vec<Event>,
+    /// The thing whose touch hurt the player during the last step, if
+    /// that's what hurt it.
+    pub hit_by: Option<usize>,
     /// Goal, lives, checkpoints and pickups.
     pub flow: Flow,
     /// The walk-out after passing the level's end marker, once it has
@@ -402,6 +406,7 @@ impl World {
             things,
             view,
             events: Vec::new(),
+            hit_by: None,
             flow: Flow::new(),
             ending: None,
             leaving: None,
@@ -704,6 +709,8 @@ impl World {
             Outcome::Ended => out.push(5),
         }
         out.push(f.lives);
+        out.push(f.hits_taken);
+        out.extend(f.recovery.map_or(0, |n| n.saturating_add(1)).to_le_bytes());
         match self.ending {
             Some(e) => {
                 out.push(1);
@@ -1152,6 +1159,7 @@ fn rope_bytes(out: &mut Vec<u8>, r: &Rope) {
 /// complete or the game is over, nothing changes.
 pub fn step(world: &mut World, input: &InputFrame) {
     world.events.clear();
+    world.hit_by = None;
     world.flow.events.clear();
     world.pause = 0;
     if world.flow.outcome.is_over() {
@@ -1217,6 +1225,10 @@ pub fn step(world: &mut World, input: &InputFrame) {
         return;
     }
     loss::tick(world);
+    hits::tick(world);
+    // Input is ignored for a while after a hit that cost a hit point.
+    let stunned = InputFrame::default();
+    let input = if world.hit_stunned() { &stunned } else { input };
     // Walkers appear and are removed by where the view was at the start
     // of the step.
     let view_at = start_view.map(|v| (v.x(), v.y()));

@@ -3,7 +3,8 @@
 //!
 //! Glyphs are 5 by 7 pixels. Letters are capitals only; lower case draws
 //! as upper case, and characters without a glyph draw as `?`. A few
-//! symbols stand for HUD icons: `♥` (lives), `◆` (gems) and `★` (relics).
+//! symbols stand for HUD icons: `♥` (lives), `◆` (gems), `★` (relics),
+//! and `●` and `○` (hit points left and lost).
 //! The font is a placeholder, like the rest of the art for now.
 
 use crate::canvas::{Color, rgb};
@@ -78,6 +79,8 @@ const GLYPHS: &[(char, [&str; 7])] = &[
     ('♥', ["     ", "## ##", "#####", "#####", " ### ", "  #  ", "     "]),
     ('◆', ["  #  ", " ### ", "#####", "#####", " ### ", "  #  ", "     "]),
     ('★', ["  #  ", "  #  ", "#####", " ### ", " ### ", "## ##", "#   #"]),
+    ('●', ["     ", " ### ", "#####", "#####", "#####", " ### ", "     "]),
+    ('○', ["     ", " ### ", "#   #", "#   #", "#   #", " ### ", "     "]),
 ];
 
 fn glyph(c: char) -> &'static [&'static str; 7] {

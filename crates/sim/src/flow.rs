@@ -9,11 +9,14 @@
 //!   player's feet go.
 //! - `gem` and `relic`: picked up and counted; relics are the rare ones.
 //!   Pickups stay picked up after losing a life, unless `resume_afresh`.
+//! - `tonic`: gives back a hit point ([`hits`](crate::hits)). It's only
+//!   taken when one is missing.
 //!
 //! Getting hurt, by touching a hazard surface or an enemy
 //! ([`things`](crate::things)), or falling below the level costs a life,
 //! unless the other character is there to take over
-//! ([`loss`](crate::loss)). With `fall_out_depth`, a fall costs the life
+//! ([`loss`](crate::loss)), or the hit leaves hit points
+//! ([`hits`](crate::hits)). With `fall_out_depth`, a fall costs the life
 //! only that far below the bottom, and with `fall_out_time` the level
 //! goes on that long after it (falling-out.md).
 //! The player stays where it was for [`DYING_FRAMES`], or is knocked out
@@ -40,6 +43,7 @@ use clamber_pack::Param;
 
 use crate::archetype::Behavior;
 use crate::collect::{self, LetterEnd, LivesStep, Pickup, Release, RelicFlight};
+use crate::hits;
 use crate::keg;
 use crate::loss;
 use crate::player::{Facing, Knockout, Player, State, frames};
@@ -52,6 +56,7 @@ pub const GOAL: &str = "goal";
 pub const CHECKPOINT: &str = "checkpoint";
 pub const GEM: &str = "gem";
 pub const RELIC: &str = "relic";
+pub const TONIC: &str = "tonic";
 
 /// Lives at the start of a level.
 pub const START_LIVES: u8 = 3;
@@ -169,6 +174,11 @@ pub struct Flow {
     /// Indices of the checkpoints reached, in order; the player comes
     /// back at the last.
     pub checkpoints: Vec<usize>,
+    /// Hit points lost in this life (`hit_points`).
+    pub hits_taken: u8,
+    /// Frames since a hit that cost a hit point, until its protection
+    /// and the wait for control are over.
+    pub recovery: Option<u16>,
     /// What happened during the last step, in order.
     pub events: Vec<FlowEvent>,
 }
@@ -190,7 +200,7 @@ pub fn reach(kind: &str, at: Vec2) -> Option<(Fixed, Fixed, Fixed, Fixed)> {
     let (half, up, down) = match kind {
         GOAL => (int(16), int(64), int(0)),
         CHECKPOINT => (int(8), int(48), int(0)),
-        GEM | RELIC => (int(8), int(8), int(8)),
+        GEM | RELIC | TONIC => (int(8), int(8), int(8)),
         _ => return None,
     };
     Some((at.x - half, at.y - up, at.x + half, at.y + down))
@@ -231,6 +241,7 @@ pub(crate) fn dying(world: &mut World) -> bool {
             *other = Other::new(other.character, player.pos, player.facing, player.pos);
         }
         world.flow.outcome = Outcome::Playing;
+        world.flow.hits_taken = 0;
         world.flow.events.push(FlowEvent::Respawn);
     }
     true
@@ -334,6 +345,11 @@ pub(crate) fn update(world: &mut World, hurt_by: Option<usize>, facing: Facing) 
                 thing.active = false;
                 flow.events.push(FlowEvent::Collect(thing.index));
             }
+            TONIC if flow.hits_taken > 0 => {
+                flow.hits_taken -= 1;
+                thing.active = false;
+                flow.events.push(FlowEvent::Collect(thing.index));
+            }
             _ => {}
         }
     }
@@ -361,11 +377,16 @@ pub(crate) fn update(world: &mut World, hurt_by: Option<usize>, facing: Facing) 
         loss::start(world);
         return;
     }
+    if hurt && !fell && hits::take(world, hurt_by.or(world.hit_by)) {
+        // The hit costs a hit point instead of a life.
+        return;
+    }
     let flow = &mut world.flow;
     if hurt {
         world.player.state = State::Hurt;
     }
     if hurt || fell {
+        flow.recovery = None;
         flow.lives = flow.lives.saturating_sub(1);
         flow.outcome = Outcome::Dying(DYING_FRAMES);
         flow.events.push(FlowEvent::Die);

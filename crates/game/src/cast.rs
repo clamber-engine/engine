@@ -618,6 +618,7 @@ mod tests {
             CHECKPOINT,
             clamber_sim::GEM,
             clamber_sim::RELIC,
+            clamber_sim::TONIC,
         ] {
             assert!(cast.has_kind(kind), "{kind}");
         }

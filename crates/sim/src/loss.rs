@@ -234,11 +234,12 @@ fn take_over(world: &mut World) {
 
 impl World {
     /// Whether the character under control can't be hurt now, after
-    /// losing a character.
+    /// losing a character or a hit point.
     pub fn protected(&self) -> bool {
-        self.loss.is_some_and(|loss| {
-            loss.frame < u16::from(frames(self.player_physics()[Param::ProtectTime]))
-        })
+        self.recovering()
+            || self.loss.is_some_and(|loss| {
+                loss.frame < u16::from(frames(self.player_physics()[Param::ProtectTime]))
+            })
     }
 
     /// Whether a character is being lost and the other hasn't yet landed
@@ -252,6 +253,9 @@ impl World {
     /// flashes off.
     pub fn player_drawn(&self) -> bool {
         if self.in_keg() || self.in_entrance() {
+            return false;
+        }
+        if self.hit_blink_off() {
             return false;
         }
         let Some(loss) = self.loss else {

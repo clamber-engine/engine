@@ -563,6 +563,11 @@ at = [5640, 448]
 type = "crawler"
 at = [5752, 448]
 
+# A tonic past the crawlers, for a hit taken on the way.
+[[entities]]
+type = "tonic"
+at = [5800, 432]
+
 [[entities]]
 type = "gem"
 at = [5832, 432]
@@ -699,6 +704,11 @@ at = [8904, 576]
 type = "gem"
 at = [8936, 576]
 
+# A tonic after the hills.
+[[entities]]
+type = "tonic"
+at = [9080, 592]
+
 [[entities]]
 type = "gem"
 at = [9216, 548]
@@ -808,6 +818,11 @@ at = [11448, 480]
 type = "flutter"
 at = [11384, 448]
 params = { path = [64, 0], period = 160 }
+
+# A tonic past the spikes.
+[[entities]]
+type = "tonic"
+at = [11688, 528]
 
 # A launcher up to the last relic.
 [[entities]]

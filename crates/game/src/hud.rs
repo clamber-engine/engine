@@ -1,5 +1,5 @@
-//! The heads-up display: lives and pickups, from the world's level flow,
-//! and the letter row while the world shows it. A world with a count
+//! The heads-up display: lives, pickups and hit points, from the world's
+//! level flow, and the letter row while the world shows it. A world with a count
 //! display shows the count and lives only when it says so.
 
 use clamber_pack::Param;
@@ -17,6 +17,8 @@ const LIFE: Color = rgb(0xe8, 0x50, 0x60);
 pub(crate) const GEM: Color = rgb(0x5a, 0xd8, 0xe8);
 pub(crate) const RELIC_ICON: Color = rgb(0xf0, 0xc8, 0x40);
 pub(crate) const COUNT: Color = rgb(0xf4, 0xf0, 0xe8);
+/// Hit points, the colour of the tonic that gives them back.
+const HIT_POINT: Color = rgb(0x48, 0xd8, 0x68);
 
 /// A letter's image in the letter row, px square.
 const LETTER: i32 = 16;
@@ -25,8 +27,9 @@ const IMAGE: i32 = 16;
 const LETTER_BACK: Color = rgb(0xf0, 0xb0, 0x50);
 const LETTER_TEXT: Color = rgb(0x30, 0x20, 0x10);
 
-/// Draws the HUD along the top left of the canvas: lives, gems, and
-/// relics out of the level's total when it has any. With a count
+/// Draws the HUD along the top left of the canvas: lives, gems, hit
+/// points when a life has more than one, and relics out of the level's
+/// total when it has any. With a count
 /// display, the count display and the lives display instead, when the
 /// world shows them. Then the letter row, if the world shows it.
 pub fn draw_hud(canvas: &mut dyn Surface, world: &World) {
@@ -46,22 +49,31 @@ pub fn draw_hud(canvas: &mut dyn Surface, world: &World) {
     }
 }
 
-/// Lives, gems and relics in a row.
+/// Lives, gems, hit points and relics in a row. Hit points are a pip
+/// each, full for those left.
 fn draw_items(canvas: &mut dyn Surface, world: &World) {
     let flow = &world.flow;
     let relics = relic_total(world);
     let mut items = vec![
-        ('♥', LIFE, flow.lives.to_string()),
-        ('◆', GEM, flow.gems.to_string()),
+        ("♥".to_string(), LIFE, flow.lives.to_string()),
+        ("◆".to_string(), GEM, flow.gems.to_string()),
     ];
+    if let Some((left, max)) = world.hit_points() {
+        let pips = (0..max).map(|k| if k < left { '●' } else { '○' });
+        items.push((pips.collect(), HIT_POINT, String::new()));
+    }
     if relics > 0 {
-        items.push(('★', RELIC_ICON, format!("{}/{relics}", flow.relics)));
+        items.push((
+            "★".to_string(),
+            RELIC_ICON,
+            format!("{}/{relics}", flow.relics),
+        ));
     }
 
     let mut x = MARGIN;
     for (icon, color, count) in items {
-        draw_text(canvas, x, MARGIN, &icon.to_string(), color);
-        x += ADVANCE + 1;
+        draw_text(canvas, x, MARGIN, &icon, color);
+        x += icon.chars().count() as i32 * ADVANCE + 1;
         draw_text(canvas, x, MARGIN, &count, COUNT);
         x += count.chars().count() as i32 * ADVANCE + GAP;
     }
@@ -170,13 +182,27 @@ mod tests {
 
         world.flow.lives -= 1;
         world.flow.gems += 10;
+        world.flow.hits_taken = 1;
         let after = drawn(&world);
         let mut expected = Canvas::new(120, 24);
         draw_text(&mut expected, MARGIN, MARGIN, "♥", LIFE);
         draw_text(&mut expected, MARGIN + 7, MARGIN, "2", COUNT);
         draw_text(&mut expected, MARGIN + 23, MARGIN, "◆", GEM);
         draw_text(&mut expected, MARGIN + 30, MARGIN, "10", COUNT);
+        // Hit points after the gems: two left of three.
+        draw_text(&mut expected, MARGIN + 52, MARGIN, "●●○", HIT_POINT);
         assert_eq!(after, expected);
+    }
+
+    #[test]
+    fn shows_no_hit_points_when_every_hit_costs_a_life() {
+        let level = Level::from_toml_str(
+            "format = 1\nsize = [400, 300]\nstart = [100, 200]\n",
+            "test",
+        );
+        let feel = generic_feel("classic-1").unwrap();
+        let world = World::new(Arc::new(level.unwrap()), Arc::new(feel));
+        assert!(!drawn(&world).pixels.contains(&HIT_POINT));
     }
 
     #[test]
@@ -267,8 +293,8 @@ mod tests {
         world.flow.relics = 1;
         let canvas = drawn(&world);
         let mut expected = canvas.clone();
-        // Relic icon after "♥3" and "◆0".
-        let x = MARGIN + 7 + 6 + GAP + 7 + 6 + GAP;
+        // Relic icon after "♥3", "◆0" and three hit points.
+        let x = MARGIN + 7 + 6 + GAP + 7 + 6 + GAP + 3 * 6 + 1 + GAP;
         draw_text(&mut expected, x, MARGIN, "★", RELIC_ICON);
         draw_text(&mut expected, x + 7, MARGIN, "1/2", COUNT);
         assert_eq!(canvas, expected);

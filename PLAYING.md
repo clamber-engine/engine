@@ -67,9 +67,13 @@ both swap the characters. Tandem only counts on the frame you press it,
 and on the map it enters a level as Jump does.
 
 Hold jump longer to jump higher. Land on an enemy, or roll into it, to
-defeat it; touching one any other way, or falling into a pit, costs a
-life. You have three. After losing one, you come back at the start, or
-at the checkpoint once you've touched it.
+defeat it. Touching one any other way, or spikes, costs a hit point: in
+Default, Snappy and Floaty a life has three, shown as pips next to the
+gem count. A hit knocks you back, and you blink for a moment, safe from
+another. A green tonic gives a hit point back. Losing the last one, or
+falling into a pit, costs a life; in the Classic presets every hit does.
+You have three lives. After losing one, you come back at the start, or
+at the checkpoint once you've touched it, with all your hit points.
 
 **Controls** on the title or pause screen remaps the keys and buttons:
 Up and Down pick a row, Left and Right pick the player or the keyboard or

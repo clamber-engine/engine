@@ -235,6 +235,7 @@ def build():
     c.flat(40)
     for i in range(4):
         c.thing("crawler", c.col - 34 + i * 7)
+    c.thing("tonic", c.col - 10, 1, comment="A tonic past the crawlers, for a hit taken on the way.")
     c.gems(c.col - 8, 4)
     c.down(4)
     c.flat(6)
@@ -285,6 +286,7 @@ def build():
         c.gems(c.col - 4, 2, rows_up=1)
         c.down(1, gentle=True)
     c.flat(10)
+    c.thing("tonic", c.col - 5, 1, comment="A tonic after the hills.")
 
     # A tower of stone blocks to climb, zigzagging up, with crawlers
     # pacing some of them. The camera holds still sideways again.
@@ -337,6 +339,7 @@ def build():
     c.gems(hop + 4, 3, rows_up=4, step=7, comment="Stepping stones over spikes.")
     c.thing("flutter", hop + 14, 6, params={"path": [64, 0], "period": 160})
     c.flat(6)
+    c.thing("tonic", c.col - 3, 1, comment="A tonic past the spikes.")
 
     # A second launcher, up to a high shelf with the last relic.
     lift = c.col

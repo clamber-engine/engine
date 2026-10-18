@@ -1375,6 +1375,28 @@ params! {
     /// and, coming back at one, the letters taken. 0: they stay as
     /// they were.
     ResumeAfresh => "resume_afresh",
+    /// Above 1, the hits a life can take: a hit costs one hit point, and
+    /// only the hit that takes the last costs the life. Coming back after
+    /// a lost life restores them all. 0 or 1: every hit costs the life.
+    /// Whole hit points.
+    HitPoints => "hit_points",
+    /// Frames from a hit that costs a hit point but not the life,
+    /// counting the hit frame, that nothing hurts the player. Whole
+    /// frames.
+    HitProtectTime => "hit_protect_time",
+    /// While protected after such a hit, the player is drawn for the
+    /// first half of each stretch of this many frames, and not drawn for
+    /// the second. 0: it doesn't blink. Whole frames.
+    HitFlashPeriod => "hit_flash_period",
+    /// Frames from such a hit, counting the hit frame, that input is
+    /// ignored. Whole frames.
+    HitControlWait => "hit_control_wait",
+    /// On such a hit the player is knocked back, away from the enemy that
+    /// hit it, or the way it doesn't face if it was something else, at
+    /// this speed across. px/frame.
+    HitKnockback => "hit_knockback",
+    /// ... and at this speed up. px/frame.
+    HitKnockbackRise => "hit_knockback_rise",
     /// Above 0, a level's `dim` entity starts the dimming of the level's
     /// background once it's near the view (see `clamber_sim::Dimming`),
     /// and this is its number of steps. 0: no dimming. Whole steps.

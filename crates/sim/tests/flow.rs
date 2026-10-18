@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
+use clamber_pack::{Fixed, Param};
 use clamber_sim::{
     DYING_FRAMES, FlowEvent, InputFrame, Outcome, Player, START_LIVES, World, generic_feel, step,
 };
@@ -48,9 +49,13 @@ const TRACK: &str = r#"
     at = [900, 400]
 "#;
 
+/// A world where every hit costs a life (`hit_points` 1); hit points
+/// are in `hit_points.rs`.
 fn world(src: &str) -> World {
     let level = Level::from_toml_str(src, "test").unwrap();
-    World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()))
+    let mut feel = generic_feel("default").unwrap();
+    feel.world.set(Param::HitPoints, Fixed::ONE);
+    World::new(Arc::new(level), Arc::new(feel))
 }
 
 /// Holds `held` for up to `frames` steps, or until a step with a flow

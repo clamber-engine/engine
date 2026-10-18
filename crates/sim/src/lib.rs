@@ -70,6 +70,7 @@ mod exit;
 mod flow;
 mod follow;
 mod hidden;
+mod hits;
 mod hutch;
 mod join;
 mod keg;
@@ -112,7 +113,7 @@ pub use ending::{END, Ending};
 pub use entrance::Entering;
 pub use exit::{EXIT, Leaving, WALL_EXIT, area};
 pub use flow::{
-    CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, reach,
+    CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, TONIC, reach,
 };
 pub use follow::{Follow, Mode, Point, point as follow_point};
 pub use hidden::HIDDEN;

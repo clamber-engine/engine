@@ -1324,8 +1324,8 @@ fn interact(
     let player = &mut world.player;
     let riding = player.riding.is_some();
     let rolling = player.state == State::Roll && !attack_boxes;
-    for thing in world.things.iter_mut().filter(|t| t.active) {
-        let Some(archetype) = thing.archetype else {
+    for (i, thing) in world.things.iter_mut().enumerate() {
+        let Some(archetype) = thing.archetype.filter(|_| thing.active) else {
             continue;
         };
         if thing.phase != Phase::Ready || has_contact(thing) {
@@ -1362,6 +1362,7 @@ fn interact(
                         continue;
                     }
                     world.events.push(Event::Hurt);
+                    world.hit_by = Some(i);
                     return;
                 }
                 if !rolling {

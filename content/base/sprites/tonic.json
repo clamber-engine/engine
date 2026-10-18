@@ -1,0 +1,398 @@
+{
+  "frames": [
+    {
+      "filename": "tonic bob 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 60,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 6,
+        "w": 60,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 1",
+      "frame": {
+        "x": 64,
+        "y": 2,
+        "w": 61,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 6,
+        "w": 61,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 2",
+      "frame": {
+        "x": 127,
+        "y": 2,
+        "w": 61,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15,
+        "y": 6,
+        "w": 61,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 3",
+      "frame": {
+        "x": 190,
+        "y": 2,
+        "w": 62,
+        "h": 83
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 6,
+        "w": 62,
+        "h": 83
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 4",
+      "frame": {
+        "x": 254,
+        "y": 2,
+        "w": 62,
+        "h": 83
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 6,
+        "w": 62,
+        "h": 83
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 5",
+      "frame": {
+        "x": 318,
+        "y": 2,
+        "w": 62,
+        "h": 83
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 13,
+        "y": 6,
+        "w": 62,
+        "h": 83
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 6",
+      "frame": {
+        "x": 382,
+        "y": 2,
+        "w": 61,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 15,
+        "y": 6,
+        "w": 61,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 7",
+      "frame": {
+        "x": 445,
+        "y": 2,
+        "w": 61,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 17,
+        "y": 6,
+        "w": 61,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 8",
+      "frame": {
+        "x": 508,
+        "y": 2,
+        "w": 60,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 20,
+        "y": 6,
+        "w": 60,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 9",
+      "frame": {
+        "x": 570,
+        "y": 2,
+        "w": 61,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 22,
+        "y": 6,
+        "w": 61,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 10",
+      "frame": {
+        "x": 633,
+        "y": 2,
+        "w": 62,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 7,
+        "w": 62,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 11",
+      "frame": {
+        "x": 697,
+        "y": 2,
+        "w": 61,
+        "h": 83
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 7,
+        "w": 61,
+        "h": 83
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 12",
+      "frame": {
+        "x": 760,
+        "y": 2,
+        "w": 62,
+        "h": 83
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 7,
+        "w": 62,
+        "h": 83
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 13",
+      "frame": {
+        "x": 824,
+        "y": 2,
+        "w": 61,
+        "h": 83
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 25,
+        "y": 7,
+        "w": 61,
+        "h": 83
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 14",
+      "frame": {
+        "x": 887,
+        "y": 2,
+        "w": 62,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 23,
+        "y": 7,
+        "w": 62,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    },
+    {
+      "filename": "tonic bob 15",
+      "frame": {
+        "x": 951,
+        "y": 2,
+        "w": 61,
+        "h": 82
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 22,
+        "y": 6,
+        "w": 61,
+        "h": 82
+      },
+      "sourceSize": {
+        "w": 100,
+        "h": 100
+      },
+      "duration": 50,
+      "ticks": 3
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "tonic.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1014,
+      "h": 87
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "bob",
+        "from": 0,
+        "to": 15,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 50,
+        "y": 50
+      },
+      "scale": 5,
+      "normals": "tonic-normals.png"
+    }
+  }
+}
