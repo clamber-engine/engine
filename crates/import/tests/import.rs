@@ -135,7 +135,7 @@ fn refuses_unknown_images_before_writing() {
     let err = importer(false)
         .import(&Image::new(vec![9; 1024]), &packs, false)
         .unwrap_err();
-    assert!(matches!(err, ImportError::Unsupported(_)), "{err}");
+    assert!(matches!(err, ImportError::NotAGame(_)), "{err}");
     assert!(err.to_string().contains("modified"), "{err}");
     assert!(!packs.exists());
 }
@@ -255,7 +255,7 @@ fn reads_images_with_and_without_copier_headers() {
     }
     fs::write(dir.join("odd.img"), [0; 1000]).unwrap();
     let err = Image::read(&dir.join("odd.img")).unwrap_err();
-    assert!(err.to_string().contains("isn't a game image"), "{err}");
+    assert!(err.to_string().contains("no image has its size"), "{err}");
 }
 
 #[test]
@@ -282,7 +282,7 @@ fn the_command_refuses_images_it_doesnt_know() {
         .unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("isn't a supported image"), "{stderr}");
+    assert!(stderr.contains("no supported image is"), "{stderr}");
     assert!(out.stdout.is_empty());
     assert!(!dir.join("packs").exists());
 

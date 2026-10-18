@@ -9,7 +9,8 @@ use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::Instant;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::time::{Duration, Instant};
 
 use clamber_game::{
     Canvas, Clock, Credits, DEFAULT_CREDITS, DrawList, Feels, Fit, GIF_DELAY, Game, Gpu, Pace,
@@ -181,6 +182,7 @@ fn play(options: Options) -> Result<(), String> {
     let (mut session, level_path) = load(&options, prefs.preset.as_deref())?;
     session.prefs = prefs;
     session.prefs_path = prefs_path;
+    session.file_dialog = true;
     session.apply_widescreen();
     #[cfg(feature = "audio")]
     let audio = open_audio(
@@ -217,6 +219,7 @@ fn play(options: Options) -> Result<(), String> {
         last: Instant::now(),
         drawn: Instant::now(),
         window: None,
+        dialog: None,
         error: None,
     };
     event_loop.run_app(&mut app).map_err(|e| e.to_string())?;
@@ -390,6 +393,51 @@ fn title(level: &Level, path: &Path) -> String {
     }
 }
 
+/// A file dialog closed sooner than this after it opened didn't open:
+/// nobody chooses that fast.
+const DIALOG_FAILED: Duration = Duration::from_millis(300);
+
+/// A file dialog that's open: when it opened, and where what's chosen in
+/// it arrives.
+struct Dialog {
+    opened: Instant,
+    chosen: Receiver<Option<PathBuf>>,
+}
+
+impl Dialog {
+    /// Opens the system's file dialog in `dir` on a thread of its own,
+    /// so the game goes on drawing behind it.
+    fn open(dir: PathBuf, window: Option<Arc<Window>>) -> Dialog {
+        let (send, chosen) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut dialog = rfd::FileDialog::new()
+                .set_title("Import a game")
+                .set_directory(dir);
+            if let Some(window) = &window {
+                dialog = dialog.set_parent(&**window);
+            }
+            let _ = send.send(dialog.pick_file());
+        });
+        Dialog {
+            opened: Instant::now(),
+            chosen,
+        }
+    }
+
+    /// What was chosen, once the dialog has closed, and whether it
+    /// failed to open.
+    fn poll(&self) -> Option<(Option<PathBuf>, bool)> {
+        match self.chosen.try_recv() {
+            Ok(file) => {
+                let failed = file.is_none() && self.opened.elapsed() < DIALOG_FAILED;
+                Some((file, failed))
+            }
+            Err(TryRecvError::Disconnected) => Some((None, true)),
+            Err(TryRecvError::Empty) => None,
+        }
+    }
+}
+
 struct Shown {
     window: Arc<Window>,
     output: Output,
@@ -432,6 +480,8 @@ struct App {
     /// When the last frame was drawn.
     drawn: Instant,
     window: Option<Shown>,
+    /// The file dialog, while it's open.
+    dialog: Option<Dialog>,
     error: Option<String>,
 }
 
@@ -634,6 +684,22 @@ impl App {
         if steps > 0 {
             self.apply_display();
             self.retitle();
+            self.file_dialog();
+        }
+    }
+
+    /// Opens the file dialog when the session asks for it, unless it's
+    /// open already, and passes on what was chosen in it.
+    fn file_dialog(&mut self) {
+        if let Some(dir) = self.session.file_request.take()
+            && self.dialog.is_none()
+        {
+            let window = self.window.as_ref().map(|shown| shown.window.clone());
+            self.dialog = Some(Dialog::open(dir, window));
+        }
+        if let Some((file, failed)) = self.dialog.as_ref().and_then(Dialog::poll) {
+            self.dialog = None;
+            self.session.file_chosen(file, failed);
         }
     }
 
@@ -728,6 +794,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::Occluded(occluded) => self.occluded = occluded,
+            WindowEvent::DroppedFile(path) => self.session.dropped(path),
             WindowEvent::Resized(size) => {
                 self.find_pace();
                 self.resized(size);

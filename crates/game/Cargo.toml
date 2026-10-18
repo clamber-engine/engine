@@ -27,6 +27,7 @@ fontdue = "0.9.4"
 gif = { version = "0.14.2", default-features = false, features = ["std"] }
 png = "0.18.1"
 pollster = "1.0.1"
+rfd = "0.17.2"
 serde = { version = "1.0.229", features = ["derive"] }
 softbuffer = "0.4.8"
 toml = "1.1.8"

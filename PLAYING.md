@@ -128,9 +128,15 @@ frame. Movement without a view of its own
 (Default, Snappy, Floaty) fills the window in every mode.
 
 **Import a game…** on the title screen turns your own copy of a
-supported game into a personal pack for Clamber to play. Find the file
-with Up and Down, Jump to open a folder or pick the file, Left to go up a
-folder, and pause to go back. The pack goes into
+supported game into a personal pack for Clamber to play. Choose the file
+in the window that opens; it starts in the folder you imported from last
+time. You can also drop the file onto Clamber's window, from any screen.
+If you're using a gamepad, or the window doesn't open, Clamber shows its
+own list of folders instead (press pause while the window is open to
+switch to it): Up and Down to move, Jump to open a folder or pick the
+file, Left to go up a folder, and pause to go back. It lists only files
+the size of a supported game, and marks with a star the ones that are
+one. The pack goes into
 `%LOCALAPPDATA%\Clamber\packs` on Windows, and
 `~/.local/share/clamber/packs` on Linux; `clamber-import <file>` does
 the same from a command line. A personal import is yours alone: it's
@@ -140,8 +146,8 @@ it supports (with or without a copier header) and converts its first
 level's ground and background, where its objects are, and its music
 (without the echo the game adds, which Clamber can't make yet). Most of the
 objects don't appear or act yet, you start near the level's left end,
-and there's no way to finish it yet. For any other file, it says it can't
-import it, and why.
+and there's no way to finish it yet. For any other file, it says it
+doesn't look like a supported game image, and why.
 
 **Games** on the title screen lists Clamber's own game and the games
 you've imported. Pick one to play it from the title screen.

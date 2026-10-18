@@ -24,7 +24,8 @@
 //! movement screen for choosing among the [`Feels`]' presets, which is
 //! remembered in the [`Prefs`] ([`prefs_path`]) along with the options
 //! screen's choices. A credits screen shows the content's [`Credits`].
-//! The title screen also imports a game the player owns, picked with a
+//! The title screen also imports a game the player owns, picked in the
+//! system's file dialog, dropped on the window or picked with a
 //! [`Picker`], as a personal pack, and lists the packs to play
 //! ([`Games`]).
 //! A pack with a level map begins a new game on it and goes back to it

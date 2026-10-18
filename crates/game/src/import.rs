@@ -1,8 +1,11 @@
 //! Importing a game the player owns, from the title screen, and the
 //! games there are to play.
 //!
-//! A [`Picker`] browses the player's folders for the image, using the
-//! same neutral actions as every menu, so it works from a gamepad too.
+//! The player picks the image in the system's file dialog, or by
+//! dropping it on the window. Where there's no dialog, or the player is
+//! using a gamepad, a [`Picker`] browses their folders for it instead,
+//! using the same neutral actions as every menu. It lists only files
+//! the size of a supported image, and marks those that are one.
 //! [`Importing`] runs the importer on a thread of its own and shows its
 //! progress, then what came of it. [`Games`] lists the bundled game and
 //! the imported packs, each marked as a personal import.
@@ -11,7 +14,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use clamber_import::{
-    Image, ImportError, Imported, Importer, Installed, import_report, installed, skipped_summary,
+    Catalog, Image, ImportError, Imported, Importer, Installed, import_report, installed,
+    skipped_summary,
 };
 use clamber_input::{Action, Frame};
 
@@ -65,6 +69,9 @@ enum Entry {
     File(String),
 }
 
+/// How a file that is a supported image is marked in the picker.
+const SUPPORTED: &str = "★ ";
+
 /// What a frame of input did to the picker.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Picked {
@@ -73,9 +80,17 @@ pub enum Picked {
     Back,
 }
 
+/// The files in a folder found to be supported images, by entry, and
+/// whether all of them have been looked at.
+#[derive(Debug, Default)]
+struct Marks {
+    found: Vec<usize>,
+    done: bool,
+}
+
 /// Choosing a file, a folder at a time: Jump opens a folder or picks a
 /// file, Left goes up a folder and Pause leaves.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Picker {
     /// The folder being shown.
     pub dir: PathBuf,
@@ -83,13 +98,33 @@ pub struct Picker {
     pub menu: Menu<usize>,
     /// Why the folder couldn't be read, if it couldn't.
     pub problem: Option<String>,
+    /// The images it lists.
+    catalog: Arc<Catalog>,
+    /// Filled in on a thread of its own, as reading the files takes a
+    /// while.
+    marks: Arc<Mutex<Marks>>,
+    /// How many of the marks are shown.
+    marked: usize,
 }
 
+impl PartialEq for Picker {
+    fn eq(&self, other: &Picker) -> bool {
+        self.dir == other.dir
+            && self.entries == other.entries
+            && self.menu == other.menu
+            && self.problem == other.problem
+            && Arc::ptr_eq(&self.marks, &other.marks)
+    }
+}
+
+impl Eq for Picker {}
+
 impl Picker {
-    /// Shows `dir`'s folders, then its files, by name. Hidden ones
-    /// (starting with `.`) are left out.
-    pub fn open(dir: &Path) -> Picker {
-        Picker::open_at(dir, None)
+    /// Shows `dir`'s folders, then its files that may be one of
+    /// `catalog`'s images, by name. Hidden ones (starting with `.`) are
+    /// left out.
+    pub fn open(dir: &Path, catalog: Arc<Catalog>) -> Picker {
+        Picker::open_at(dir, None, catalog)
     }
 
     /// The folder to start in: `remembered` if it's still there, or else
@@ -110,7 +145,7 @@ impl Picker {
     }
 
     /// Shows `dir` with the entry called `select` selected.
-    fn open_at(dir: &Path, select: Option<&str>) -> Picker {
+    fn open_at(dir: &Path, select: Option<&str>, catalog: Arc<Catalog>) -> Picker {
         let dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
         let mut entries = Vec::new();
         if dir.parent().is_some() {
@@ -126,9 +161,10 @@ impl Picker {
                         continue;
                     }
                     // Follows links, so a linked folder opens like one.
-                    if entry.path().is_dir() {
+                    let path = entry.path();
+                    if path.is_dir() {
                         folders.push(name);
-                    } else {
+                    } else if std::fs::metadata(&path).is_ok_and(|m| catalog.may_be(m.len())) {
                         files.push(name);
                     }
                 }
@@ -157,12 +193,49 @@ impl Picker {
         if let Some(i) = selected {
             menu = menu.with_selected(i);
         }
+        let marks = Arc::new(Mutex::new(Marks::default()));
+        let files: Vec<(usize, PathBuf)> = entries
+            .iter()
+            .enumerate()
+            .filter_map(|(i, e)| match e {
+                Entry::File(name) => Some((i, dir.join(name))),
+                _ => None,
+            })
+            .collect();
+        {
+            let (catalog, marks) = (catalog.clone(), marks.clone());
+            std::thread::spawn(move || {
+                let lock = || marks.lock().unwrap_or_else(PoisonError::into_inner);
+                for (i, path) in files {
+                    if catalog.identify_file(&path).is_some() {
+                        lock().found.push(i);
+                    }
+                }
+                lock().done = true;
+            });
+        }
         Picker {
             dir,
             entries,
             menu,
             problem,
+            catalog,
+            marks,
+            marked: 0,
         }
+    }
+
+    /// Marks the files found to be supported images since the last
+    /// time. Returns whether all the files have been looked at.
+    pub fn mark(&mut self) -> bool {
+        let marks = self.marks.lock().unwrap_or_else(PoisonError::into_inner);
+        for &i in &marks.found[self.marked..] {
+            if let Entry::File(name) = &self.entries[i] {
+                self.menu.items[i].0 = fit(&format!("{SUPPORTED}{name}"), WIDTH - 4);
+            }
+        }
+        self.marked = marks.found.len();
+        marks.done
     }
 
     fn up(&mut self) {
@@ -171,12 +244,13 @@ impl Picker {
                 .dir
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned());
-            *self = Picker::open_at(parent, name.as_deref());
+            *self = Picker::open_at(parent, name.as_deref(), self.catalog.clone());
         }
     }
 
     /// Applies one frame of input.
     pub fn update(&mut self, frame: &Frame) -> Option<Picked> {
+        self.mark();
         if self.entries.is_empty() {
             // Nothing to choose; only leaving.
             let pressed = frame.pressed;
@@ -195,7 +269,7 @@ impl Picker {
                     None
                 }
                 Entry::Folder(name) => {
-                    *self = Picker::open(&self.dir.join(name));
+                    *self = Picker::open(&self.dir.join(name), self.catalog.clone());
                     None
                 }
                 Entry::File(name) => Some(Picked::File(self.dir.join(name))),
@@ -238,6 +312,8 @@ impl Picker {
         if !self.entries.is_empty() {
             self.menu.draw_rows(canvas, centre, top, PICKER_ROWS);
         }
+        let marked = format!("{SUPPORTED}a supported game");
+        draw_text_centred(canvas, centre, VIEW.1 as i32 - 12 - LINE, &marked, SUBTITLE);
         let hint = "Jump: open   Left: up a folder   Pause: back";
         draw_text_centred(canvas, centre, VIEW.1 as i32 - 12, hint, SUBTITLE);
     }

@@ -37,8 +37,8 @@ impl Image {
                 bytes.drain(..COPIER_HEADER);
             }
             _ => {
-                return Err(ImportError::Unsupported(format!(
-                    "it isn't a game image ({} bytes)",
+                return Err(ImportError::NotAGame(format!(
+                    "no image has its size ({} bytes)",
                     bytes.len()
                 )));
             }
@@ -162,6 +162,32 @@ impl Catalog {
         }
     }
 
+    /// Whether a file of `size` bytes could be a supported image, going
+    /// by its size alone: with or without a copier header, it has a
+    /// supported image's size.
+    pub fn may_be(&self, size: u64) -> bool {
+        let header = COPIER_HEADER as u64;
+        let image = match size % 1024 {
+            0 => size,
+            r if r == header => size - header,
+            _ => return false,
+        };
+        self.known.iter().any(|k| k.size == image)
+    }
+
+    /// The supported image in the file at `path`, if it is one. Only a
+    /// file that [`may_be`](Catalog::may_be) one is read.
+    pub fn identify_file(&self, path: &Path) -> Option<&Known> {
+        let size = std::fs::metadata(path).ok()?.len();
+        if !self.may_be(size) {
+            return None;
+        }
+        match self.outcome(&Image::read(path).ok()?) {
+            Outcome::Known(known) => Some(known),
+            _ => None,
+        }
+    }
+
     /// What `image` is. The hash is only taken for an image of a
     /// supported size.
     pub fn outcome(&self, image: &Image) -> Outcome<'_> {
@@ -183,7 +209,7 @@ impl Catalog {
     /// Finds the image in the catalog, or says why it isn't there.
     pub fn identify(&self, image: &Image) -> Result<&Known, ImportError> {
         if image.is_empty() {
-            return Err(ImportError::Unsupported("the file is empty".into()));
+            return Err(ImportError::NotAGame("the file is empty".into()));
         }
         let size = image.len();
         let reason = match self.outcome(image) {
@@ -192,7 +218,7 @@ impl Catalog {
                 "this version of Clamber can't import any games yet".to_string()
             }
             Outcome::WrongSize => {
-                format!("it isn't a supported image: none is {size} bytes")
+                format!("no supported image is {size} bytes")
             }
             Outcome::Unsupported => format!(
                 "it has the size of a supported image but not its contents \
@@ -201,7 +227,7 @@ impl Catalog {
                 image.sha256()
             ),
         };
-        Err(ImportError::Unsupported(reason))
+        Err(ImportError::NotAGame(reason))
     }
 }
 
@@ -243,14 +269,43 @@ mod tests {
     fn refuses_others_with_a_reason() {
         let image = Image::new(vec![1, 2, 3, 4]);
         let reason = |catalog: &Catalog, image: &Image| match catalog.identify(image) {
-            Err(ImportError::Unsupported(reason)) => reason,
+            Err(ImportError::NotAGame(reason)) => reason,
             other => panic!("{other:?}"),
         };
         assert!(reason(&Catalog::default(), &image).contains("can't import any games yet"));
         let catalog = catalog(&image);
         assert!(reason(&catalog, &Image::new(vec![1, 2, 3, 5])).contains("modified"));
-        assert!(reason(&catalog, &Image::new(vec![1, 2, 3])).contains("isn't a supported"));
+        assert!(reason(&catalog, &Image::new(vec![1, 2, 3])).contains("no supported image"));
         assert!(reason(&catalog, &Image::new(Vec::new())).contains("empty"));
+    }
+
+    #[test]
+    fn tells_files_that_may_be_images_by_size() {
+        let image = Image::new(vec![1; 2048]);
+        let catalog = catalog(&image);
+        assert!(catalog.may_be(2048));
+        assert!(catalog.may_be(2048 + 512));
+        assert!(!catalog.may_be(1024));
+        assert!(!catalog.may_be(2049));
+        assert!(!catalog.may_be(1024 + 512));
+        assert!(!Catalog::default().may_be(2048));
+
+        let dir = std::env::temp_dir().join(format!("clamber-identify-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = |name: &str, bytes: &[u8]| {
+            let path = dir.join(name);
+            std::fs::write(&path, bytes).unwrap();
+            path
+        };
+        let mut headed = vec![9; COPIER_HEADER];
+        headed.extend(image.bytes());
+        let known = |path: &Path| catalog.identify_file(path).map(|k| k.title.clone());
+        assert_eq!(known(&file("a", image.bytes())).as_deref(), Some("title-9"));
+        assert_eq!(known(&file("b", &headed)).as_deref(), Some("title-9"));
+        assert_eq!(known(&file("c", &[2; 2048])), None);
+        assert_eq!(known(&file("d", &[1; 100])), None);
+        assert_eq!(known(&dir.join("missing")), None);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     fn vectors(name: &str) -> Vec<Vec<String>> {
@@ -278,7 +333,7 @@ mod tests {
             let file_size: usize = file_size.parse().unwrap();
             let image = Image::from_file(vec![0; file_size]);
             let image = match (outcome.as_str(), image) {
-                ("not-an-image", Err(ImportError::Unsupported(_))) => continue,
+                ("not-an-image", Err(ImportError::NotAGame(_))) => continue,
                 (_, Ok(image)) => image,
                 (_, other) => panic!("{row:?}: {other:?}"),
             };

@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use clamber_import::{Importer, Installed, Widescreen};
 
-use clamber_input::{Action, Event, Frame, Input, Settings};
+use clamber_input::{Action, Device, Event, Frame, Input, Settings};
 use clamber_level::Arrival;
 use clamber_sim::{InputFrame, Outcome, World};
 
@@ -93,7 +93,12 @@ pub enum Screen {
     /// The credits, scrolled down this many lines, and the screen to go
     /// back to.
     Credits(usize, Box<Screen>),
-    /// Choosing a game image to import, and the screen to go back to.
+    /// Waiting for the player to choose a game image to import in the
+    /// system's file dialog ([`Session::file_request`]), and the screen
+    /// to go back to.
+    Choosing(Box<Screen>),
+    /// Choosing a game image to import in the game's own browser, and
+    /// the screen to go back to.
     Picker(Picker, Box<Screen>),
     /// An import, running or finished, and the picker it was started
     /// from.
@@ -163,6 +168,7 @@ impl Screen {
             | Screen::Movement(_, from)
             | Screen::Options(_, from)
             | Screen::Credits(_, from)
+            | Screen::Choosing(from)
             | Screen::Picker(_, from)
             | Screen::Importing(_, from)
             | Screen::Games(_, from) => from.tune(),
@@ -222,6 +228,14 @@ pub struct Session {
     /// begins on it, and finishing a level entered from it goes back
     /// there.
     pub map: Option<MapPlay>,
+    /// The platform has a file dialog to choose a game image in.
+    pub file_dialog: bool,
+    /// The folder to open the file dialog in, when the game wants the
+    /// player to choose a file there. The platform takes it, shows the
+    /// dialog, and passes what was chosen to [`Session::file_chosen`].
+    pub file_request: Option<PathBuf>,
+    /// The kind of device the last button was pressed on.
+    pub device: Device,
 }
 
 impl Session {
@@ -246,12 +260,20 @@ impl Session {
             packs_dir: None,
             importer: Arc::new(Importer::builtin()),
             map: None,
+            file_dialog: false,
+            file_request: None,
+            device: Device::Keyboard,
         }
     }
 
     /// Records a device event. A press that finishes a remap shows on
     /// the controls screen.
     pub fn handle(&mut self, event: Event) {
+        match event {
+            Event::Key { down: true, .. } => self.device = Device::Keyboard,
+            Event::PadButton { down: true, .. } => self.device = Device::Pad,
+            _ => {}
+        }
         let remapped = self.input.handle(event);
         if let (Some(remapped), Screen::Controls(controls, _)) = (remapped, &mut self.screen) {
             controls.remapped(remapped);
@@ -275,6 +297,7 @@ impl Session {
         let frame = everyone(input);
         match self.screen {
             Screen::Map => return self.step_map(&frame),
+            Screen::Choosing(..) => return self.step_choosing(&frame),
             Screen::Picker(..) => return self.step_picker(&frame),
             Screen::Importing(..) => return self.step_importing(&frame),
             Screen::Games(..) => return self.step_games(&frame),
@@ -455,9 +478,8 @@ impl Session {
                 self.screen = Screen::Games(self.games(), Box::new(from));
             }
             Item::Import => {
-                let dir = Picker::start_dir(self.prefs.import_folder.as_deref());
                 let from = std::mem::replace(&mut self.screen, Screen::Playing);
-                self.screen = Screen::Picker(Picker::open(&dir), Box::new(from));
+                self.choose_file(from);
             }
             Item::ToTitle => self.screen = Screen::title(),
             Item::Quit => self.quit = true,
@@ -471,12 +493,96 @@ impl Session {
             | Screen::Movement(_, from)
             | Screen::Options(_, from)
             | Screen::Credits(_, from)
+            | Screen::Choosing(from)
             | Screen::Picker(_, from)
             | Screen::Importing(_, from)
             | Screen::Games(_, from) => from,
             other => Box::new(other),
         };
         self.screen = *from;
+    }
+
+    /// Has the player choose a game image to import, in the folder they
+    /// last imported from: in the system's file dialog if there is one
+    /// and they're using the keyboard, or else in the game's browser.
+    fn choose_file(&mut self, from: Screen) {
+        let dir = Picker::start_dir(self.prefs.import_folder.as_deref());
+        if self.file_dialog && self.device == Device::Keyboard {
+            self.file_request = Some(dir);
+            self.screen = Screen::Choosing(Box::new(from));
+        } else {
+            self.browse(dir, from);
+        }
+    }
+
+    /// The game's own browser for choosing a game image, in `dir`.
+    fn browse(&mut self, dir: PathBuf, from: Screen) {
+        let catalog = Arc::new(self.importer.catalog.clone());
+        self.screen = Screen::Picker(Picker::open(&dir, catalog), Box::new(from));
+    }
+
+    /// Goes from waiting on the file dialog to the game's browser.
+    fn browse_instead(&mut self) {
+        if let Screen::Choosing(from) = std::mem::replace(&mut self.screen, Screen::Playing) {
+            let dir = Picker::start_dir(self.prefs.import_folder.as_deref());
+            self.browse(dir, *from);
+        }
+    }
+
+    /// While the file dialog is open, Pause browses in the game instead.
+    fn step_choosing(&mut self, frame: &Frame) {
+        if frame.pressed.contains(Action::Pause) {
+            self.browse_instead();
+        }
+    }
+
+    /// What the player chose in the file dialog: a file to import, or
+    /// nothing. If the dialog `failed` to show, the game's browser takes
+    /// its place from then on.
+    pub fn file_chosen(&mut self, file: Option<PathBuf>, failed: bool) {
+        if !matches!(self.screen, Screen::Choosing(_)) {
+            // The player went on to the game's browser.
+            return;
+        }
+        match file {
+            Some(file) => {
+                if let Some(dir) = file.parent() {
+                    self.remember_import_folder(dir);
+                }
+                self.start_import(file, false);
+            }
+            None if failed => {
+                report::warn("the file dialog didn't open; browsing in the game instead");
+                self.file_dialog = false;
+                self.browse_instead();
+            }
+            None => self.back(),
+        }
+    }
+
+    /// Imports a file dropped on the window, unless an import is running.
+    /// During play, the game pauses first.
+    pub fn dropped(&mut self, file: PathBuf) {
+        match &self.screen {
+            Screen::Importing(importing, _) if importing.result.is_none() => {
+                report::warn(format!("{}: an import is running already", file.display()));
+                return;
+            }
+            // A finished import is replaced by this one.
+            Screen::Importing(..) => return self.start_import(file, false),
+            Screen::Playing => self.screen = Screen::paused(),
+            _ => {}
+        }
+        let from = std::mem::replace(&mut self.screen, Screen::Playing);
+        self.screen = Screen::Choosing(Box::new(from));
+        self.file_chosen(Some(file), false);
+    }
+
+    fn remember_import_folder(&mut self, dir: &Path) {
+        if self.prefs.import_folder.as_deref() != Some(dir) {
+            self.prefs.import_folder = Some(dir.to_path_buf());
+            self.save_prefs("the folder to import from");
+        }
     }
 
     fn step_picker(&mut self, frame: &Frame) {
@@ -487,10 +593,8 @@ impl Session {
             None => {}
             Some(Picked::Back) => self.back(),
             Some(Picked::File(file)) => {
-                if self.prefs.import_folder.as_ref() != Some(&picker.dir) {
-                    self.prefs.import_folder = Some(picker.dir.clone());
-                    self.save_prefs("the folder to import from");
-                }
+                let dir = picker.dir.clone();
+                self.remember_import_folder(&dir);
                 self.start_import(file, false);
             }
         }
@@ -522,7 +626,15 @@ impl Session {
         };
         match after {
             After::Replace => self.start_import(file, true),
-            After::Another => self.back(),
+            After::Another => {
+                self.back();
+                if let Screen::Choosing(_) = self.screen {
+                    // The dialog again.
+                    self.back();
+                    let from = std::mem::replace(&mut self.screen, Screen::Playing);
+                    self.choose_file(from);
+                }
+            }
             After::Done => {
                 self.back();
                 self.back();
@@ -920,6 +1032,10 @@ impl Session {
                 self.draw_credits(canvas, *scroll, centre);
                 return;
             }
+            Screen::Choosing(_) => {
+                draw_choosing(canvas, centre);
+                return;
+            }
             Screen::Picker(picker, _) => {
                 picker.draw(canvas, centre);
                 return;
@@ -1039,6 +1155,20 @@ impl Session {
 
 /// The options screen's items, showing the settings in `prefs` and the
 /// game's widescreen mode, `widescreen`.
+/// While the player chooses a file in the system's file dialog.
+fn draw_choosing(canvas: &mut dyn Surface, centre: i32) {
+    draw_text_centred(canvas, centre, 40, "IMPORT A GAME", HEADING);
+    let lines = [
+        "Choose your own copy of a supported game",
+        "in the window that opened",
+    ];
+    for (i, line) in lines.into_iter().enumerate() {
+        draw_text_centred(canvas, centre, 40 + (2 + i as i32) * LINE, line, SUBTITLE);
+    }
+    let hint = "Pause: browse in the game instead";
+    draw_text_centred(canvas, centre, VIEW.1 as i32 - 12, hint, SUBTITLE);
+}
+
 fn options_items(prefs: &Prefs, widescreen: Widescreen) -> Vec<(String, Setting)> {
     let on = |on| if on { "On" } else { "Off" };
     let (display, volume) = (&prefs.display, &prefs.volume);
@@ -1881,12 +2011,132 @@ mod tests {
     }
 
     #[test]
+    fn imports_a_game_chosen_in_the_file_dialog() {
+        let (mut s, dir) = importing_session("dialog");
+        s.file_dialog = true;
+        pick(&mut s, Item::Import);
+        assert!(matches!(s.screen, Screen::Choosing(_)), "{:?}", s.screen);
+        let games = s.file_request.take().expect("the dialog is asked for");
+        assert!(games.ends_with("games"), "{games:?}");
+        s.step(&idle());
+        assert!(matches!(s.screen, Screen::Choosing(_)), "it waits");
+
+        // A file somewhere else: that folder is remembered.
+        let elsewhere = dir.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::fs::copy(games.join("game.img"), elsewhere.join("mine.img")).unwrap();
+        s.file_chosen(Some(elsewhere.join("mine.img")), false);
+        assert!(finish_import(&mut s).result.as_ref().unwrap().is_ok());
+        assert_eq!(s.prefs.import_folder.as_ref(), Some(&elsewhere));
+
+        // Done goes back to the title, past the dialog.
+        s.step(&press(Action::Down));
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Title(_)), "{:?}", s.screen);
+
+        // Choose another file opens the dialog again.
+        pick(&mut s, Item::Import);
+        assert_eq!(s.file_request.take(), Some(elsewhere.clone()));
+        s.file_chosen(Some(elsewhere.join("mine.img")), false);
+        finish_import(&mut s);
+        let Screen::Importing(importing, _) = &s.screen else {
+            unreachable!()
+        };
+        assert!(matches!(
+            importing.result,
+            Some(Err(ImportError::AlreadyImported(_)))
+        ));
+        s.step(&press(Action::Down));
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Choosing(_)), "{:?}", s.screen);
+        assert_eq!(s.file_request.take(), Some(elsewhere));
+
+        // Nothing chosen: back to the title.
+        s.file_chosen(None, false);
+        assert!(matches!(s.screen, Screen::Title(_)), "{:?}", s.screen);
+        // What a dialog chooses after the player has gone on is ignored.
+        s.file_chosen(Some(games.join("game.img")), false);
+        assert!(matches!(s.screen, Screen::Title(_)), "{:?}", s.screen);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn browses_in_the_game_without_a_file_dialog() {
+        let (mut s, dir) = importing_session("no-dialog");
+        s.file_dialog = true;
+
+        // Pause while the dialog is open.
+        pick(&mut s, Item::Import);
+        assert!(s.file_request.take().is_some());
+        s.step(&press(Action::Pause));
+        assert!(matches!(s.screen, Screen::Picker(..)), "{:?}", s.screen);
+        s.step(&press(Action::Pause));
+        assert!(matches!(s.screen, Screen::Title(_)), "{:?}", s.screen);
+
+        // With a gamepad.
+        s.handle(Event::PadButton {
+            pad: clamber_input::PadId(0),
+            input: clamber_input::PadInput::South,
+            down: true,
+        });
+        assert_eq!(s.device, Device::Pad);
+        pick(&mut s, Item::Import);
+        assert!(matches!(s.screen, Screen::Picker(..)), "{:?}", s.screen);
+        assert_eq!(s.file_request, None);
+        s.step(&press(Action::Pause));
+
+        // A dialog that doesn't open: the browser from then on.
+        s.handle(Event::Key {
+            key: clamber_input::Key::Enter,
+            down: true,
+        });
+        assert_eq!(s.device, Device::Keyboard);
+        pick(&mut s, Item::Import);
+        assert!(s.file_request.take().is_some());
+        s.file_chosen(None, true);
+        assert!(matches!(s.screen, Screen::Picker(..)), "{:?}", s.screen);
+        assert!(!s.file_dialog);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn imports_a_dropped_file() {
+        let (mut s, dir) = importing_session("dropped");
+        let file = dir.join("games/game.img");
+        s.step(&press(Action::Jump));
+        assert_eq!(s.screen, Screen::Playing);
+        s.dropped(file.clone());
+        assert!(matches!(s.screen, Screen::Importing(..)), "{:?}", s.screen);
+        // Not while it runs.
+        s.dropped(file.clone());
+        let importing = finish_import(&mut s);
+        assert!(importing.result.as_ref().unwrap().is_ok());
+        assert_eq!(s.prefs.import_folder, Some(dir.join("games")));
+
+        // Over a finished import: it's done again, from where that was.
+        s.dropped(file);
+        let importing = finish_import(&mut s);
+        assert!(matches!(
+            importing.result,
+            Some(Err(ImportError::AlreadyImported(_)))
+        ));
+        // Done: back to the game, paused.
+        s.step(&press(Action::Up));
+        s.step(&press(Action::Jump));
+        assert!(matches!(s.screen, Screen::Paused(_)), "{:?}", s.screen);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn refuses_what_it_cant_import_and_says_why() {
         let (mut s, dir) = importing_session("refuses");
+        // The picker lists the file, but the importer doesn't know it.
+        pick(&mut s, Item::Import);
         s.importer = Arc::new(Importer::builtin());
-        import_the_game(&mut s);
+        s.step(&press(Action::Down));
+        s.step(&press(Action::Jump));
         let importing = finish_import(&mut s);
-        let Some(Err(ImportError::Unsupported(_))) = &importing.result else {
+        let Some(Err(ImportError::NotAGame(_))) = &importing.result else {
             panic!("{:?}", importing.result);
         };
         let menu = importing.menu.as_ref().unwrap();
@@ -1968,20 +2218,49 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    /// A catalog that knows one image, `[1; 2048]`.
+    fn catalog() -> Arc<clamber_import::Catalog> {
+        let image = clamber_import::Image::new(vec![1; 2048]);
+        Arc::new(clamber_import::Catalog {
+            known: vec![clamber_import::Known {
+                title: "title-9".into(),
+                release: "made-up release".into(),
+                size: image.len() as u64,
+                sha256: image.sha256(),
+            }],
+        })
+    }
+
     #[test]
     fn the_picker_browses_folders() {
         let dir = scratch("picker");
         std::fs::create_dir_all(dir.join("b-folder/inner")).unwrap();
         std::fs::create_dir_all(dir.join("A-folder")).unwrap();
         std::fs::create_dir_all(dir.join(".hidden")).unwrap();
-        std::fs::write(dir.join("z.img"), "").unwrap();
-        std::fs::write(dir.join("c.img"), "").unwrap();
-        let mut picker = Picker::open(&dir);
+        // The size of the image with a copier header, but not the image.
+        std::fs::write(dir.join("z.img"), [2; 2048 + 512]).unwrap();
+        std::fs::write(dir.join("c.img"), [1; 2048]).unwrap();
+        // Not the size of an image the catalog knows.
+        std::fs::write(dir.join("notes.txt"), "notes").unwrap();
+        std::fs::write(dir.join("big.img"), [1; 4096]).unwrap();
+        let mut picker = Picker::open(&dir, catalog());
         let labels =
             |p: &Picker| -> Vec<String> { p.menu.items.iter().map(|i| i.0.clone()).collect() };
         assert_eq!(
             labels(&picker),
             ["../", "A-folder/", "b-folder/", "c.img", "z.img"]
+        );
+        // The image is marked once it has been read.
+        for _ in 0..500 {
+            if picker.mark() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(picker.mark());
+        assert_eq!(
+            labels(&picker),
+            ["../", "A-folder/", "b-folder/", "★ c.img", "z.img"]
         );
         let down = Frame::after(Actions::NONE, Action::Down.into());
         let jump = Frame::after(Actions::NONE, Action::Jump.into());
@@ -1997,7 +2276,7 @@ mod tests {
         picker.update(&down);
         assert_eq!(picker.update(&jump), Some(Picked::File(dir.join("c.img"))));
 
-        let mut gone = Picker::open(&dir.join("not-there"));
+        let mut gone = Picker::open(&dir.join("not-there"), catalog());
         assert!(gone.problem.is_some());
         assert_eq!(labels(&gone), ["../"]);
         assert_eq!(gone.update(&jump), None);

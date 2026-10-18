@@ -130,7 +130,10 @@ pub trait Decoder: Send + Sync {
 pub enum ImportError {
     /// The image file couldn't be read.
     Read(String),
-    /// The image isn't one the importer supports.
+    /// The file isn't a supported game image (`spec/formats/rom-image.md`,
+    /// "Identifying an image").
+    NotAGame(String),
+    /// The image is a supported game's, but this build can't convert it.
     Unsupported(String),
     /// The pack can't go there.
     Destination(String),
@@ -147,6 +150,9 @@ impl fmt::Display for ImportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ImportError::Read(message) => write!(f, "can't read the image: {message}"),
+            ImportError::NotAGame(reason) => {
+                write!(f, "this doesn't look like a supported game image: {reason}")
+            }
             ImportError::Unsupported(reason) => write!(f, "can't import this file: {reason}"),
             ImportError::Destination(message) => write!(f, "can't put the pack there: {message}"),
             ImportError::AlreadyImported(dir) => write!(
