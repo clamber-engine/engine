@@ -11,6 +11,8 @@
 //! its reference (`placed-1234`), for a pack to give each one a
 //! definition.
 
+use std::collections::BTreeSet;
+
 use clamber_level::{Entity, Section, Spot, Vec2};
 use toml::{Table, Value};
 
@@ -287,17 +289,25 @@ impl Placements {
         bottom: i64,
         kind: impl Fn(u16) -> Option<Kind>,
     ) -> (Vec<Entity>, Vec<Vec<usize>>) {
-        let entity = |entry: Entry| {
-            let (kind, params, below) = match kind(entry.reference) {
+        let mut ids = BTreeSet::new();
+        let mut entity = |entry: Entry| {
+            let (kind, params, below, id) = match kind(entry.reference) {
                 Some(kind) => {
                     let (name, params) = kind.entity();
-                    (name.to_string(), params, kind.below_entry())
+                    // Only the first of a kind gets its id.
+                    let id = kind.id().filter(|&id| ids.insert(id));
+                    (name.to_string(), params, kind.below_entry(), id)
                 }
-                None => (format!("{PLACED}{:04x}", entry.reference), Table::new(), 0),
+                None => (
+                    format!("{PLACED}{:04x}", entry.reference),
+                    Table::new(),
+                    0,
+                    None,
+                ),
             };
             Entity {
                 kind,
-                id: None,
+                id: id.map(String::from),
                 // A u16 x and a bottom edge inside a level fit an i32.
                 at: Vec2::ints(i32::from(entry.x), entry.level_y(bottom) as i32 + below),
                 params,
@@ -714,6 +724,20 @@ mod tests {
         let entities = read(&fragment()).unwrap().entities(BOTTOM, kind);
         let crate_ = entities.iter().find(|e| e.kind == "hutch").unwrap();
         assert_eq!(crate_.at, Vec2::ints(40, 313));
+    }
+
+    /// Only the first wall-return entrance gets the id the arrival coming
+    /// back to it names. Reference 1234 is on two entries.
+    #[test]
+    fn the_first_wall_return_entrance_has_its_id() {
+        let kind = |r| (r == 0x1234).then_some(Kind::WallReturnEntrance);
+        let entities = read(&fragment()).unwrap().entities(BOTTOM, kind);
+        let ids: Vec<(&str, Option<&str>)> = entities
+            .iter()
+            .filter(|e| e.kind == crate::kinds::ENTRANCE)
+            .map(|e| (e.kind.as_str(), e.id.as_deref()))
+            .collect();
+        assert_eq!(ids, [("entrance", Some("wall-return")), ("entrance", None)]);
     }
 
     /// placements.md, "Exits": an exit needs the vertical window. Here the

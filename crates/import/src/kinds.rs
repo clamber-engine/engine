@@ -171,6 +171,15 @@ impl Kind {
         }
     }
 
+    /// The id the first entity of this kind gets, if it's one that
+    /// something else in the level refers to.
+    pub fn id(self) -> Option<&'static str> {
+        match self {
+            Kind::WallReturnEntrance => Some(WALL_RETURN),
+            _ => None,
+        }
+    }
+
     pub fn from_name(name: &str) -> Option<Kind> {
         Kind::ALL.into_iter().find(|k| k.name() == name)
     }
@@ -247,10 +256,21 @@ impl Kind {
             // one ([`crate::LevelDecoder`]), and the barrel's position
             // otherwise.
             Kind::RestartBarrel => KEG,
-            // wall-exits.md: placed and not drawn. The engine doesn't
-            // come back from a wall exit's area yet (#207), so it does
-            // nothing.
-            Kind::WallReturnEntrance => WALL_RETURN,
+            // wall-exits.md, "Coming back from the first wall exit's
+            // area": an entrance the characters come out of only when
+            // play comes back to the level at its arrival, thrown at
+            // (3.75, 2) for 6 frames, then falling as out of the level's
+            // entrance, steered from the seventh frame. Entering from the
+            // level map it's drawn and does nothing.
+            Kind::WallReturnEntrance => {
+                set(
+                    "throw_speed",
+                    Value::Array(vec![Value::Float(3.75), Value::Integer(2)]),
+                );
+                set("rise", Value::Integer(6));
+                set("steer_from", Value::Integer(7));
+                ENTRANCE
+            }
             // level-start.md, "Coming back from the room": coming in from
             // the level map it does nothing and isn't drawn. The engine
             // doesn't come back from the room through it yet (#217).
@@ -381,7 +401,8 @@ pub const EXIT: &str = "exit";
 /// The kind of entity a wall exit is: no archetype's.
 pub const WALL_EXIT: &str = "wall-exit";
 
-/// The kind of entity a wall-return entrance is: no archetype's.
+/// The id of the first wall-return entrance's entity, which the arrival
+/// coming back from the area behind the first wall exit names.
 pub const WALL_RETURN: &str = "wall-return";
 
 /// The kind of entity a room-return entrance is: no archetype's.
@@ -802,13 +823,12 @@ mod tests {
                 Kind::Exit,
                 Kind::WallExit,
                 Kind::RoomReturnEntrance,
-                Kind::WallReturnEntrance,
                 Kind::Critter,
             ]
             .contains(&kind)
             {
                 assert!(
-                    [EXIT, WALL_EXIT, ROOM_ENTRANCE, WALL_RETURN, CRITTER].contains(&name),
+                    [EXIT, WALL_EXIT, ROOM_ENTRANCE, CRITTER].contains(&name),
                     "{kind}"
                 );
                 assert!(!Archetypes::builtin().names().any(|n| n == name));

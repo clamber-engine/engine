@@ -50,6 +50,7 @@ fn world(characters: usize, at: (i32, i32), walk: Dir) -> World {
         name: "test".into(),
         at: Vec2::ints(at.0, at.1),
         walk: Some(walk),
+        entrance: None,
     };
     World::arriving(level(), Arc::new(feel), &arrival)
 }
@@ -207,6 +208,7 @@ fn an_arrival_without_a_walk_begins_as_the_level_does() {
         name: "back".into(),
         at: Vec2::ints(500, 150),
         walk: None,
+        entrance: None,
     };
     let mut arrived = World::arriving(level.clone(), feel.clone(), &arrival);
     let mut started = World::new(level, feel);
@@ -258,6 +260,7 @@ fn a_rooms_objects_are_there_from_frame_1() {
         name: "from-level".into(),
         at: level.start,
         walk: Some(Dir::Left),
+        entrance: None,
     };
     let feel = Arc::new(generic_feel("classic-1").unwrap());
     let mut world = World::arriving(level, feel, &arrival);

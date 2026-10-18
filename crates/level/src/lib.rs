@@ -8,7 +8,8 @@
 //!   its own parallax factor, drawn smoothly or as pixel art, at any
 //!   number of texels per world unit
 //! - **arrivals**: named points other areas lead into, where the
-//!   characters walk in or the level begins as at its start
+//!   characters walk in, come out of an entrance, or the level begins
+//!   as at its start
 //! - **entities**: placed things with per-instance parameters
 //! - **sections**: optionally, when entities appear: section by section,
 //!   by the path the view takes ([`Section`])

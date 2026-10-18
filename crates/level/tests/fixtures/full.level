@@ -64,6 +64,11 @@ walk = "left"
 name = "top"
 at = [80, 100]
 
+[[arrivals]]
+name = "out-of-the-spring"
+at = [300, 480]
+entrance = "spring-a"
+
 [[entities]]
 type = "spring"
 id = "spring-a"

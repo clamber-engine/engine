@@ -153,6 +153,7 @@ fn parts() -> LevelParts {
         restart: None,
         scene_return: None,
         room_return: None,
+        wall_return: None,
         room: None,
         back_to: None,
         view_limits: Some(Location::new(BANK, 0x7500)),

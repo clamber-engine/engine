@@ -294,7 +294,7 @@ impl World {
     /// archetype in the built-in [`Archetypes`].
     pub fn try_new(level: Arc<Level>, feel: Arc<Feel>) -> Result<World, ArchetypeError> {
         let start = level.start;
-        World::begin(level, feel, start, None)
+        World::begin(level, feel, start, None, None)
     }
 
     /// The level as play comes into it at `arrival`: the characters walk
@@ -317,15 +317,18 @@ impl World {
     ) -> Result<World, ArchetypeError> {
         assert!(!feel.roster.is_empty(), "a world needs a character");
         let walk = WalkingIn::of(arrival, &feel.world);
-        World::begin(level, feel, arrival.at, walk)
+        let inside = arrival.entrance.as_deref();
+        World::begin(level, feel, arrival.at, walk, inside)
     }
 
-    /// The level beginning with the lead at `start`, or walking in to it.
+    /// The level beginning with the lead at `start`, or walking in to it,
+    /// or inside the entrance with the id `inside`.
     fn begin(
         level: Arc<Level>,
         feel: Arc<Feel>,
         start: Vec2,
         walk: Option<WalkingIn>,
+        inside: Option<&str>,
     ) -> Result<World, ArchetypeError> {
         assert!(!feel.roster.is_empty(), "a world needs a character");
         let mut player = Player::new(&level, start);
@@ -351,7 +354,7 @@ impl World {
         // A level with an entrance begins as an area does (view.md, "When
         // an area begins"), and so does one walked into; the view starts
         // settled on the lead otherwise. Walking in, the entrance is gone.
-        let mut entering = entrance::begin(&things);
+        let mut entering = entrance::begin(&level, &things, inside);
         if walk.is_some()
             && let Some(e) = entering.take()
         {

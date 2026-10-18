@@ -18,7 +18,14 @@
 //! Engine choices where the spec says nothing:
 //!
 //! - Only a level's first entrance acts; a level without one begins
-//!   with the characters in play at the start point.
+//!   with the characters in play at the start point. An entrance that an
+//!   [`Arrival`] names acts only when play comes in at that arrival, as
+//!   when coming back from the area behind the first level's first wall
+//!   exit (wall-exits.md): with its own values, the characters wait at
+//!   the arrival's point, not the entrance's, and are thrown out from
+//!   there. Otherwise it's a placed thing that is drawn and does nothing. An arrival that names an
+//!   entity that isn't an entrance begins with the characters in play at
+//!   its point.
 //! - Up to and including the throw's frame, everything else waits too,
 //!   as while the player is in a keg, but the view.
 //!
@@ -33,12 +40,13 @@
 //! - A hit during the throw ends it: the player is hurt as usual.
 //!
 //! [`World::brightness`]: crate::World::brightness
+//! [`Arrival`]: clamber_level::Arrival
 
 use std::collections::VecDeque;
 
 use clamber_fixed::Fixed;
 use clamber_input::Frame;
-use clamber_level::Vec2;
+use clamber_level::{Level, Vec2};
 use clamber_pack::Param;
 
 use crate::archetype::{Behavior, Entrance};
@@ -58,11 +66,22 @@ pub struct Entering {
     pub landed: bool,
 }
 
-/// How a level with `things` begins: inside its first entrance, if it
-/// has one.
-pub(crate) fn begin(things: &[Thing]) -> Option<Entering> {
+/// How `level` with `things` begins: inside the entrance whose entity
+/// has the id `named`, or without one inside the level's own first
+/// entrance, the first that no arrival names, if it has one.
+pub(crate) fn begin(level: &Level, things: &[Thing], named: Option<&str>) -> Option<Entering> {
+    let id = |t: &Thing| level.entities[t.index].id.as_deref();
+    let ours = |t: &Thing| match named {
+        Some(named) => id(t) == Some(named),
+        None => id(t).is_none_or(|id| {
+            !level
+                .arrivals
+                .iter()
+                .any(|a| a.entrance.as_deref() == Some(id))
+        }),
+    };
     things.iter().find_map(|t| match t.archetype?.behavior {
-        Behavior::Entrance(_) => Some(Entering {
+        Behavior::Entrance(_) if ours(t) => Some(Entering {
             entrance: t.index,
             landed: false,
         }),

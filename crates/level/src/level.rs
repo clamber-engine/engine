@@ -51,7 +51,8 @@ pub struct Level {
 }
 
 /// A way play comes into a level from another area: where the lead
-/// character is, at its feet, and whether the characters walk in.
+/// character is, at its feet, and whether the characters walk in or come
+/// out of an entrance.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Arrival {
     /// What exits that lead here call it, unique in the level.
@@ -61,6 +62,10 @@ pub struct Arrival {
     /// [`Dir::Right`]; `None` if the level begins at `at` as it does at
     /// its start.
     pub walk: Option<Dir>,
+    /// The `id` of the entity the characters come out of, as at the
+    /// level's start out of its entrance, if they don't come out of that
+    /// one. An entrance an arrival names isn't the level's own.
+    pub entrance: Option<String>,
 }
 
 impl Level {
@@ -450,6 +455,7 @@ struct ArrivalFile {
     name: String,
     at: [N; 2],
     walk: Option<String>,
+    entrance: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -672,7 +678,7 @@ impl Reader<'_> {
             return Err(self.err("start", "is outside the level"));
         }
         let mut arrival_names = BTreeSet::new();
-        let arrivals = f
+        let arrivals: Vec<Arrival> = f
             .arrivals
             .into_iter()
             .enumerate()
@@ -705,10 +711,17 @@ impl Reader<'_> {
                         ));
                     }
                 };
+                if walk.is_some() && a.entrance.is_some() {
+                    return Err(self.err(
+                        &format!("{path}.entrance"),
+                        "the characters walk in, so they can't come out of an entrance",
+                    ));
+                }
                 Ok(Arrival {
                     name: a.name,
                     at,
                     walk,
+                    entrance: a.entrance,
                 })
             })
             .collect::<Result<_, _>>()?;
@@ -759,6 +772,16 @@ impl Reader<'_> {
                 })
             })
             .collect::<Result<_, _>>()?;
+        for (i, a) in arrivals.iter().enumerate() {
+            if let Some(id) = &a.entrance
+                && !ids.contains(id)
+            {
+                return Err(self.err(
+                    &format!("arrivals[{i}].entrance"),
+                    format!("no entity has the id `{id}`"),
+                ));
+            }
+        }
 
         let mut colliders = Vec::new();
         for (i, c) in f.collision.into_iter().enumerate() {
@@ -1289,6 +1312,9 @@ impl Level {
             };
             if let Some(walk) = walk {
                 at.insert("walk".into(), Value::String(walk.into()));
+            }
+            if let Some(id) = &a.entrance {
+                at.insert("entrance".into(), Value::String(id.clone()));
             }
             Value::Table(at)
         });

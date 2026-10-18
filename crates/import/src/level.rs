@@ -21,8 +21,8 @@ use clamber_level::{
 use crate::{
     BANK_SIZE, Background, COLUMN_BANDS, Collectibles, Decoder, END, EXIT, GridPicture, Ground,
     Image, KEG, Known, LEVELS, Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures,
-    Placements, ScreenMap, StartRecord, TileSet, VIEW_HEIGHT, VIEW_WIDTH, ViewLimits, kind_of,
-    kind_rows, unpack, unpack_nibbles,
+    Placements, ScreenMap, StartRecord, TileSet, VIEW_HEIGHT, VIEW_WIDTH, ViewLimits, WALL_EXIT,
+    WALL_RETURN, kind_of, kind_rows, unpack, unpack_nibbles,
 };
 
 /// Lines in a band.
@@ -76,6 +76,10 @@ pub struct LevelParts {
     /// The room-return record, if play comes back to the level after the
     /// area its upper exit leads to, beginning as at its start.
     pub room_return: Option<Location>,
+    /// The wall-return record, if play comes back to the level after the
+    /// area its first wall exit leads to, out of its wall-return
+    /// entrance.
+    pub wall_return: Option<Location>,
     /// The file name, without `.level`, of the area the upper exit leads
     /// to, if that's imported too: play comes into it at [`FROM_LEVEL`].
     /// Without it the exit leads straight to [`ROOM_RETURN`].
@@ -161,6 +165,10 @@ pub const SCENE_RETURN: &str = "from-scene";
 /// upper exit leads to.
 pub const ROOM_RETURN: &str = "from-room";
 
+/// The arrival play comes back to the first level at after the area its
+/// first wall exit leads to.
+pub const WALL_RETURN_ARRIVAL: &str = "from-wall";
+
 /// The arrival play comes into an area at from the level it was entered
 /// from, as into the first level's room.
 pub const FROM_LEVEL: &str = "from-level";
@@ -196,6 +204,20 @@ fn lead_exits(entities: &mut [Entity], scene: bool, room: bool, into_room: Optio
         if let Some((area, arrival)) = leads {
             lead(exit, area, arrival);
         }
+    }
+}
+
+/// Has the first wall exit in `entities`, the one furthest left, lead to
+/// [`WALL_RETURN_ARRIVAL`]: wall-exits.md has play come back to the level
+/// there after the area behind it. That area isn't imported, so the wall
+/// exit leads straight back.
+fn lead_wall_exit(entities: &mut [Entity]) {
+    let first = entities
+        .iter_mut()
+        .filter(|e| e.kind == WALL_EXIT)
+        .min_by_key(|e| e.at.x);
+    if let Some(wall) = first {
+        lead(wall, None, WALL_RETURN_ARRIVAL);
     }
 }
 
@@ -397,6 +419,7 @@ impl LevelDecoder {
                 name: FROM_LEVEL.into(),
                 at: level.start,
                 walk: Some(walk),
+                entrance: None,
             });
         }
         let returns = [
@@ -416,8 +439,27 @@ impl LevelDecoder {
                     name: name.into(),
                     at: Vec2::new(px(x), px(y)),
                     walk,
+                    entrance: None,
                 });
             }
+        }
+        // wall-exits.md: thrown out of the wall-return entrance from the
+        // record's point, where the level has both.
+        if let Some(at) = p.wall_return
+            && level
+                .entities
+                .iter()
+                .any(|e| e.id.as_deref() == Some(WALL_RETURN))
+        {
+            let (x, y) = record("wall-return", at)?;
+            let px = |n: i64| Fixed::from_int(i32::try_from(n).expect("a level fits in i32"));
+            level.arrivals.push(Arrival {
+                name: WALL_RETURN_ARRIVAL.into(),
+                at: Vec2::new(px(x), px(y)),
+                walk: None,
+                entrance: Some(WALL_RETURN.into()),
+            });
+            lead_wall_exit(&mut level.entities);
         }
         lead_exits(
             &mut level.entities,
@@ -492,6 +534,29 @@ impl Decoder for LevelDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// wall-exits.md: the first wall exit is the one further left.
+    #[test]
+    fn the_first_wall_exit_leads_back_to_the_wall_return() {
+        let entity = |kind: &str, x| Entity {
+            kind: kind.into(),
+            id: None,
+            at: Vec2::ints(x, 300),
+            params: Default::default(),
+        };
+        let mut entities = [
+            entity(WALL_EXIT, 900),
+            entity(EXIT, 100),
+            entity(WALL_EXIT, 400),
+        ];
+        lead_wall_exit(&mut entities);
+        let leads: Vec<_> = entities
+            .iter()
+            .map(|e| e.params.get("arrival").and_then(|v| v.as_str()))
+            .collect();
+        assert_eq!(leads, [None, None, Some(WALL_RETURN_ARRIVAL)]);
+        assert!(entities.iter().all(|e| !e.params.contains_key("area")));
+    }
 
     #[test]
     fn the_lowest_exit_leads_to_the_scene_and_the_others_to_the_room() {

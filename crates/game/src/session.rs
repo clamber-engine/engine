@@ -622,6 +622,7 @@ impl Session {
                 name: String::new(),
                 at: level.start,
                 walk: None,
+                entrance: None,
             },
         };
         let world = match back {

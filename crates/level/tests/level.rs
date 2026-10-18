@@ -156,6 +156,12 @@ fn reads_arrivals() {
     let cave = l.arrival("from-the-cave").unwrap();
     assert_eq!((cave.at, cave.walk), (v(1200.0, 400.0), Some(Dir::Left)));
     assert_eq!(l.arrival("top").unwrap().walk, None);
+    assert_eq!(l.arrival("top").unwrap().entrance, None);
+    let out = l.arrival("out-of-the-spring").unwrap();
+    assert_eq!(
+        (out.walk, out.entrance.as_deref()),
+        (None, Some("spring-a"))
+    );
     assert!(l.arrival("nowhere").is_none());
     let arrival = |body: &str| level_err(&format!("[[arrivals]]\n{body}"));
     assert!(arrival("name = \"a\"\nat = [0, 0]\nwalk = \"up\"").contains("arrivals[0].walk"));
@@ -163,6 +169,10 @@ fn reads_arrivals() {
     assert!(arrival("name = \"a\"\nat = [200, 0]").contains("arrivals[0].at: is outside"));
     let twice = "[[arrivals]]\nname = \"a\"\nat = [0, 0]\n[[arrivals]]\nname = \"a\"\nat = [1, 0]";
     assert!(level_err(twice).contains("arrivals[1].name: `a` is used twice"));
+    let nobody = arrival("name = \"a\"\nat = [0, 0]\nentrance = \"door\"");
+    assert!(nobody.contains("arrivals[0].entrance: no entity has the id `door`"));
+    let both = arrival("name = \"a\"\nat = [0, 0]\nwalk = \"left\"\nentrance = \"door\"");
+    assert!(both.contains("arrivals[0].entrance"));
 }
 
 #[test]
