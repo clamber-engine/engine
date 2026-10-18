@@ -3,8 +3,9 @@
 //! `spec/formats/graphics.md` for its layers.
 //!
 //! Its objects come from its placement list
-//! (`spec/formats/placements.md`), its camera rules from its view-limit
-//! record ([`crate::ViewLimits`]), and its music from its song
+//! (`spec/formats/placements.md`) and its single collectibles from its
+//! group list (`spec/formats/collectibles.md`), its camera rules from
+//! its view-limit record ([`crate::ViewLimits`]), and its music from its song
 //! ([`crate::music`]).
 //!
 //! No format spec says where a level's grid size and type count are
@@ -18,10 +19,10 @@ use clamber_level::{
 };
 
 use crate::{
-    BANK_SIZE, Background, COLUMN_BANDS, Decoder, END, EXIT, GridPicture, Ground, Image, KEG,
-    Known, LEVELS, Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures, Placements,
-    ScreenMap, StartRecord, TileSet, VIEW_HEIGHT, VIEW_WIDTH, ViewLimits, kind_of, kind_rows,
-    unpack, unpack_nibbles,
+    BANK_SIZE, Background, COLUMN_BANDS, Collectibles, Decoder, END, EXIT, GridPicture, Ground,
+    Image, KEG, Known, LEVELS, Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures,
+    Placements, ScreenMap, StartRecord, TileSet, VIEW_HEIGHT, VIEW_WIDTH, ViewLimits, kind_of,
+    kind_rows, unpack, unpack_nibbles,
 };
 
 /// Lines in a band.
@@ -58,6 +59,9 @@ pub struct LevelParts {
     pub scenery: Scenery,
     /// The placement list, if the level has its objects.
     pub placements: Option<Location>,
+    /// The group list and the shape table, if the level has its single
+    /// collectibles.
+    pub collectibles: Option<CollectibleParts>,
     /// The start record, if the level has one (`level-start.md`).
     pub start: Option<Location>,
     /// The way the characters walk in to the start record's point when
@@ -85,6 +89,14 @@ pub struct LevelParts {
     pub view_limits: Option<Location>,
     /// The level's song, if it has its music.
     pub song: Option<LevelSong>,
+}
+
+/// Where a level's single collectibles are in an image
+/// (`spec/formats/collectibles.md`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CollectibleParts {
+    pub groups: Location,
+    pub shapes: Location,
 }
 
 /// Where a level's background pictures are in an image
@@ -367,6 +379,16 @@ impl LevelDecoder {
         if let Some(list) = p.placements {
             (level.entities, level.sections) = self.objects(image, list, height)?;
         }
+        if let Some(at) = p.collectibles {
+            let collectibles = Collectibles::read(
+                bank_of(image, at.groups),
+                at.groups.address,
+                bank_of(image, at.shapes),
+                at.shapes.address,
+            )
+            .map_err(|e| format!("the level's single collectibles: {e}"))?;
+            level.entities.extend(collectibles.entities());
+        }
         if let Some(at) = p.restart {
             restart_at(&mut level.entities, record("restart", at)?);
         }
@@ -428,16 +450,21 @@ impl LevelDecoder {
         list: Location,
         bottom: i64,
     ) -> Result<(Vec<Entity>, Vec<Section>), String> {
-        let bank = |address| {
-            let start = list.in_bank(address).position(image.len())?;
-            let end = (start / BANK_SIZE + 1) * BANK_SIZE;
-            image.bytes().get(start..end.min(image.len()))
-        };
-        let placements = Placements::read(bank, list.address)
+        let placements = Placements::read(bank_of(image, list), list.address)
             .map_err(|e| format!("the level's placement list: {e}"))?;
         let rows = kind_rows(&self.title);
         let kind = |reference| kind_of(image.bytes(), reference, &rows).map(|(_, kind)| kind);
         Ok(placements.objects(bottom, kind))
+    }
+}
+
+/// The bytes of `at`'s bank in `image`, from an address to the bank's
+/// end, or `None` where the image doesn't have that address.
+fn bank_of<'a>(image: &'a Image, at: Location) -> impl Fn(u16) -> Option<&'a [u8]> {
+    move |address| {
+        let start = at.in_bank(address).position(image.len())?;
+        let end = (start / BANK_SIZE + 1) * BANK_SIZE;
+        image.bytes().get(start..end.min(image.len()))
     }
 }
 

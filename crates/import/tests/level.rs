@@ -2,7 +2,8 @@
 //! with a [`LevelDecoder`], loaded from the pack and played. None of the
 //! data is any real game's: it's made up from the format specs,
 //! `spec/formats/level-ground.md`, `spec/formats/graphics.md`,
-//! `spec/formats/placements.md`, `spec/formats/level-start.md`,
+//! `spec/formats/placements.md`, `spec/formats/collectibles.md`,
+//! `spec/formats/level-start.md`,
 //! `spec/formats/view-limits.md`, `spec/formats/sound.md` and `spec/formats/songs.md`.
 
 use std::fs;
@@ -10,8 +11,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clamber_import::{
-    BANK_SIZE, Below, Catalog, Ground, Image, ImportError, Importer, Known, Layout, LevelDecoder,
-    LevelParts, LevelSong, Location, NIBBLE_HEADER, PackedGround, Scenery, installed,
+    BANK_SIZE, Below, Catalog, CollectibleParts, Ground, Image, ImportError, Importer, Known,
+    Layout, LevelDecoder, LevelParts, LevelSong, Location, NIBBLE_HEADER, PackedGround, Scenery,
+    installed,
 };
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Fixed, Level, Vec2};
@@ -97,6 +99,21 @@ fn group_members() -> Vec<u8> {
     entries(&[[2, 320, 64, 0x7180], [0; 4]])
 }
 
+/// A group list of one group: shape 0 (bits 1 to 9 all 0) with its left edge at level x
+/// 104 and its top at level y 456, then the end.
+fn group_list() -> Vec<u8> {
+    let group: u32 = (456 / 8) << 10 | (104 / 8) << 21;
+    let mut bytes = group.to_le_bytes().to_vec();
+    bytes.extend([0; 4]);
+    bytes
+}
+
+/// A shape table whose shape 0, right after its one offset, is two
+/// columns of one row, both holding an item.
+fn shape_table() -> Vec<u8> {
+    vec![2, 0, 2, 1, 0b11, 0]
+}
+
 /// A start record: level x 24, 31 above the bottom edge, which is on the
 /// floor.
 fn start_record() -> Vec<u8> {
@@ -127,6 +144,10 @@ fn parts() -> LevelParts {
             pictures: 5,
         },
         placements: Some(Location::new(BANK, 0x7000)),
+        collectibles: Some(CollectibleParts {
+            groups: Location::new(BANK, 0x7600),
+            shapes: Location::new(BANK, 0x7700),
+        }),
         start: Some(Location::new(BANK, 0x7400)),
         walk_in: None,
         restart: None,
@@ -212,6 +233,8 @@ fn image() -> Image {
         (picture_table, pictures()),
         (p.placements.unwrap(), placement_list()),
         (Location::new(BANK, 0x7208), group_members()),
+        (p.collectibles.unwrap().groups, group_list()),
+        (p.collectibles.unwrap().shapes, shape_table()),
         (p.start.unwrap(), start_record()),
         (p.view_limits.unwrap(), view_limits()),
         (Location::new(BANK, SAMPLE), sample_record()),
@@ -310,7 +333,7 @@ fn writes_the_level_s_music_with_its_loop() {
 }
 
 /// Objects without a kind fingerprint row are named by their reference;
-/// a group's members carry the group.
+/// a group's members carry the group. The single collectibles follow.
 #[test]
 fn places_the_objects_in_the_placement_list() {
     let (level, _) = imported_level("places");
@@ -324,6 +347,8 @@ fn places_the_objects_in_the_placement_list() {
         [
             ("placed-7100", Vec2::ints(200, 472)),
             ("placed-7180", Vec2::ints(320, 448)),
+            ("spark", Vec2::ints(112, 465)),
+            ("spark", Vec2::ints(120, 465)),
         ]
     );
     let member = &level.entities[1].params;
@@ -421,6 +446,23 @@ fn the_player_walks_on_the_imported_ground() {
     }
     assert_eq!(lines.first(), Some(&481));
     assert_eq!(lines.last(), Some(&473), "{lines:?}");
+}
+
+/// Walking right along the floor on `classic-1`, the player takes both
+/// single collectibles.
+#[test]
+fn the_player_takes_the_imported_collectibles() {
+    let (level, _) = imported_level("takes");
+    let mut world = World::new(
+        Arc::new(level),
+        Arc::new(generic_feel("classic-1").unwrap()),
+    );
+    let right: Actions = [Action::Right].into_iter().collect();
+    for _ in 0..120 {
+        step(&mut world, &InputFrame::single(Frame::after(right, right)));
+    }
+    assert!(world.player.pos.x.floor() > 140);
+    assert_eq!(world.flow.gems, 2);
 }
 
 /// Packs `data` as literals, 15 bytes to a command

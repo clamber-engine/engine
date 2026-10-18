@@ -3,7 +3,10 @@
 
 use clamber_level::Dir;
 
-use crate::{FIRST_LEVEL, FIRST_ROOM, LevelParts, LevelSong, Location, PackedGround, Scenery};
+use crate::{
+    CollectibleParts, FIRST_LEVEL, FIRST_ROOM, LevelParts, LevelSong, Location, PackedGround,
+    Scenery,
+};
 
 /// The data a locator row finds. The level parts are the first level's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -224,6 +227,10 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
             pictures,
         },
         placements: Some(at(Data::PlacementList)?),
+        collectibles: Some(CollectibleParts {
+            groups: at(Data::CollectibleGroups)?,
+            shapes: at(Data::CollectibleShapes)?,
+        }),
         start: Some(at(Data::StartRecord)?),
         walk_in: None,
         restart: Some(at(Data::RestartRecord)?),
@@ -268,6 +275,8 @@ pub fn first_room(title: &str) -> Option<LevelParts> {
             palettes: at(Data::RoomPaletteSet)?,
         },
         placements: Some(at(Data::RoomPlacementList)?),
+        // "The first level's room [...] ha[s] no single collectibles".
+        collectibles: None,
         start: Some(at(Data::RoomStartRecord)?),
         walk_in: Some(Dir::Left),
         restart: None,

@@ -22,6 +22,7 @@
 //! The `clamber-import` command and the game's import menu both call
 //! [`Importer::import`].
 
+mod collectibles;
 mod echo;
 mod graphics;
 mod ground;
@@ -49,6 +50,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+pub use collectibles::{Collectibles, GROUP_SIZE, Group, Item, SPARK, Shape};
 pub use graphics::{
     Background, GridPicture, PaletteSet, Pictures, ScreenMap, TILE, TileEntry, TileSet, channels,
     rgb, unpack,
@@ -61,7 +63,8 @@ pub use kinds::{
     WALL_EXIT, WALL_RETURN, candidate, kind_of, kind_rows,
 };
 pub use level::{
-    FROM_LEVEL, LevelDecoder, LevelParts, PackedGround, ROOM_RETURN, SCENE_RETURN, Scenery, water,
+    CollectibleParts, FROM_LEVEL, LevelDecoder, LevelParts, PackedGround, ROOM_RETURN,
+    SCENE_RETURN, Scenery, water,
 };
 pub use level_map::{
     APPEARANCE_OFFSET, CORNER_SIZE, Direction, FIRST_CORNER, LAST_CORNER, LevelMap, Point,

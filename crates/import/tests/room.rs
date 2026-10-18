@@ -39,6 +39,7 @@ fn parts() -> LevelParts {
             palettes: Location::new(BANK, 0xA000),
         },
         placements: Some(Location::new(BANK, 0xB500)),
+        collectibles: None,
         start: Some(Location::new(BANK, 0xB600)),
         walk_in: Some(Dir::Left),
         restart: None,
