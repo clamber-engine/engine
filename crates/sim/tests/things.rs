@@ -906,6 +906,58 @@ fn classic_bounced_walker_jumps_holds_still_and_falls_through_the_floor() {
     assert!(!w.things[0].active);
 }
 
+/// walker.md, "Being bounced on": from B on, a bounced walker put on the
+/// player on every frame from B + k to B + 41 (8 px up, so that it ends
+/// the frame on the player as it falls), from any B + k it's still there
+/// on, neither hurts it nor gives
+/// another bounce: the player is the same as when it's left to fall.
+/// A walker that wasn't bounced on, put on the player the same way once
+/// it's on the ground, hurts it.
+#[test]
+fn classic_bounced_walker_no_longer_touches_the_player() {
+    let player = |w: &World| (w.player.pos, w.player.vel, w.player.state, w.player.facing);
+    let (mut w, b) = classic_bounce();
+    let left: Vec<_> = (0..=b + 41)
+        .map(|_| {
+            hold(&mut w, Actions::NONE, 1);
+            player(&w)
+        })
+        .collect();
+    assert!(left[b + 41].2 != State::Bounce, "lands within B + 41");
+    let mut placed = 0;
+    for k in 1..=41 {
+        let (mut w, _) = classic_bounce();
+        hold(&mut w, Actions::NONE, b + k);
+        // Only while it hasn't fallen out by itself.
+        if !w.things[0].active {
+            continue;
+        }
+        placed += 1;
+        for (n, want) in left.iter().enumerate().skip(b + k) {
+            w.things[0].pos = Vec2::new(w.player.pos.x, w.player.pos.y - Fixed::from_int(8));
+            let seen = hold(&mut w, Actions::NONE, 1);
+            assert!(w.things[0].active, "B + {k}: B + {}", n - b);
+            assert!(!seen.events.contains(&Event::Hurt), "B + {k}");
+            assert!(!seen.events.contains(&Event::Bounce), "B + {k}");
+            assert_eq!(player(&w), *want, "B + {k}: B + {}", n - b);
+        }
+    }
+    assert!(placed >= 30, "{placed}");
+    // A second, still walker further on, put on the player once it's
+    // back on the ground.
+    let far = small_walker("450", "0", "left");
+    let mut w = world_on(
+        "classic-1",
+        [300, 300],
+        &(small_walker("300", "0", "left") + &far),
+    );
+    hold(&mut w, Actions::NONE, b + 60);
+    assert!(w.player.grounded() && w.things[1].active);
+    w.things[1].pos = w.player.pos;
+    let seen = hold(&mut w, Actions::NONE, 2);
+    assert!(seen.events.contains(&Event::Hurt));
+}
+
 // Classic 1: getting hurt by walkers (walker-contact.md, "Being hurt"),
 // knock-out (knock-out.md) and walkers while the player is knocked out
 // (walker.md).
