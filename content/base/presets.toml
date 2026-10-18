@@ -246,6 +246,8 @@ put_down_time = 0
 put_down_ahead = 0
 put_down_lift = 0
 put_down_regrab = 0
+let_go_speed = 0
+let_go_rise = 0
 count_life = 0
 letter_count = 0
 letter_row_in = 0
@@ -679,6 +681,12 @@ put_down_time = 14
 put_down_ahead = 16
 put_down_lift = 3
 put_down_regrab = 2
+# An object still in the hands at a knock-out (knock-out.md, "An object
+# in the hands") is let go on the hit frame: 1 px a frame across the way
+# the player faces and 4 up, falling by `throw_gravity` up to
+# `throw_max_fall`.
+let_go_speed = 1
+let_go_rise = 4
 # The collectible count (collectibles.md).
 count_life = 100
 # The letters (letters.md): four of them, and the letter row. It's

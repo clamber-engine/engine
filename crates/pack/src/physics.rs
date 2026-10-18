@@ -962,6 +962,15 @@ params! {
     /// letting go, still held when the put-down is over, picks the object
     /// up again then. Whole frames.
     PutDownRegrab => "put_down_regrab",
+    /// Above 0, an object still in the player's hands at a knock-out is
+    /// let go on the hit frame and falls away, touching nothing: its
+    /// speed across becomes this, the way the player faces, and it falls
+    /// by `throw_gravity` up to `throw_max_fall`. 0: it drops straight
+    /// down. px per frame.
+    LetGoSpeed => "let_go_speed",
+    /// The upward speed an object let go of (`let_go_speed`) starts
+    /// with, px per frame.
+    LetGoRise => "let_go_rise",
     /// Above 0, when the collectible count reaches this, it starts again
     /// from 0 and the player gets one more life. 0: it just goes up.
     /// Whole collectibles.

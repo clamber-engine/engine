@@ -83,7 +83,8 @@ fn vy(ball: &Thing) -> Fixed {
 /// has the ball one frame on on `T`.
 #[test]
 fn a_ball_bounces_drops_through_ledges_and_bounces_again() {
-    let mut play = Play::new(world(1000, &format!("{LEDGES}{}", thrower(1000, 300))));
+    // The player stands where no ball reaches it.
+    let mut play = Play::new(world(1070, &format!("{LEDGES}{}", thrower(1000, 300))));
     assert!(play.world.things[0].active, "the thrower is near the view");
     // Steps 0 and 1 are A and A + 1.
     play.step(&[]);
@@ -129,6 +130,7 @@ fn a_ball_bounces_drops_through_ledges_and_bounces_again() {
         };
         assert_eq!(ignoring, want, "T + {n}");
     }
+    assert!(play.world.player.knockout.is_none());
 }
 
 /// thrower.md, "When it throws": up on `A` + 2, right on `A` + 33 and
@@ -301,4 +303,99 @@ fn a_placed_ball_appears_with_the_view() {
         }
     }
     assert!(appeared);
+}
+
+/// Every ball and thrower there, with what decides how it goes on, in a
+/// fixed order.
+fn moving(world: &World) -> Vec<(String, Vec2, Fixed, u32, Phase)> {
+    let mut all: Vec<_> = world
+        .things
+        .iter()
+        .filter(|t| t.active)
+        .map(|t| (t.kind.clone(), t.pos, t.vx, t.clock, t.phase))
+        .collect();
+    all.sort_by_key(|(kind, pos, ..)| (kind.clone(), pos.x.to_bits(), pos.y.to_bits()));
+    all
+}
+
+/// Whether one of `a` and `b` has every ball the other has: they only
+/// differ by balls the view removed in one run and not the other.
+fn agree<T: PartialEq>(a: &[T], b: &[T]) -> bool {
+    a.iter().all(|x| b.contains(x)) || b.iter().all(|x| a.contains(x))
+}
+
+/// Plays `world` for `before` steps, then knocks the player out on H in
+/// one copy and not in the other. Checks that on H the two are the same,
+/// that the knocked-out run is unchanged on H + 1 to H + 10, and that from
+/// H + 11 it is 10 frames behind the other for `after` frames. Returns how
+/// many of those frames had something to compare.
+fn ten_frames_late(mut world: World, before: u32, after: u32) -> usize {
+    let still = InputFrame::single(Frame::default());
+    for _ in 0..before {
+        step(&mut world, &still);
+    }
+    let mut free = world.clone();
+    // The hit lands on the next step, H.
+    world.player.hurt_ahead = Some(0);
+    step(&mut world, &still);
+    step(&mut free, &still);
+    assert!(world.player.knockout.is_some(), "knocked out on H");
+    assert_eq!(moving(&world), moving(&free), "H as without the hit");
+    let at_h = moving(&world);
+    for n in 1..=10 {
+        step(&mut world, &still);
+        assert_eq!(moving(&world), at_h, "H + {n} unchanged");
+    }
+    let mut compared = 0;
+    for n in 1..=after {
+        step(&mut world, &still);
+        step(&mut free, &still);
+        assert!(free.player.knockout.is_none(), "the other run isn't hit");
+        let (late, on_time) = (moving(&world), moving(&free));
+        assert!(
+            agree(&late, &on_time),
+            "H + {}: {late:?} {on_time:?}",
+            n + 10
+        );
+        compared += usize::from(!late.is_empty() && !on_time.is_empty());
+    }
+    compared
+}
+
+/// thrower.md, "While the player is knocked out": the thrower and its
+/// balls stop on H + 1 to H + 10, no ball is thrown then, and from H + 11
+/// everything is where it would have been 10 frames earlier, throws
+/// included.
+#[test]
+fn the_thrower_and_its_balls_go_on_10_frames_late_after_a_knock_out() {
+    // A ball in the air on H (thrown up on 2), and throws due on 33 and
+    // 144 from the knock-out on 25.
+    let compared = ten_frames_late(world(1070, &thrower(1000, 300)), 24, 130);
+    assert!(compared > 100, "{compared}");
+}
+
+/// The same for a ball placed in the level.
+#[test]
+fn a_placed_ball_goes_on_10_frames_late_after_a_knock_out() {
+    let ball = "[[entities]]\ntype = \"ball\"\nat = [1040, 300]\n\
+        params = { velocity = [-1.171875, -3] }\n";
+    let world = world(1070, &format!("{}{ball}", thrower(1000, 300)));
+    let compared = ten_frames_late(world, 5, 60);
+    assert!(compared > 40, "{compared}");
+}
+
+/// The same for a thrower already knocked out and falling, which isn't
+/// removed on H + 1 to H + 10.
+#[test]
+fn a_falling_thrower_goes_on_10_frames_late_after_a_knock_out() {
+    let mut w = world(1070, &thrower(1000, 300));
+    for _ in 0..5 {
+        step(&mut w, &InputFrame::single(Frame::default()));
+    }
+    w.things[0].phase = Phase::Falling {
+        vy: f(-6.0),
+        hold: 0,
+    };
+    let compared = ten_frames_late(w, 3, 40);
+    assert!(compared > 10, "{compared}");
 }

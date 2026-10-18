@@ -15,10 +15,15 @@
 //! moving on the first step.
 //!
 //! A ball with a [`Contact`](crate::Contact) hurts the player as [`hurt_ahead`] says
-//! (spec/behavior/ball-contact.md); it isn't affected itself, and goes on
-//! moving while the player is knocked out, which the spec doesn't cover.
-//! It can hurt on the step it appears, which the spec doesn't cover
-//! either. A thrower with a [`ThrowerContact`](crate::ThrowerContact)
+//! (spec/behavior/ball-contact.md); it isn't affected itself. It can
+//! hurt on the step it appears, which the spec doesn't cover.
+//!
+//! While the player is knocked out, the thrower, knocked out or not, and
+//! every ball stop on the frames the player holds still after the hit
+//! (`knockout_hold`), and no ball is thrown, so all of them go on that
+//! many frames late (thrower.md, "While the player is knocked out"). The
+//! view still makes a thrower that isn't knocked out appear and leave
+//! then, which the spec doesn't cover. A thrower with a [`ThrowerContact`](crate::ThrowerContact)
 //! hurts the player as [`thrower_hurt_ahead`] says, and is bounced on as
 //! [`bounced_on`] says and rolled into as [`rolled_into`] says, which
 //! knock it out (spec/behavior/thrower-contact.md). Knocked out, it
@@ -82,6 +87,12 @@ impl Picture {
         let down =
             self.height == 0 || (-i64::from(top)..=self.height + i64::from(bottom)).contains(&y);
         across && down
+    }
+
+    /// Whether `pos`, with its `y` rounded down, is `depth` or more below
+    /// the picture's top. Never with a view that doesn't move vertically.
+    pub(crate) fn below(self, pos: Vec2, depth: i64) -> bool {
+        self.height != 0 && pos.y.floor() - self.top >= depth
     }
 }
 

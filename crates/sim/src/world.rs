@@ -163,6 +163,10 @@ pub enum Phase {
     Thrown(Flight),
     /// An object just set down, which comes to rest on the next step.
     Placed,
+    /// An object let go at a knock-out, falling away at `vy` down and
+    /// its `vx` across after `wait` more steps, touching nothing until
+    /// it's removed (see [`carry`](crate::carry)).
+    LetGo { vy: Fixed, wait: u8 },
     /// A ball moving at `vy` down, ignoring floors until it's below the
     /// one it bounced on, if `ignoring` has it. `kept` says it bounced or
     /// stopped ignoring floors on the last step. Its `clock` counts its
@@ -589,6 +593,7 @@ impl World {
                 Phase::Gone => [21, 0],
                 Phase::Open => [22, 0],
                 Phase::Caught(since) => [23, since],
+                Phase::LetGo { wait, .. } => [24, wait],
             });
             if let Phase::Wobbling { thrown, .. } = t.phase {
                 out.push(thrown.map_or(0, |n| n.saturating_add(1)));
@@ -597,7 +602,8 @@ impl World {
             | Phase::Knocked { vy: Some(vy) }
             | Phase::Flying { vy, .. }
             | Phase::Bolting { vx: vy }
-            | Phase::Item { vy, .. } = t.phase
+            | Phase::Item { vy, .. }
+            | Phase::LetGo { vy, .. } = t.phase
             {
                 fixed(&mut out, vy);
             }

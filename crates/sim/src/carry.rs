@@ -14,8 +14,16 @@
 //! - Put down, it's set `put_down_ahead` in front of the player and
 //!   `put_down_lift` above the floor on the put-down's last frame, and
 //!   rests on the floor from the next.
-//! - If the player is hurt, knocked out, swaps or is out of play while
-//!   holding it, it drops straight down.
+//! - If the player is hurt, swaps or is out of play while holding it,
+//!   it drops straight down.
+//! - With a `let_go_speed`, one still in the hands at a knock-out is let
+//!   go on the hit frame instead, even with its throw begun, and falls
+//!   away touching nothing until it's removed, as
+//!   `spec/behavior/knock-out.md` ("An object in the hands") describes
+//!   ([`fall_away`]). A holder moves from the next frame, other objects
+//!   once the player does, `knockout_hold` frames after the hit.
+//!   Without a view it's removed once below the level, which the spec
+//!   doesn't cover.
 //!
 //! Thrown, it bounces on the floor and then rolls along it, breaks
 //! against faces and walls, and hits walkers, as
@@ -120,8 +128,26 @@ pub(crate) fn after(world: &mut World, input: &Frame) {
     };
     if !can_hold(world) {
         world.player.hands = None;
-        if world.things[hands.thing].phase == Phase::Held {
-            drop(&mut world.things[hands.thing], &physics);
+        let facing = world.player.facing;
+        let let_go = world.player.knockout.is_some() && physics[Param::LetGoSpeed] > Fixed::ZERO;
+        let thing = &mut world.things[hands.thing];
+        if thing.phase == Phase::Held {
+            if let_go {
+                let held = frames(physics[Param::KnockoutHold]).saturating_sub(1);
+                let holds_character = thing.archetype.as_ref().and_then(holder).is_some();
+                let wait = if holds_character { 0 } else { held };
+                let ahead = match facing {
+                    Facing::Left => -physics[Param::LetGoSpeed],
+                    Facing::Right => physics[Param::LetGoSpeed],
+                };
+                thing.vx = ahead;
+                thing.phase = Phase::LetGo {
+                    vy: -physics[Param::LetGoRise],
+                    wait,
+                };
+            } else {
+                drop(thing, &physics);
+            }
         }
         return;
     }
@@ -298,6 +324,40 @@ pub(crate) fn fly(
         thing.active = false;
     }
     false
+}
+
+/// One frame of an object let go at a knock-out: after its wait, it
+/// falls by `throw_gravity` up to `throw_max_fall` and moves by its
+/// speeds, through everything. It's removed once left of the level, or
+/// with `picture`, where the view was at the start of the step, once its
+/// `y` rounded down is at the bottom of the window objects appear in
+/// (`appear_below` below the picture) or below; without one, once it's
+/// below the level.
+pub(crate) fn fall_away(
+    level: &Level,
+    thing: &mut Thing,
+    size: Vec2,
+    physics: &Physics,
+    picture: Option<Picture>,
+) {
+    let Phase::LetGo { vy, wait } = thing.phase else {
+        return;
+    };
+    if wait > 0 {
+        thing.phase = Phase::LetGo { vy, wait: wait - 1 };
+        return;
+    }
+    let vy = (vy + physics[Param::ThrowGravity]).min(physics[Param::ThrowMaxFall]);
+    thing.pos = Vec2::new(thing.pos.x + thing.vx, thing.pos.y + vy);
+    thing.phase = Phase::LetGo { vy, wait: 0 };
+    let depth = physics[Param::ViewHeight].floor() + physics[Param::AppearBelow].floor();
+    let below = match picture {
+        Some(picture) => picture.below(thing.pos, depth),
+        None => thing.pos.y - size.y > level.size.y,
+    };
+    if thing.pos.x < Fixed::ZERO || below {
+        thing.active = false;
+    }
 }
 
 /// What makes an object of `archetype` hold the missing character, if

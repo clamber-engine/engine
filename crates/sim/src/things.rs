@@ -35,7 +35,9 @@
 //!   hurts the player.
 //! - While the player is knocked out, things don't act on it, and
 //!   enemies other than the one that hurt it hold still for the frames
-//!   it holds still after the hit.
+//!   it holds still after the hit. Throwers, knocked out or not, and
+//!   balls hold still then too, the one that hurt it as well, and no
+//!   ball is thrown, so they go on that many frames late.
 //! - While a character is being lost, things don't act on the player,
 //!   and while the one that took over is protected, nothing hurts it
 //!   (see [`loss`](crate::loss)).
@@ -248,7 +250,12 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         hutch::update(world, &physics, frozen, true);
         return None;
     }
-    throwers::throw(world);
+    // Throwers and balls stop then too, the one that hurt it as well,
+    // and none is thrown.
+    let thrower_held = held.is_some();
+    if !thrower_held {
+        throwers::throw(world);
+    }
     // Balls leave by where the view was at the start of the step.
     let picture = world.view.map(|v| Picture::of(v, &physics));
     let mut freed = Vec::new();
@@ -262,6 +269,12 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
             .archetype
             .is_some_and(|a| matches!(a.behavior, Behavior::Stinger(_)));
         if stinger && held.is_some() {
+            continue;
+        }
+        let thrown = thing
+            .archetype
+            .is_some_and(|a| matches!(a.behavior, Behavior::Thrower { .. } | Behavior::Ball(_)));
+        if thrown && thrower_held {
             continue;
         }
         if paused && thing.archetype.is_some_and(|a| a.behavior.fall().is_some()) {
@@ -436,6 +449,10 @@ fn advance(level: &Level, thing: &mut Thing, physics: &Physics, picture: Option<
         }
         Phase::Placed => {
             carry::settle(level, thing, physics);
+            return false;
+        }
+        Phase::LetGo { .. } => {
+            carry::fall_away(level, thing, archetype.size, physics, picture);
             return false;
         }
         Phase::Flying { .. } => {

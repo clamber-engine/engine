@@ -530,6 +530,8 @@ mod tests {
                     | Param::PutDownAhead
                     | Param::PutDownLift
                     | Param::PutDownRegrab
+                    | Param::LetGoSpeed
+                    | Param::LetGoRise
                     | Param::CountLife
                     | Param::LetterCount
                     | Param::LetterRowIn
