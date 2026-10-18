@@ -56,9 +56,9 @@ are saved to `%APPDATA%\Clamber\input.toml` on Windows, and
 the defaults.
 
 **Movement** on the title screen picks how the game feels: Default,
-Snappy (quicker and heavier) or Floaty (light, long jumps). Picking one
-starts the level over with it. The Classic presets are listed but can't
-be picked yet. Your choice is saved to `prefs.toml` in the same folder
+Snappy (quicker and heavier), Floaty (light, long jumps) or Classic 1
+(the first classic title's movement). Picking one starts the level over
+with it. Classic 2 and Classic 3 are listed but can't be picked yet. Your choice is saved to `prefs.toml` in the same folder
 as `input.toml`, and the game starts with it next time.
 
 **Options** on the title or pause screen turns fullscreen and vsync on
@@ -68,6 +68,26 @@ frames a second. On a volume, Left turns it down and Right or Jump turns
 it up, in steps of 10%; Jump at 100% goes back to silent. All of these,
 and the window's size, are saved to `prefs.toml` too. The game pauses when its
 window loses focus.
+
+**Widescreen** on the options screen sets how the game being played
+shows a classic movement's view, which is narrower than a wide window.
+Each game has its own setting; Left, and Right or Jump, go through the
+modes:
+
+- **Original activation**, where imported games start: the window shows
+  more than the original view, and things are drawn as soon as they're
+  in the window, but they only move and act once they're inside the
+  original view, so play goes as it did there.
+- **Wide activation**, where Clamber's own game starts: things appear
+  and act across the whole window, coming in from outside it. Play goes
+  differently from the original.
+- **Original framing**: only the original view's width is shown, with
+  borders at the sides, and play goes as it did there.
+
+In every mode, nothing appears out of nowhere inside the window. The two
+activation modes aren't finished yet; until they are, a game set to
+either plays in original framing. Movement without a view of its own
+(Default, Snappy, Floaty) fills the window in every mode.
 
 **Import a game…** on the title screen turns your own copy of a
 supported game into a personal pack for Clamber to play. Find the file

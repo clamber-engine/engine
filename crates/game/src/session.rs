@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use clamber_import::{Importer, Installed};
+use clamber_import::{Importer, Installed, Widescreen};
 
 use clamber_input::{Action, Event, Frame, Input, Settings};
 use clamber_level::Arrival;
@@ -20,14 +20,14 @@ use crate::camera::VIEW;
 use crate::canvas::{Color, rgb};
 use crate::controls::{Controls, Request};
 use crate::credits::Credits;
-use crate::display::Look;
+use crate::display::{Look, made};
 use crate::feels::Feels;
 use crate::game::Game;
 use crate::hud::{COUNT, GEM, RELIC_ICON, relic_total};
 use crate::import::{After, Games, Importing, PERSONAL, Pick, Picked, Picker};
 use crate::map::{MapPlay, MapStep};
 use crate::menu::{Choice, Menu};
-use crate::prefs::{Prefs, Volume};
+use crate::prefs::{BUNDLED, Prefs, Volume};
 use crate::report;
 use crate::sound::{Cue, cues};
 use crate::surface::Surface;
@@ -121,6 +121,9 @@ pub enum Setting {
     /// around to silent.
     MusicVolume,
     EffectsVolume,
+    /// The widescreen mode of the game being played, changed with Left,
+    /// and Right or Jump, which go round the modes.
+    Widescreen,
     Back,
 }
 
@@ -335,6 +338,7 @@ impl Session {
             }
             return;
         }
+        let widescreen = self.widescreen();
         if let Screen::Options(menu, _) = &mut self.screen {
             let pressed = frame.pressed;
             let volume = &mut self.prefs.volume;
@@ -358,8 +362,23 @@ impl Session {
                     false
                 };
                 if changed {
-                    menu.items = options_items(&self.prefs);
+                    menu.items = options_items(&self.prefs, widescreen);
                     self.save_prefs("the volume");
+                    return;
+                }
+            }
+            if menu.current() == Setting::Widescreen {
+                let back = pressed.contains(Action::Left);
+                if back || pressed.contains(Action::Right) || pressed.contains(Action::Jump) {
+                    let mode = self.widescreen().next(back);
+                    let key = self.game_key().to_string();
+                    self.prefs.widescreen.insert(key, mode);
+                    self.apply_widescreen();
+                    let Screen::Options(menu, _) = &mut self.screen else {
+                        unreachable!()
+                    };
+                    menu.items = options_items(&self.prefs, mode);
+                    self.save_prefs("the widescreen mode");
                     return;
                 }
             }
@@ -381,10 +400,10 @@ impl Session {
                 Setting::Fullscreen => display.fullscreen = !display.fullscreen,
                 Setting::Vsync => display.vsync = !display.vsync,
                 // changed above
-                Setting::MusicVolume | Setting::EffectsVolume => return,
+                Setting::MusicVolume | Setting::EffectsVolume | Setting::Widescreen => return,
                 Setting::Back => unreachable!(),
             }
-            menu.items = options_items(&self.prefs);
+            menu.items = options_items(&self.prefs, widescreen);
             self.save_prefs("the display options");
             return;
         }
@@ -424,7 +443,7 @@ impl Session {
             }
             Item::Options => {
                 let from = std::mem::replace(&mut self.screen, Screen::Playing);
-                let menu = Menu::new(options_items(&self.prefs));
+                let menu = Menu::new(options_items(&self.prefs, self.widescreen()));
                 self.screen = Screen::Options(menu, Box::new(from));
             }
             Item::Credits => {
@@ -616,7 +635,10 @@ impl Session {
         let sprites = pack
             .and_then(Installed::sprites)
             .unwrap_or_else(|| content_dir().join(SPRITES));
-        let look = pack.map_or(Look::RENDERED, |p| Look::of(&p.manifest));
+        let look = Look {
+            widescreen: self.widescreen_for(pack),
+            ..pack.map_or(Look::RENDERED, |p| Look::of(&p.manifest))
+        };
         let mut game = load_game(path, &sprites, self.game.world.feel.clone())?.with_look(look);
         game.debug |= self.game.debug;
         Ok(game)
@@ -744,6 +766,38 @@ impl Session {
         self.save_prefs("the movement choice");
     }
 
+    /// What [`Prefs::widescreen`] calls the game being played.
+    fn game_key(&self) -> &str {
+        self.pack.as_ref().map_or(BUNDLED, |p| &p.manifest.id)
+    }
+
+    /// The widescreen mode `pack`, or the bundled game without one,
+    /// plays in: the one picked for it, or else its own default.
+    fn widescreen_for(&self, pack: Option<&Installed>) -> Widescreen {
+        let key = pack.map_or(BUNDLED, |p| &p.manifest.id);
+        let default = pack.map_or(Look::RENDERED, |p| Look::of(&p.manifest));
+        self.prefs
+            .widescreen
+            .get(key)
+            .copied()
+            .unwrap_or(default.widescreen)
+    }
+
+    /// The widescreen mode of the game being played.
+    pub fn widescreen(&self) -> Widescreen {
+        self.widescreen_for(self.pack.as_ref())
+    }
+
+    /// Plays the game being played, and the areas play went on from, in
+    /// the widescreen mode the prefs give it.
+    pub fn apply_widescreen(&mut self) {
+        let mode = self.widescreen();
+        self.game.set_widescreen(mode);
+        for (_, game) in &mut self.left {
+            game.set_widescreen(mode);
+        }
+    }
+
     /// Saves the prefs, if there's somewhere to. On failure, warns that
     /// `what` won't be remembered.
     pub fn save_prefs(&self, what: &str) {
@@ -802,7 +856,7 @@ impl Session {
             | Screen::Paused(_)
             | Screen::Complete(_)
             | Screen::GameOver(_)
-            | Screen::Map => self.game.look,
+            | Screen::Map => self.game.shown(),
             _ => Look::RENDERED,
         }
     }
@@ -835,6 +889,15 @@ impl Session {
             Screen::Options(menu, _) => {
                 draw_text_centred(canvas, centre, 50, "OPTIONS", HEADING);
                 menu.draw(canvas, centre, 80);
+                if menu.current() == Setting::Widescreen {
+                    let mode = self.widescreen();
+                    let y = 80 + menu.height() + 2 * LINE;
+                    draw_text_centred(canvas, centre, y, about_widescreen(mode), SUBTITLE);
+                    if !made(mode) {
+                        let not_yet = "Not made yet: plays in original framing";
+                        draw_text_centred(canvas, centre, y + LINE, not_yet, SUBTITLE);
+                    }
+                }
                 return;
             }
             Screen::Credits(scroll, _) => {
@@ -958,8 +1021,9 @@ impl Session {
     }
 }
 
-/// The options screen's items, showing the settings in `prefs`.
-fn options_items(prefs: &Prefs) -> Vec<(String, Setting)> {
+/// The options screen's items, showing the settings in `prefs` and the
+/// game's widescreen mode, `widescreen`.
+fn options_items(prefs: &Prefs, widescreen: Widescreen) -> Vec<(String, Setting)> {
     let on = |on| if on { "On" } else { "Off" };
     let (display, volume) = (&prefs.display, &prefs.volume);
     vec![
@@ -976,8 +1040,21 @@ fn options_items(prefs: &Prefs) -> Vec<(String, Setting)> {
             format!("Effects: < {}% >", volume.effects),
             Setting::EffectsVolume,
         ),
+        (
+            format!("Widescreen: < {} >", widescreen.label()),
+            Setting::Widescreen,
+        ),
         ("Back".into(), Setting::Back),
     ]
+}
+
+/// What widescreen mode `mode` does, in a line.
+fn about_widescreen(mode: Widescreen) -> &'static str {
+    match mode {
+        Widescreen::OriginalActivation => "Shows more; things act as in the original view",
+        Widescreen::WideActivation => "Things appear and act across the whole window",
+        Widescreen::OriginalFraming => "The original view, with borders at the sides",
+    }
 }
 
 /// Writes the input settings to `path`, creating its folder. Returns
@@ -1263,6 +1340,7 @@ mod tests {
                 "Vsync: On",
                 "Music: < 100% >",
                 "Effects: < 100% >",
+                "Widescreen: < Wide activation >",
                 "Back"
             ]
         );
@@ -1299,11 +1377,93 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
 
         s.step(&press(Action::Down));
+        s.step(&press(Action::Down));
         s.step(&press(Action::Jump));
         let Screen::Title(menu) = &s.screen else {
             panic!("back to the title")
         };
         assert_eq!(menu.current(), Item::Options);
+    }
+
+    #[test]
+    fn a_game_with_a_view_of_its_own_is_framed_to_it() {
+        let mut s = session(LEVEL);
+        s.screen = Screen::Playing;
+        assert_eq!(s.look(), Look::RENDERED, "no view of its own");
+        s.game.set_feel(generic_feel("classic-1").unwrap());
+        let framed = Look {
+            view: (256, VIEW.1),
+            ..Look::RENDERED
+        };
+        assert_eq!(s.look(), framed);
+        assert_eq!(s.game.camera.view, framed.view);
+        let mut canvas = crate::Canvas::new(framed.view.0, framed.view.1);
+        s.draw(&mut canvas, 1.0);
+        assert_eq!(
+            s.game.world.view_middle().map(|x| x.to_f64()),
+            Some(s.game.camera.top_left(1.0).0 + 128.0),
+            "the picture is the view's"
+        );
+        s.game.restart();
+        assert_eq!(s.game.camera.view, framed.view, "kept on a restart");
+    }
+
+    #[test]
+    fn options_pick_each_games_widescreen_mode_and_remember_it() {
+        let dir = std::env::temp_dir().join(format!("clamber-widescreen-{}", std::process::id()));
+        let path = dir.join("prefs.toml");
+        let mut s = session(LEVEL);
+        s.prefs_path = Some(path.clone());
+        s.game.set_feel(generic_feel("classic-1").unwrap());
+        s.step(&press(Action::Pause));
+        while !matches!(&s.screen, Screen::Title(m) if m.current() == Item::Options) {
+            s.step(&press(Action::Down));
+        }
+        s.step(&press(Action::Jump));
+        while !matches!(&s.screen, Screen::Options(m, _) if m.current() == Setting::Widescreen) {
+            s.step(&press(Action::Down));
+        }
+        let label = |s: &Session| {
+            let Screen::Options(menu, _) = &s.screen else {
+                panic!("not on the options screen")
+            };
+            menu.items[4].0.clone()
+        };
+        assert_eq!(
+            s.widescreen(),
+            Widescreen::WideActivation,
+            "the bundled default"
+        );
+        let mut canvas = Game::canvas();
+        s.draw(&mut canvas, 1.0);
+        assert!(canvas.pixels.contains(&SUBTITLE), "says what it does");
+
+        s.step(&press(Action::Right));
+        assert_eq!(s.widescreen(), Widescreen::OriginalFraming);
+        assert_eq!(s.game.look.widescreen, Widescreen::OriginalFraming);
+        assert_eq!(label(&s), "Widescreen: < Original framing >");
+        assert_eq!(
+            s.prefs.widescreen.get(BUNDLED),
+            Some(&Widescreen::OriginalFraming)
+        );
+        assert_eq!(Prefs::load(&path), s.prefs);
+        s.step(&press(Action::Jump));
+        assert_eq!(s.widescreen(), Widescreen::OriginalActivation);
+        s.step(&press(Action::Left));
+        s.step(&press(Action::Left));
+        assert_eq!(s.widescreen(), Widescreen::WideActivation);
+        assert_eq!(Prefs::load(&path), s.prefs);
+        // The activation modes aren't made yet, so every mode is framed.
+        assert_eq!(s.game.shown().view, (256, VIEW.1));
+        std::fs::remove_dir_all(dir).unwrap();
+
+        // Another game has its own.
+        s.prefs.widescreen.clear();
+        s.prefs
+            .widescreen
+            .insert("title-1".into(), Widescreen::OriginalFraming);
+        s.apply_widescreen();
+        assert_eq!(s.game.look.widescreen, Widescreen::WideActivation);
     }
 
     #[test]
@@ -1639,6 +1799,7 @@ mod tests {
         let look = Look {
             view: (256, 224),
             pixel_art: true,
+            widescreen: Widescreen::OriginalActivation,
         };
         assert_eq!(s.game.look, look);
         assert_eq!(s.game.camera.view, look.view);

@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use clamber_import::Widescreen;
 use clamber_level::{Area, Depth, Layer, Shape, Vec2};
 use clamber_pack::Feel;
 use clamber_sim::{
@@ -87,9 +88,24 @@ impl Game {
     /// Draws the game the way `look` says, with a camera to match.
     pub fn with_look(self, look: Look) -> Game {
         Game {
-            camera: Camera::with_view(&self.world, look.view),
+            camera: Camera::with_view(&self.world, look.framing(&self.world).view),
             look,
             ..self
+        }
+    }
+
+    /// The look the game is drawn with: its own, framed as its
+    /// widescreen mode says ([`Look::framing`]).
+    pub fn shown(&self) -> Look {
+        self.look.framing(&self.world)
+    }
+
+    /// Plays in widescreen mode `mode` from now on, with the camera
+    /// settled again for it.
+    pub fn set_widescreen(&mut self, mode: Widescreen) {
+        if self.look.widescreen != mode {
+            self.look.widescreen = mode;
+            self.camera = Camera::with_view(&self.world, self.shown().view);
         }
     }
 
@@ -176,7 +192,7 @@ impl Game {
         if self.world.flow.events.contains(&FlowEvent::Respawn) {
             // A jump to somewhere else, not a move to draw between.
             self.previous = self.world.player.pos;
-            self.camera = Camera::with_view(&self.world, self.look.view);
+            self.camera = Camera::with_view(&self.world, self.shown().view);
         } else {
             self.camera.update(&self.world);
         }
@@ -664,6 +680,7 @@ mod tests {
         let look = Look {
             view: (256, 224),
             pixel_art: true,
+            widescreen: Widescreen::OriginalFraming,
         };
         let mut game = Game::new(world).with_art(art).with_look(look);
         game.debug = false;

@@ -181,6 +181,7 @@ fn play(options: Options) -> Result<(), String> {
     let (mut session, level_path) = load(&options, prefs.preset.as_deref())?;
     session.prefs = prefs;
     session.prefs_path = prefs_path;
+    session.apply_widescreen();
     #[cfg(feature = "audio")]
     let audio = open_audio(
         &session.game.world.level,

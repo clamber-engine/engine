@@ -3,8 +3,10 @@
 //!
 //! [`prefs_path`]: crate::prefs_path
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use clamber_import::Widescreen;
 use serde::{Deserialize, Serialize};
 
 use crate::report;
@@ -24,7 +26,15 @@ pub struct Prefs {
     /// next one in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub import_folder: Option<PathBuf>,
+    /// The widescreen mode picked on the options screen for each game,
+    /// by its pack's id, or [`BUNDLED`] for the bundled game. Games
+    /// without one play in their own default.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub widescreen: BTreeMap<String, Widescreen>,
 }
+
+/// What [`Prefs::widescreen`] calls the bundled game.
+pub const BUNDLED: &str = "clamber";
 
 /// The window's settings.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,6 +151,10 @@ mod tests {
                     effects: 0,
                 },
                 import_folder: Some(PathBuf::from("games")),
+                widescreen: BTreeMap::from([
+                    (BUNDLED.to_string(), Widescreen::OriginalFraming),
+                    ("title-1".to_string(), Widescreen::WideActivation),
+                ]),
             },
         ] {
             assert_eq!(Prefs::from_toml_str(&prefs.to_toml_string()), Ok(prefs));

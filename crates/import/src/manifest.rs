@@ -38,6 +38,57 @@ pub struct Manifest {
     /// is seen at once. Packs without one get the engine's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view: Option<[u32; 2]>,
+    /// How the pack plays in a window wider than its view, unless the
+    /// player picks otherwise. Packs without one get
+    /// [`Widescreen::OriginalActivation`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub widescreen: Option<Widescreen>,
+}
+
+/// How a game whose movement has a view of its own (a preset with
+/// `view_width` above 0) plays in a window wider than that view. Nothing
+/// may pop into sight in any of them: whatever is inside the window is
+/// already there, or comes in from outside it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Widescreen {
+    /// Things are placed and drawn as soon as they're inside the wide
+    /// window, but only move, act and collide once they're inside the
+    /// original view, so play goes as it would there.
+    #[default]
+    OriginalActivation,
+    /// Things appear and act by the whole wide window, so they come in
+    /// from outside it. Play goes differently from the original view.
+    WideActivation,
+    /// Only the original view's width is shown, with borders at the
+    /// sides. Play goes as it would there.
+    OriginalFraming,
+}
+
+impl Widescreen {
+    pub const ALL: [Widescreen; 3] = [
+        Widescreen::OriginalActivation,
+        Widescreen::WideActivation,
+        Widescreen::OriginalFraming,
+    ];
+
+    /// Its name, as the options screen shows it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Widescreen::OriginalActivation => "Original activation",
+            Widescreen::WideActivation => "Wide activation",
+            Widescreen::OriginalFraming => "Original framing",
+        }
+    }
+
+    /// The mode after this one in [`ALL`](Widescreen::ALL), wrapping
+    /// around, or before it with `back`.
+    pub fn next(self, back: bool) -> Widescreen {
+        let all = Widescreen::ALL;
+        let i = all.iter().position(|&m| m == self).expect("listed");
+        let step = if back { all.len() - 1 } else { 1 };
+        all[(i + step) % all.len()]
+    }
 }
 
 /// The largest view, in pixels each way, a manifest can ask for.
@@ -123,6 +174,7 @@ mod tests {
             redistribute: false,
             pixel_art: true,
             view: Some([320, 200]),
+            widescreen: Some(Widescreen::OriginalFraming),
         }
     }
 
@@ -133,6 +185,7 @@ mod tests {
         assert!(text.contains("redistribute = false"), "{text}");
         assert!(text.contains("pixel_art = true"), "{text}");
         assert!(text.contains("view = [320, 200]"), "{text}");
+        assert!(text.contains("widescreen = \"original-framing\""), "{text}");
         assert_eq!(Manifest::from_toml_str(&text), Ok(m));
     }
 
@@ -141,10 +194,12 @@ mod tests {
         let text = manifest().to_toml();
         let plain = text
             .replace("pixel_art = true", "")
-            .replace("view = [320, 200]", "");
+            .replace("view = [320, 200]", "")
+            .replace("widescreen = \"original-framing\"", "");
         let m = Manifest::from_toml_str(&plain).unwrap();
         assert!(!m.pixel_art);
         assert_eq!(m.view, None);
+        assert_eq!(m.widescreen, None);
     }
 
     #[test]
@@ -154,6 +209,21 @@ mod tests {
             let bad = text.replace("[320, 200]", view);
             assert!(Manifest::from_toml_str(&bad).is_err(), "{view}");
         }
+    }
+
+    #[test]
+    fn widescreen_modes_go_round() {
+        for mode in Widescreen::ALL {
+            assert_eq!(mode.next(false).next(true), mode);
+        }
+        assert_eq!(
+            Widescreen::OriginalFraming.next(false),
+            Widescreen::OriginalActivation
+        );
+        let bad = manifest()
+            .to_toml()
+            .replace("original-framing", "stretched");
+        assert!(Manifest::from_toml_str(&bad).is_err());
     }
 
     #[test]

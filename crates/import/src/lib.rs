@@ -74,7 +74,7 @@ pub use level_map::{
 pub use level_start::{START_RECORD_SIZE, StartRecord};
 pub use location::{BANK_SIZE, Location};
 pub use locators::{Data, first_level, first_level_ground, first_room, first_scene, locate};
-pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable};
+pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable, Widescreen};
 pub use music::{LevelSong, Music, RATE, render};
 pub use nibbles::{NIBBLE_HEADER, unpack_nibbles};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements, RECORD_SIZE, Record};
@@ -477,6 +477,7 @@ impl Importer {
             redistribute: false,
             pixel_art: true,
             view: view_of(&known.title),
+            widescreen: Some(Widescreen::OriginalActivation),
         };
         let path = staging.join(MANIFEST);
         fs::write(&path, manifest.to_toml())

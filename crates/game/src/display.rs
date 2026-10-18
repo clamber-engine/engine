@@ -3,7 +3,9 @@
 
 use std::time::Duration;
 
-use clamber_import::Manifest;
+use clamber_import::{Manifest, Widescreen};
+use clamber_pack::Param;
+use clamber_sim::World;
 
 use crate::camera::VIEW;
 use crate::canvas::Fit;
@@ -94,22 +96,62 @@ pub struct Look {
     /// window's own resolution ([`letterbox`]), and each texture is
     /// filtered as it says.
     pub pixel_art: bool,
+    /// How it plays when `view` is wider than its movement's own view.
+    pub widescreen: Widescreen,
 }
 
 impl Look {
-    /// The bundled art's look: a [`VIEW`] drawn at the window's resolution.
+    /// The bundled art's look: a [`VIEW`] drawn at the window's
+    /// resolution, in wide activation.
     pub const RENDERED: Look = Look {
         view: VIEW,
         pixel_art: false,
+        widescreen: Widescreen::WideActivation,
     };
 
     /// The look an imported pack asks for in its manifest. A pack that
-    /// doesn't give its view's size gets [`VIEW`].
+    /// doesn't give its view's size gets [`VIEW`], and one that doesn't
+    /// say how it plays wide gets original activation.
     pub fn of(manifest: &Manifest) -> Look {
         Look {
             view: manifest.view.map_or(VIEW, |[w, h]| (w, h)),
             pixel_art: manifest.pixel_art,
+            widescreen: manifest.widescreen.unwrap_or_default(),
         }
+    }
+
+    /// The look `world` is drawn with: in original framing, as wide as
+    /// its movement's view, if it has one and that's narrower, and as
+    /// high as this look's (#194).
+    pub fn framing(self, world: &World) -> Look {
+        let width = world
+            .view
+            .map(|_| world.feel.world[Param::ViewWidth].floor());
+        match (in_effect(self.widescreen), width) {
+            (Widescreen::OriginalFraming, Some(width)) if width > 0 => Look {
+                view: (self.view.0.min(width as u32), self.view.1),
+                ..self
+            },
+            _ => self,
+        }
+    }
+}
+
+/// Whether the engine can play in `mode` yet. Original and wide
+/// activation need things that are drawn but don't act yet (#236), and
+/// a wider window for things to appear in (#235); until they're made,
+/// games set to them play in original framing, so nothing pops in.
+pub fn made(mode: Widescreen) -> bool {
+    mode == Widescreen::OriginalFraming
+}
+
+/// The mode a game set to `mode` plays in: `mode` itself, once it's
+/// [`made`], and original framing until then.
+pub fn in_effect(mode: Widescreen) -> Widescreen {
+    if made(mode) {
+        mode
+    } else {
+        Widescreen::OriginalFraming
     }
 }
 
