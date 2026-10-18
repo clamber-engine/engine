@@ -2,8 +2,9 @@
 
 # Clamber Engine
 
-An open-source 2D platformer engine written in Rust, built for fast,
-momentum-driven side-scrolling with layered, pre-rendered-style art.
+An open-source 2D platformer engine written in Rust, with a
+deterministic fixed-point simulation, data-driven movement presets,
+content packs, and conformance tests that check behaviour frame by frame.
 
 Clamber ships with its own original game content. It also includes an
 importer that can convert data from game cartridges you legally own into
