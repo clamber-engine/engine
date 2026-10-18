@@ -610,7 +610,7 @@ impl LevelDecoder {
         let (mut skipped, mut notes) = (Vec::new(), Vec::new());
         if let Some(song) = p.song {
             let read = |at| image.at(at);
-            match song.music(read) {
+            match crate::optional(|| song.music(read)) {
                 Ok(music) => {
                     notes.push(format!(
                         "song {}: {}",
@@ -632,7 +632,8 @@ impl LevelDecoder {
                     part: Optional::Song,
                     name: format!("song {}", song.song),
                     reason,
-                    diagnostics: song.diagnose(read),
+                    diagnostics: crate::optional(|| Ok(song.diagnose(read)))
+                        .unwrap_or_else(|e| vec![e]),
                 }),
             }
         }
@@ -709,6 +710,17 @@ fn return_entrance(name: &str, entities: &[Entity]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fault in converting a song skips the song, not the import.
+    #[test]
+    fn a_converter_that_panics_skips_its_part() {
+        let converted: Result<(), String> = crate::optional(|| panic!("a fault"));
+        assert_eq!(
+            converted,
+            Err("the converter stopped unexpectedly".to_string())
+        );
+        assert_eq!(crate::optional(|| Ok(3)), Ok(3));
+    }
 
     /// level-start.md, "Coming back from the room": out of the
     /// room-return entrance, where there is one, and only from the room.

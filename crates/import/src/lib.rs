@@ -240,6 +240,15 @@ pub fn skipped_summary(skipped: &[Skipped]) -> Vec<String> {
         .collect()
 }
 
+/// Runs the conversion of an optional part, so that a fault in it (a
+/// panic) only skips the part rather than stopping the import. The
+/// reason given doesn't quote the panic's message, which could say
+/// anything.
+pub(crate) fn optional<T>(convert: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(convert))
+        .unwrap_or_else(|_| Err("the converter stopped unexpectedly".into()))
+}
+
 /// A text report on an import, for the player to share when something
 /// went wrong: what was imported or why it wasn't, which optional parts
 /// were skipped, and their diagnostics. It never quotes the image.
