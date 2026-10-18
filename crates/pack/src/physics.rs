@@ -1253,6 +1253,15 @@ params! {
     /// ... or this far right of the view's right edge or further. Whole
     /// px.
     RemoveRight => "remove_right",
+    /// Above 0, the objects that can be there at once (see
+    /// `clamber_sim::Placing`): each placed object in a level's sections
+    /// takes a place while it's there, as do thrown balls and animals out
+    /// of their crates. Whole.
+    Places => "places",
+    /// Above 0, the pictures there are: each placed object whose
+    /// `clamber_level::Spot` says it takes one does while it's there, and
+    /// so do a burst keg's pieces and flash. Whole.
+    Pictures => "pictures",
     /// The lead passes a level's `end` marker only with its feet line
     /// this far above or below the marker or closer (see
     /// `clamber_sim::Ending`). Whole px.

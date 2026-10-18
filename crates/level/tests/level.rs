@@ -528,25 +528,28 @@ fn entities_can_appear_by_sections() {
     let entities = "[[entities]]\ntype = \"a\"\nat = [1, 1]\n".repeat(5);
     let src = format!(
         "format = 1\nsize = [100, 100]\nstart = [10, 10]\n{entities}\
-         [[sections]]\nspots = [0, {{ entities = [1, 2], at = [40, 9] }}]\nmeets = [50, 60]\n\
+         [[sections]]\nspots = [0, {{ entities = [1, 2], at = [40, 9], picture = true }}]\nmeets = [50, 60]\n\
          [[sections]]\nspots = [{{ entities = [3], rows = true }}, 4]\n"
     );
     let l = Level::from_toml_str(&src, "x.level").unwrap();
-    let spots = |i: usize| -> Vec<(Vec<usize>, Option<Vec2>, bool)> {
+    let spots = |i: usize| -> Vec<(Vec<usize>, Option<Vec2>, bool, bool)> {
         l.sections[i]
             .spots
             .iter()
-            .map(|s| (s.entities.clone(), s.at, s.rows))
+            .map(|s| (s.entities.clone(), s.at, s.rows, s.picture))
             .collect()
     };
     assert_eq!(
         spots(0),
         [
-            (vec![0], None, false),
-            (vec![1, 2], Some(v(40.0, 9.0)), false)
+            (vec![0], None, false, false),
+            (vec![1, 2], Some(v(40.0, 9.0)), false, true)
         ]
     );
-    assert_eq!(spots(1), [(vec![3], None, true), (vec![4], None, false)]);
+    assert_eq!(
+        spots(1),
+        [(vec![3], None, true, false), (vec![4], None, false, false)]
+    );
     assert_eq!(l.sections[0].meets, Some(v(50.0, 60.0)));
     assert_eq!(l.sections[1].meets, None);
     let back = Level::from_toml_str(&l.to_toml_string(), "saved").unwrap();

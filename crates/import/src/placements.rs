@@ -219,11 +219,15 @@ impl Placements {
     /// nothing hold nothing back, so they aren't spots.
     ///
     /// An exit needs the view's rows too, in either class ("When placed
-    /// objects are removed", "Exits").
+    /// objects are removed", "Exits"). In a list without sections, class 2
+    /// entries need only the window, however far above or below the view
+    /// they are ("Stored order").
     ///
-    /// Whether class 2 entries far above or below the view appear in a
-    /// list without sections isn't covered; as the engine's choice they
-    /// need only the window, as in "When an entry appears".
+    /// A class 1 entry's object takes a picture ("How many objects can be
+    /// there"). The spec doesn't say whether a class 15 entry's or a
+    /// group's members' do; as the engine's choice a class 15 entry's
+    /// doesn't, and a group's do when its members are all class 1
+    /// entries, as in the first level.
     pub fn objects(
         &self,
         bottom: i64,
@@ -242,11 +246,13 @@ impl Placements {
                     at: (entities[spot_entities[0]].at != at).then_some(at),
                     entities: spot_entities,
                     rows: entry.needs_rows() || sectioned && entry.class == 2 || exit,
+                    picture: entry.class == 1,
                 }),
                 Class::Group if !spot_entities.is_empty() => Some(Spot {
                     at: (entities[spot_entities[0]].at.x != at.x).then_some(at),
                     entities: spot_entities,
                     rows: false,
+                    picture: placement.members.iter().all(|m| m.class == 1),
                 }),
                 _ => None,
             }

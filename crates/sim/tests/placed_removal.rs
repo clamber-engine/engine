@@ -120,13 +120,57 @@ fn kegs_crates_hidden_objects_and_hutches() {
     assert_eq!(step_at::<7>(&mut w, 712, 200)[3..], [true; 4]);
 }
 
-#[test]
-fn a_moved_crate_isnt_removed_this_way() {
+/// "Objects put down elsewhere", the spec's example: a crate whose start
+/// is at x = 1000, put down at `at`, with the view's top at 200.
+fn put_down(at: i32) -> World {
     let mut w = world(&[("crate", 1000, 300)], false);
     step_at::<4>(&mut w, 712, 200);
-    // Carried away and set down.
-    w.things[3].pos.x = Fixed::from_int(1040);
-    assert!(step_at::<4>(&mut w, 2000, 200)[3]);
+    w.things[3].pos.x = Fixed::from_int(at);
+    w
+}
+
+#[test]
+fn put_down_elsewhere_it_goes_by_its_start_and_its_own_x() {
+    let mut w = put_down(800);
+    // Its own x is in the margin, but its start is near the view.
+    assert!(step_at::<4>(&mut w, 928, 200)[3]);
+    assert!(step_at::<4>(&mut w, 1031, 200)[3]);
+    assert!(!step_at::<4>(&mut w, 1032, 200)[3]);
+    // It comes back at its start, not where it was put down.
+    assert!(step_at::<4>(&mut w, 712, 200)[3]);
+    assert_eq!(w.things[3].pos.x, Fixed::from_int(1000));
+
+    // With the view moving left instead: its start leaves the window
+    // first, and it stays until its own x is 385 right of the view.
+    let mut w = put_down(800);
+    assert!(step_at::<4>(&mut w, 711, 200)[3]);
+    assert!(step_at::<4>(&mut w, 416, 200)[3]);
+    assert!(!step_at::<4>(&mut w, 415, 200)[3]);
+
+    // Put down at 1150: its own x reaches the margin first, and it stays
+    // until its start leaves the window.
+    let mut w = put_down(1150);
+    assert!(step_at::<4>(&mut w, 765, 200)[3]);
+    assert!(step_at::<4>(&mut w, 712, 200)[3]);
+    assert!(!step_at::<4>(&mut w, 711, 200)[3]);
+}
+
+#[test]
+fn while_its_there_or_carried_its_start_places_nothing_else() {
+    let mut w = put_down(1150);
+    // Its start leaves the window and comes back: it's the same crate,
+    // where it was put down.
+    assert!(step_at::<4>(&mut w, 1100, 200)[3]);
+    assert!(step_at::<4>(&mut w, 900, 200)[3]);
+    assert_eq!(w.things[3].pos.x, Fixed::from_int(1150));
+
+    // Carried, it stays however far from its start, wherever that is.
+    let mut w = put_down(1000);
+    w.things[3].phase = Phase::Held;
+    w.things[3].pos.x = Fixed::from_int(3000);
+    assert!(step_at::<4>(&mut w, 2800, 200)[3]);
+    assert!(step_at::<4>(&mut w, 900, 200)[3]);
+    assert_eq!(w.things[3].pos.x, Fixed::from_int(3000));
 }
 
 /// "Exits": there only in the window and the vertical window, removed

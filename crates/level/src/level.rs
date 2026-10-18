@@ -90,6 +90,9 @@ pub struct Spot {
     /// Whether one entity also has to be within the view's rows to
     /// appear.
     pub rows: bool,
+    /// Whether each of its entities takes one of the preset's `pictures`
+    /// while it's there.
+    pub picture: bool,
 }
 
 /// A colour as red, green and blue, written `#rrggbb`.
@@ -466,6 +469,8 @@ enum SpotFile {
         at: Option<[N; 2]>,
         #[serde(default)]
         rows: bool,
+        #[serde(default)]
+        picture: bool,
     },
 }
 
@@ -829,11 +834,18 @@ impl Reader<'_> {
                                 entities: vec![e],
                                 at: None,
                                 rows: false,
+                                picture: false,
                             },
-                            SpotFile::Table { entities, at, rows } => Spot {
+                            SpotFile::Table {
+                                entities,
+                                at,
+                                rows,
+                                picture,
+                            } => Spot {
                                 entities,
                                 at: at.map(v2),
                                 rows,
+                                picture,
                             },
                         };
                         if spot.entities.is_empty() {
@@ -1490,7 +1502,7 @@ impl Level {
             let spots = s.spots.iter().map(|spot| {
                 let index = |&e: &usize| Value::Integer(e as i64);
                 match spot.entities.as_slice() {
-                    [e] if spot.at.is_none() && !spot.rows => index(e),
+                    [e] if spot.at.is_none() && !spot.rows && !spot.picture => index(e),
                     entities => {
                         let mut pt = Table::new();
                         let entities = entities.iter().map(index).collect();
@@ -1500,6 +1512,9 @@ impl Level {
                         }
                         if spot.rows {
                             pt.insert("rows".into(), Value::Boolean(true));
+                        }
+                        if spot.picture {
+                            pt.insert("picture".into(), Value::Boolean(true));
                         }
                         Value::Table(pt)
                     }

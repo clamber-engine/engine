@@ -7,7 +7,9 @@ use clamber_fixed::Fixed;
 use clamber_level::{Arrival, Entity, Level, Vec2};
 use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 
-use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior, Rope, Sling, Spring};
+use crate::archetype::{
+    Archetype, ArchetypeError, Archetypes, Behavior, KEG_PIECES, Rope, Sling, Spring,
+};
 use crate::carry::{self, Flight};
 use crate::collect;
 use crate::dimming::{self, Dimming};
@@ -1117,6 +1119,11 @@ pub fn step(world: &mut World, input: &InputFrame) {
     world.pause = 0;
     if world.flow.outcome.is_over() {
         return;
+    }
+    // A burst's pieces and flash give up their pictures on the step they
+    // go, so they're free from the next.
+    if let Some(placing) = &mut world.placing {
+        placing.held_pictures = world.bursts.len() * (KEG_PIECES + 1);
     }
     keg::bursts(world);
     // The dimming starts by where the view was at the start of the step.

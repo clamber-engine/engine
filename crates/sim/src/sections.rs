@@ -107,6 +107,9 @@ pub struct Placed {
     pub sections: Sections,
     /// The entities of each spot: none for a marker.
     pub entities: Vec<Vec<usize>>,
+    /// Whether each of a spot's entities takes a picture while it's
+    /// there.
+    pub pictures: Vec<bool>,
     /// The spot of each of the level's entities, if it's in one.
     pub spot_of: Vec<Option<usize>>,
 }
@@ -125,6 +128,7 @@ impl Placed {
                 joins: Vec::new(),
             },
             entities: Vec::new(),
+            pictures: Vec::new(),
             spot_of: vec![None; level.entities.len()],
         };
         for section in &level.sections {
@@ -148,10 +152,12 @@ impl Placed {
                     placed.spot_of[e] = Some(placed.entities.len());
                 }
                 placed.entities.push(spot.entities.clone());
+                placed.pictures.push(spot.picture);
             }
             if section.spots.is_empty() {
                 placed.spots.push(Spot::Marker);
                 placed.entities.push(Vec::new());
+                placed.pictures.push(false);
             }
             placed.sections.runs.push(first..=placed.spots.len() - 1);
             placed.sections.joins.extend(section.meets.map(whole));
@@ -170,6 +176,10 @@ pub struct Placing {
     /// the view removes them. Things that leave by their own rule, such
     /// as collected or defeated ones, stay there.
     pub there: Vec<bool>,
+    /// The pictures that things other than placed objects held at the
+    /// start of the step: a burst keg's pieces and flash, including on
+    /// the step they go.
+    pub held_pictures: usize,
 }
 
 impl Placing {
@@ -179,6 +189,7 @@ impl Placing {
         Placing {
             opening: Opening::begin(&placed.sections, view_top),
             there: vec![false; placed.spots.len()],
+            held_pictures: 0,
             placed,
         }
     }

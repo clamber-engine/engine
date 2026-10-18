@@ -614,6 +614,8 @@ mod tests {
                     | Param::AppearBelow
                     | Param::RemoveLeft
                     | Param::RemoveRight
+                    | Param::Places
+                    | Param::Pictures
                     | Param::EndReach
                     | Param::EndWalkSpeed
                     | Param::EndRise

@@ -77,10 +77,11 @@ use clamber_level::{Dir, Level, Rect, Vec2};
 use clamber_pack::{Param, Physics};
 
 use crate::archetype::Behavior;
+use crate::dimming::DIM;
 use crate::exit::EXIT;
 use crate::flow::FlowEvent;
 use crate::player::{Facing, Player, ceil, frames};
-use crate::sections::{Opening, Spot, Window};
+use crate::sections::{Opening, Placed, Placing, Spot, Window};
 use crate::world::{Phase, Thing, World};
 
 /// What the view's speed is kept to, px per frame.
@@ -534,11 +535,19 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 ///   needs the view's rows to appear, as exits do, on the first step it's
 ///   outside them.
 ///
+/// An object that can be carried, resting where it was put down, is
+/// removed by the same rule with its own position for "far" and the
+/// rows, and its start's for "near" (placements.md, "Objects put down
+/// elsewhere"). While it's there its spot places nothing else, also while
+/// it's carried, however far from its start; once removed it comes back
+/// at its start, as an object that hasn't been moved.
+///
 /// Engine choices where the spec says nothing: near the level's left end
 /// "in the window" is near the view as for appearing (`V` counted as 32),
-/// so nothing is removed on the step it appears; objects that were moved
-/// and set down aren't removed this way; and outside spots only scenery
-/// is, the other objects staying in the level.
+/// so nothing is removed on the step it appears; an object that can be
+/// carried that came to rest after being dropped is removed as one put
+/// down is; and outside spots only scenery is, the other objects staying
+/// in the level.
 ///
 /// A collectible there `once` appears as throwers do, rising from where
 /// it's placed if it rises, and is removed on the first step its start
@@ -548,7 +557,10 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 /// In a level with sections, its things in them appear only by the
 /// sections' rules ([`Placing`]), as walkers, throwers, balls and
 /// stingers otherwise would; other things there appear as they are
-/// placed. They are removed as they would be otherwise, and can then
+/// placed. With a preset that limits `places` and `pictures`, a spot that
+/// comes up appears only if what it needs is free at the start of the
+/// step, taking it from what the spots before it left ([`Room`]); one
+/// that doesn't comes up again later. They are removed as they would be otherwise, and can then
 /// appear again. Things that aren't removed by the view stay gone once
 /// they leave by their own rule.
 pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) {
@@ -562,7 +574,11 @@ pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) 
             .step(&placed.sections, &placed.spots, &window, (left, top), |i| {
                 there[i]
             });
+        let mut room = Room::at_start(&world.things, placing, &world.level, &physics);
         for i in up {
+            if !room.take(&placing.placed, &world.level, i) {
+                continue;
+            }
             placing.there[i] = true;
             for &e in &placed.entities[i] {
                 arrive(&mut world.things[e], world.level.entities[e].at);
@@ -678,13 +694,18 @@ pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) 
         let Some(leaves) = leaves(thing, spot.is_some()) else {
             continue;
         };
-        // Only while it's still as it appeared.
+        // Only while it's still as it appeared, or for an object that can
+        // be carried, resting where it was put down.
         let start = entity.at;
-        if !thing.active || thing.phase != Phase::Ready || thing.pos != start {
+        let put_down = matches!(
+            thing.archetype.map(|a| a.behavior),
+            Some(Behavior::Carry { .. })
+        );
+        if !thing.active || thing.phase != Phase::Ready || thing.pos != start && !put_down {
             continue;
         }
-        let (x, y) = (start.x.floor(), start.y.floor());
-        let start_near = near(x, left, &physics);
+        let start_near = near(start.x.floor(), left, &physics);
+        let (x, y) = (thing.pos.x.floor(), thing.pos.y.floor());
         let in_rows = window.holds_y(y, top);
         let gone = match leaves {
             Leaves::Far => !start_near && (far(x, left, &physics) || !in_rows),
@@ -699,6 +720,67 @@ pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) 
             thing.active = false;
             removed(thing.index);
         }
+    }
+}
+
+/// The places and pictures free at the start of a step, for a preset that
+/// limits them (placements.md, "How many objects can be there"): `None`
+/// is no limit.
+struct Room {
+    places: Option<usize>,
+    pictures: Option<usize>,
+}
+
+impl Room {
+    /// What's free given what's there: a place for each placed object in
+    /// a spot and each thrown ball, and a picture for each placed object
+    /// whose spot takes them and each one `placing` says other things
+    /// hold. The spec doesn't say whether a `dim` entity, which places
+    /// nothing, takes a place; it doesn't.
+    fn at_start(things: &[Thing], placing: &Placing, level: &Level, physics: &Physics) -> Room {
+        let (mut places, mut pictures) = (0, placing.held_pictures);
+        for thing in things.iter().filter(|t| t.active && t.kind != DIM) {
+            match placing.placed.spot_of.get(thing.index) {
+                Some(Some(spot)) => {
+                    places += 1;
+                    pictures += usize::from(placing.placed.pictures[*spot]);
+                }
+                Some(None) => {}
+                // A thrown ball, which comes after the level's entities.
+                None if thing.index >= level.entities.len() => places += 1,
+                None => {}
+            }
+        }
+        let free = |param: Param, taken: usize| {
+            let limit = physics[param].floor();
+            (limit > 0).then(|| (limit as usize).saturating_sub(taken))
+        };
+        Room {
+            places: free(Param::Places, places),
+            pictures: free(Param::Pictures, pictures),
+        }
+    }
+
+    /// Takes what spot `i` needs, if it's free: a place for each of its
+    /// entities, and a picture too for each if the spot takes them. The
+    /// spec doesn't cover a group finding too few free; as the engine's
+    /// choice, it waits until there's room for all its members.
+    fn take(&mut self, placed: &Placed, level: &Level, i: usize) -> bool {
+        let places = placed.entities[i]
+            .iter()
+            .filter(|&&e| level.entities[e].kind != DIM)
+            .count();
+        let pictures = if placed.pictures[i] { places } else { 0 };
+        let short = |free: Option<usize>, need: usize| free.is_some_and(|n| n < need);
+        if short(self.places, places) || short(self.pictures, pictures) {
+            return false;
+        }
+        for (free, need) in [(&mut self.places, places), (&mut self.pictures, pictures)] {
+            if let Some(n) = free {
+                *n -= need;
+            }
+        }
+        true
     }
 }
 
@@ -771,7 +853,7 @@ fn arrive(thing: &mut Thing, start: Vec2) {
             thing.wait = appear_wait;
         }
         Some(Behavior::Thrower { .. }) => thing.clock = 0,
-        Some(Behavior::Ball(_)) => thing.pos = start,
+        Some(Behavior::Ball(_) | Behavior::Carry { .. }) => thing.pos = start,
         Some(Behavior::Collect { .. }) => {
             thing.pos = start;
             thing.clock = 0;

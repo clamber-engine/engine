@@ -330,6 +330,8 @@ appear_above = 0
 appear_below = 0
 remove_left = 0
 remove_right = 0
+places = 0
+pictures = 0
 end_reach = 0
 end_walk_speed = 0
 end_rise = 0
@@ -820,6 +822,11 @@ appear_above = 31
 appear_below = 32
 remove_left = 128
 remove_right = 129
+# Placed objects wait for one of 12 places, and those of class 1 entries
+# for one of 11 pictures too (placements.md, "How many objects can be
+# there").
+places = 12
+pictures = 11
 # Passing the end marker, the walk-out and the fade (level-end.md). The
 # brightness goes from 15 to 0 a step every 2 frames, so the picture is
 # black 28 frames after the fade starts.
