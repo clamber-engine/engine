@@ -1304,6 +1304,7 @@ impl Player {
             acting = Some(GroundAction {
                 frame: 0,
                 dir: held_dir,
+                air: false,
             });
             goes_on = true;
             self.vel.x = Fixed::ZERO;
@@ -2009,8 +2010,9 @@ impl Player {
         if self.grounded() {
             self.hop = None;
         }
-        // Going off a ledge ends the ground action.
-        self.ground_action = acting.filter(|_| goes_on && self.grounded());
+        // Going off a ledge ends the ground action, unless it started in
+        // the air.
+        self.ground_action = acting.filter(|a| goes_on && (a.air || self.grounded()));
         self.state = self.next_state(held(Action::Action), events);
     }
 
@@ -3310,6 +3312,9 @@ pub struct GroundAction {
     pub frame: u8,
     /// The way it goes: -1, 0 or 1.
     pub dir: i32,
+    /// It started in the air, on frame 1 of a resume, and goes on in the
+    /// air (restart-barrel.md).
+    pub air: bool,
 }
 
 /// A timed roll.

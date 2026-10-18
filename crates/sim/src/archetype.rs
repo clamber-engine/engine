@@ -436,10 +436,12 @@ pub const HIDDEN_ITEMS: [&str; 3] = ["cluster", "crate", "canister"];
 /// `first_shift`'s `right` or `left`, `[without Action, with it]`, until
 /// it's in play. Jump held, with `first_jump_lift`, makes it wait that
 /// much higher, and it takes off on the frame after the burst, which
-/// moves as a frame of the fall with the jump's gravity. Otherwise Left
-/// held alone, with `first_turn`, starts a turn that is on that frame of
-/// itself on the frame after the burst. Down and Action held without Up
-/// do neither.
+/// moves as a frame of the fall with the jump's gravity. Otherwise Down
+/// and Action held without Up, with `first_action`, start the ground
+/// action, which is on that frame of itself on the frame after the burst
+/// and goes on in the air. Otherwise Left held alone, with `first_turn`,
+/// starts a turn that is on that frame of itself on the frame after the
+/// burst.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Keg {
     pub contact: Contact,
@@ -460,6 +462,7 @@ pub struct Keg {
     /// `[right, left]`, each `[without Action, with it]`.
     pub first_shift: [[Fixed; 2]; 2],
     pub first_jump_lift: Option<Fixed>,
+    pub first_action: Option<u8>,
     pub first_turn: Option<u8>,
 }
 
@@ -1427,6 +1430,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "restart",
             "first_shift",
             "first_jump_lift",
+            "first_action",
             "first_turn",
         ],
         "entrance" => &[
@@ -2060,6 +2064,10 @@ fn parse_keg(table: &Table, path: &str) -> Result<Keg, String> {
         first_jump_lift: match table.get("first_jump_lift") {
             None => None,
             Some(v) => Some(number(v, &format!("{path}.first_jump_lift"))?),
+        },
+        first_action: match table.get("first_action") {
+            None => None,
+            Some(_) => Some(frames("first_action")?.max(1)),
         },
         first_turn: match table.get("first_turn") {
             None => None,

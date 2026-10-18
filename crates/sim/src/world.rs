@@ -983,7 +983,7 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     roll(out, p.stopped);
     out.push(p.air_stopped.into());
     match p.ground_action {
-        Some(a) => out.extend([1, a.frame, a.dir as u8]),
+        Some(a) => out.extend([1, a.frame, a.dir as u8, a.air.into()]),
         None => out.push(0),
     }
     match p.boost {

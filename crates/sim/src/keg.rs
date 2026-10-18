@@ -20,7 +20,8 @@
 //! the air and in play, falling as any fall does, except that a jump can
 //! start after landing `land_lockout` frames sooner. Input held on frame
 //! 1 can move the player across, start a jump that takes off on the frame
-//! after the burst, or start a turn ([`Keg`]'s `first_` values). Its gait goes on in
+//! after the burst, start the ground action, which goes on in the air, or
+//! start a turn ([`Keg`]'s `first_` values). Its gait goes on in
 //! the fall as off a ledge where the ground simply ends, so a turn there
 //! takes as long as on the ground. The picture is black
 //! until `fade_from` and fades in from there ([`World::brightness`]).
@@ -33,9 +34,9 @@
 //!   a character joins, and the other character isn't drawn either. It
 //!   comes back at the restart point as after any lost life
 //!   (following.md), and follows from there.
-//! - Down and Action held on frame 1 without Up don't start the ground
-//!   action (#258): they only move the player as Left or Right with
-//!   Action do.
+//! - A ground action started on frame 1 doesn't shake the view, and from
+//!   the frame after the burst it knocks out what its own frame there
+//!   would. The spec doesn't say.
 //! - The pieces and the flash start at the keg's position, move from the
 //!   step after it breaks, and are gone after `burst_time` frames. They
 //!   touch nothing.
@@ -47,7 +48,7 @@ use clamber_pack::Param;
 
 use crate::archetype::{Behavior, KEG_PIECES, Keg};
 use crate::flow::{FlowEvent, Outcome};
-use crate::player::{State, ceil};
+use crate::player::{GroundAction, State, ceil};
 use crate::pose;
 use crate::view;
 use crate::world::{Event, Phase, World};
@@ -307,8 +308,8 @@ pub(crate) fn hold(world: &mut World, input: &Frame) -> bool {
 }
 
 /// What input held on frame 1 of a resume does: Right or Left held alone
-/// moves the player across, and Jump held starts a jump, or else Left held
-/// alone a turn.
+/// moves the player across, and Jump held starts a jump, or else Down and
+/// Action without Up the ground action, or else Left held alone a turn.
 fn first_input(player: &mut crate::Player, r: &mut Resume, keg: &Keg, input: &Frame) {
     let held = |a: Action| input.held.contains(a);
     let (right, left) = (held(Action::Right), held(Action::Left));
@@ -324,7 +325,15 @@ fn first_input(player: &mut crate::Player, r: &mut Resume, keg: &Keg, input: &Fr
         player.pos.y -= lift;
         player.keg_fall = false;
         r.jump = true;
-    } else if let Some(turn) = keg.first_turn.filter(|_| left && !right && !ground_action) {
+    } else if let Some(frame) = keg.first_action.filter(|_| ground_action) {
+        // It goes on from the frame after the burst.
+        player.ground_action = Some(GroundAction {
+            frame: frame - 1,
+            dir: i32::from(right) - i32::from(left),
+            air: true,
+        });
+        player.state = State::GroundAction;
+    } else if let Some(turn) = keg.first_turn.filter(|_| left && !right) {
         // It goes on from the frame after the burst.
         player.turn = Some(turn - 1);
     }

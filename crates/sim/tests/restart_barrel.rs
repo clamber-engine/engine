@@ -580,3 +580,116 @@ fn left_on_frame_1_turns_from_frame_63() {
         assert!(frames.iter().all(|s| s.2 == Facing::Right), "{first:?}");
     }
 }
+
+/// Resumes with `first` held on frame 1, `mid` on frames 2 to 62 and
+/// `late` from 63 on; for frames 0 to `last`, the player's place, speed
+/// and facing, and whether the ground action is in progress.
+fn resume_acting(
+    first: &[Action],
+    mid: &[Action],
+    late: &[Action],
+    last: usize,
+) -> Vec<(Vec2, Vec2, Facing, bool)> {
+    let mut play = Play::new(900);
+    play.touch_and_fall_out();
+    let seen = |w: &World| {
+        let p = &w.player;
+        (p.pos, p.vel, p.facing, p.ground_action.is_some())
+    };
+    let mut frames = vec![seen(&play.world)];
+    for frame in 1..=last {
+        play.step(match frame {
+            1 => first,
+            2..=62 => mid,
+            _ => late,
+        });
+        frames.push(seen(&play.world));
+    }
+    frames
+}
+
+/// restart-barrel.md, "Input on frame 1", rule 2: Down and Action held on
+/// frame 1 without Up start the ground action on frame 1, in the air. It
+/// is in progress on frames 1 to 119, and `y` and `vy` are as with nothing
+/// held: the player falls from frame 63 and lands.
+#[test]
+fn down_and_action_on_frame_1_start_the_ground_action_in_the_air() {
+    let none = resume_holding(&[], &[], &[], 140);
+    let cases: [&[Action]; 5] = [&[D, A], &[R, D, A], &[L, D, A], &[L, R, D, A], &[D, A, R]];
+    for keys in cases {
+        let frames = resume_acting(keys, &[], &[], 140);
+        for (n, seen) in frames.iter().enumerate() {
+            assert_eq!(
+                seen.3,
+                (1..=119).contains(&n),
+                "{keys:?}: frame {n} in progress"
+            );
+            assert_eq!(seen.0.y, none[n].0.y, "{keys:?}: frame {n} y");
+            assert_eq!(seen.1.y, none[n].1.y, "{keys:?}: frame {n} vy");
+            assert_eq!(seen.2, Facing::Right, "{keys:?}: frame {n} facing");
+        }
+        assert!(!frames[70].0.y.eq(&none[0].0.y), "{keys:?}: it falls");
+        assert!(
+            frames[110].0.y == f(409.0) && frames[63].0.y < f(409.0),
+            "{keys:?}: it lands"
+        );
+    }
+}
+
+/// With direction ±1, `vx` is 0 until frame 62 and follows
+/// ground-action.md's "Speed and position" with frame 63 as `P`: ±0.375
+/// on 63, ±0.703125 on 64, ±3 from 102 on. Frame 120 (`E`) keeps the
+/// speed of 119. `x` on frames 1 to 62 is as in "Position" with Action.
+#[test]
+fn its_speed_starts_on_the_frame_after_the_burst() {
+    for (keys, way, shift) in [(&[R, D, A][..], 1.0, 0.375), (&[L, D, A][..], -1.0, 0.625)] {
+        let frames = resume_acting(keys, &[], &[], 121);
+        for (n, seen) in frames.iter().enumerate().take(63).skip(1) {
+            assert_eq!(seen.0.x, f(1000.0 + shift), "{keys:?}: frame {n} x");
+            assert_eq!(seen.1.x, Fixed::ZERO, "{keys:?}: frame {n} vx");
+        }
+        let vx = |n: usize| frames[n].1.x;
+        assert_eq!(vx(63), f(way * 0.375), "{keys:?}: frame 63");
+        assert_eq!(vx(64), f(way * 0.703125), "{keys:?}: frame 64");
+        assert_eq!(vx(65), f(way * 0.98828125), "{keys:?}: frame 65");
+        assert_eq!(vx(101), f(way * 2.97265625), "{keys:?}: frame 101");
+        for n in 102..=120 {
+            assert_eq!(vx(n), f(way * 3.0), "{keys:?}: frame {n}");
+        }
+        // As in ground-action.md's example from `x` on P - 1 to P + 39,
+        // then 3 px a frame to `E`, which is P + 57 here.
+        assert_eq!(
+            frames[120].0.x - frames[62].0.x,
+            f(way * (98.74609375 + 18.0 * 3.0)),
+            "{keys:?}: frame 120"
+        );
+        // From frame 121 the usual rules apply: with nothing held it
+        // slows down.
+        assert_eq!(vx(121), f(way * 2.625), "{keys:?}: frame 121");
+    }
+}
+
+/// With direction 0 the player doesn't move until frame 121, with Left or
+/// Right held from frame 2 or 63 on.
+#[test]
+fn with_direction_0_it_stays_put_until_frame_121() {
+    for (mid, late) in [(&[][..], &[][..]), (&[R], &[R]), (&[], &[R]), (&[L], &[L])] {
+        let frames = resume_acting(&[D, A], mid, late, 121);
+        for (n, seen) in frames.iter().enumerate().take(121) {
+            assert_eq!(seen.0.x, f(1000.0), "{mid:?} {late:?}: frame {n} x");
+            assert_eq!(seen.1.x, Fixed::ZERO, "{mid:?} {late:?}: frame {n} vx");
+        }
+        if !late.is_empty() {
+            assert_ne!(frames[121].1.x, Fixed::ZERO, "{mid:?} {late:?}: frame 121");
+        }
+    }
+}
+
+/// With Up held too, or Jump, there's no ground action.
+#[test]
+fn up_or_jump_on_frame_1_keep_it_from_starting() {
+    for keys in [&[U, D, A][..], &[J, D, A], &[J, R, D, A]] {
+        let frames = resume_acting(keys, &[], &[], 140);
+        assert!(frames.iter().all(|s| !s.3), "{keys:?}");
+    }
+}
