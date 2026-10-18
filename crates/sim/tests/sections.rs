@@ -115,3 +115,19 @@ fn the_far_section_opens_while_the_point_is_near() {
     let opening = w.placing.as_ref().unwrap().opening;
     assert_eq!((opening.home, opening.crossing), (1, None));
 }
+
+#[test]
+fn a_wider_view_would_bring_in_spots_only_as_their_sections_place_them() {
+    let mut w = world();
+    step_at(&mut w, 300, 200);
+    let would = |w: &World, width| -> Vec<usize> {
+        let before = w.state_bytes();
+        let things = w.would_appear(300, width);
+        assert_eq!(w.state_bytes(), before, "nothing changes");
+        things.iter().map(|t| t.index).collect()
+    };
+    assert_eq!(would(&w, 600), [] as [usize; 0]);
+    assert_eq!(would(&w, 700), [0]);
+    // And the post, once the window reaches it too.
+    assert_eq!(would(&w, 800), [0, 1]);
+}

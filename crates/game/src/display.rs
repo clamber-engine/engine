@@ -137,12 +137,11 @@ impl Look {
     }
 }
 
-/// Whether the engine can play in `mode` yet. Original and wide
-/// activation need things that are drawn but don't act yet (#236), and
-/// a wider window for things to appear in (#235); until they're made,
-/// games set to them play in original framing, so nothing pops in.
+/// Whether the engine can play in `mode` yet. Wide activation needs a
+/// wider window for things to appear in (#235); until it's made, games
+/// set to it play in original framing, so nothing pops in.
 pub fn made(mode: Widescreen) -> bool {
-    mode == Widescreen::OriginalFraming
+    mode != Widescreen::WideActivation
 }
 
 /// The mode a game set to `mode` plays in: `mode` itself, once it's

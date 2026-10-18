@@ -178,6 +178,9 @@ pub struct Quad {
     pub flip: Flip,
     /// Draw every visible texel in this colour, keeping its alpha.
     pub flash: Option<Rgba>,
+    /// How opaque it's drawn, from 0 (not at all) to 255 (as its texels
+    /// are).
+    pub opacity: u8,
     /// A normal map laid out like `texture`, to light it by. Flashes
     /// aren't lit.
     pub normals: Option<Arc<Texture>>,

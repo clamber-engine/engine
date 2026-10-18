@@ -229,6 +229,7 @@ fn draw_image(
                 ],
                 flip: Flip::default(),
                 flash: None,
+                opacity: 255,
                 normals: normals.cloned(),
             });
         }
@@ -289,6 +290,7 @@ fn draw_tiles(
                 dst: [left, top, right, bottom],
                 flip,
                 flash: None,
+                opacity: 255,
                 normals: normals.cloned(),
             });
         }

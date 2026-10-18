@@ -119,6 +119,7 @@ impl Canvas {
                 let sx = (sx.floor() as u32).min(src.w - 1);
                 let sy = (sy.floor() as u32).min(src.h - 1);
                 let [r, g, b, a] = image.get(src.x + sx, src.y + sy);
+                let a = (a as u32 * quad.opacity as u32 / 255) as u8;
                 let encoded = quad.normals.as_ref().map(|n| {
                     let [r, g, b, a] = n.levels[0].get(src.x + sx, src.y + sy);
                     let p = |c: u8| c as f32 * a as f32 / 255.0;
@@ -172,7 +173,8 @@ impl Canvas {
                 let u = (x as f32 + 0.5 - l) / (r - l) * size.0;
                 let (sx, sy) = quad.flip.source((u, v), (src.w as f32, src.h as f32));
                 let at = ((src.x as f32 + sx) / shrink, (src.y as f32 + sy) / shrink);
-                let [r, g, b, a] = bilinear(image, at, lo, hi);
+                let opacity = quad.opacity as f32 / 255.0;
+                let [r, g, b, a] = bilinear(image, at, lo, hi).map(|c| c * opacity);
                 if a <= 0.0 {
                     continue;
                 }

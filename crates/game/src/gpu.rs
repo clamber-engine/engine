@@ -22,7 +22,7 @@ use crate::surface::{
 /// Every vertex is in view units, and samples its texture within
 /// `bounds` so filtering doesn't reach into neighbouring frames. Colours
 /// are premultiplied by alpha; `flash` replaces a texel's colour with the
-/// vertex colour, keeping its alpha. `lit` says whether to light the
+/// vertex colour, keeping its alpha times the vertex's. `lit` says whether to light the
 /// texel by its normal (`w`), and how the quad is flipped (`xyz`, see
 /// [`crate::surface::normal`]); [`Lighting::at`] is the same sum.
 const SHADER: &str = "
@@ -126,7 +126,7 @@ fn fragment(in: Out) -> @location(0) vec4<f32> {
             texel = vec4<f32>(texel.rgb * light(normalize(n), in.at), texel.a);
         }
     }
-    let flashed = vec4<f32>(in.color.rgb * texel.a, texel.a);
+    let flashed = vec4<f32>(in.color.rgb * texel.a, texel.a) * in.color.a;
     let out = mix(texel * in.color, flashed, in.flash);
     if view.linear_out > 0.5 && out.a > 0.0 {
         return vec4<f32>(decode(out.rgb / out.a) * out.a, out.a);
@@ -991,10 +991,13 @@ impl Mesh {
                 (y + h - 0.5).max(y + 0.5) / size.1,
             ]
         };
+        // Premultiplied, with its opacity in alpha for a flash.
+        let opacity = quad.opacity as f32 / 255.0;
         let (color, flash) = match quad.flash {
-            Some([r, g, b, _]) => ([r, g, b, 255].map(|c| c as f32 / 255.0), 1.0),
-            None => ([1.0; 4], 0.0),
+            Some([r, g, b, _]) => ([r, g, b].map(|c| c as f32 / 255.0), 1.0),
+            None => ([opacity; 3], 0.0),
         };
+        let color = [color[0], color[1], color[2], opacity];
         let drawn = quad.flip.size((w, h));
         let [l, t, r, b] = quad.dst;
         let corner = |cx: f32, cy: f32| {
@@ -1178,6 +1181,7 @@ mod tests {
                 ..Flip::default()
             },
             flash: None,
+            opacity: 255,
             normals: None,
         };
         let mut list = DrawList::new((2, 1));
@@ -1251,6 +1255,7 @@ mod tests {
                     ..Flip::default()
                 },
                 flash: None,
+                opacity: 255,
                 normals: Some(Texture::new(normals.clone(), false)),
             });
         }

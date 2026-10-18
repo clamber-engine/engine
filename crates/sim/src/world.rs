@@ -430,6 +430,22 @@ impl World {
         physics
     }
 
+    /// The things that aren't in the level but would appear at their
+    /// start if the view reached them, as they'd be on appearing, at
+    /// their start: those near a view `width` px wide with its left edge
+    /// at level x `left`, by the same rules as the world's own view
+    /// (see [`View`]), with the view's top where it is now. Nothing
+    /// changes. Without a view there are none.
+    ///
+    /// This is for showing more than the view does without things popping
+    /// in: they can be drawn where they'll appear before they do.
+    pub fn would_appear(&self, left: i64, width: i64) -> Vec<Thing> {
+        match self.view {
+            Some(view) => view::would_appear(self, (left, view.y()), width),
+            None => Vec::new(),
+        }
+    }
+
     /// The level `x` of the middle of the view, with its left edge
     /// rounded down to a whole px as it's drawn, if there is a view.
     pub fn view_middle(&self) -> Option<Fixed> {

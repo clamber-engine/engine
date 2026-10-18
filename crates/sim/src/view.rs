@@ -563,8 +563,40 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 /// that doesn't comes up again later. They are removed as they would be otherwise, and can then
 /// appear again. Things that aren't removed by the view stay gone once
 /// they leave by their own rule.
-pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) {
+pub(crate) fn walkers(world: &mut World, at: (i64, i64), appear: bool) {
     let physics = world.player_physics();
+    walkers_by(world, &physics, at, appear);
+}
+
+/// The things that aren't in the level but would appear at their start,
+/// by [`walkers`]' rules, on a step on which the view's left edge and
+/// top were at `(left, top)`, were the view `width` px wide: each as it
+/// would be on appearing, at its start. Nothing in `world` changes. A
+/// group is there whole, or not at all, and a placed object only where
+/// its sections would place it.
+pub(crate) fn would_appear(world: &World, (left, top): (i64, i64), width: i64) -> Vec<Thing> {
+    let mut physics = world.player_physics();
+    physics.set(Param::ViewWidth, Fixed::from_int(width as i32));
+    let mut after = world.clone();
+    walkers_by(&mut after, &physics, (left, top), true);
+    let level = &world.level;
+    world
+        .things
+        .iter()
+        .zip(after.things)
+        .filter(|(before, after)| !before.active && after.active)
+        .map(|(_, mut thing)| {
+            if let Some(entity) = level.entities.get(thing.index) {
+                // A stinger is put at its start once it moves.
+                thing.pos = entity.at;
+            }
+            thing
+        })
+        .collect()
+}
+
+fn walkers_by(world: &mut World, physics: &Physics, (left, top): (i64, i64), appear: bool) {
+    let physics = *physics;
     if appear && let Some(placing) = &mut world.placing {
         let placed = &placing.placed;
         let there = &placing.there;

@@ -37,6 +37,7 @@
 //! [`Session`] or [`Game`] can be stepped and drawn in tests, and
 //! [`capture`]d to a GIF and screenshots without a display.
 
+mod beyond;
 mod camera;
 mod canvas;
 mod capture;

@@ -360,3 +360,42 @@ fn a_walker_hit_by_a_thrown_object_leaves_by_the_window() {
         assert_eq!(step_in(&mut w, 1000, 200), stays, "X - V of {x} - 1000");
     }
 }
+
+/// The `x` of each thing [`World::would_appear`] gives for a view
+/// `width` px wide at `left`, checking that nothing changes.
+fn would_appear(world: &World, left: i64, width: i64) -> Vec<f64> {
+    let before = world.state_bytes();
+    let things = world.would_appear(left, width);
+    assert_eq!(world.state_bytes(), before, "nothing changes");
+    things.iter().map(|t| t.pos.x.to_f64()).collect()
+}
+
+#[test]
+fn says_which_walkers_a_wider_view_would_bring_in_at_their_start() {
+    let mut w = world("left", 0);
+    step_at(&mut w, 300);
+    assert_eq!(would_appear(&w, 711, 256), [] as [f64; 0]);
+    assert_eq!(would_appear(&w, 712, 256), [1000.0]);
+    // A view 400 px wide reaches it from further left.
+    assert_eq!(would_appear(&w, 568, 400), [1000.0]);
+    assert_eq!(would_appear(&w, 567, 400), [] as [f64; 0]);
+    let thing = &w.would_appear(568, 400)[0];
+    assert!(thing.active && thing.vx == Fixed::ZERO, "as it appears");
+
+    // One in the level isn't given, nor one that's defeated.
+    step_at(&mut w, 712);
+    assert_eq!(would_appear(&w, 712, 256), [] as [f64; 0]);
+    w.things[0].active = false;
+    w.things[0].phase = Phase::Falling {
+        vy: Fixed::ZERO,
+        hold: 0,
+    };
+    assert_eq!(would_appear(&w, 712, 256), [] as [f64; 0]);
+}
+
+#[test]
+fn a_wider_view_would_bring_in_a_group_whole() {
+    let mut w = group(&[1000, 1040, 1080]);
+    group_step_at(&mut w, 300);
+    assert_eq!(would_appear(&w, 568, 400), [1000.0, 1040.0, 1080.0]);
+}

@@ -1449,11 +1449,12 @@ mod tests {
         assert_eq!(Prefs::load(&path), s.prefs);
         s.step(&press(Action::Jump));
         assert_eq!(s.widescreen(), Widescreen::OriginalActivation);
+        assert_eq!(s.game.shown().view, VIEW, "the whole window");
         s.step(&press(Action::Left));
         s.step(&press(Action::Left));
         assert_eq!(s.widescreen(), Widescreen::WideActivation);
         assert_eq!(Prefs::load(&path), s.prefs);
-        // The activation modes aren't made yet, so every mode is framed.
+        // Wide activation isn't made yet, so it's framed.
         assert_eq!(s.game.shown().view, (256, VIEW.1));
         std::fs::remove_dir_all(dir).unwrap();
 

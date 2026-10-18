@@ -77,16 +77,21 @@ modes:
 - **Original activation**, where imported games start: the window shows
   more than the original view, and things are drawn as soon as they're
   in the window, but they only move and act once they're inside the
-  original view, so play goes as it did there.
+  original view, so play goes as it did there. Until then they stand
+  where they'll start, and can't be touched. Things that go while
+  outside the original view, as when it leaves them behind, fade out
+  where they were, and fade in where they start if the window still
+  shows that. The counters and lives stay over the original view's
+  width, in the middle of the window.
 - **Wide activation**, where Clamber's own game starts: things appear
   and act across the whole window, coming in from outside it. Play goes
   differently from the original.
 - **Original framing**: only the original view's width is shown, with
   borders at the sides, and play goes as it did there.
 
-In every mode, nothing appears out of nowhere inside the window. The two
-activation modes aren't finished yet; until they are, a game set to
-either plays in original framing. Movement without a view of its own
+In every mode, nothing appears out of nowhere inside the window. Wide
+activation isn't finished yet; until it is, a game set to it plays in
+original framing. Movement without a view of its own
 (Default, Snappy, Floaty) fills the window in every mode.
 
 **Import a game…** on the title screen turns your own copy of a

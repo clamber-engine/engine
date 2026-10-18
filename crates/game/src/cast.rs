@@ -157,9 +157,23 @@ impl Cast {
 
     /// Draws `thing` in `pose` with its origin at `(x, y)`.
     pub fn draw_thing(&self, canvas: &mut dyn Surface, thing: &Thing, pose: &Pose, x: f32, y: f32) {
+        self.draw_thing_faded(canvas, thing, pose, (x, y), 255);
+    }
+
+    /// Draws `thing` as [`Cast::draw_thing`] does, `opacity` from 0 (not
+    /// at all) to 255 (as it is).
+    pub fn draw_thing_faded(
+        &self,
+        canvas: &mut dyn Surface,
+        thing: &Thing,
+        pose: &Pose,
+        (x, y): (f32, f32),
+        opacity: u8,
+    ) {
         if let Some(&id) = self.kinds.get(&thing.kind) {
             let sprite = Sprite {
                 flip_x: thing.facing == Facing::Left,
+                opacity,
                 ..self.sprite(id, pose, x, y)
             };
             self.bank.draw(canvas, &sprite);

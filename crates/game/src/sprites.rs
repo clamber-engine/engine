@@ -109,6 +109,8 @@ pub struct Sprite {
     pub palette: Option<PaletteId>,
     /// Draw every visible pixel in this colour, keeping its alpha.
     pub flash: Option<Rgba>,
+    /// How opaque it's drawn, from 0 (not at all) to 255 (as it is).
+    pub opacity: u8,
 }
 
 impl Sprite {
@@ -123,6 +125,7 @@ impl Sprite {
             flip_y: false,
             palette: None,
             flash: None,
+            opacity: 255,
         }
     }
 }
@@ -171,6 +174,7 @@ impl SpriteBank {
                 diagonal: false,
             },
             flash: sprite.flash,
+            opacity: sprite.opacity,
             normals: entry.normals.clone(),
         });
     }
@@ -308,6 +312,26 @@ mod tests {
             [BG, BG, G, G, BG, BG],
             [BG, BG, half_green, G, G, BG],
         ]);
+    }
+
+    #[test]
+    fn draws_partly_see_through_or_not_at_all() {
+        let (bank, id) = bank(&indexed());
+        let faded = |opacity| {
+            let rows = draw(
+                &bank,
+                Sprite {
+                    opacity,
+                    flash: Some([0, 255, 0, 255]),
+                    ..Sprite::new(id, 0, 3.0, 3.0)
+                },
+            );
+            rows[1][3]
+        };
+        assert_eq!(faded(255), G);
+        assert_eq!(faded(0), BG);
+        let half = faded(128);
+        assert!(half != G && half != BG, "between: {half:06x}");
     }
 
     #[test]
