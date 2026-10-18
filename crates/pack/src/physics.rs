@@ -621,6 +621,11 @@ params! {
     /// ground that, this many columns ahead, is 8 px or more higher than
     /// its own column. Whole columns.
     StartRiseAhead => "start_rise_ahead",
+    /// Above 0, with `start_rise_ahead`, on a grounded frame held toward
+    /// such a rise the target speed is the last frame's, 0 after a frame
+    /// stopped by a rise, and the body faces the held way at once; a turn
+    /// starts there only when that target points behind it.
+    RiseKeepsTarget => "rise_keeps_target",
     /// Above 0, with `face_slope`, an airborne body moving into a column
     /// whose floor is above its feet by this much or less is lifted onto
     /// it, or lands on it if falling; higher floor stops it as a wall.

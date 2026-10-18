@@ -438,6 +438,7 @@ mod tests {
                     | Param::FaceExit
                     | Param::FaceSlideSwitch
                     | Param::StartRiseAhead
+                    | Param::RiseKeepsTarget
                     | Param::AirStep
                     | Param::AirWholePixels
                     | Param::StillFalls

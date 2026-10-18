@@ -138,6 +138,7 @@ fn walking_left_into_a_wall_stops_at_the_edge_of_its_own_column() {
     // A vertical step of 64 px rising to the left, past column 99.
     let mut world = ground(|c| Some(if c < 100 { -64 } else { 0 }), 103.25);
     world.player.vel.x = Fixed::from_int(-2);
+    world.player.target = Fixed::from_int(-2);
     world.player.facing = Facing::Left;
     let mut xs = Vec::new();
     for _ in 0..4 {
@@ -198,6 +199,108 @@ fn standing_in_front_of_a_rise() {
     // Holding the other way walks away as usual.
     hold(&mut world, &[Action::Left]);
     assert_eq!(row(&world).1, -64);
+}
+
+/// Steps once per entry of `keys` from `world`, and returns `x` relative
+/// to `x0`, `vx`, facing and whether it turned on each frame.
+fn rise_rows(world: &mut World, x0: f64, keys: &[&[Action]]) -> Vec<(Fixed, Fixed, Facing, bool)> {
+    let mut previous: &[Action] = &[];
+    let mut rows = Vec::new();
+    for held in keys {
+        press(world, previous, held);
+        previous = held;
+        let p = &world.player;
+        assert!(p.grounded());
+        rows.push((
+            p.pos.x - fx(x0),
+            p.vel.x,
+            p.facing,
+            world.events.contains(&Event::Turn),
+        ));
+    }
+    rows
+}
+
+#[test]
+fn holding_toward_a_rise_keeps_the_target_and_turns_at_once() {
+    // Walking left away from the face, then Right: the target stays at
+    // walking speed to the left until the column 5 ahead is no longer
+    // 8 px higher, and facing turns right at once.
+    let mut world = ground(rise, 199.0);
+    world.player.facing = Facing::Left;
+    let (l, r): (&[Action], &[Action]) = (&[Action::Left], &[Action::Right]);
+    let rows = rise_rows(&mut world, 199.0, &[l, l, r, r]);
+    let (left, right) = (Facing::Left, Facing::Right);
+    assert_eq!(
+        rows,
+        [
+            (fx(-0.25), fx(-0.25), left, false),
+            (fx(-0.71875), fx(-0.46875), left, false),
+            (fx(-1.37890625), fx(-0.66015625), right, true),
+            (fx(-2.203125), fx(-0.82421875), right, false),
+        ]
+    );
+}
+
+#[test]
+fn turns_next_to_a_rise_start_by_the_kept_target() {
+    // Facing right 5.125 px from the foot of a 64 px step rising to the
+    // left.
+    let mut world = ground(|c| Some(if c < 100 { -64 } else { 0 }), 105.125);
+    let (l, r): (&[Action], &[Action]) = (&[Action::Left], &[Action::Right]);
+    let rows = rise_rows(
+        &mut world,
+        105.125,
+        &[l, l, l, r, r, r, r, l, l, l, l, l, l],
+    );
+    let (left, right) = (Facing::Left, Facing::Right);
+    assert_eq!(
+        rows,
+        [
+            (fx(-0.25), fx(-0.25), right, false),
+            (fx(-0.71875), fx(-0.46875), left, true),
+            (fx(-1.37890625), fx(-0.66015625), left, false),
+            (fx(-1.70703125), fx(-0.328125), left, false),
+            (fx(-1.74609375), fx(-0.0390625), right, true),
+            (fx(-1.53125), fx(0.21484375), right, false),
+            (fx(-1.09375), fx(0.4375), right, false),
+            (fx(-0.4609375), fx(0.6328125), left, true),
+            (fx(0.33984375), fx(0.80078125), left, false),
+            (fx(0.79296875), fx(0.453125), left, false),
+            (fx(0.94140625), fx(0.1484375), left, false),
+            (fx(0.82421875), fx(-0.1171875), left, false),
+            (fx(0.47265625), fx(-0.3515625), right, true),
+        ]
+    );
+}
+
+#[test]
+fn a_kept_running_target_outlasts_releasing_action() {
+    // Speeding up toward a running target of 3 in front of the face, then
+    // Right held without Action: the target stays 3 until the move is
+    // blocked, and is 0 from then on.
+    let mut world = ground(rise, 197.0);
+    world.player.vel.x = fx(0.5);
+    world.player.target = Fixed::from_int(3);
+    let mut rows = Vec::new();
+    for _ in 0..5 {
+        press(
+            &mut world,
+            &[Action::Right, Action::Action],
+            &[Action::Right],
+        );
+        rows.push((world.player.pos.x, grains(world.player.vel.x)));
+    }
+    assert_eq!(
+        rows,
+        [
+            (fx(197.8125), 208),
+            (fx(198.8984375), 278),
+            (fx(198.0), 0),
+            (fx(198.0), 0),
+            (fx(198.0), 0),
+        ]
+    );
 }
 
 #[test]
@@ -297,7 +400,12 @@ fn a_direction_held_up_a_face_is_ignored_then_and_just_after() {
     assert_eq!((after, facing), (ease(before, 0), Facing::Left));
     let (before, after, facing) = off[1];
     assert_eq!((after, facing), (ease(before, 0), Facing::Left));
-    let (before, after, _) = off[2];
+    // Then the face is still the rise 5 columns ahead, and the target is
+    // the last frame's ("Holding toward a rise"), until the player is
+    // far enough from it to start toward it.
+    let (before, after, facing) = off[2];
+    assert_eq!((after, facing), (ease(before, 0), Facing::Right));
+    let (before, after, _) = off[3];
     assert_eq!(after, ease(before, 512));
 }
 
@@ -507,8 +615,9 @@ fn faced_ledge(drop: i32) -> impl Fn(i32) -> Option<i32> {
 }
 
 /// One frame from a landing: `vx` (1/256), facing, gait, whether a turn
-/// is under way, whether the frame turned, and whether a roll started.
-type FallRow = (i64, Facing, Gait, bool, bool, bool);
+/// is under way, whether the frame turned, whether a roll started, and
+/// `x`.
+type FallRow = (i64, Facing, Gait, bool, bool, bool, Fixed);
 
 /// Runs right off [`faced_ledge`] at full speed from x = 250, Right and
 /// Action held up to the frame that leaves the face, then `air` until
@@ -533,6 +642,7 @@ fn fall_from_face(
             p.turn.is_some(),
             world.events.contains(&Event::Turn),
             world.events.contains(&Event::RollStart),
+            p.pos.x,
         )
     };
     while !world.events.contains(&Event::LeaveGround) {
@@ -581,13 +691,28 @@ fn after_a_fall_from_a_face_the_mode_waits_11_frames() {
 
     // However long the fall: facing stays as it is on the landing frames
     // whatever is held, no turn starts on them, and on G + 11 the other
-    // way held starts a turn, which changes facing on G + 15.
+    // way held starts a turn, which changes facing on G + 15. Back at the
+    // foot of the ledge, the other way is toward a rise, with a target of
+    // 0: no turn starts, and facing turns at once from G + 12
+    // (steep-faces.md, "Holding toward a rise"; G + 11 isn't covered).
     for drop in [40, 100, 176, 260] {
         for air in [&[][..], &[L], &[A, L]] {
             let rows = fall_from_face(drop, air, |_| vec![L]).unwrap();
             for (n, row) in rows[..11].iter().enumerate() {
                 assert!(matches!(row.2, Gait::Landing(_)), "{drop} G + {n}");
                 assert_eq!((row.1, row.3, row.4), (Facing::Right, false, false));
+            }
+            // The column 5 to the left is the ledge's.
+            if rows[10].6 < Fixed::from_int(309) {
+                let row = &rows[11];
+                assert_eq!(
+                    (row.1, row.3, row.4),
+                    (Facing::Right, false, false),
+                    "{drop}"
+                );
+                let row = &rows[12];
+                assert_eq!((row.1, row.3, row.4), (Facing::Left, false, true), "{drop}");
+                continue;
             }
             assert!(rows[11].3, "{drop}: a turn on G + 11");
             assert_eq!(rows[14].1, Facing::Right);

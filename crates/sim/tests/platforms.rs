@@ -273,6 +273,7 @@ fn walking(world: &mut World, x: f64, y: f64) {
     p.pos.x = fx(x);
     p.pos.y = fx(y) + Fixed::from_int(FLOOR);
     p.vel.x = Fixed::from_int(2);
+    p.target = Fixed::from_int(2);
     p.facing = Facing::Right;
     assert!(p.grounded());
 }

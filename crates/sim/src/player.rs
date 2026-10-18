@@ -227,6 +227,9 @@ pub struct Player {
     /// Added to the next frame's target speed down the steep face under
     /// the player (`face_slide_switch`).
     pub push: Fixed,
+    /// The last step's move was stopped by a rise: a frame held toward
+    /// one next keeps a target of 0 (`rise_keeps_target`).
+    pub blocked: bool,
     /// After a landing, what the switch frame steep faces wait for is,
     /// until it has come (`face_slide_switch`).
     pub face_switch: Option<FaceSwitch>,
@@ -385,6 +388,7 @@ impl Player {
             approach: None,
             approach_face: false,
             push: Fixed::ZERO,
+            blocked: false,
             face_switch: None,
             rolled_jump: false,
             walked_off: false,
@@ -1447,6 +1451,28 @@ impl Player {
             )
         };
 
+        // Held toward ground ahead too high to start toward, the target
+        // is the last frame's and the player faces the held way at once,
+        // but not on the frames whose target follows the input as in the
+        // air.
+        let toward_rise = physics[Param::RiseKeepsTarget] > Fixed::ZERO
+            && self.grounded()
+            && face.is_none()
+            && acting.is_none()
+            && self.roll.is_none()
+            && !rolling
+            && self.roll_stop == 0
+            && !crouching
+            && !busy.still
+            && !events.contains(&Event::JumpStart)
+            && self.face_switch.is_none()
+            && rise_ahead(dir);
+        let kept_target = if self.blocked {
+            Fixed::ZERO
+        } else {
+            self.target
+        };
+
         let turn_time = frames(physics[Param::TurnTime]);
         let slide = frames(physics[Param::RollStopSlide]);
         // With a stride cycle, whether a turn starts is decided once the
@@ -1552,7 +1578,7 @@ impl Player {
             && (self.grounded() || air_gait)
             && !events.contains(&Event::JumpStart)
         {
-            self.turn_on_ground(dir, turn_time, !striding)
+            self.turn_on_ground(dir, turn_time, !striding, toward_rise)
         } else {
             // In the air, and on the take-off frame, facing follows the
             // input at once.
@@ -1567,6 +1593,7 @@ impl Player {
         // ahead that's too high to start walking toward.
         let run_dir = dir;
         let walled = start_vx == Fixed::ZERO
+            && !toward_rise
             && self.grounded()
             && !rolling
             && !events.contains(&Event::JumpStart)
@@ -1640,6 +1667,7 @@ impl Player {
             }
         } else if response > Fixed::ZERO {
             let mut target = match dir {
+                _ if toward_rise => kept_target,
                 -1 => -cap,
                 1 => cap,
                 _ => Fixed::ZERO,
@@ -1681,7 +1709,20 @@ impl Player {
             // walking or running; landings and the end of a roll set the
             // gait below.
             self.gait = Gait::Standing;
-        } else if self.stride(run_dir, held(Action::Action), turn_ends, physics) {
+        } else if self.stride(
+            run_dir,
+            // Toward a rise, a turn starts by the way the target points.
+            if toward_rise && self.target.is_negative() {
+                -1
+            } else if toward_rise {
+                i32::from(self.target > Fixed::ZERO)
+            } else {
+                run_dir
+            },
+            held(Action::Action),
+            turn_ends,
+            physics,
+        ) {
             self.facing = facing_of(-direction(self.facing));
             events.push(Event::Turn);
         }
@@ -1755,6 +1796,7 @@ impl Player {
         }
         let hold = self.jump_hold;
         let feet = self.pos.y;
+        self.blocked = false;
         let moved = if slope > Fixed::ZERO && airborne {
             self.move_in_air_by_columns(level, physics, events)
         } else if slope > Fixed::ZERO {
@@ -1763,6 +1805,7 @@ impl Player {
             let before = self.vel.x;
             let rise = (face_rolls && self.roll.is_some()).then_some(STEP);
             let moved = self.move_by_columns(level, slope, face.map(|way| (way, physics)), rise);
+            self.blocked = before != Fixed::ZERO && self.vel.x == Fixed::ZERO;
             if let Some(roll) = self.roll.as_mut().filter(|_| face_rolls) {
                 roll.stopped |= before != Fixed::ZERO && self.vel.x == Fixed::ZERO;
             }
@@ -2708,11 +2751,21 @@ impl Player {
 
     /// Goes on with the turn under way, or, if `start`, starts one if
     /// `dir` points behind the player, and returns the facing for this
-    /// frame.
-    fn turn_on_ground(&mut self, dir: i32, turn_time: u8, start: bool) -> Facing {
+    /// frame. Held `toward_rise`, the player faces `dir` at once, before
+    /// the turn's own change.
+    fn turn_on_ground(
+        &mut self,
+        dir: i32,
+        turn_time: u8,
+        start: bool,
+        toward_rise: bool,
+    ) -> Facing {
         let mut facing = self.facing;
         let length = turn_time.saturating_sub(self.short_turn.into());
         self.turn = self.turn.map(|n| n + 1).filter(|&n| n < length);
+        if toward_rise {
+            facing = facing_of(dir);
+        }
         if start && self.turn.is_none() && dir == -direction(facing) {
             self.turn = Some(0);
         }
@@ -2726,15 +2779,23 @@ impl Player {
     }
 
     /// Goes on through the stride cycle once the frame's speed is known,
-    /// holding `dir`, and starts a turn when one can start. `turn_ends`
-    /// says the turn under way ended this frame. Returns whether facing
-    /// changes now, which only a turn shorter than 2 frames does.
-    fn stride(&mut self, dir: i32, action: bool, turn_ends: bool, physics: &Physics) -> bool {
+    /// holding `dir`, and starts a turn when one can start and `turn_dir`
+    /// points behind the player. `turn_ends` says the turn under way
+    /// ended this frame. Returns whether facing changes now, which only a
+    /// turn shorter than 2 frames does.
+    fn stride(
+        &mut self,
+        dir: i32,
+        turn_dir: i32,
+        action: bool,
+        turn_ends: bool,
+        physics: &Physics,
+    ) -> bool {
         if self.turn.is_some() {
             return false;
         }
         let forward = direction(self.facing);
-        let opposite = dir == -forward;
+        let opposite = turn_dir == -forward;
         let v = self.vel.x.abs();
         let steps = physics[Param::StrideSteps]
             .floor()

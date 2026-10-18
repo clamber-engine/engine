@@ -151,6 +151,7 @@ face_speed = 0
 face_exit = 0
 face_slide_switch = 0
 start_rise_ahead = 0
+rise_keeps_target = 0
 air_step = 0
 air_whole_pixels = 0
 still_falls = 0
@@ -663,6 +664,9 @@ face_exit = 2
 # on or next to a face").
 face_slide_switch = 11
 start_rise_ahead = 5
+# Held toward such a rise, the target is the last frame's and facing
+# turns at once (steep-faces.md, "Holding toward a rise").
+rise_keeps_target = 1
 hurt_width = 24
 hurt_offset = -3
 hurt_jump_time = 6
