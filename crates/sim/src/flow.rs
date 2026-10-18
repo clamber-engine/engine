@@ -42,7 +42,7 @@ use clamber_level::Vec2;
 use clamber_pack::Param;
 
 use crate::archetype::Behavior;
-use crate::collect::{self, LetterEnd, LivesStep, Pickup, Release, RelicFlight};
+use crate::collect::{self, LetterEnd, LetterShow, LivesStep, Pickup, Release, RelicFlight};
 use crate::hits;
 use crate::keg;
 use crate::loss;
@@ -148,9 +148,11 @@ pub struct Flow {
     /// Letters taken that haven't joined yet: the step each joins on,
     /// and the letter.
     pub joining: Vec<(u32, u8)>,
-    /// The step the last letter was taken on, for the letter row
-    /// ([`World::letter_row`](crate::World::letter_row)).
-    pub letter_taken: Option<u32>,
+    /// The letter row shown after the last letter taken, and the one
+    /// before it, which may still be sliding out
+    /// ([`World::letter_rows`](crate::World::letter_rows)).
+    pub letter_shown: Option<LetterShow>,
+    pub letter_before: Option<LetterShow>,
     /// The letter row's ending, from the step the word's last letter
     /// joined on ([`World::letter_row`](crate::World::letter_row)).
     pub letter_end: Option<LetterEnd>,
@@ -261,7 +263,8 @@ pub(crate) fn afresh(world: &mut World) {
     let at_restart = !flow.checkpoints.is_empty();
     if !at_restart {
         flow.letters = 0;
-        flow.letter_taken = None;
+        flow.letter_shown = None;
+        flow.letter_before = None;
         flow.letter_end = None;
     }
     flow.joining.clear();

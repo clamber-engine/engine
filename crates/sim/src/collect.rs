@@ -49,9 +49,13 @@
 //! at a time (see [`World::lives_display`]). One that's there `once` is
 //! gone for good when it's taken.
 //!
-//! Engine choices where the spec says nothing: a letter taken while the
-//! row is shown for another shows it again from the start, and one taken
-//! during the ending shows the row for it instead. Of the lives display
+//! A letter taken while the row is shown, before its last frame at rest,
+//! keeps it there for as long as if it had been taken first; one taken
+//! later brings in another row, while the first slides out.
+//!
+//! Engine choices where the spec says nothing: a letter taken during the
+//! ending shows the row for it instead, and a third row coming in while
+//! two are drawn takes the place of the older one. Of the lives display
 //! after the count reaches `count_life` and the one in the ending, the
 //! one that started last is shown, and of that and the one after a
 //! collectible giving lives, the one that started last too. Displays
@@ -116,6 +120,15 @@ pub struct LetterEnd {
     /// The lives before the one it gave, and with it.
     pub before: u8,
     pub after: u8,
+}
+
+/// A letter row shown after a letter was taken.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct LetterShow {
+    /// The step the letter that brought the row in was taken on.
+    pub from: u32,
+    /// The step the last letter it shows was taken on.
+    pub last: u32,
 }
 
 /// A taken relic's image, flying to its resting place.
@@ -183,21 +196,29 @@ pub struct LetterRow {
 
 impl World {
     /// The letter row in the picture made from the last step, if it's
-    /// drawn in it.
+    /// drawn in it: of [`letter_rows`](World::letter_rows), the one that
+    /// came in last.
     pub fn letter_row(&self) -> Option<LetterRow> {
+        self.letter_rows().pop()
+    }
+
+    /// The letter rows in the picture made from the last step, the one
+    /// that came in first first: while one slides out, a letter taken
+    /// then brings in another (letters.md, "Another letter while the row
+    /// is shown").
+    pub fn letter_rows(&self) -> Vec<LetterRow> {
         let physics = &self.feel.world;
         let int = |p: Param| i32::try_from(physics[p].floor()).unwrap_or(0);
         let count = whole(physics[Param::LetterCount]).min(u32::from(MAX_LETTERS));
-        let taken = self.flow.letter_taken?;
-        let n = self.frame.checked_sub(1)?;
-        let since = n.checked_sub(taken)?;
+        let (Some(shown), Some(n)) = (self.flow.letter_shown, self.frame.checked_sub(1)) else {
+            return Vec::new();
+        };
         if count == 0 {
-            return None;
+            return Vec::new();
         }
-        if let Some(end) = self.letter_end().filter(|e| e.at >= taken) {
-            return self.ending_row(end, n, count as u8);
+        if let Some(end) = self.letter_end().filter(|e| e.at >= shown.last) {
+            return self.ending_row(end, n, count as u8).into_iter().collect();
         }
-        let since = i64::from(since);
         let (into, slide, out) = (
             i64::from(int(Param::LetterRowIn)),
             i64::from(int(Param::LetterRowSlide)),
@@ -208,18 +229,28 @@ impl World {
             i64::from(int(Param::LetterRowRise)),
             i64::from(int(Param::LetterRowSpeed)),
         );
-        let y = slide_y(since, (into, slide, out), (rest, rise, rise, speed))?;
         let (left, gap) = (int(Param::LetterRowX), int(Param::LetterRowGap));
         let mut x = [0; MAX_LETTERS as usize];
         for (k, x) in x.iter_mut().enumerate() {
             *x = left.saturating_add(gap.saturating_mul(k as i32));
         }
-        Some(LetterRow {
-            y: i32::try_from(y).unwrap_or(i32::MAX),
-            x,
-            count: count as u8,
-            letters: self.flow.letters,
-        })
+        [self.flow.letter_before, Some(shown)]
+            .into_iter()
+            .flatten()
+            .filter(|s| s.from <= n)
+            .filter_map(|s| {
+                // Letters taken while it's shown move its end on.
+                let out = out + i64::from(s.last - s.from);
+                let since = i64::from(n - s.from);
+                slide_y(since, (into, slide, out), (rest, rise, rise, speed))
+            })
+            .map(|y| LetterRow {
+                y: i32::try_from(y).unwrap_or(i32::MAX),
+                x,
+                count: count as u8,
+                letters: self.flow.letters,
+            })
+            .collect()
     }
 
     /// The count display in the picture made from the last step, if the
@@ -786,7 +817,22 @@ fn take(world: &mut World, start: Option<View>) {
         if letter > 0 {
             flow.joining
                 .push((world.frame + u32::from(join_delay), letter));
-            flow.letter_taken = Some(world.frame);
+            // Taken before the row's last frame at rest, the row goes on
+            // with its end moved; later, another row comes in.
+            let out = whole(world.feel.world[Param::LetterRowOut]);
+            flow.letter_shown = match flow.letter_shown {
+                Some(s) if world.frame < (s.last + out).saturating_sub(1) => Some(LetterShow {
+                    last: world.frame,
+                    ..s
+                }),
+                before => {
+                    flow.letter_before = before;
+                    Some(LetterShow {
+                        from: world.frame,
+                        last: world.frame,
+                    })
+                }
+            };
         }
     }
 }

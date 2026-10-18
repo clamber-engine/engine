@@ -173,6 +173,62 @@ fn while_its_there_or_carried_its_start_places_nothing_else() {
     assert_eq!(w.things[3].pos.x, Fixed::from_int(3000));
 }
 
+/// "In lists with sections", "Objects put down elsewhere", the spec's
+/// example: a crate whose start, at x = 200 on a ledge at level y 1000,
+/// needs the view's rows to appear (a class 15 entry), put down at
+/// x = 600 on the floor at level y 1400.
+fn put_down_below() -> World {
+    let src = r#"
+        format = 1
+        size = [4000, 1600]
+        start = [3000, 1400]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 1400, 4000, 200]
+
+        [[collision]]
+        shape = "rect"
+        rect = [100, 1000, 200, 20]
+
+        [[entities]]
+        type = "crate"
+        at = [200, 1000]
+
+        [[sections]]
+        spots = [{ entities = [0], rows = true }]
+    "#;
+    let level = Level::from_toml_str(src, "test").unwrap();
+    let mut w = World::new(
+        Arc::new(level),
+        Arc::new(generic_feel("classic-1").unwrap()),
+    );
+    assert!(step_at::<1>(&mut w, 0, 900)[0]);
+    w.things[0].pos.x = Fixed::from_int(600);
+    w.things[0].pos.y = Fixed::from_int(1400);
+    w
+}
+
+#[test]
+fn put_down_below_it_comes_back_only_with_its_start_in_the_rows() {
+    let mut w = put_down_below();
+    assert!(step_at::<1>(&mut w, 300, 1250)[0]);
+    assert!(step_at::<1>(&mut w, 727, 1250)[0]);
+    assert!(!step_at::<1>(&mut w, 728, 1250)[0]);
+    // Its start is in the window across, but not in the rows.
+    assert!(!step_at::<1>(&mut w, 150, 1250)[0]);
+    assert!(step_at::<1>(&mut w, 150, 1031)[0]);
+    let at = w.things[0].pos;
+    assert_eq!((at.x, at.y), (Fixed::from_int(200), Fixed::from_int(1000)));
+
+    // Going up before it's removed, it stays down on the floor: its
+    // start places nothing else.
+    let mut w = put_down_below();
+    assert!(step_at::<1>(&mut w, 150, 1250)[0]);
+    assert!(step_at::<1>(&mut w, 150, 1031)[0]);
+    assert_eq!(w.things[0].pos.x, Fixed::from_int(600));
+}
+
 /// "Exits": there only in the window and the vertical window, removed
 /// as soon as either no longer holds, even when only `U` changes.
 #[test]

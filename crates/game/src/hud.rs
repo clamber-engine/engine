@@ -48,7 +48,7 @@ pub fn draw_hud(canvas: &mut dyn Surface, world: &World) {
     } else {
         draw_items(canvas, world);
     }
-    if let Some(row) = world.letter_row() {
+    for row in world.letter_rows() {
         draw_letter_row(canvas, world, &row);
     }
 }

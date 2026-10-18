@@ -185,6 +185,71 @@ fn the_row_shows_the_letters_taken_in_their_slots() {
     assert!(at(228).is_none() && at(229).is_none());
 }
 
+/// Letters.md's example of another letter while the row is shown: with
+/// letter 4 taken, letter 1 is taken on frame 100 and letter 2 on `p2`.
+/// Gives the y of each row drawn in the picture made on each frame.
+fn two_letters(p2: usize) -> Vec<Vec<i32>> {
+    let mut w = world(&[(X + 1000, F - 10, 1), (X + 1500, F - 10, 2)]);
+    w.flow.letters = 0b1000;
+    let mut ys = Vec::new();
+    for n in 0..400 {
+        if n == 100 {
+            w.things[0].pos = w.player.pos;
+        }
+        if n == p2 {
+            w.things[1].pos = w.player.pos;
+        }
+        idle(&mut w);
+        ys.push(w.letter_rows().iter().map(|r| r.y).collect());
+    }
+    ys
+}
+
+#[test]
+fn a_letter_taken_before_the_rows_end_keeps_it_shown() {
+    let ys = two_letters(150);
+    assert_eq!(ys[101], Vec::<i32>::new());
+    assert_eq!(ys[102], [-12]);
+    assert!(ys[110..=271].iter().all(|y| y == &[12]));
+    let out: Vec<_> = (272..=277).map(|n| ys[n][0]).collect();
+    assert_eq!(out, [8, 4, 0, -4, -8, -12]);
+    assert!(ys[278..].iter().all(Vec::is_empty));
+
+    // Taken while the row still slides in, it goes on sliding in.
+    let ys = two_letters(105);
+    let slide: Vec<_> = (102..=109).map(|n| ys[n][0]).collect();
+    assert_eq!(slide, [-12, -8, -4, 0, 4, 8, 12, 16]);
+    assert!(ys[110..=226].iter().all(|y| y == &[12]));
+    assert_eq!(ys[227], [8]);
+
+    // On the frame before the end, as late as it can be.
+    let ys = two_letters(220);
+    assert!(ys[110..=341].iter().all(|y| y == &[12]));
+    assert_eq!(ys[342], [8]);
+}
+
+#[test]
+fn a_letter_taken_on_the_rows_end_or_later_brings_in_a_second_row() {
+    let ys = two_letters(224);
+    assert!(ys[110..=221].iter().all(|y| y == &[12]));
+    let first: Vec<_> = (222..=227).map(|n| ys[n][0]).collect();
+    assert_eq!(first, [8, 4, 0, -4, -8, -12]);
+    assert_eq!(ys[225], [-4]);
+    assert_eq!(ys[226], [-8, -12]);
+    assert_eq!(ys[227], [-12, -8]);
+    assert_eq!(ys[228], [-4]);
+    assert_eq!(ys[229], [0]);
+    assert!(ys[234..=345].iter().all(|y| y == &[12]));
+    assert_eq!(ys[346], [8]);
+    assert!(ys[352..].iter().all(Vec::is_empty));
+
+    // Taken on the end itself.
+    let ys = two_letters(221);
+    assert_eq!(ys[221], [12]);
+    assert_eq!(ys[222], [8]);
+    assert_eq!(ys[223], [4, -12]);
+}
+
 #[test]
 fn the_default_preset_has_no_letter_row() {
     let level = r#"

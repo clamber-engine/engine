@@ -826,12 +826,15 @@ impl World {
             out.extend(at.to_le_bytes());
             out.push(k);
         }
-        match f.letter_taken {
-            Some(at) => {
-                out.push(1);
-                out.extend(at.to_le_bytes());
+        for shown in [f.letter_shown, f.letter_before] {
+            match shown {
+                Some(s) => {
+                    out.push(1);
+                    out.extend(s.from.to_le_bytes());
+                    out.extend(s.last.to_le_bytes());
+                }
+                None => out.push(0),
             }
-            None => out.push(0),
         }
         out.extend(f.shown.to_le_bytes());
         match f.last_step {
