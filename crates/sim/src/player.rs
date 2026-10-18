@@ -2168,9 +2168,10 @@ impl Player {
                 self.hands = None;
             }
         }
+        // The object was found at the end of the step before, with the
+        // player on the ground then; it may have taken off since.
         if let Some(thing) = self.pick.take()
             && self.hands.is_none()
-            && self.grounded()
             && held(Action::Action)
         {
             // A roll into the object ends.

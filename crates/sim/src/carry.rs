@@ -2,10 +2,14 @@
 //! can be carried, carrying it, throwing it and putting it down, as
 //! `spec/behavior/carrying.md` describes.
 //!
-//! A pick-up starts on the frame after one that ends with the player
-//! moving into an object within reach with action held, or on a frame
-//! action is pressed with the player standing within reach. The player
-//! does the rest ([`Hands`]); this module moves the object to match:
+//! A pick-up starts on a frame with action held, if the frame before
+//! ended with the player on the ground, holding nothing, not knocked
+//! out and within the object's reach ([`Grab`](crate::Grab)), by the
+//! player's facing then. Moving into it with action held, it starts on
+//! the frame after the first that ends within reach; pressing action
+//! within reach, on the press frame, with no roll. A holder lying where
+//! it's placed is within reach by its look. The player does the rest
+//! ([`Hands`]); this module moves the object to match:
 //!
 //! - While held, it sits on the player's head. Where it's drawn isn't in
 //!   the spec.
@@ -61,7 +65,7 @@ use crate::archetype::{Archetype, Behavior, Holder};
 use crate::columns::{self, column};
 use crate::flow::Outcome;
 use crate::player::{
-    Act, Facing, HEIGHT, Player, SPEED_GRAIN, STEP, State, TINY, ceil, ease, frames, is_wall,
+    Act, Facing, HEIGHT, Player, SPEED_GRAIN, STEP, TINY, ceil, ease, frames, is_wall,
 };
 use crate::throwers::Picture;
 use crate::world::{Event, Phase, Thing, World};
@@ -99,43 +103,40 @@ impl Flight {
     }
 }
 
-/// Before the player moves: an action press with the player standing
-/// within reach of an object starts a pick-up on this step, and so does
-/// one made late in a put-down and still held as it ends.
+/// Before the player moves: an action press made with the player
+/// within reach of an object as a put-down ends starts a pick-up on this
+/// step, and so does one made late in the put-down and still held.
 pub(crate) fn before(world: &mut World, input: &Frame) {
     let physics = world.player_physics();
     let p = &world.player;
-    if physics[Param::PickUpTime] <= Fixed::ZERO || !p.grounded() {
+    let Some(h) = p.hands else {
+        return;
+    };
+    let put_down = frames(physics[Param::PutDownTime]);
+    if physics[Param::PickUpTime] <= Fixed::ZERO
+        || !p.grounded()
+        || h.act != Act::PutDown
+        || h.frame.saturating_add(1) < put_down
+    {
         return;
     }
-    let put_down = frames(physics[Param::PutDownTime]);
-    let (free, regrab) = match p.hands {
-        None => (true, false),
-        Some(h) if h.act == Act::PutDown && h.frame.saturating_add(1) >= put_down => (
-            true,
-            h.frame.saturating_add(1) == put_down
-                && h.press.is_some()
-                && input.held.contains(Action::Action),
-        ),
-        Some(_) => (false, false),
-    };
-    let press = input.pressed.contains(Action::Action) && p.vel.x == Fixed::ZERO;
-    if free && (press || regrab) {
-        // Pressing action within reach doesn't roll.
-        if let Some(thing) = in_reach(world, None) {
-            world.player.pick = Some(thing);
-        }
+    let regrab = h.press.is_some() && input.held.contains(Action::Action);
+    if input.pressed.contains(Action::Action) || regrab {
+        world.player.pick = in_reach(world);
     }
 }
 
 /// After everything has moved: moves the object the player holds with
 /// it, lets go of it where the player throws or sets it down, and finds
-/// the object a pick-up starts with on the next step, if one does.
-pub(crate) fn after(world: &mut World, input: &Frame) {
+/// the object a pick-up starts with on the next step if action is held
+/// then.
+pub(crate) fn after(world: &mut World) {
     world.player.pick = None;
     let physics = world.player_physics();
     let Some(hands) = world.player.hands else {
-        world.player.pick = moving_into(world, input, &physics);
+        if physics[Param::PickUpTime] > Fixed::ZERO && world.player.grounded() && can_hold(world) {
+            world.player.pick = in_reach(world);
+        }
         return;
     };
     // With a `let_go_speed`, an object still in the hands on the
@@ -237,53 +238,36 @@ fn can_hold(world: &World) -> bool {
         && world.flow.outcome == Outcome::Playing
 }
 
-/// The object a player moving into it with action held picks up on the
-/// next step: the nearest within reach in the way it's moving.
-fn moving_into(world: &World, input: &Frame, physics: &Physics) -> Option<usize> {
+/// The object resting within the player's reach, or just set down: the
+/// nearest across, if more than one is. A holder lying where it's placed
+/// is within reach by its look ([`Holder::still_at`]), its `clock`
+/// counting the frames it has been there, the one it appeared on
+/// included.
+fn in_reach(world: &World) -> Option<usize> {
     let p = &world.player;
-    let moving = p.vel.x != Fixed::ZERO || p.state == State::Roll;
-    if physics[Param::PickUpTime] <= Fixed::ZERO
-        || !moving
-        || !p.grounded()
-        || !input.held.contains(Action::Action)
-        || !can_hold(world)
-    {
-        return None;
-    }
-    let way = if p.vel.x.is_negative() {
-        Facing::Left
-    } else if p.vel.x > Fixed::ZERO {
-        Facing::Right
-    } else {
-        p.facing
-    };
-    in_reach(world, Some(way))
-}
-
-/// The nearest object resting within reach of the player, or just set
-/// down, only those on the side `way` says if it's given.
-fn in_reach(world: &World, way: Option<Facing>) -> Option<usize> {
-    let p = &world.player;
+    let (x, y) = (p.pos.x.floor(), ceil(p.pos.y));
+    let right = p.facing == Facing::Right;
     world
         .things
         .iter()
         .filter(|t| t.active && matches!(t.phase, Phase::Ready | Phase::Placed))
         .filter_map(|t| {
-            let reach = match t.archetype {
-                Some(Archetype {
-                    behavior: Behavior::Carry { reach, .. },
-                    ..
-                }) => reach,
-                _ => return None,
+            let Some(Archetype {
+                behavior: Behavior::Carry { reach, holder, .. },
+                ..
+            }) = t.archetype
+            else {
+                return None;
             };
-            let gap = t.pos.x - p.pos.x;
-            let side = match way {
-                Some(Facing::Left) => gap <= Fixed::ZERO,
-                Some(Facing::Right) => gap >= Fixed::ZERO,
-                None => true,
+            let grab = match holder {
+                Some(h) if t.phase == Phase::Ready && !h.still_at(t.clock.saturating_sub(1)) => {
+                    h.shaking
+                }
+                _ => reach,
             };
-            let level = (t.pos.y - p.pos.y).abs() <= STEP;
-            (side && level && gap.abs() <= reach).then_some((gap.abs(), t.index))
+            let across = t.pos.x.floor() - x;
+            grab.holds(right, across, ceil(t.pos.y) - y)
+                .then_some((across.abs(), t.index))
         })
         .min()
         .map(|(_, index)| index)

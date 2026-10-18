@@ -66,7 +66,7 @@ pub enum Behavior {
     /// Fires the player off at `velocity` on touch.
     Launcher { velocity: Vec2 },
     /// An object the player can pick up, carry, throw and put down
-    /// (see [`carry`](crate::carry)), from `reach` px away or closer.
+    /// (see [`carry`](crate::carry)), from within its [`Grab`].
     /// Thrown, it hits walkers its `hit` box touches, or its `hit_early`
     /// box for its first `hit_early_time` frames out of the hands. It
     /// knocks out throwers its `thrower` box holds, or its
@@ -75,7 +75,7 @@ pub enum Behavior {
     /// moved `thrower_turn` px left. With a `holder`, it holds the missing
     /// character. With `opens`, it opens wall exits.
     Carry {
-        reach: Fixed,
+        reach: Grab,
         hit: Hit,
         hit_early: Hit,
         hit_early_time: u8,
@@ -1083,11 +1083,51 @@ impl Hit {
 /// its [`Behavior::Carry`] boxes hold and balls its `ball` box holds, or
 /// their early boxes for its first `hit_early_time` frames out of the
 /// hands ([`Hit::holds`]).
+///
+/// Lying where it's placed, it shakes in a cycle of `look` frames
+/// counted from the one it appeared on, looking still on the frames of
+/// the cycle within either of `still` (ends included). While it shakes,
+/// the player picks it up from within `shaking` rather than the
+/// object's `reach`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Holder {
     pub window: (i32, i32, i32, i32),
     pub ball: Hit,
     pub ball_early: Hit,
+    pub shaking: Grab,
+    pub look: u32,
+    pub still: [(i32, i32); 2],
+}
+
+impl Holder {
+    /// Whether it looks still `age` frames after it appeared.
+    pub fn still_at(&self, age: u32) -> bool {
+        let frame = (age % self.look.max(1)) as i32;
+        self.still
+            .iter()
+            .any(|&(from, to)| (from..=to).contains(&frame))
+    }
+}
+
+/// Where a player can pick an object up from, in whole px, ends
+/// included: the object's `x` rounded down less the player's, `right`
+/// for a player facing right and `left` for one facing left, and the
+/// object's `y` rounded up less the player's, `below`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Grab {
+    pub right: (i32, i32),
+    pub left: (i32, i32),
+    pub below: (i32, i32),
+}
+
+impl Grab {
+    /// Whether an object `across` and `below` the player, as above, is
+    /// within it for a player facing right if `right`.
+    pub fn holds(&self, right: bool, across: i64, below: i64) -> bool {
+        let inside =
+            |(from, to): (i32, i32), v: i64| (i64::from(from)..=i64::from(to)).contains(&v);
+        inside(if right { self.right } else { self.left }, across) && inside(self.below, below)
+    }
 }
 
 /// What makes a thrown object open wall exits (see
@@ -1333,6 +1373,9 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "hit_thrower_turn",
             "hit_ball",
             "hit_ball_early",
+            "holder_reach",
+            "holder_look",
+            "holder_still",
             "hit_wall_exit",
             "hit_wall_exit_early",
         ],
@@ -1615,10 +1658,8 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             }
         }
         "carry" => {
-            let reach = number("reach")?;
-            if reach.is_negative() {
-                return Err(format!("{path}.reach: must not be negative"));
-            }
+            let grab = |key: &str| parse_grab(get(key)?, &format!("{path}.{key}"));
+            let reach = grab("reach")?;
             let hit = |key: &str| -> Result<Hit, String> {
                 let at = format!("{path}.{key}");
                 match get(key)? {
@@ -1655,6 +1696,20 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                     window: edges(get("holder_window")?, &format!("{path}.holder_window"))?,
                     ball: hit("hit_ball")?,
                     ball_early: hit("hit_ball_early")?,
+                    shaking: grab("holder_reach")?,
+                    look: match get("holder_look")? {
+                        Value::Integer(n) if (1..=i64::from(u32::MAX)).contains(n) => *n as u32,
+                        _ => {
+                            return Err(format!(
+                                "{path}.holder_look: expected a whole number of frames, at least 1"
+                            ));
+                        }
+                    },
+                    still: parse_ranges(
+                        get("holder_still")?,
+                        &format!("{path}.holder_still"),
+                        "frames of the cycle",
+                    )?,
                 }),
                 Some(_) => return Err(format!("{path}.holds_character: expected true or false")),
             };
@@ -2500,6 +2555,27 @@ fn parse_range(value: &Value, at: &str) -> Result<(i32, i32), String> {
         }
         _ => Err(format!("{at}: expected [from, to]")),
     }
+}
+
+/// Reads a [`Grab`]: `{ right = [from, to], left = [from, to], below =
+/// [from, to] }`. Errors start with `at`.
+fn parse_grab(value: &Value, at: &str) -> Result<Grab, String> {
+    let Value::Table(table) = value else {
+        return Err(format!("{at}: expected {{ right, left, below }}"));
+    };
+    const KEYS: [&str; 3] = ["right", "left", "below"];
+    if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
+        return Err(format!("{at}.{key}: no such value"));
+    }
+    let range = |key: &str| match table.get(key) {
+        Some(v) => parse_range(v, &format!("{at}.{key}")),
+        None => Err(format!("{at}: missing `{key}`")),
+    };
+    Ok(Grab {
+        right: range("right")?,
+        left: range("left")?,
+        below: range("below")?,
+    })
 }
 
 /// Reads `[[from, to], [from, to]]`, whole px, which come in the order

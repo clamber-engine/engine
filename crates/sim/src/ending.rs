@@ -165,7 +165,6 @@ pub(crate) fn step(world: &mut World) {
     let Some(mut ending) = world.ending else {
         return;
     };
-    let none = Frame::default();
     let physics = world.player_physics();
     let start_view = world.view;
     loss::tick(world);
@@ -195,7 +194,7 @@ pub(crate) fn step(world: &mut World) {
     if let Some(at) = view_at {
         view::walkers(world, at, false);
     }
-    carry::after(world, &none);
+    carry::after(world);
     collect::update(world, true, start_view);
 
     let x = world.player.pos.x.floor();

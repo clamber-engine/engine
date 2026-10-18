@@ -1352,7 +1352,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         view::walkers(world, at, false);
     }
     view::update(world, begin);
-    carry::after(world, &input.players[0]);
+    carry::after(world);
     keg::after(world);
     drop_in::after(world);
     collect::update(world, true, start_view);

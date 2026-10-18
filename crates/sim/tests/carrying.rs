@@ -167,10 +167,11 @@ fn a_pick_up_at_full_running_speed() {
     let rows = play.hold(&[Right, A], 200);
     let g = rows.iter().position(|r| r.act.is_some()).unwrap();
     assert_eq!(rows[g].act, Some(Act::PickUp));
-    let reach = f(24.0);
+    // "Reach": facing right, the object's x less the player's, both
+    // rounded down, is at most 38.
     let first_in_reach = rows
         .iter()
-        .position(|r| f(600.0) - r.pos.x <= reach)
+        .position(|r| 600 - r.pos.x.floor() <= 38)
         .unwrap();
     assert_eq!(g, first_in_reach + 1);
     assert_eq!(rows[g - 1].vel.x, speed(768));
@@ -449,11 +450,15 @@ fn picking_up_again_after_putting_down() {
     assert_eq!(rows[9].act, Some(Act::PickUp));
     assert!(rows.iter().all(|r| !has(r, Event::RollStart)));
 
-    // On Q + 1, it doesn't.
+    // On Q + 1, it doesn't. Held on, it's picked up on Q + 15 by
+    // "Picking up": the put-down is over at the end of Q + 14.
     let mut play = put_down();
     let rows = play.hold(&[A], 20);
-    assert!(rows[13..].iter().all(|r| r.act.is_none()));
+    assert_eq!(rows[13].act, None);
+    assert_eq!(rows[14].act, Some(Act::PickUp));
     // A press within reach later does, on the press frame.
+    let mut play = put_down();
+    play.hold(&[], 20);
     play.step(&[]);
     assert_eq!(play.step(&[A]).act, Some(Act::PickUp));
 }

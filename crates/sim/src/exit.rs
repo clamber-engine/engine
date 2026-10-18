@@ -69,7 +69,6 @@
 //! [`Opens`]: crate::Opens
 
 use clamber_fixed::Fixed;
-use clamber_input::Frame;
 use clamber_level::{Arrival, Entity, Vec2};
 use clamber_pack::{Param, Physics};
 
@@ -370,7 +369,6 @@ pub(crate) fn step(world: &mut World) {
     let Some(mut leaving) = world.leaving else {
         return;
     };
-    let none = Frame::default();
     let physics = world.player_physics();
     let start_view = world.view;
     loss::tick(world);
@@ -415,7 +413,7 @@ pub(crate) fn step(world: &mut World) {
     if leaving.fade.is_none() {
         view::update(world, Begin::default());
     }
-    carry::after(world, &none);
+    carry::after(world);
     collect::update(world, false, start_view);
     if leaving.fade == Some(frames(world.feel.world[Param::ExitFadeTime])) {
         world.flow.outcome = Outcome::Exited(leaving.exit);

@@ -941,7 +941,8 @@ fn leaves(thing: &Thing, in_spot: bool) -> Option<Leaves> {
 
 /// A thing that isn't in the level appearing at `start`: a walker at
 /// rest, heading the way it was placed, waiting its `appear_wait` steps;
-/// a thrower starting its timetable; a stinger afresh, even after being
+/// a thrower starting its timetable; an object that can be carried
+/// starting its clock; a stinger afresh, even after being
 /// knocked out. Defeated walkers, knocked-out throwers and thrown balls
 /// don't appear.
 fn arrive(thing: &mut Thing, start: Vec2) {
@@ -968,7 +969,12 @@ fn arrive(thing: &mut Thing, start: Vec2) {
             thing.wait = appear_wait;
         }
         Some(Behavior::Thrower { .. }) => thing.clock = 0,
-        Some(Behavior::Ball(_) | Behavior::Carry { .. }) => thing.pos = start,
+        Some(Behavior::Ball(_)) => thing.pos = start,
+        // A holder's look counts from here, this step being the first.
+        Some(Behavior::Carry { .. }) => {
+            thing.pos = start;
+            thing.clock = 0;
+        }
         Some(Behavior::Collect { .. }) => {
             thing.pos = start;
             thing.clock = 0;

@@ -87,8 +87,10 @@
 # - `launcher`: fires the player off at `velocity = [x, y]` on touch.
 # - `carry`: an object the player can pick up, carry, throw and put down,
 #   with physics that has `pick_up_time` above 0. It stands on its
-#   position. The player reaches it with its x within `reach` of the
-#   player's and its bottom within 8 px of the player's feet. Thrown,
+#   position. The player picks it up from within `reach = { right =
+#   [from, to], left = [from, to], below = [from, to] }`: its x rounded
+#   down less the player's, by the way the player faces, and its y
+#   rounded up less the player's feet line, px, ends included. Thrown,
 #   it bounces and rolls on the floor and breaks against faces and
 #   walls (the preset's `throw_*` values), and hits walkers: those whose
 #   box overlaps `hit = [behind, ahead, above, below]`, px from its
@@ -508,14 +510,15 @@ size = [24, 16]
 offset = 0
 velocity = [0, -13.5]
 
-# `reach` is a placeholder: spec/behavior/carrying.md doesn't give the
-# reach for Classic 1 yet (clamber-engine/spec#19). 24 is the player's
-# half width and this box's added together, so the boxes touch.
+# title-1's barrel (spec/behavior/carrying.md, "Reach"): the player picks
+# it up from within `reach`: the object's `x` rounded down less the
+# player's, by the way the player faces, and its `y` rounded up less the
+# player's, `below`, ends included.
 [archetypes.crate]
 behavior = "carry"
 size = [32, 24]
 offset = 0
-reach = 24
+reach = { right = [-7, 38], left = [-33, 12], below = [-22, 32] }
 # title-1's (spec/behavior/thrown-objects.md, "Hitting walkers"), with
 # its small walker's box (`size = [20, 12]`, `offset = 0.5`). Hits from
 # more than 12 px below a walker aren't covered; `above` allows up to
@@ -538,6 +541,13 @@ holds_character = false
 holder_window = [31, 32, 31, 32]
 hit_ball = [27, 21, 25, 20]
 hit_ball_early = [27, 47, 52, 50]
+# Lying where it's placed, it shakes in a cycle of `holder_look` frames
+# from the one it appeared on, looking still on the frames of the cycle
+# in `holder_still`. Shaking, it's picked up from within `holder_reach`
+# instead of `reach` (carrying.md, "Reach").
+holder_reach = { right = [-10, 43], left = [-36, 17], below = [-21, 31] }
+holder_look = 40
+holder_still = [[9, 13], [34, 38]]
 # title-1's (spec/behavior/wall-exits.md, "Opening"): thrown and moving
 # right, it opens a wall exit whose position, both rounded down across
 # and up down, is inside `hit_wall_exit`, `[behind, ahead, above,
@@ -805,7 +815,7 @@ item_touch = 5
 behavior = "carry"
 size = [32, 24]
 offset = 0
-reach = 24
+reach = { right = [-7, 38], left = [-33, 12], below = [-22, 32] }
 hit = [18, 13, 13, 18]
 hit_early = [19, 38, 13, 51]
 hit_early_time = 16
@@ -816,6 +826,9 @@ holds_character = false
 holder_window = [31, 32, 31, 32]
 hit_ball = [27, 21, 25, 20]
 hit_ball_early = [27, 47, 52, 50]
+holder_reach = { right = [-10, 43], left = [-36, 17], below = [-21, 31] }
+holder_look = 40
+holder_still = [[9, 13], [34, 38]]
 hit_wall_exit = [24, 24, 26, 33]
 hit_wall_exit_early = [25, 49, 50, 66]
 
