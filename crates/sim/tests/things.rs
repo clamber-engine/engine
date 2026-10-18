@@ -1,12 +1,14 @@
 //! Enemies and interactive objects played through whole worlds.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
+use clamber_pack::{CharacterFeel, Presets};
 use clamber_sim::{
-    Air, Event, Facing, Fixed, FlowEvent, Gait, InputFrame, LAUNCH_REST, Outcome, Phase, Roll,
-    RollSize, START_LIVES, State, World, generic_feel, step,
+    Air, Event, Facing, Fixed, FlowEvent, Gait, InputFrame, LAUNCH_REST, Outcome, Phase, ROLL,
+    Roll, RollSize, START_LIVES, State, World, generic_feel, step,
 };
 
 /// Ground at y = 400 from x = 0 to 600, with a wall from x = 100 to 120
@@ -17,6 +19,30 @@ fn world(start: [i32; 2], entities: &str) -> World {
 
 /// [`world`] on the given feel preset.
 fn world_on(preset: &str, start: [i32; 2], entities: &str) -> World {
+    World::new(
+        Arc::new(arena(start, entities)),
+        Arc::new(generic_feel(preset).unwrap()),
+    )
+}
+
+/// [`world_on`] Classic 1 with its second character under control and
+/// the first following.
+fn second_on(start: [i32; 2], entities: &str) -> World {
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: BTreeMap::from([(ROLL.to_string(), BTreeMap::new())]),
+    });
+    let mut world = World::new(Arc::new(arena(start, entities)), Arc::new(feel));
+    world.player.character = 1;
+    if let Some(other) = &mut world.other {
+        other.character = 0;
+    }
+    world
+}
+
+/// [`world`]'s level.
+fn arena(start: [i32; 2], entities: &str) -> Level {
     let src = format!(
         r#"
         format = 1
@@ -36,8 +62,7 @@ fn world_on(preset: &str, start: [i32; 2], entities: &str) -> World {
         "#,
         start[0], start[1]
     );
-    let level = Level::from_toml_str(&src, "test").unwrap();
-    World::new(Arc::new(level), Arc::new(generic_feel(preset).unwrap()))
+    Level::from_toml_str(&src, "test").unwrap()
 }
 
 /// What happened while holding `held` for `frames` steps.
@@ -132,7 +157,8 @@ fn landing_on_an_enemy_defeats_it_and_bounces() {
         w.things[0].phase,
         Phase::Falling {
             vy: -Fixed::from_int(5),
-            hold: 0
+            hold: 0,
+            glide: None,
         }
     );
 
@@ -341,7 +367,8 @@ fn classic_bounce_sets_vy_then_holds_still_for_two_frames() {
         w.things[0].phase,
         Phase::Falling {
             vy: fx(-6.0 + 0.4375),
-            hold: 0
+            hold: 0,
+            glide: None,
         }
     );
 }
@@ -1636,6 +1663,18 @@ fn classic_roll_defeats_at(
     facing: Facing,
     heading: &str,
 ) -> bool {
+    roll_defeats_at(false, walker, i, facing, heading)
+}
+
+/// [`classic_roll_defeats_at`], with the second character leading if
+/// `second` says so.
+fn roll_defeats_at(
+    second: bool,
+    walker: fn(&str, &str, &str) -> String,
+    i: i32,
+    facing: Facing,
+    heading: &str,
+) -> bool {
     let p = match facing {
         Facing::Left => 297,
         Facing::Right => 303,
@@ -1645,11 +1684,12 @@ fn classic_roll_defeats_at(
         "left" => w + 1,
         _ => w - 1,
     };
-    let mut world = world_on(
-        "classic-1",
-        [300, 400],
-        &walker(&format!("{start}.5"), "1", heading),
-    );
+    let walker = walker(&format!("{start}.5"), "1", heading);
+    let mut world = if second {
+        second_on([300, 400], &walker)
+    } else {
+        world_on("classic-1", [300, 400], &walker)
+    };
     let speed = Fixed::from_int(3);
     world.player.facing = facing;
     world.player.state = State::Roll;
@@ -1851,7 +1891,12 @@ fn classic_roll_second_defeat_boosts_again() {
 /// D + 1; a small walker heading left starts at `walker`. Action is
 /// held again on the frames `action` says.
 fn classic_roll_stop(walker: &str, action: impl Fn(usize) -> bool) -> Vec<RollRow> {
-    let mut w = world_on("classic-1", [300, 400], &small_walker(walker, "1", "left"));
+    classic_roll_stop_among(&small_walker(walker, "1", "left"), action)
+}
+
+/// [`classic_roll_stop`] among the walkers `walkers` places.
+fn classic_roll_stop_among(walkers: &str, action: impl Fn(usize) -> bool) -> Vec<RollRow> {
+    let mut w = world_on("classic-1", [300, 400], walkers);
     roll_rows(&mut w, 70, |n| {
         let mut held = Actions::NONE;
         if n == 0 || action(n) {
@@ -1964,4 +2009,334 @@ fn classic_hurt_before_a_roll_comes_first() {
     });
     assert_eq!(rows[h].events, [Event::Hurt]);
     assert_eq!(w.things[0].phase, Phase::Ready);
+}
+
+#[test]
+fn classic_roll_stop_lengthened_by_a_defeat_attacks_to_d_plus_9_and_hurts_from_d_plus_14() {
+    let x = classic_stop_x();
+    // The first walker is defeated on K = D + 3, in the stop, with no
+    // boost; a second follows it `gap` px behind.
+    let first: i64 = walker_start_for(x, -16, D + 3)
+        .trim_end_matches(".5")
+        .parse()
+        .unwrap();
+    let (mut latest_defeat, mut earliest_hurt) = (0, usize::MAX);
+    for gap in 3..=60 {
+        let walkers = small_walker(&format!("{first}.5"), "1", "left")
+            + &small_walker(&format!("{}.5", first + gap), "1", "left");
+        let rows = classic_roll_stop_among(&walkers, |_| false);
+        let defeats: Vec<_> = (0..70).filter(|&n| rows[n].defeats > 0).collect();
+        assert_eq!(defeats[0], D + 3, "gap {gap}");
+        assert!(rows.iter().all(|r| r.defeats <= 1), "gap {gap}");
+        let hurt = rows.iter().position(|r| r.events.contains(&Event::Hurt));
+        if let Some(&second) = defeats.get(1) {
+            assert!((D + 6..=D + 9).contains(&second), "gap {gap}: {second}");
+            latest_defeat = latest_defeat.max(second);
+        }
+        if let Some(h) = hurt {
+            assert!(h >= D + 14, "gap {gap}: hurt on {h}");
+            earliest_hurt = earliest_hurt.min(h);
+        }
+        // Right is held from D + 1: the player first moves on D + 20, or
+        // on D + 22 after a second defeat in the stop.
+        if hurt.is_none_or(|h| h > D + 22) {
+            let moves = (D + 4..70).find(|&n| rows[n].vx != Fixed::ZERO);
+            let expect = if defeats.len() > 1 { D + 22 } else { D + 20 };
+            assert_eq!(moves, Some(expect), "gap {gap}: {defeats:?}");
+        }
+    }
+    assert_eq!(latest_defeat, D + 9);
+    assert_eq!(earliest_hurt, D + 14);
+}
+
+#[test]
+fn classic_roll_defeats_one_of_several_walkers_in_range_except_on_p() {
+    let walkers = small_walker("260.5", "1", "left").repeat(3);
+    let run = |action: bool| {
+        let mut w = world_on("classic-1", [200, 400], &walkers);
+        w.player.vel.x = Fixed::from_int(2);
+        w.player.state = State::Walk;
+        let rows = roll_rows(&mut w, 20, |n| {
+            if n == 0 || action {
+                Actions::from_iter([Action::Right, Action::Action])
+            } else {
+                Action::Right.into()
+            }
+        });
+        let defeats: Vec<_> = rows.iter().map(|r| r.defeats).collect();
+        (w, defeats)
+    };
+    // Without Action, the next one on the next attack frame, K + 3.
+    let (_, defeats) = run(false);
+    assert_eq!((defeats[12], defeats[15], defeats[18]), (1, 1, 1));
+    // With Action held, both left on P: one pause and one boost.
+    let (w, defeats) = run(true);
+    assert_eq!((defeats[12], defeats[15]), (1, 2));
+    assert_eq!(defeats.iter().sum::<usize>(), 3);
+    // The defeat on P is a new K: its own pause and boost.
+    assert_eq!(w.player.roll.unwrap().boosts, 2);
+    assert_eq!(w.player.roll.unwrap().speed, Fixed::from_int(5));
+}
+
+/// The speed each boost along a chain of rolls through a row of small
+/// walkers heading left gives, the player walking right from x = 140 at
+/// its walking speed and rolling with Action held.
+fn chain_speeds(second: bool) -> Vec<Fixed> {
+    let walkers: String = (0..7)
+        .map(|n| small_walker(&format!("{}.5", 200 + 45 * n), "1", "left"))
+        .collect();
+    let mut w = if second {
+        second_on([140, 400], &walkers)
+    } else {
+        world_on("classic-1", [140, 400], &walkers)
+    };
+    w.player.vel.x = if second { fx(2.25) } else { Fixed::from_int(2) };
+    w.player.state = State::Walk;
+    let mut speeds = Vec::new();
+    let mut previous = Actions::NONE;
+    for _ in 0..120 {
+        let held = Actions::from_iter([Action::Right, Action::Action]);
+        step(&mut w, &InputFrame::single(Frame::after(previous, held)));
+        previous = held;
+        if let Some(roll) = w.player.roll
+            && usize::from(roll.boosts) > speeds.len()
+        {
+            speeds.push(roll.speed);
+        }
+    }
+    speeds
+}
+
+#[test]
+fn classic_roll_chain_grows_by_1_a_boost_up_to_8() {
+    assert_eq!(
+        chain_speeds(false),
+        [4, 5, 6, 7, 8, 8, 8].map(Fixed::from_int)
+    );
+    assert_eq!(
+        chain_speeds(true),
+        [4.375, 5.375, 6.375, 7.375, 8.0, 8.0, 8.0].map(fx)
+    );
+}
+
+#[test]
+fn classic_second_character_roll_defeat_ranges() {
+    type Walker = fn(&str, &str, &str) -> String;
+    let table: [(Walker, Facing, &str, i32, i32); 12] = [
+        (small_walker, Facing::Right, "left", -21, 16),
+        (small_walker, Facing::Right, "right", -22, 15),
+        (small_walker, Facing::Left, "left", -15, 22),
+        (small_walker, Facing::Left, "right", -16, 21),
+        (medium_walker, Facing::Right, "left", -28, 14),
+        (medium_walker, Facing::Right, "right", -20, 22),
+        (medium_walker, Facing::Left, "left", -22, 20),
+        (medium_walker, Facing::Left, "right", -14, 28),
+        (large_walker, Facing::Right, "left", -24, 19),
+        (large_walker, Facing::Right, "right", -25, 18),
+        (large_walker, Facing::Left, "left", -18, 25),
+        (large_walker, Facing::Left, "right", -19, 24),
+    ];
+    for (n, (walker, facing, heading, low, high)) in table.into_iter().enumerate() {
+        for (i, defeated) in [
+            (low - 1, false),
+            (low, true),
+            (high, true),
+            (high + 1, false),
+        ] {
+            assert_eq!(
+                roll_defeats_at(true, walker, i, facing, heading),
+                defeated,
+                "row {n}: I = {i}, facing {facing:?}, heading {heading}"
+            );
+        }
+    }
+}
+
+#[test]
+fn classic_second_character_roll_example() {
+    // rolling-into-walkers.md, "The second character": walking right at
+    // 2.25, Action and Right on frame 0, Right held; a small walker heads
+    // left, its x at the end of frame f being 69 − f.
+    let run = |action: fn(usize) -> bool| {
+        let mut w = second_on([200, 400], &small_walker("270", "1", "left"));
+        w.player.vel.x = fx(2.25);
+        w.player.state = State::Walk;
+        let mut previous: Actions = Action::Right.into();
+        let mut rows = Vec::new();
+        for n in 0..50 {
+            let mut held: Actions = Action::Right.into();
+            if action(n) {
+                held.insert(Action::Action);
+            }
+            step(&mut w, &InputFrame::single(Frame::after(previous, held)));
+            previous = held;
+            rows.push((
+                w.player.pos.x - Fixed::from_int(200),
+                w.player.vel.x,
+                w.player.state,
+                w.events.clone(),
+                w.flow.events.len(),
+            ));
+        }
+        rows
+    };
+    let held = run(|_| true);
+    let once = run(|n| n == 0);
+    let check = |rows: &[(Fixed, Fixed, State, Vec<Event>, usize)], frame: usize, x, vx| {
+        assert_eq!(
+            (rows[frame].0, rows[frame].1),
+            (fx(x), fx(vx)),
+            "frame {frame}"
+        );
+    };
+    for rows in [&held, &once] {
+        assert_eq!(rows[0].3, [Event::RollStart]);
+        check(rows, 11, 34.1328125, 3.13671875);
+        check(rows, 12, 37.296875, 3.1640625);
+        check(rows, 13, 37.296875, 3.1640625);
+        check(rows, 14, 37.296875, 3.1640625);
+        let defeats: Vec<_> = (0..50).filter(|&n| rows[n].4 > 0).collect();
+        assert_eq!(defeats, [12]);
+    }
+    check(&held, 15, 40.609375, 3.3125);
+    check(&held, 26, 82.9375, 4.12109375);
+    check(&held, 32, 108.1875, 4.25390625);
+    check(&held, 38, 133.93359375, 4.3125);
+    check(&held, 45, 164.2578125, 4.34375);
+    assert_eq!(held[38].2, State::Roll);
+    let ends: Vec<_> = (1..50).filter(|&n| !held[n].3.is_empty()).collect();
+    assert_eq!(ends, [45]);
+    assert_eq!(held[45].3, [Event::RollEnd]);
+    check(&once, 15, 40.484375, 3.1875);
+    check(&once, 26, 76.53125, 3.3203125);
+    check(&once, 32, 96.53515625, 3.34375);
+    assert_eq!(once[26].2, State::Roll);
+    let ends: Vec<_> = (1..50).filter(|&n| !once[n].3.is_empty()).collect();
+    assert_eq!(ends, [32]);
+    assert_eq!(once[32].3, [Event::RollEnd]);
+}
+
+/// A classic-1 player rolling right at 3 px per frame, at x = `x` at the
+/// end of the next frame, and a small walker just turned at the left end
+/// of its patrol: heading right at 64/256 px per frame, still facing
+/// left, at x = 200.75 (rolling-into-walkers.md, "Walkers that are
+/// speeding up or turning", the example).
+fn turning_walker(x: f64) -> World {
+    let mut w = world_on(
+        "classic-1",
+        [300, 400],
+        &small_walker("200.75", "1", "left"),
+    );
+    let walker = &mut w.things[0];
+    walker.heading = Facing::Right;
+    walker.vx = Fixed::from_ratio_pow2(64, 8);
+    walker.turn = 3;
+    let speed = Fixed::from_int(3);
+    w.player.pos.x = fx(x) - speed;
+    w.player.facing = Facing::Right;
+    w.player.state = State::Roll;
+    w.player.vel.x = speed;
+    w.player.roll = Some(Roll {
+        left: 20,
+        dir: Facing::Right,
+        size: RollSize::Normal,
+        speed,
+        boosts: 0,
+        defeated: false,
+        held: false,
+        carry: false,
+        still: false,
+        stopped: false,
+        since_press: 0,
+        air: 0,
+        frame: 0,
+    });
+    w
+}
+
+#[test]
+fn classic_roll_defeats_a_turning_walker_by_where_it_was_and_eases_its_fall() {
+    let mut w = turning_walker(224.5);
+    let rows = roll_rows(&mut w, 1, |_| Actions::NONE);
+    assert_eq!(rows[0].defeats, 1);
+    let mut walker = vec![w.things[0].clone()];
+    for _ in 0..5 {
+        step(&mut w, &InputFrame::default());
+        walker.push(w.things[0].clone());
+    }
+    let expect = [
+        (201.09375, 88, -6.0, 0.0),
+        (201.09375, 88, -6.0, 0.0),
+        (201.09375, 88, -6.0, 0.0),
+        (201.51953125, 109, -5.5625, -5.5625),
+        (202.015625, 127, -5.125, -10.6875),
+        (202.57421875, 143, -4.6875, -15.375),
+    ];
+    for (k, (thing, (x, vx, vy, y))) in walker.iter().zip(expect).enumerate() {
+        let Phase::Falling { vy: fall, .. } = thing.phase else {
+            panic!("K + {k}: {:?}", thing.phase);
+        };
+        assert_eq!(
+            (
+                thing.pos.x,
+                thing.vx,
+                fall,
+                thing.pos.y - Fixed::from_int(400)
+            ),
+            (fx(x), Fixed::from_ratio_pow2(vx, 8), fx(vy), fx(y)),
+            "K + {k}"
+        );
+        assert_eq!(thing.facing, Facing::Left, "K + {k}");
+    }
+    // 1 px further on, I′ is 25: out of range, though its x at the end of
+    // K, 201, would give 24.
+    let mut w = turning_walker(225.5);
+    assert_eq!(roll_rows(&mut w, 1, |_| Actions::NONE)[0].defeats, 0);
+}
+
+#[test]
+fn classic_roll_defeat_as_a_walker_stops_at_a_wall_falls_straight_down() {
+    // A small walker heading left reaches the wall at x = 120; the player
+    // stands out of its reach.
+    let mut w = world_on("classic-1", [220, 400], &small_walker("140.5", "1", "left"));
+    let stops_next = |w: &World| {
+        let mut next = w.clone();
+        step(&mut next, &InputFrame::default());
+        next.things[0].vx == Fixed::ZERO
+    };
+    while !stops_next(&w) {
+        step(&mut w, &InputFrame::default());
+        assert!(w.things[0].pos.x > Fixed::from_int(120));
+    }
+    // Roll left into it on S, the frame it stops: I′ = 15.
+    let speed = Fixed::from_int(3);
+    w.player.pos.x = Fixed::from_int(w.things[0].pos.x.floor() as i32 + 15) + speed;
+    w.player.facing = Facing::Left;
+    w.player.state = State::Roll;
+    w.player.vel.x = -speed;
+    w.player.roll = Some(Roll {
+        left: 20,
+        dir: Facing::Left,
+        size: RollSize::Normal,
+        speed,
+        boosts: 0,
+        defeated: false,
+        held: false,
+        carry: false,
+        still: false,
+        stopped: false,
+        since_press: 0,
+        air: 0,
+        frame: 0,
+    });
+    let rows = roll_rows(&mut w, 1, |_| Actions::NONE);
+    assert_eq!(rows[0].defeats, 1);
+    let x = w.things[0].pos.x;
+    for k in 1..=10 {
+        step(&mut w, &InputFrame::default());
+        let walker = &w.things[0];
+        assert!(matches!(walker.phase, Phase::Falling { .. }), "K + {k}");
+        assert_eq!((walker.pos.x, walker.vx), (x, Fixed::ZERO), "K + {k}");
+    }
+    assert!(w.things[0].pos.y < Fixed::from_int(400));
 }

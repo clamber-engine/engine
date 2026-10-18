@@ -412,6 +412,7 @@ mod tests {
                     | Param::RollStopGuard
                     | Param::RollDefeatFreeze
                     | Param::RollBoost
+                    | Param::RollBoostCap
                     | Param::RollBoostAtDefeat
                     | Param::RollDefeatHoldsWalkers
                     | Param::GroundActionTime

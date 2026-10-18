@@ -126,6 +126,7 @@ roll_attack_stop = 0
 roll_stop_guard = 0
 roll_defeat_freeze = 0
 roll_boost = 0
+roll_boost_cap = 0
 roll_boost_at_defeat = 0
 roll_defeat_holds_walkers = 0
 ground_action_time = 0
@@ -522,7 +523,9 @@ air_acceleration = 0.09375
 # pose's hurt ranges for all three walkers. The roll's attack box (22
 # wide, 4 behind), checked against walkers before they move as the bounce
 # box is, gives rolling-into-walkers.md's defeat ranges at the end of the
-# frame for walkers walking at full speed. The ground action's attack box (53 wide,
+# frame for walkers walking at full speed, and by the way a walker faced
+# before it moved, for walkers speeding up or turning. A chain of boosts
+# never takes a roll past 8 px per frame. The ground action's attack box (53 wide,
 # its middle 26.5 ahead), checked the same way, gives
 # ground-action-enemies.md's knock-out ranges at the end of the frame for
 # walkers walking at full speed. The knock-out flight falls under `gravity`,
@@ -639,6 +642,7 @@ roll_attack_stop = 8
 roll_stop_guard = 11
 roll_defeat_freeze = 2
 roll_boost = 1
+roll_boost_cap = 8
 # The first character's ground action (ground-action.md). The second
 # character has none (its Down + Action presses roll).
 ground_action_time = 59
@@ -1033,6 +1037,10 @@ roll_carry_time = 6
 roll_lone_run_any_dir = 1
 roll_stop_press_lengthens = 1
 roll_slide_turns = 1
+# Its roll's attack box (18 wide, 3 ahead) gives its defeat ranges against
+# all three walkers (rolling-into-walkers.md, "The second character").
+roll_attack_width = 18
+roll_attack_offset = 3
 # The second character follows by where the first is now.
 follow_lag = 0
 # The second character being hit isn't specified yet, so it's a hit with

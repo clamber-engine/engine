@@ -494,6 +494,9 @@ params! {
     /// started plus this much for each such boost in the chain of rolls.
     /// One boost per enemy defeated.
     RollBoost => "roll_boost",
+    /// Above 0, the most a boosted roll's speed comes to, however many
+    /// boosts its chain has had.
+    RollBoostCap => "roll_boost_cap",
     /// Above 0, whether a roll is boosted is decided on the frame it
     /// defeats an enemy, by action being held then. Boosted, the roll
     /// eases toward its speed plus `roll_boost` once the freeze is over,

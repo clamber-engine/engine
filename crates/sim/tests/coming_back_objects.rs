@@ -342,11 +342,13 @@ fn barrels_walkers_the_thrower_and_its_ball_are_there_again() {
     w.things[WALKER].phase = Phase::Falling {
         vy: Fixed::from_int(8),
         hold: 0,
+        glide: None,
     };
     w.things[THROWER].active = false;
     w.things[THROWER].phase = Phase::Falling {
         vy: Fixed::from_int(8),
         hold: 0,
+        glide: None,
     };
     w.things[BALL].active = false;
     w.things[BALL].phase = Phase::Flying {
@@ -383,6 +385,7 @@ fn a_knocked_out_thrower_and_a_removed_placed_ball_are_there_again() {
         Phase::Falling {
             vy: Fixed::from_int(2),
             hold: 3,
+            glide: None,
         },
         Phase::Defeated(4),
         Phase::Defeated(1),

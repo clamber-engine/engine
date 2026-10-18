@@ -613,6 +613,7 @@ fn throw(walker: &mut Thing, vx: Fixed) {
     walker.phase = Phase::Falling {
         vy: -defeat.jump,
         hold: 1,
+        glide: None,
     };
 }
 

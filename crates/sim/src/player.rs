@@ -196,6 +196,8 @@ pub struct Player {
     /// A boost waiting for action to be held, after a roll or its stop
     /// defeated an enemy (`roll_boost` above 0).
     pub boost: Option<Boost>,
+    /// A boost was used on this frame, its new roll's first.
+    pub boosted: bool,
     /// An action press waiting until a timed roll can start: how many
     /// frames ago it was made, how many it waits at most, and whether
     /// action must stay held meanwhile.
@@ -377,6 +379,7 @@ impl Player {
             air_stopped: false,
             ground_action: None,
             boost: None,
+            boosted: false,
             roll_press: None,
             since_run: None,
             lone_run: false,
@@ -984,6 +987,7 @@ impl Player {
         events: &mut Vec<Event>,
     ) {
         self.touched.clear();
+        self.boosted = false;
         self.update_jump_held(input);
         if self.frozen > 0 {
             if self.unseated {
@@ -1424,6 +1428,7 @@ impl Player {
             None
         };
         let boosted = boost.is_some();
+        self.boosted = boosted;
         let started = can_roll && !boosted && self.start_timed_roll(input, physics);
         if started || boost == Some(true) {
             self.state = State::Roll;
@@ -2568,8 +2573,12 @@ impl Player {
             return None;
         }
         self.boost = None;
-        let speed = boost.size.speed(physics)
+        let mut speed = boost.size.speed(physics)
             + physics[Param::RollBoost] * Fixed::from_int(boost.boosts.into());
+        let cap = physics[Param::RollBoostCap];
+        if cap > Fixed::ZERO {
+            speed = speed.min(cap);
+        }
         let left = frames(physics[Param::RollTime]);
         if let Some(roll) = &mut self.roll {
             roll.left = left;

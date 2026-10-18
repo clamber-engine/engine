@@ -313,7 +313,8 @@ fn breaks_on_a_thrower_and_knocks_it_out() {
             play.world.things[1].phase,
             Phase::Falling {
                 vy: f(-5.0),
-                hold: 0
+                hold: 0,
+                glide: None,
             }
         );
         play.step(&[]);

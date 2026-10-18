@@ -107,6 +107,7 @@ fn a_defeated_walker_never_comes_back() {
     w.things[0].phase = Phase::Falling {
         vy: Fixed::ZERO,
         hold: 0,
+        glide: None,
     };
     w.things[0].pos.x = fx(700.0);
     assert_eq!(step_at(&mut w, 1032), None);
@@ -227,6 +228,7 @@ fn a_defeated_member_stays_away_when_its_group_comes_back() {
     w.things[1].phase = Phase::Falling {
         vy: Fixed::ZERO,
         hold: 0,
+        glide: None,
     };
     w.things[1].active = false;
     for (thing, x) in w.things.iter_mut().zip([900.5, 0.0, 900.5]) {
@@ -275,6 +277,7 @@ fn falling(phase: Phase, x: f64) -> World {
 const FALLING: Phase = Phase::Falling {
     vy: Fixed::ZERO,
     hold: 0,
+    glide: None,
 };
 
 /// walker-view.md, "Defeated walkers falling out": removed once its `x`
@@ -334,6 +337,7 @@ fn a_defeated_walker_isnt_removed_before_its_first_falling_frame() {
     let holding = Phase::Falling {
         vy: fx(-6.0),
         hold: 1,
+        glide: None,
     };
     let hit = Phase::Knocked { vy: None };
     for phase in [holding, hit] {
@@ -389,6 +393,7 @@ fn says_which_walkers_a_wider_view_would_bring_in_at_their_start() {
     w.things[0].phase = Phase::Falling {
         vy: Fixed::ZERO,
         hold: 0,
+        glide: None,
     };
     assert_eq!(would_appear(&w, 712, 256), [] as [f64; 0]);
 }

@@ -414,6 +414,7 @@ fn a_falling_thrower_goes_on_10_frames_late_after_a_knock_out() {
     w.things[0].phase = Phase::Falling {
         vy: f(-6.0),
         hold: 0,
+        glide: None,
     };
     let compared = ten_frames_late(w, 3, 40);
     assert!(compared > 10, "{compared}");
@@ -632,7 +633,11 @@ fn a_falling_thrower_goes_on_while_a_character_is_lost() {
         for _ in 0..5 {
             step(&mut w, &InputFrame::single(Frame::default()));
         }
-        w.things[0].phase = Phase::Falling { vy: f(-6.0), hold };
+        w.things[0].phase = Phase::Falling {
+            vy: f(-6.0),
+            hold,
+            glide: None,
+        };
         let (compared, same) = as_without_the_loss(w, 3, 60);
         assert!(compared > 20 && same > 20, "hold {hold}: {compared} {same}");
     }

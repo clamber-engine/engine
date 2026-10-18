@@ -151,8 +151,13 @@ pub enum Phase {
     /// Defeated; gone after this many more frames.
     Defeated(u8),
     /// A defeated walker falling out of the level at `vy`, after holding
-    /// still for `hold` more frames.
-    Falling { vy: Fixed, hold: u8 },
+    /// still for `hold` more frames. With a `glide`, its speed across
+    /// eases toward that as it falls; otherwise it keeps it.
+    Falling {
+        vy: Fixed,
+        hold: u8,
+        glide: Option<Fixed>,
+    },
     /// A walker knocked back by a thrown object: moving along the floor
     /// on the step after the hit (`vy` is `None`), then falling out of
     /// the level at `vy`.
@@ -694,6 +699,12 @@ impl World {
             }
             if let Phase::Rope { target, .. } = t.phase {
                 fixed(&mut out, target);
+            }
+            if let Phase::Falling {
+                glide: Some(glide), ..
+            } = t.phase
+            {
+                fixed(&mut out, glide);
             }
             if let Phase::Flitting { uy, z, target } = t.phase {
                 fixed(&mut out, uy);

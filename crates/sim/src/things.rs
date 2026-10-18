@@ -368,7 +368,10 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     for index in bounced_throwers {
         defeat(&mut world.things[index], freeze);
     }
-    for &index in attacked.iter().chain(&rolled_thrower) {
+    for &index in &attacked {
+        rolled_over(&mut world.things[index], roll_freeze);
+    }
+    if let Some(index) = rolled_thrower {
         defeat(&mut world.things[index], roll_freeze);
     }
     for index in rolled_into {
@@ -450,9 +453,9 @@ fn advance(
             }
             return false;
         }
-        Phase::Falling { vy, hold } => {
+        Phase::Falling { vy, hold, glide } => {
             if let Some(defeat) = archetype.behavior.fall() {
-                fall(level, thing, &archetype, defeat, vy, hold);
+                fall(level, thing, &archetype, defeat, vy, hold, glide);
             }
             // A knocked-out thrower that moved leaves the picture as a
             // ball does, with a view.
@@ -656,9 +659,30 @@ fn defeat(thing: &mut Thing, hold: u8) {
         Some(defeat) => Phase::Falling {
             vy: -defeat.jump,
             hold,
+            glide: None,
         },
         None => Phase::Defeated(DEFEATED_FRAMES),
     };
+}
+
+/// Defeats an enemy a roll's attack box touched, as [`defeat`] does. A
+/// walker's speed across then eases toward the speed it was heading for
+/// on this frame as it falls: none if it has just stopped at a wall or a
+/// ledge, as its speed up only starts on the next frame
+/// (rolling-into-walkers.md, "Walkers that are speeding up or turning").
+fn rolled_over(thing: &mut Thing, hold: u8) {
+    defeat(thing, hold);
+    if let (Some(Behavior::Walker { speed, .. }), Phase::Falling { glide, .. }) =
+        (thing.archetype.map(|a| a.behavior), &mut thing.phase)
+    {
+        *glide = Some(if thing.vx == Fixed::ZERO {
+            Fixed::ZERO
+        } else if thing.heading == Facing::Left {
+            -speed
+        } else {
+            speed
+        });
+    }
 }
 
 /// Defeats an enemy bounced on by a player facing `facing`, as
@@ -686,8 +710,9 @@ fn bounce_off(thing: &mut Thing, facing: Facing, hold: u8) {
 }
 
 /// Moves a defeated walker or thrower: still while `hold` lasts, then down under
-/// the fall's gravity, through anything, at the speed it had across. It's
-/// gone once its top is below the level.
+/// the fall's gravity, through anything, at the speed it had across, or
+/// with a `glide`, at its speed eased toward that by the walker's
+/// `response` first. It's gone once its top is below the level.
 fn fall(
     level: &Level,
     thing: &mut Thing,
@@ -695,15 +720,27 @@ fn fall(
     defeat: Fall,
     vy: Fixed,
     hold: u8,
+    glide: Option<Fixed>,
 ) {
     if hold > 0 {
-        thing.phase = Phase::Falling { vy, hold: hold - 1 };
+        thing.phase = Phase::Falling {
+            vy,
+            hold: hold - 1,
+            glide,
+        };
         return;
+    }
+    if let (Some(target), Behavior::Walker { response, .. }) = (glide, archetype.behavior) {
+        thing.vx = ease(thing.vx, target, response);
     }
     let next = (vy + defeat.gravity).min(defeat.max_fall);
     let by = if defeat.move_first { vy } else { next };
     thing.pos = Vec2::new(thing.pos.x + thing.vx, thing.pos.y + by);
-    thing.phase = Phase::Falling { vy: next, hold: 0 };
+    thing.phase = Phase::Falling {
+        vy: next,
+        hold: 0,
+        glide,
+    };
     if thing.pos.y - archetype.size.y > level.size.y {
         thing.active = false;
     }
@@ -894,6 +931,7 @@ fn knock_out(world: &mut World, index: usize) {
         thrower.phase = Phase::Falling {
             vy: -defeat.jump,
             hold: 1,
+            glide: None,
         };
         world.flow.events.push(FlowEvent::Defeat(thrower.index));
     }
@@ -1316,13 +1354,15 @@ fn bounce_on_boxes(world: &mut World, physics: &Physics) -> Vec<usize> {
     bounced
 }
 
-/// Defeats every enemy the rolling player's attack box touches on an
+/// Defeats an enemy the rolling player's attack box touches on an
 /// attack frame, from the player's position after this step's move and
-/// the enemies' before theirs, on whole pixels: every frame of a timed
-/// roll before its `roll_end` frame, and the first `roll_attack_stop`
-/// frames of the stop after one. The box is `roll_attack_width` wide,
-/// centred `roll_attack_offset` in front of the player, as tall as the
-/// body. Returns the enemies defeated, which are put out of action once
+/// the enemies' before theirs, on whole pixels, and by the way they
+/// faced then: every frame of a timed roll before its `roll_end` frame,
+/// and the first `roll_attack_stop` frames of the stop after one. The
+/// box is `roll_attack_width` wide, centred `roll_attack_offset` in
+/// front of the player, as tall as the body. With several in reach, it
+/// defeats the first placed, or all of them on a boost's first frame.
+/// Returns the enemies defeated, which are put out of action once
 /// they've moved this frame.
 fn roll_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
     let player = &world.player;
@@ -1335,7 +1375,9 @@ fn roll_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
         physics[Param::RollAttackWidth],
         physics[Param::RollAttackOffset],
     );
-    strike(world, reach, |b| b.is_enemy())
+    // Several in reach: only a boost's first frame defeats more than one.
+    let most = if player.boosted { usize::MAX } else { 1 };
+    strike(world, reach, |b| b.is_enemy(), |t| t.facing, most)
 }
 
 /// Knocks out every walker and thrower the ground action's attack box
@@ -1359,7 +1401,7 @@ fn ground_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
         return Vec::new();
     }
     let reach = attack_box(world, width, physics[Param::GroundAttackOffset]);
-    strike(world, reach, |b| b.fall().is_some())
+    strike(world, reach, |b| b.fall().is_some(), going, usize::MAX)
 }
 
 /// The player's attack box on whole pixels: `width` wide, centred
@@ -1380,12 +1422,15 @@ fn attack_box(world: &World, width: Fixed, offset: Fixed) -> (Fixed, Fixed, Fixe
     )
 }
 
-/// The things whose behavior `kind` accepts that `reach` touches, before
-/// they move, on whole pixels. Each is noted as defeated.
+/// The first `most` things whose behavior `kind` accepts that `reach`
+/// touches, before they move, on whole pixels, their boxes turned the
+/// way `facing` says. Each is noted as defeated.
 fn strike(
     world: &mut World,
     reach: (Fixed, Fixed, Fixed, Fixed),
     kind: impl Fn(Behavior) -> bool,
+    facing: fn(&Thing) -> Facing,
+    most: usize,
 ) -> Vec<usize> {
     let mut struck = Vec::new();
     for thing in world
@@ -1396,10 +1441,11 @@ fn strike(
         let Some(archetype) = thing.archetype else {
             continue;
         };
-        if kind(archetype.behavior)
+        if struck.len() < most
+            && kind(archetype.behavior)
             && overlap(
                 reach,
-                archetype.bounds(whole_pixels(thing.pos), going(thing)),
+                archetype.bounds(whole_pixels(thing.pos), facing(thing)),
             )
         {
             struck.push(thing.index);
