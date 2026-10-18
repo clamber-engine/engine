@@ -2,7 +2,9 @@
 //!
 //! The simulation runs at exactly 60 Hz ([`Clock`]) and the screen is
 //! drawn between its last two states, so motion stays smooth at any
-//! refresh rate. Everything is drawn on a [`Surface`] in view units: the
+//! refresh rate. With vsync, the steps follow the display's refresh
+//! instead ([`Pace`]), so each frame is drawn a whole number of
+//! refreshes on from the last. Everything is drawn on a [`Surface`] in view units: the
 //! camera always sees [`VIEW`] units of the world, at whatever size it's
 //! shown. The GPU draws a frame's [`DrawList`] at the window's own
 //! resolution, at its shape ([`Gpu`]), in step with the display's
@@ -76,7 +78,7 @@ pub use camera::{Camera, VIEW};
 pub use canvas::{Canvas, Color, Fit, present, rgb};
 pub use capture::{Capture, GIF_DELAY, SHOTS, capture, encode_gif, encode_png, redraw};
 pub use cast::{Cast, PLAYER, Pose, Poses};
-pub use clock::Clock;
+pub use clock::{Clock, Pace};
 pub use controls::{Controls, Request, Row, TIMEOUT};
 pub use credits::{Credits, DEFAULT_CREDITS};
 pub use display::Look;

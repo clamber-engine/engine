@@ -1,7 +1,7 @@
 //! Draws a frame's [`DrawList`] through the GPU at the window's own
 //! resolution: the view scaled to fit at its own shape, letterboxed in
 //! black, with smoothly filtered textures drawn from their mipmaps and
-//! pixel art kept sharp, and edges smoothed by multisampling. Quads with
+//! pixel art kept sharp, quads on whole pixels, and edges smoothed by multisampling. Quads with
 //! normal maps are lit in the shader just as the software canvas lights
 //! them. Frames are presented in step with the display's refresh when
 //! vsync is on.
@@ -608,8 +608,15 @@ impl Painter {
     /// Draws `list` into `target`, letterboxed in black.
     fn paint(&mut self, list: &DrawList, target: &wgpu::Texture) {
         self.frame += 1;
-        let mut mesh = Mesh::default();
+        let size = (target.width(), target.height());
         let view = (list.view.0 as f32, list.view.1 as f32);
+        let mut mesh = Mesh {
+            pixels: match list.pixel_art {
+                true => 1.0,
+                false => letterbox(list.view, size).2 / view.0,
+            },
+            ..Mesh::default()
+        };
         mesh.rect([0.0, 0.0, view.0, view.1], list.background, 255);
         for item in &list.items {
             match item {
@@ -669,7 +676,6 @@ impl Painter {
         self.queue
             .write_buffer(&self.lighting, 0, &lighting_bytes(&list.lighting));
 
-        let size = (target.width(), target.height());
         if self.samples > 1 && self.multisampled.as_ref().is_none_or(|m| m.1 != size) {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("multisampled"),
@@ -739,8 +745,9 @@ impl Painter {
                     pass.draw(scaled_up..scaled_up + 6, 0..1);
                 }
                 _ => {
+                    // On whole pixels, as the quads' edges are.
                     let (x, y, w, h) = letterbox(list.view, size);
-                    pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                    pass.set_viewport(x.floor(), y.floor(), w, h, 0.0, 1.0);
                     self.draw_batches(&mut pass, &mesh);
                 }
             }
@@ -885,6 +892,9 @@ struct Mesh {
     floats: Vec<f32>,
     /// Vertex ranges by what they draw with.
     batches: Vec<(Batch, std::ops::Range<u32>)>,
+    /// Pixels drawn into per view unit, to put quads' edges on whole
+    /// pixels, or 0 to leave them where they are.
+    pixels: f32,
 }
 
 /// Where a vertex samples from, and the bounds samples stay within.
@@ -999,7 +1009,14 @@ impl Mesh {
         };
         let color = [color[0], color[1], color[2], opacity];
         let drawn = quad.flip.size((w, h));
-        let [l, t, r, b] = quad.dst;
+        // Every quad's edges on whole pixels, so layers and sprites
+        // scrolling between them don't shift against each other or
+        // change shape from frame to frame (#190).
+        let pixels = self.pixels;
+        let [l, t, r, b] = match pixels > 0.0 {
+            true => quad.dst.map(|v| (v * pixels).round() / pixels),
+            false => quad.dst,
+        };
         let corner = |cx: f32, cy: f32| {
             let (sx, sy) = quad.flip.source((cx * drawn.0, cy * drawn.1), (w, h));
             let uv = ((x + sx) / size.0, (y + sy) / size.1);
@@ -1161,6 +1178,47 @@ mod tests {
             let (r, g, b) = (row[2] >> 16, row[2] >> 8 & 0xff, row[2] & 0xff);
             assert!((96..=160).contains(&r) && g == 0 && (96..=160).contains(&b));
         }
+    }
+
+    #[test]
+    fn puts_quads_on_whole_pixels() {
+        let quad = Quad {
+            texture: Texture::new(Pixels::new(8, 8), false),
+            src: Rect {
+                x: 0,
+                y: 0,
+                w: 8,
+                h: 8,
+            },
+            dst: [1.13, 2.29, 9.13, 10.29],
+            flip: Flip::default(),
+            flash: None,
+            opacity: 255,
+            normals: None,
+        };
+        // Corners as left, top, right and bottom.
+        let edges = |pixels: f32| {
+            let mut mesh = Mesh {
+                pixels,
+                ..Mesh::default()
+            };
+            mesh.quad(&quad, None);
+            let at: Vec<(f32, f32)> = mesh.floats.chunks(FLOATS).map(|v| (v[0], v[1])).collect();
+            let x = at.iter().map(|p| p.0);
+            let y = at.iter().map(|p| p.1);
+            [
+                x.clone().fold(f32::MAX, f32::min),
+                y.clone().fold(f32::MAX, f32::min),
+                x.fold(f32::MIN, f32::max),
+                y.fold(f32::MIN, f32::max),
+            ]
+        };
+        let near = |a: [f32; 4], b: [f32; 4]| a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-5);
+        // Five pixels to a unit, as a 384-unit view is shown at 1920.
+        assert!(near(edges(5.0), [1.2, 2.2, 9.2, 10.2]), "{:?}", edges(5.0));
+        // Pixel art: whole units.
+        assert!(near(edges(1.0), [1.0, 2.0, 9.0, 10.0]));
+        assert!(near(edges(0.0), quad.dst));
     }
 
     #[test]

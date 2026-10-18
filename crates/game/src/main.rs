@@ -12,9 +12,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clamber_game::{
-    Canvas, Clock, Credits, DEFAULT_CREDITS, DrawList, Feels, Fit, GIF_DELAY, Game, Gpu, Prefs,
-    SPRITES, Screen, Session, Surface, VIEW, content_dir, display, encode_gif, encode_png, keys,
-    load_game, present, report, rgb,
+    Canvas, Clock, Credits, DEFAULT_CREDITS, DrawList, Feels, Fit, GIF_DELAY, Game, Gpu, Pace,
+    Prefs, SPRITES, Screen, Session, Surface, VIEW, content_dir, display, encode_gif, encode_png,
+    keys, load_game, present, report, rgb,
 };
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
@@ -213,6 +213,7 @@ fn play(options: Options) -> Result<(), String> {
         focused: true,
         occluded: false,
         clock: Clock::new(),
+        pace: None,
         last: Instant::now(),
         drawn: Instant::now(),
         window: None,
@@ -423,6 +424,9 @@ struct App {
     /// The window is hidden behind others or minimized.
     occluded: bool,
     clock: Clock,
+    /// How frames drawn with vsync pace the clock, on the display the
+    /// window is on, if its refresh rate is known.
+    pace: Option<Pace>,
     /// When the clock was last advanced.
     last: Instant,
     /// When the last frame was drawn.
@@ -582,10 +586,34 @@ impl App {
         display::frame_interval(vsync, active)
     }
 
+    /// Whether the steps follow the frames: drawn with vsync during
+    /// play, on a display whose refresh rate is known. Otherwise they
+    /// follow the clock, between frames too.
+    fn paced(&self) -> bool {
+        self.pace.is_some() && self.visible() && self.frame_interval().is_zero()
+    }
+
+    /// Notes the refresh rate of the display the window is on.
+    fn find_pace(&mut self) {
+        let Some(shown) = &self.window else {
+            return;
+        };
+        let millihertz = shown
+            .window
+            .current_monitor()
+            .and_then(|m| m.refresh_rate_millihertz());
+        self.pace = millihertz.and_then(Pace::new);
+    }
+
     /// Runs the logic steps that are due.
     fn update(&mut self) {
         let now = Instant::now();
-        let steps = self.clock.advance(now - self.last);
+        let elapsed = now - self.last;
+        let paced = self.paced();
+        let steps = match &mut self.pace {
+            Some(pace) if paced => self.clock.advance_paced(elapsed, pace),
+            _ => self.clock.advance(elapsed),
+        };
         self.last = now;
         for _ in 0..steps {
             #[cfg(feature = "gamepad")]
@@ -664,6 +692,7 @@ impl ApplicationHandler for App {
         match self.open(event_loop) {
             Ok(shown) => {
                 self.window = Some(shown);
+                self.find_pace();
                 self.last = Instant::now();
             }
             Err(e) => self.fail(event_loop, format!("can't open a window: {e}")),
@@ -686,7 +715,11 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::Occluded(occluded) => self.occluded = occluded,
-            WindowEvent::Resized(size) => self.resized(size),
+            WindowEvent::Resized(size) => {
+                self.find_pace();
+                self.resized(size);
+            }
+            WindowEvent::Moved(_) | WindowEvent::ScaleFactorChanged { .. } => self.find_pace(),
             WindowEvent::RedrawRequested => {
                 if let Err(e) = self.frame() {
                     self.fail(event_loop, e);
@@ -699,7 +732,10 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        self.update();
+        // Paced steps are only run as frames are drawn.
+        if !self.paced() {
+            self.update();
+        }
         if self.session.quit {
             event_loop.exit();
             return;
