@@ -43,8 +43,26 @@ issues and only reads issues labeled `needs-director`. Process details are
 in `spec/COMMUNICATION.md`.
 
 - **Pick work** from open issues labeled `ready` (`gh issue list --label ready`).
-  The pinned "Roadmap" issue gives the order. Claim an issue by assigning
-  yourself and adding `in-progress`; skip issues someone else has claimed.
+  The pinned "Roadmap" issue gives the order.
+- **Several clean agents may run at once**, all as the same GitHub account.
+  Your prompt gives your agent name (`clean-1`, `clean-2`, ...); if it
+  doesn't, you are `clean-1`. Claims are by label, not by assignee:
+  - **Claim** an issue by assigning yourself, adding `in-progress` and the
+    label `agent:<your name>` (create it if it's missing), and commenting
+    "Claimed by <your name>." Then re-read the issue: if another agent's
+    claim comment came first, remove your label and comment, and pick
+    another issue.
+  - **Your in-progress work** is the open issues carrying your own
+    `agent:` label. Never continue, change or close an issue carrying
+    another agent's label.
+  - **A stale claim** (no commit referencing the issue and no comment from
+    that agent for 3 hours) may be taken over: comment "Taking over from
+    <name>: stale claim.", swap the label, and continue.
+  - **Prefer issues in different areas** (crates, files) from what other
+    agents have in progress, to avoid conflicting edits.
+  - **Before pushing**, `git pull --rebase` and rerun the checks if
+    anything changed underneath you. If CI on main goes red, whoever pushed
+    last fixes it first.
 - **Finish** by pushing a commit that says `Fixes #N`. Split large issues
   into smaller ones and link them.
 - **Need a spec answer?** Open an issue on `clamber-engine/spec` following
