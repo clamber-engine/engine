@@ -1089,7 +1089,7 @@ impl Player {
         if self.grounded()
             && self.state != State::Roll
             && acting.is_none()
-            && pressed(Action::Swap)
+            && crate::swap::swap_press(input)
             && feel.roster.len() > 1
             && feel.world[Param::SwapMoves] == Fixed::ZERO
         {

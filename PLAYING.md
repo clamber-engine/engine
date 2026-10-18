@@ -37,11 +37,30 @@ The game starts at the title screen. Pick **Start** to play.
 |---|---|---|
 | Move | Arrow keys | D-pad or left stick |
 | Jump; pick in menus | Z or Space | Bottom face button (A on Xbox, Cross on PlayStation) |
-| Run (hold) | X | Left or right face button |
-| Roll | Down and X together while running | Down and run together while running |
+| Action: run (hold) and roll | X | Left face button (X on Xbox, Square on PlayStation) |
+| Swap characters | C | Select (View on Xbox, Share on PlayStation) |
+| Tandem | V | Right face button (B on Xbox, Circle on PlayStation) |
 | Pause; back in menus | Enter or Escape | Start |
 | Collision and region view | F1 | |
 | Fullscreen | F11 or Alt+Enter | |
+
+The gamepad layout is the classic titles' own. The top face button and
+the shoulders do nothing.
+
+**Rolling** depends on the movement picked (below):
+
+- **Classic 1:** press Action to roll, standing, walking or running.
+  Holding Action runs, so to roll while running, let go of Action and
+  press it again. Holding Down when you press Action starts the ground
+  action instead, except with the second character, which rolls. Press
+  Action just before
+  landing and keep it held to roll as you land.
+- **Default, Snappy and Floaty:** hold Down and Action together while
+  moving.
+
+**Swap** and **Tandem** only matter with two characters, in Classic 1:
+both swap the characters. Tandem only counts on the frame you press it,
+and on the map it enters a level as Jump does.
 
 Hold jump longer to jump higher. Land on an enemy, or roll into it, to
 defeat it; touching one any other way, or falling into a pit, costs a

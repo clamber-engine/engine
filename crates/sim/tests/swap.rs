@@ -28,6 +28,7 @@ const R: Action = Action::Right;
 const L: Action = Action::Left;
 const D: Action = Action::Down;
 const A: Action = Action::Action;
+const T: Action = Action::Tandem;
 
 fn f(v: f64) -> Fixed {
     Fixed::from_f64(v).unwrap()
@@ -266,6 +267,46 @@ fn a_jump_press_just_before_shortens_the_wait_and_keeps_its_gravity() {
     assert_eq!(rows[0].vel, Vec2::default());
     assert_eq!(rows[46].pos.y, f(400.0 - 0.99609375 + 0.4375));
     assert_eq!(rows[78].character, 1);
+}
+
+#[test]
+fn a_tandem_press_swaps_as_a_swap_press_does() {
+    // controls.md, "Tandem in `title-1`": the same swap, frame by frame.
+    let mut by_swap = Play::flat();
+    let mut by_tandem = Play::flat();
+    let swapped = by_swap.swap(81);
+    let mut rows = vec![by_tandem.step(&[T])];
+    rows.extend(by_tandem.idle(80));
+    for (n, (s, t)) in swapped.iter().zip(&rows).enumerate() {
+        assert_eq!(format!("{s:?}"), format!("{t:?}"), "Q + {n}");
+    }
+    assert_eq!(rows[80].character, 1);
+}
+
+#[test]
+fn a_tandem_swap_never_keeps_the_jumps_gravity() {
+    // Jump pressed on Q - 1 and held, Tandem on Q: the wait is shortened
+    // as with Swap, but the gravity is the usual one (difference 2).
+    let mut play = Play::flat();
+    play.step(&[J]);
+    let mut rows = vec![play.step(&[J, T])];
+    rows.extend(play.idle(79));
+    assert!(rows.iter().all(|r| !r.events.contains(&Event::JumpStart)));
+    assert_eq!(rows[45].pos.y, f(400.0));
+    assert_eq!(rows[46].pos.y, f(400.0 - 0.99609375 + 0.4375));
+    assert_eq!(rows[77].character, 0);
+    assert_eq!(rows[78].character, 1);
+}
+
+#[test]
+fn holding_tandem_after_a_refused_press_does_nothing() {
+    let mut play = Play::flat();
+    play.step(&[J]);
+    play.idle(2);
+    assert_eq!(play.step(&[T]).state, State::Jump);
+    let rows = play.hold(&[T], 120);
+    assert!(rows.iter().any(|r| r.events.contains(&Event::Land)));
+    assert!(rows.iter().all(|r| r.state != State::Swap));
 }
 
 #[test]

@@ -162,7 +162,7 @@ pub(crate) fn update(world: &mut World, physics: &Physics, input: &Frame) -> boo
             swap.frame += 1;
             swap
         }
-        None if input.pressed.contains(Action::Swap) && can_start(world, physics, &other) => {
+        None if swap_press(input) && can_start(world, physics, &other) => {
             start(world, physics, input, &other)
         }
         None => return false,
@@ -182,6 +182,13 @@ pub(crate) fn update(world: &mut World, physics: &Physics, input: &Frame) -> boo
     }
     world.swap = Some(swap);
     true
+}
+
+/// Whether this frame has a swap press: Swap, or Tandem, which counts
+/// only on the frame of its press (`controls.md`). Swap's presses are
+/// the same so far, since a refused press isn't kept.
+pub(crate) fn swap_press(input: &Frame) -> bool {
+    input.pressed.contains(Action::Swap) || input.pressed.contains(Action::Tandem)
 }
 
 /// Whether a swap press on this frame starts a swap, from how things
@@ -228,8 +235,9 @@ fn start(world: &mut World, physics: &Physics, input: &Frame, other: &Other) -> 
     };
     let lag = u16::from(frames(physics[Param::SwapLag]));
     // A jump pressed up to two frames before, and held since, keeps its
-    // lighter gravity.
-    let held_jump = input.held.contains(Action::Jump)
+    // lighter gravity, but not in a swap started by Tandem alone.
+    let held_jump = input.pressed.contains(Action::Swap)
+        && input.held.contains(Action::Jump)
         && (input.pressed.contains(Action::Jump) || matches!(recent.jump, Some((0 | 1, true))));
     let held_gravity = physics[Param::HeldJumpGravity];
     let gravity = if held_jump && held_gravity > Fixed::ZERO {

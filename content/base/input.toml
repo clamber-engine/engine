@@ -3,6 +3,12 @@
 #
 # Keys are named by physical position (W3C UI Events `code` values), pad
 # face buttons by position (South is the bottom one).
+#
+# The pad layout is the one both classic titles use by default
+# (spec/behavior/controls.md), so the Classic presets get their title's
+# layout and Clamber's own movements share it: bottom jumps, left is
+# action, right is tandem, Select swaps and Start pauses. The top button
+# and the shoulders are left free.
 
 # Frames a jump press stays buffered, so pressing jump just before landing
 # still jumps. 0 turns buffering off.
@@ -21,6 +27,7 @@ down = ["ArrowDown"]
 jump = ["KeyZ", "Space"]
 action = ["KeyX"]
 swap = ["KeyC"]
+tandem = ["KeyV"]
 pause = ["Enter", "Escape"]
 
 [player.pad]
@@ -29,9 +36,10 @@ right = ["DPadRight", "LeftStickRight"]
 up = ["DPadUp", "LeftStickUp"]
 down = ["DPadDown", "LeftStickDown"]
 jump = ["South"]
-action = ["West", "East"]
-swap = ["North", "LeftShoulder", "RightShoulder"]
+action = ["West"]
+swap = ["Select"]
 pause = ["Start"]
+tandem = ["East"]
 
 [[player]]
 
@@ -43,6 +51,7 @@ down = ["KeyS"]
 jump = ["KeyG"]
 action = ["KeyF"]
 swap = ["KeyH"]
+tandem = ["KeyJ"]
 pause = ["Tab"]
 
 [player.pad]
@@ -51,6 +60,7 @@ right = ["DPadRight", "LeftStickRight"]
 up = ["DPadUp", "LeftStickUp"]
 down = ["DPadDown", "LeftStickDown"]
 jump = ["South"]
-action = ["West", "East"]
-swap = ["North", "LeftShoulder", "RightShoulder"]
+action = ["West"]
+swap = ["Select"]
 pause = ["Start"]
+tandem = ["East"]

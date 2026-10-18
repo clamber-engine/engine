@@ -259,9 +259,10 @@ impl MapPlay {
     }
 }
 
-/// The map's buttons for the actions `held`. Jump, Action and Pause are
-/// enter buttons where they `enter`, and other buttons elsewhere; Swap
-/// is always another button.
+/// The map's buttons for the actions `held`. Jump, Action, Pause and
+/// Tandem (which does what Jump does, `controls.md`) are enter buttons
+/// where they `enter`, and other buttons elsewhere; Swap is always
+/// another button.
 fn buttons(held: Actions, enter: bool) -> Buttons {
     let pairs = [
         (Action::Right, Buttons::RIGHT),
@@ -270,7 +271,7 @@ fn buttons(held: Actions, enter: bool) -> Buttons {
         (Action::Down, Buttons::DOWN),
         (Action::Swap, Buttons::other(0)),
     ];
-    let presses = [Action::Jump, Action::Action, Action::Pause];
+    let presses = [Action::Jump, Action::Action, Action::Pause, Action::Tandem];
     let mut b = Buttons::NONE;
     for (action, button) in pairs {
         if held.contains(action) {
@@ -295,4 +296,22 @@ fn dim(c: Color, light: u32) -> Color {
     let full = clamber_worldmap::FULL;
     let channel = |shift: u32| ((c >> shift & 0xff) * light / full) << shift;
     channel(16) | channel(8) | channel(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tandem_enters_as_jump_does() {
+        let jump = buttons(Action::Jump.into(), true);
+        let tandem = buttons(Action::Tandem.into(), true);
+        assert!(jump.any(Buttons::ENTER) && tandem.any(Buttons::ENTER));
+        // kept apart, so pressing one while the other is held is new
+        let both = buttons(Actions::from(Action::Jump) | Action::Tandem.into(), true);
+        assert!(!both.newly(jump).is_empty());
+        // and only another button where nothing can be entered
+        assert!(!buttons(Action::Tandem.into(), false).any(Buttons::ENTER));
+        assert!(!buttons(Action::Tandem.into(), false).is_empty());
+    }
 }

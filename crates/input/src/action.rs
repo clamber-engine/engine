@@ -21,10 +21,12 @@ pub enum Action {
     /// Swap the lead character.
     Swap,
     Pause,
+    /// Act on the pair of characters; what it does depends on the movement.
+    Tandem,
 }
 
 impl Action {
-    pub const ALL: [Action; 8] = [
+    pub const ALL: [Action; 9] = [
         Action::Left,
         Action::Right,
         Action::Up,
@@ -33,17 +35,18 @@ impl Action {
         Action::Action,
         Action::Swap,
         Action::Pause,
+        Action::Tandem,
     ];
 
-    /// The scenario and trace code: one of `LRUDJASP`.
+    /// The scenario and trace code: one of `LRUDJASPT`.
     pub fn code(self) -> char {
-        b"LRUDJASP"[self as usize] as char
+        b"LRUDJASPT"[self as usize] as char
     }
 
     /// The name used in settings files.
     pub fn name(self) -> &'static str {
         [
-            "left", "right", "up", "down", "jump", "action", "swap", "pause",
+            "left", "right", "up", "down", "jump", "action", "swap", "pause", "tandem",
         ][self as usize]
     }
 }
@@ -56,26 +59,26 @@ impl fmt::Display for Action {
 
 /// A set of actions, one bit per action in [`Action::ALL`] order.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Actions(u8);
+pub struct Actions(u16);
 
 impl Actions {
     pub const NONE: Actions = Actions(0);
 
     /// Bit `i` is `Action::ALL[i]`, the same layout as trace buttons.
-    pub fn from_bits(bits: u8) -> Actions {
+    pub fn from_bits(bits: u16) -> Actions {
         Actions(bits)
     }
 
-    pub fn bits(self) -> u8 {
+    pub fn bits(self) -> u16 {
         self.0
     }
 
     pub fn contains(self, action: Action) -> bool {
-        self.0 & (1 << action as u8) != 0
+        self.0 & (1 << action as u16) != 0
     }
 
     pub fn insert(&mut self, action: Action) {
-        self.0 |= 1 << action as u8;
+        self.0 |= 1 << action as u16;
     }
 
     pub fn is_empty(self) -> bool {
@@ -89,7 +92,7 @@ impl Actions {
 
 impl From<Action> for Actions {
     fn from(action: Action) -> Actions {
-        Actions(1 << action as u8)
+        Actions(1 << action as u16)
     }
 }
 
@@ -124,7 +127,7 @@ impl Not for Actions {
     }
 }
 
-/// Trace notation: codes in `LRUDJASP` order, or `.` for nothing.
+/// Trace notation: codes in `LRUDJASPT` order, or `.` for nothing.
 impl fmt::Display for Actions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.is_empty() {
@@ -164,7 +167,7 @@ mod tests {
     #[test]
     fn codes_follow_scenario_order() {
         let codes: String = Action::ALL.iter().map(|a| a.code()).collect();
-        assert_eq!(codes, "LRUDJASP");
+        assert_eq!(codes, "LRUDJASPT");
         for (i, a) in Action::ALL.iter().enumerate() {
             assert_eq!(*a as usize, i);
         }

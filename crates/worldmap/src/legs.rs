@@ -62,10 +62,10 @@ impl Dir {
 }
 
 /// The buttons held on a frame: the four directions, up to eight enter
-/// buttons, and up to four others. Only directions choose a path; a new
+/// buttons, and up to eight others. Only directions choose a path; a new
 /// press of any button replaces a remembered press.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Buttons(pub u16);
+pub struct Buttons(pub u32);
 
 impl Buttons {
     pub const NONE: Buttons = Buttons(0);
@@ -74,9 +74,9 @@ impl Buttons {
     pub const UP: Buttons = Buttons(4);
     pub const DOWN: Buttons = Buttons(8);
 
-    /// Another button, `n` from 0 to 3.
+    /// Another button, `n` from 0 to 7.
     pub const fn other(n: u8) -> Buttons {
-        assert!(n < 4);
+        assert!(n < 8);
         Buttons(16 << n)
     }
 
@@ -85,11 +85,11 @@ impl Buttons {
     /// another is held is still a new press.
     pub const fn enter(n: u8) -> Buttons {
         assert!(n < 8);
-        Buttons(256 << n)
+        Buttons(0x1000 << n)
     }
 
     /// All the enter buttons.
-    pub const ENTER: Buttons = Buttons(0xff00);
+    pub const ENTER: Buttons = Buttons(0xf_f000);
 
     /// Whether any of `b` is among these.
     pub fn any(self, b: Buttons) -> bool {

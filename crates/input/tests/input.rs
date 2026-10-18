@@ -36,6 +36,30 @@ fn builtin_binds_every_action_for_both_players() {
 }
 
 #[test]
+fn builtin_pad_layout_is_the_classic_titles() {
+    // spec/behavior/controls.md: the same layout in both titles.
+    let layout = [
+        (PadInput::DPadLeft, Some(Action::Left)),
+        (PadInput::DPadRight, Some(Action::Right)),
+        (PadInput::DPadUp, Some(Action::Up)),
+        (PadInput::DPadDown, Some(Action::Down)),
+        (PadInput::South, Some(Action::Jump)),
+        (PadInput::West, Some(Action::Action)),
+        (PadInput::East, Some(Action::Tandem)),
+        (PadInput::North, None),
+        (PadInput::LeftShoulder, None),
+        (PadInput::RightShoulder, None),
+        (PadInput::Start, Some(Action::Pause)),
+        (PadInput::Select, Some(Action::Swap)),
+    ];
+    for p in &Settings::builtin().players {
+        for (input, action) in layout {
+            assert_eq!(p.pad_action(input), action, "{input:?}");
+        }
+    }
+}
+
+#[test]
 fn settings_file_overrides_only_what_it_lists() {
     let s = Settings::from_toml_str(
         "jump_buffer_frames = 0\n[[player]]\n[player.keys]\njump = [\"KeyK\"]\n",

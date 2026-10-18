@@ -3,11 +3,11 @@
 use std::fmt;
 
 /// Every action code, in the order traces write them.
-pub const ORDER: &str = "LRUDJASP";
+pub const ORDER: &str = "LRUDJASPT";
 
 /// A set of held actions.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Buttons(u8);
+pub struct Buttons(u16);
 
 impl Buttons {
     pub const NONE: Buttons = Buttons(0);
@@ -48,7 +48,7 @@ impl Buttons {
     }
 
     /// Parses a trace `input` column: `.` for nothing held, otherwise the
-    /// held codes in `LRUDJASP` order.
+    /// held codes in `LRUDJASPT` order.
     pub fn parse_trace(s: &str) -> Result<Buttons, String> {
         if s == "." {
             return Ok(Buttons::NONE);
@@ -64,7 +64,7 @@ impl Buttons {
     }
 }
 
-/// Trace notation: codes in `LRUDJASP` order, or `.` for nothing.
+/// Trace notation: codes in `LRUDJASPT` order, or `.` for nothing.
 impl fmt::Display for Buttons {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.is_empty() {
@@ -97,8 +97,8 @@ mod tests {
     fn trace_codes_in_canonical_order() {
         assert_eq!(Buttons::parse_trace(".").unwrap(), Buttons::NONE);
         assert_eq!(
-            Buttons::parse_trace("LRUDJASP").unwrap().to_string(),
-            "LRUDJASP"
+            Buttons::parse_trace("LRUDJASPT").unwrap().to_string(),
+            "LRUDJASPT"
         );
         assert!(Buttons::parse_trace("JR").is_err());
         assert!(Buttons::parse_trace("").is_err());

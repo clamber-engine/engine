@@ -50,7 +50,7 @@ pub enum Row {
     Back,
 }
 
-const ROWS: [Row; 12] = [
+const ROWS: [Row; 13] = [
     Row::Player,
     Row::Action(Action::Left),
     Row::Action(Action::Right),
@@ -60,6 +60,7 @@ const ROWS: [Row; 12] = [
     Row::Action(Action::Action),
     Row::Action(Action::Swap),
     Row::Action(Action::Pause),
+    Row::Action(Action::Tandem),
     Row::Reset,
     Row::Save,
     Row::Back,
