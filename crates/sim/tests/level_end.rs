@@ -440,3 +440,128 @@ fn a_marker_leading_on_is_left_as_an_exit_is() {
     let level = play.world.level.clone();
     assert_eq!(clamber_sim::area(&level.entities[0]), Some("level"));
 }
+
+/// "Walkers and bunches": a walker goes on walking as usual on every
+/// frame of the walk-out.
+#[test]
+fn walkers_go_on_walking_during_the_walk_out() {
+    let walker = "[[entities]]\ntype = \"crawler\"\nat = [960, 449]\n";
+    let mut play = Play::new(world("classic-1", 1010, (1000, 449), walker));
+    let walker = play
+        .world
+        .things
+        .iter()
+        .position(|t| t.kind == "crawler")
+        .unwrap();
+    assert!(play.until_passed(&[R], 1));
+    let mut x = play.world.things[walker].pos.x;
+    while !play.world.flow.outcome.is_over() {
+        play.step(&[]);
+        let thing = &play.world.things[walker];
+        assert!(thing.active);
+        assert_eq!(thing.pos.x, x - f(0.5), "frame {}", play.world.frame);
+        x = thing.pos.x;
+    }
+}
+
+/// "Walkers and bunches": a walker whose contact would hurt the lead on
+/// `T` doesn't, and the lead walks on through its place. Found by
+/// waiting for a walker coming toward the lead until, without the
+/// marker, the lead would be hurt on exactly the frame after the one
+/// Right is pressed on.
+#[test]
+fn a_walker_that_would_hurt_the_lead_on_t_doesnt() {
+    let walker = "[[entities]]\ntype = \"crawler\"\nat = [1060, 449]\n";
+    let hurt_on_t = |marker: (i32, i32), wait: usize| {
+        let mut play = Play::new(world("classic-1", 1010, marker, walker));
+        for _ in 0..wait {
+            play.step(&[]);
+            if play.world.events.contains(&Event::Hurt) {
+                return None;
+            }
+        }
+        play.step(&[R]);
+        let passed = play.passed();
+        play.step(&[R]);
+        Some((passed, play.world.events.contains(&Event::Hurt)))
+    };
+    let wait = (0..120)
+        .find(|&wait| hurt_on_t((1000, 300), wait) == Some((false, true)))
+        .expect("a wait after which the lead is hurt on T");
+    assert_eq!(hurt_on_t((1000, 449), wait), Some((true, false)));
+
+    let mut play = Play::new(world("classic-1", 1010, (1000, 449), walker));
+    play.hold(&[], wait);
+    assert!(play.until_passed(&[R], 1));
+    while !play.world.flow.outcome.is_over() {
+        play.step(&[]);
+        assert!(!play.world.events.contains(&Event::Hurt));
+        assert!(play.world.frame < 400);
+    }
+    assert_eq!(play.world.flow.outcome, Outcome::Complete);
+}
+
+/// A bunch `ahead` px right of the marker and `above` px above the
+/// lead's feet line, the lead standing on the marker and passing it on
+/// its first frame of Right. The frames after `T` on which the bunch is
+/// taken, and on which its items reach the count, until the level is
+/// over.
+fn bunch_during_the_walk_out(ahead: i32, above: i32) -> (Option<u32>, Vec<u32>) {
+    let bunch = format!(
+        "[[entities]]\ntype = \"cluster\"\nat = [{}, {}]\n",
+        1000 + ahead,
+        449 - above
+    );
+    let mut play = Play::new(world("classic-1", 1000, (1000, 449), &bunch));
+    assert!(play.until_passed(&[R], 1));
+    let n = play.world.frame;
+    let (mut taken, mut counted) = (None, Vec::new());
+    let mut gems = play.world.flow.gems;
+    while !play.world.flow.outcome.is_over() {
+        play.step(&[]);
+        let k = play.world.frame - n - 1;
+        if play
+            .world
+            .flow
+            .events
+            .iter()
+            .any(|e| matches!(e, FlowEvent::Collect(_)))
+        {
+            assert!(taken.is_none());
+            taken = Some(k);
+        }
+        if play.world.flow.gems > gems {
+            counted.push(k);
+            gems = play.world.flow.gems;
+        }
+    }
+    (taken, counted)
+}
+
+/// "Walkers and bunches", the example: a bunch 33 px right of the
+/// marker and 20 px above the feet line is taken on `T` + 9, and its
+/// items reach the count from `T` + 26, every 6 frames until the level
+/// is over.
+#[test]
+fn a_bunch_is_taken_during_the_walk_out() {
+    let (taken, counted) = bunch_during_the_walk_out(33, 20);
+    assert_eq!(taken, Some(9));
+    assert!(!counted.is_empty());
+    let expected: Vec<u32> = (0..counted.len() as u32).map(|i| 26 + 6 * i).collect();
+    assert_eq!(counted, expected);
+}
+
+/// "Walkers and bunches": the standing ranges apply on every frame of
+/// the walk-out, though the lead is off the ground, not the jumping ones.
+#[test]
+fn during_the_walk_out_a_bunch_is_taken_by_the_standing_ranges() {
+    // The lead rises 1/8 px a frame from T + 1, so its feet line is 1 px
+    // higher by T + 9, when I comes into range: D is `above` less 1, and
+    // only gets smaller after that.
+    assert_eq!(bunch_during_the_walk_out(33, -8).0, None);
+    assert_eq!(bunch_during_the_walk_out(33, -7).0, Some(9));
+    assert_eq!(bunch_during_the_walk_out(33, 41).0, Some(9));
+    // D 46 to 49 while I is in range: in the jumping row's D, but not
+    // the standing row's.
+    assert_eq!(bunch_during_the_walk_out(33, 50).0, None);
+}

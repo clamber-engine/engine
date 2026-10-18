@@ -162,12 +162,15 @@ impl Kind {
         }
     }
 
-    /// How far below its entry's level y an object of this kind's
-    /// position is: animal-crate.md puts a crate 1 px below.
-    pub fn below_entry(self) -> i32 {
+    /// How far right of its entry's level x and below its level y an
+    /// object of this kind's position is: bunches.md and letters.md put
+    /// bunches and letters 1 px left, animal-crate.md puts a crate 1 px
+    /// below.
+    pub fn from_entry(self) -> (i32, i32) {
         match self {
-            Kind::AnimalCrate => 1,
-            _ => 0,
+            Kind::Bunch | Kind::Letter(_) => (-1, 0),
+            Kind::AnimalCrate => (0, 1),
+            _ => (0, 0),
         }
     }
 

@@ -29,10 +29,14 @@
 //! Engine choices where the spec says nothing: the marker can't be
 //! passed while the player is hurt, knocked out, swapping or losing a
 //! character; during the walk-out things go on moving but don't touch
-//! the characters, nothing is collected, and without a `let_go_speed` an
-//! object in the hands stays there; the other character goes on
-//! following. With one, it's let go on the walk-out's first step
-//! ([`carry`]).
+//! the characters, and without a `let_go_speed` an object in the hands
+//! stays there; the other character goes on following. With one, it's
+//! let go on the walk-out's first step ([`carry`]).
+//!
+//! During the walk-out walkers go on moving as usual but don't hurt the
+//! lead, and collectibles are still taken, with their walking ranges
+//! whatever the step, as "Walkers and bunches" describes for bunches.
+//! The spec covers only bunches; here every collectible is taken so.
 
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame};
@@ -192,7 +196,7 @@ pub(crate) fn step(world: &mut World) {
         view::walkers(world, at, false);
     }
     carry::after(world, &none);
-    collect::update(world, false, start_view);
+    collect::update(world, true, start_view);
 
     let x = world.player.pos.x.floor();
     let fade_at = physics[Param::EndFadeAt].floor();

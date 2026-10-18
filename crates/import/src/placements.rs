@@ -196,8 +196,8 @@ impl Placements {
     }
 
     /// The objects as level entities, for a level whose bottom edge is at
-    /// `bottom`. Each is at its entry's position (moved down by
-    /// [`Kind::below_entry`]), the entity
+    /// `bottom`. Each is at its entry's position (moved by
+    /// [`Kind::from_entry`]), the entity
     /// [`Kind::entity_with`] gives for the kind and settings `kind` gives its
     /// reference, or
     /// else of kind `placed-` and its reference in hex. A group's walkers,
@@ -297,17 +297,17 @@ impl Placements {
     ) -> (Vec<Entity>, Vec<Vec<usize>>) {
         let mut ids = BTreeSet::new();
         let mut entity = |entry: Entry| {
-            let (kind, params, below, id) = match kind(entry.reference) {
+            let (kind, params, (right, below), id) = match kind(entry.reference) {
                 Some((kind, settings)) => {
                     let (name, params) = kind.entity_with(&settings);
                     // Only the first of a kind gets its id.
                     let id = kind.id().filter(|&id| ids.insert(id));
-                    (name.to_string(), params, kind.below_entry(), id)
+                    (name.to_string(), params, kind.from_entry(), id)
                 }
                 None => (
                     format!("{PLACED}{:04x}", entry.reference),
                     Table::new(),
-                    0,
+                    (0, 0),
                     None,
                 ),
             };
@@ -315,7 +315,10 @@ impl Placements {
                 kind,
                 id: id.map(String::from),
                 // A u16 x and a bottom edge inside a level fit an i32.
-                at: Vec2::ints(i32::from(entry.x), entry.level_y(bottom) as i32 + below),
+                at: Vec2::ints(
+                    i32::from(entry.x) + right,
+                    entry.level_y(bottom) as i32 + below,
+                ),
                 params,
             }
         };
@@ -730,6 +733,34 @@ mod tests {
         let entities = read(&fragment()).unwrap().entities(BOTTOM, kind);
         let crate_ = entities.iter().find(|e| e.kind == "hutch").unwrap();
         assert_eq!(crate_.at, Vec2::ints(40, 313));
+    }
+
+    /// bunches.md and letters.md: a bunch's or a letter's position is 1
+    /// px left of its entry's level x.
+    #[test]
+    fn bunches_and_letters_are_1_px_left_of_their_entry() {
+        for (kind, name) in [(Kind::Bunch, "cluster"), (Kind::Letter(2), "letter")] {
+            let entities = read(&fragment()).unwrap().entities(BOTTOM, |r| {
+                (r == 0x2000).then(|| (kind, KindSettings::default()))
+            });
+            let placed = entities.iter().find(|e| e.kind == name).unwrap();
+            assert_eq!(placed.at, Vec2::ints(39, 312), "{name}");
+        }
+    }
+
+    /// The spot keeps its entry's position, which decides when the
+    /// object appears.
+    #[test]
+    fn a_bunchs_spot_is_at_its_entry() {
+        let kind = |r| (r == 0x2000).then(|| (Kind::Bunch, KindSettings::default()));
+        let (entities, sections) = read(&fragment()).unwrap().objects(BOTTOM, kind);
+        let bunch = entities.iter().position(|e| e.kind == "cluster").unwrap();
+        let spot = sections[0]
+            .spots
+            .iter()
+            .find(|s| s.entities == [bunch])
+            .unwrap();
+        assert_eq!(spot.at, Some(Vec2::ints(40, 312)));
     }
 
     /// Only the first wall-return entrance gets the id the arrival coming

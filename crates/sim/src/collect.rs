@@ -718,6 +718,7 @@ fn take(world: &mut World, start: Option<View>) {
     let half = world.feel.world[Param::RelicSize].floor() / 2;
     let player = &world.player;
     let crouch_start = frames(world.player_physics()[Param::CrouchStart]);
+    let walking_out = world.ending.is_some();
     let x = player.pos.x.floor();
     let feet = -(-player.pos.y).floor();
     for (i, thing) in world
@@ -768,7 +769,12 @@ fn take(world: &mut World, start: Option<View>) {
         let (Ok(past), Ok(below)) = (i32::try_from(past), i32::try_from(below)) else {
             continue;
         };
-        if !span(&reach, player, crouch_start).contains(past, below) {
+        // During the walk-out, by the walking ranges.
+        let span = match walking_out {
+            true => reach.walk,
+            false => span(&reach, player, crouch_start),
+        };
+        if !span.contains(past, below) {
             continue;
         }
         thing.active = false;
