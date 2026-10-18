@@ -7,9 +7,12 @@ deterministic fixed-point simulation, data-driven movement presets,
 content packs, and conformance tests that check behaviour frame by frame.
 
 Clamber ships with its own original game content. It also includes an
-importer that can convert data from game cartridges you legally own into
-Clamber's formats, locally, for personal play. Converted data is never
-distributed with or by this project.
+importer that can convert data from Donkey Kong Country SNES ROMs you
+legally own into Clamber's formats, locally, for personal play. Converted
+data is never distributed with or by this project.
+
+Clamber is not affiliated with or endorsed by Nintendo or Rare. Donkey Kong
+Country is a trademark of its owners.
 
 ## Latest gameplay
 
