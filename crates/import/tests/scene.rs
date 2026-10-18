@@ -6,18 +6,20 @@
 //! ("The first level's scene"), `spec/formats/level-ground.md`,
 //! `spec/formats/placements.md`, `spec/formats/level-start.md` and
 //! `spec/formats/view-limits.md`, with the scene's view from
-//! `spec/behavior/level-ends.md` ("In the first level's scene").
+//! `spec/behavior/level-ends.md` ("In the first level's scene") and its
+//! timing from `spec/behavior/exits.md` ("The scene").
 
 use std::fs;
 use std::sync::Arc;
 
 use clamber_import::{
     BANK_SIZE, Catalog, FROM_LEVEL, Image, Importer, Known, LevelDecoder, LevelParts, Location,
-    Scenery, installed, rgb,
+    SCENE_RETURN, Scenery, installed, rgb,
 };
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Dir, Fixed, LayerContent, Level, Vec2};
-use clamber_sim::{InputFrame, World, generic_feel, step};
+use clamber_pack::{CharacterFeel, Presets};
+use clamber_sim::{Facing, InputFrame, Outcome, World, generic_feel, step};
 use clamber_sprite::{Image as Picture, decode_png};
 
 const BANK: u8 = 0xC1;
@@ -55,6 +57,8 @@ fn parts() -> LevelParts {
         wall_return: None,
         room: None,
         back_to: None,
+        scene: None,
+        scene_of: Some("level-1"),
         view_limits: Some(Location::new(BANK, 0xA300)),
         song: None,
     }
@@ -299,4 +303,54 @@ fn the_view_never_moves() {
             );
         }
     }
+}
+
+/// exits.md, "The scene": the lead walks in on frames 0 to 28, then
+/// stands still facing left whatever is pressed, the picture fades out
+/// from frame 366, and frame 396 is the last before play goes back to
+/// the first level's scene-return arrival.
+#[test]
+fn the_scene_plays_by_itself_and_goes_back_to_the_level() {
+    let (level, _) = imported_scene("timing");
+    let scene = level.scene.clone().unwrap();
+    assert_eq!(scene.area.as_deref(), Some("level-1"));
+    assert_eq!(scene.arrival.as_deref(), Some(SCENE_RETURN));
+    let arrival = level.arrival(FROM_LEVEL).unwrap().clone();
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: Default::default(),
+    });
+    let mut world = World::arriving(Arc::new(level), Arc::new(feel), &arrival);
+    let (mut lead, mut other) = (Vec::new(), Vec::new());
+    let mut brightness = Vec::new();
+    let mut held = Actions::NONE;
+    for k in 0..=396u32 {
+        assert!(!world.flow.outcome.is_over(), "over before frame {k}");
+        // Every action in turn, pressed and held.
+        let now: Actions = [[Action::Right, Action::Jump, Action::Left][k as usize % 3]]
+            .into_iter()
+            .collect();
+        step(&mut world, &InputFrame::single(Frame::after(held, now)));
+        held = now;
+        lead.push(world.player.pos);
+        other.push(world.other.as_ref().map(|o| o.pos));
+        brightness.push(world.brightness());
+        if k >= 29 {
+            assert_eq!(world.player.facing, Facing::Left, "frame {k}");
+        }
+    }
+    assert!(lead[1].x < lead[0].x, "walks in leftward");
+    assert!(lead[29..].iter().all(|&p| p == lead[28]));
+    assert!(other[27].is_some());
+    assert!(other[28..].iter().all(|&p| p == other[27]));
+    assert_eq!(brightness[364], (15, 15));
+    assert_eq!(brightness[365], (15, 15));
+    assert_eq!(brightness[366], (15, 15));
+    assert_eq!(brightness[367], (14, 15));
+    assert_eq!(brightness[368], (14, 15));
+    assert_eq!(brightness[394], (1, 15));
+    assert_eq!(brightness[395], (0, 15));
+    assert_eq!(brightness[396], (0, 15));
+    assert_eq!(world.flow.outcome, Outcome::Ended);
 }

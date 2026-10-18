@@ -4,8 +4,8 @@
 use clamber_level::Dir;
 
 use crate::{
-    CollectibleParts, FIRST_LEVEL, FIRST_ROOM, LevelParts, LevelSong, Location, PackedGround,
-    Scenery,
+    CollectibleParts, FIRST_LEVEL, FIRST_ROOM, FIRST_SCENE, LevelParts, LevelSong, Location,
+    PackedGround, Scenery,
 };
 
 /// The data a locator row finds. The level parts are the first level's.
@@ -207,7 +207,8 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
 
 /// The parts of the first level of `title`, where the spec gives all of
 /// them: the locations from [`locate`], and the sizes from
-/// `level-ground.md` and `graphics.md` ("The first level's data").
+/// `level-ground.md` and `graphics.md` ("The first level's data"). Its
+/// exits lead into its room and its scene.
 pub fn first_level(title: &str) -> Option<LevelParts> {
     let at = |data| locate(title, data);
     let (columns, types, pictures) = match title {
@@ -239,6 +240,8 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
         wall_return: Some(at(Data::WallReturnRecord)?),
         room: Some(FIRST_ROOM),
         back_to: None,
+        scene: Some(FIRST_SCENE),
+        scene_of: None,
         view_limits: Some(at(Data::ViewLimits)?),
         // `sound.md`: "The first level plays song 0".
         song: Some(LevelSong {
@@ -286,6 +289,8 @@ pub fn first_room(title: &str) -> Option<LevelParts> {
         wall_return: None,
         room: None,
         back_to: Some(FIRST_LEVEL),
+        scene: None,
+        scene_of: None,
         view_limits: None,
         song: None,
     })
@@ -295,8 +300,9 @@ pub fn first_room(title: &str) -> Option<LevelParts> {
 /// the spec gives all of them: the locations from [`locate`], the grid's
 /// 1 528 columns and `N` = 154 from `level-ground.md`, and types 0 to
 /// 435 and front tiles 0 to 43 from `graphics.md` ("The first level's
-/// scene"). The lead walks in leftward (`exits.md`, "The scene"), and it
-/// has no single collectibles (`collectibles.md`), restart or music.
+/// scene"). The lead walks in leftward, and the scene plays by itself
+/// and goes back to the first level (`exits.md`, "The scene"). It has no
+/// single collectibles (`collectibles.md`), restart or music.
 pub fn first_scene(title: &str) -> Option<LevelParts> {
     let at = |data| locate(title, data);
     let (columns, types, pictures, front_count) = match title {
@@ -327,6 +333,8 @@ pub fn first_scene(title: &str) -> Option<LevelParts> {
         wall_return: None,
         room: None,
         back_to: None,
+        scene: None,
+        scene_of: Some(FIRST_LEVEL),
         view_limits: Some(at(Data::SceneViewLimits)?),
         song: None,
     })

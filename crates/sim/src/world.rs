@@ -24,6 +24,7 @@ use crate::loss::{self, Loss, Lost};
 use crate::player::{Act, Facing, Player, ROLL, Roll, frames};
 use crate::ride;
 use crate::rope;
+use crate::scene;
 use crate::script::{InputFrame, Script};
 use crate::sections::{Placed, Placing};
 use crate::sling;
@@ -700,6 +701,7 @@ impl World {
                 out.push(4);
                 count(&mut out, i);
             }
+            Outcome::Ended => out.push(5),
         }
         out.push(f.lives);
         match self.ending {
@@ -858,6 +860,7 @@ impl World {
                 FlowEvent::Life => (8, 0),
                 FlowEvent::Letter(k) => (9, usize::from(k)),
                 FlowEvent::Exited(i) => (10, i),
+                FlowEvent::Ended => (11, 0),
             };
             out.push(tag);
             count(&mut out, index);
@@ -1195,8 +1198,9 @@ pub fn step(world: &mut World, input: &InputFrame) {
         world.frame += 1;
         return;
     }
-    if walk_in::hold(world) {
-        // Everything waits while the characters walk in.
+    let walking = walk_in::hold(world);
+    if scene::hold(world, walking) || walking {
+        // Everything waits while the characters walk in, and in a scene.
         world.frame += 1;
         return;
     }

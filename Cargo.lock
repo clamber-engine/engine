@@ -340,6 +340,7 @@ dependencies = [
  "clamber-fixed",
  "clamber-input",
  "clamber-level",
+ "clamber-pack",
  "clamber-sim",
  "clamber-sprite",
  "clamber-worldmap",

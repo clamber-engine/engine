@@ -172,9 +172,16 @@ impl Game {
         let arrival = level
             .entities
             .get(exit)
-            .and_then(|e| e.params.get("arrival")?.as_str())
-            .and_then(|name| level.arrival(name));
-        match arrival {
+            .and_then(|e| e.params.get("arrival")?.as_str());
+        self.come_back(arrival);
+    }
+
+    /// Comes back into the level at the arrival called `arrival`, as
+    /// [`leave_by`](Game::leave_by) does, or restarts it if it has no
+    /// such arrival.
+    pub fn come_back(&mut self, arrival: Option<&str>) {
+        let level = self.world.level.clone();
+        match arrival.and_then(|name| level.arrival(name)) {
             Some(arrival) => {
                 let world = self.world.coming_back(arrival);
                 self.replace_world(world);

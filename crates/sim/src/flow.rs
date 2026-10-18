@@ -75,6 +75,9 @@ pub enum Outcome {
     /// leading to another area, at this entity index. The world no longer
     /// changes.
     Exited(usize),
+    /// The area's scene is over, and play goes on where it leads
+    /// ([`Scene`](clamber_level::Scene)). The world no longer changes.
+    Ended,
 }
 
 impl Outcome {
@@ -82,7 +85,7 @@ impl Outcome {
     pub fn is_over(self) -> bool {
         matches!(
             self,
-            Outcome::Complete | Outcome::GameOver | Outcome::Exited(_)
+            Outcome::Complete | Outcome::GameOver | Outcome::Exited(_) | Outcome::Ended
         )
     }
 }
@@ -113,6 +116,8 @@ pub enum FlowEvent {
     /// The lead left the area through the exit, or past the end marker
     /// leading to another area, at this entity index.
     Exited(usize),
+    /// The area's scene is over.
+    Ended,
 }
 
 /// Progress through the level.

@@ -48,6 +48,8 @@ pub struct Level {
     /// When entities appear, if they appear section by section as the
     /// view goes; empty if they don't.
     pub sections: Vec<Section>,
+    /// How the area plays by itself, if it's a scene.
+    pub scene: Option<Scene>,
 }
 
 /// A way play comes into a level from another area: where the lead
@@ -147,6 +149,31 @@ pub struct Light {
     pub radius: Fixed,
     /// Multiplies `color` at the light's centre, at least 0.
     pub intensity: f64,
+}
+
+/// An area that plays by itself, as a scene between two parts of a
+/// level. Play comes in at an arrival, and the characters walk in if it
+/// has them walk; from then on the lead stands still where it is, the
+/// other character too, nothing held or pressed has any effect and
+/// nothing else moves. The picture fades out to black, and the area ends
+/// on its own.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Scene {
+    /// The area's last frame, counting its frames from 0.
+    pub last: u32,
+    /// The frame the fade-out starts from, at full brightness, before
+    /// `last`.
+    pub fade: u32,
+    /// How many frames each step of the fade-out lasts, at least 1: the
+    /// picture is black once the steps from `fade` reach `last`.
+    pub fade_step: u32,
+    /// The other area of the pack play goes on in after the last frame,
+    /// the file name of its level without `.level`; this level without
+    /// one.
+    pub area: Option<String>,
+    /// The arrival play comes in at there; without one, the area begins
+    /// as at its start.
+    pub arrival: Option<String>,
 }
 
 /// A music track. Loop points are for formats without loop tags; without
@@ -447,6 +474,17 @@ struct File {
     lights: Vec<LightFile>,
     #[serde(default)]
     sections: Vec<SectionFile>,
+    scene: Option<SceneFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SceneFile {
+    last: u32,
+    fade: u32,
+    fade_step: u32,
+    area: Option<String>,
+    arrival: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -813,6 +851,7 @@ impl Reader<'_> {
             .map(|(i, l)| self.light(&format!("lights[{i}]"), l))
             .collect::<Result<_, _>>()?;
         let sections = self.sections(f.sections, entities.len())?;
+        let scene = f.scene.map(|s| self.scene("scene", s)).transpose()?;
 
         Ok(Level {
             name: f.name,
@@ -829,6 +868,36 @@ impl Reader<'_> {
             lighting,
             lights,
             sections,
+            scene,
+        })
+    }
+
+    fn scene(&self, at: &str, s: SceneFile) -> Result<Scene, LevelError> {
+        if s.fade_step == 0 {
+            return Err(self.err(&format!("{at}.fade_step"), "must be positive"));
+        }
+        if s.fade >= s.last || (s.last - s.fade) / s.fade_step == 0 {
+            return Err(self.err(
+                &format!("{at}.fade"),
+                "must leave a step of the fade before `last`",
+            ));
+        }
+        for (key, name) in [("area", &s.area), ("arrival", &s.arrival)] {
+            if let Some(name) = name
+                && !is_name(name)
+            {
+                return Err(self.err(
+                    &format!("{at}.{key}"),
+                    "use lowercase letters, digits, - and _",
+                ));
+            }
+        }
+        Ok(Scene {
+            last: s.last,
+            fade: s.fade,
+            fade_step: s.fade_step,
+            area: s.area,
+            arrival: s.arrival,
         })
     }
 
@@ -1345,6 +1414,23 @@ impl Level {
                 }
             }
             t.insert("music".into(), Value::Table(mt));
+        }
+
+        if let Some(s) = &self.scene {
+            let mut st = Table::new();
+            for (key, n) in [
+                ("last", s.last),
+                ("fade", s.fade),
+                ("fade_step", s.fade_step),
+            ] {
+                st.insert(key.into(), Value::Integer(n.into()));
+            }
+            for (key, name) in [("area", &s.area), ("arrival", &s.arrival)] {
+                if let Some(name) = name {
+                    st.insert(key.into(), Value::String(name.clone()));
+                }
+            }
+            t.insert("scene".into(), Value::Table(st));
         }
 
         if self.lighting != Lighting::default() {

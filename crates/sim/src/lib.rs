@@ -79,6 +79,7 @@ mod pose;
 mod record;
 mod ride;
 mod rope;
+mod scene;
 mod script;
 mod sections;
 mod sling;

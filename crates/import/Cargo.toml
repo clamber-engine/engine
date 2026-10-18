@@ -19,5 +19,6 @@ toml = "1.1.8"
 [dev-dependencies]
 clamber-audio = { path = "../audio" }
 clamber-input = { path = "../input" }
+clamber-pack = { path = "../pack" }
 clamber-sim = { path = "../sim" }
 clamber-worldmap = { path = "../worldmap" }

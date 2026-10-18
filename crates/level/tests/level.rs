@@ -340,6 +340,30 @@ fn format_errors() {
     );
 }
 
+/// A scene's timing and where play goes on after it, read, checked and
+/// saved again.
+#[test]
+fn reads_and_saves_a_scene() {
+    let src = "format = 1\nsize = [100, 100]\nstart = [10, 10]\n\
+               [scene]\nlast = 40\nfade = 9\nfade_step = 2\narea = \"level-1\"\narrival = \"back\"\n";
+    let l = Level::from_toml_str(src, "x.level").unwrap();
+    let scene = l.scene.clone().unwrap();
+    assert_eq!((scene.last, scene.fade, scene.fade_step), (40, 9, 2));
+    assert_eq!(scene.area.as_deref(), Some("level-1"));
+    assert_eq!(scene.arrival.as_deref(), Some("back"));
+    let back = Level::from_toml_str(&l.to_toml_string(), "saved").unwrap();
+    assert_eq!(back, l);
+
+    let scene = |rest: &str| level_err(&format!("[scene]\nlast = 40\n{rest}"));
+    assert!(scene("fade = 9\nfade_step = 0\n").contains("scene.fade_step: must be positive"));
+    assert!(scene("fade = 40\nfade_step = 1\n").contains("scene.fade: must leave a step"));
+    assert!(scene("fade = 39\nfade_step = 2\n").contains("scene.fade: must leave a step"));
+    assert!(
+        scene("fade = 9\nfade_step = 2\narea = \"Level 1\"\n")
+            .contains("scene.area: use lowercase")
+    );
+}
+
 #[test]
 fn imports_tiled_flips_in_clamber_order() {
     // Tiled swaps x and y before mirroring; Clamber mirrors first.

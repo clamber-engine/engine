@@ -15,7 +15,8 @@
 use std::collections::BTreeMap;
 
 use clamber_level::{
-    Area, Arrival, Collision, Dir, Entity, FORMAT, Fixed, Level, Rect, Region, Section, Track, Vec2,
+    Area, Arrival, Collision, Dir, Entity, FORMAT, Fixed, Level, Rect, Region, Scene, Section,
+    Track, Vec2,
 };
 
 use crate::{
@@ -91,6 +92,15 @@ pub struct LevelParts {
     /// finishing this one, as in the first level's room
     /// (`level-end.md`, "In the first level's room").
     pub back_to: Option<&'static str>,
+    /// The file name, without `.level`, of the area the floor exit leads
+    /// to, if that's imported too: play comes into it at [`FROM_LEVEL`].
+    /// Without it the exit leads straight to [`SCENE_RETURN`].
+    pub scene: Option<&'static str>,
+    /// The file name, without `.level`, of the level this area is the
+    /// scene of, if it's one: it plays by itself with the timing of
+    /// `exits.md` ("The scene"), and then play goes back into that level
+    /// at its [`SCENE_RETURN`] arrival.
+    pub scene_of: Option<&'static str>,
     /// The view-limit record, if the level has one (`view-limits.md`).
     pub view_limits: Option<Location>,
     /// The level's song, if it has its music.
@@ -197,11 +207,11 @@ pub const FROM_LEVEL: &str = "from-level";
 /// spec gives, so the lowest exit is taken to be the floor one and the
 /// others the upper one.
 ///
-/// The upper exit leads into the room at [`FROM_LEVEL`] if the room is
-/// imported as `into_room`. The scene isn't imported yet, so the floor
-/// exit leads straight to where play comes back after it, and so does the
-/// upper one without the room.
-fn lead_exits(entities: &mut [Entity], scene: bool, room: bool, into_room: Option<&str>) {
+/// The floor exit leads into the scene at [`FROM_LEVEL`] if the scene
+/// is imported as `into.scene`, and the upper one into the room if it is
+/// imported as `into.room`. Without them, each leads straight to where
+/// play comes back after it.
+fn lead_exits(entities: &mut [Entity], scene: bool, room: bool, into: Leads) {
     let floor = entities
         .iter()
         .enumerate()
@@ -213,14 +223,39 @@ fn lead_exits(entities: &mut [Entity], scene: bool, room: bool, into_room: Optio
         .enumerate()
         .filter(|(_, e)| e.kind == EXIT)
     {
-        let leads = match (Some(i) == floor, into_room) {
-            (true, _) => scene.then_some((None, SCENE_RETURN)),
-            (false, Some(area)) => Some((Some(area), FROM_LEVEL)),
-            (false, None) => room.then_some((None, ROOM_RETURN)),
+        let (area, back) = match Some(i) == floor {
+            true => (into.scene, scene.then_some(SCENE_RETURN)),
+            false => (into.room, room.then_some(ROOM_RETURN)),
+        };
+        let leads = match area {
+            Some(area) => Some((Some(area), FROM_LEVEL)),
+            None => back.map(|arrival| (None, arrival)),
         };
         if let Some((area, arrival)) = leads {
             lead(exit, area, arrival);
         }
+    }
+}
+
+/// The areas a level's exits lead into, by file name without `.level`,
+/// where they're imported.
+#[derive(Clone, Copy, Debug, Default)]
+struct Leads {
+    scene: Option<&'static str>,
+    room: Option<&'static str>,
+}
+
+/// The scene of a level, as `exits.md` has the first level's ("The
+/// scene"): frame 396 is its last, and the brightness is 15 − `j` on
+/// frames 365 + 2`j` and 366 + 2`j`, so 15 to frame 366 and 0 on 395 and
+/// 396. Then play goes on in `level` at its [`SCENE_RETURN`] arrival.
+fn scene_of(level: &str) -> Scene {
+    Scene {
+        last: 396,
+        fade: 365,
+        fade_step: 2,
+        area: Some(level.into()),
+        arrival: Some(SCENE_RETURN.into()),
     }
 }
 
@@ -530,11 +565,15 @@ impl LevelDecoder {
             &mut level.entities,
             p.scene_return.is_some(),
             p.room_return.is_some(),
-            p.room,
+            Leads {
+                scene: p.scene,
+                room: p.room,
+            },
         );
         if let Some(area) = p.back_to {
             lead_back(&mut level.entities, area);
         }
+        level.scene = p.scene_of.map(scene_of);
         // Music is optional: a song that can't be converted leaves the
         // level to the game's own music.
         let (mut skipped, mut notes) = (Vec::new(), Vec::new());
@@ -661,7 +700,7 @@ mod tests {
             params: Default::default(),
         };
         let mut entities = [entity(EXIT, 300), entity(KEG, 450), entity(EXIT, 400)];
-        lead_exits(&mut entities, true, true, None);
+        lead_exits(&mut entities, true, true, Leads::default());
         fn leads(e: &Entity) -> Option<&str> {
             e.params.get("arrival").and_then(|v| v.as_str())
         }
@@ -669,13 +708,13 @@ mod tests {
         assert_eq!(leads(&entities[1]), None);
         assert_eq!(leads(&entities[2]), Some(SCENE_RETURN));
         let mut entities = [entity(EXIT, 300), entity(EXIT, 400)];
-        lead_exits(&mut entities, false, true, None);
+        lead_exits(&mut entities, false, true, Leads::default());
         assert_eq!(leads(&entities[0]), Some(ROOM_RETURN));
         assert_eq!(leads(&entities[1]), None);
     }
 
     #[test]
-    fn the_upper_exit_leads_into_the_room_and_the_room_s_end_markers_back() {
+    fn the_exits_lead_into_the_room_and_the_scene_and_the_room_s_end_markers_back() {
         let entity = |kind: &str, y| Entity {
             kind: kind.into(),
             id: None,
@@ -684,11 +723,15 @@ mod tests {
         };
         let param = |e: &Entity, key| e.params.get(key).and_then(|v| v.as_str()).map(String::from);
         let mut level = [entity(EXIT, 300), entity(EXIT, 400)];
-        lead_exits(&mut level, true, true, Some("room"));
+        let into = Leads {
+            scene: Some("scene"),
+            room: Some("room"),
+        };
+        lead_exits(&mut level, true, true, into);
         assert_eq!(param(&level[0], "area").as_deref(), Some("room"));
         assert_eq!(param(&level[0], "arrival").as_deref(), Some(FROM_LEVEL));
-        assert_eq!(param(&level[1], "area"), None);
-        assert_eq!(param(&level[1], "arrival").as_deref(), Some(SCENE_RETURN));
+        assert_eq!(param(&level[1], "area").as_deref(), Some("scene"));
+        assert_eq!(param(&level[1], "arrival").as_deref(), Some(FROM_LEVEL));
         let mut room = [entity(END, 400), entity(KEG, 400)];
         lead_back(&mut room, "level");
         assert_eq!(param(&room[0], "area").as_deref(), Some("level"));

@@ -94,7 +94,11 @@ pub fn cues(world: &World) -> impl Iterator<Item = Cue> + '_ {
         FlowEvent::GameOver => Some(Cue::GameOver),
         FlowEvent::Defeat(_) => Some(Cue::Defeat),
         FlowEvent::Launch(_) => Some(Cue::Launch),
-        FlowEvent::Respawn | FlowEvent::Life | FlowEvent::Letter(_) | FlowEvent::Exited(_) => None,
+        FlowEvent::Respawn
+        | FlowEvent::Life
+        | FlowEvent::Letter(_)
+        | FlowEvent::Exited(_)
+        | FlowEvent::Ended => None,
     });
     moves.chain(flow)
 }

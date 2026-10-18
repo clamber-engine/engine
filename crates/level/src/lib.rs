@@ -20,6 +20,8 @@
 //!   camera rules
 //! - **camera** rules for the whole level: limits and look-ahead
 //! - **music**: a track to play, with optional loop points
+//! - **scene**: optionally, that the area plays by itself and ends on
+//!   its own, and where play goes on after it ([`Scene`])
 //! - **lighting**: an ambient colour and a key light, and point lights,
 //!   which shade layers and sprites that have normal maps
 //!
@@ -35,6 +37,6 @@ pub use collision::{Collider, Collision, Dir, Hit, Shape, Span};
 pub use geom::{Area, Rect, Vec2};
 pub use level::{
     Arrival, Camera, CameraRule, Depth, Entity, FORMAT, KeyLight, Layer, LayerContent, Level,
-    LevelError, Light, Lighting, Region, Rgb, Section, Spot, Surface, Tile, TileLayer, Tileset,
-    Track, builtin_surfaces,
+    LevelError, Light, Lighting, Region, Rgb, Scene, Section, Spot, Surface, Tile, TileLayer,
+    Tileset, Track, builtin_surfaces,
 };

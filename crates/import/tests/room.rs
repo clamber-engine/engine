@@ -48,6 +48,8 @@ fn parts() -> LevelParts {
         wall_return: None,
         room: None,
         back_to: None,
+        scene: None,
+        scene_of: None,
         view_limits: None,
         song: None,
     }

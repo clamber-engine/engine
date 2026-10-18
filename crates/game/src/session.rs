@@ -673,6 +673,24 @@ impl Session {
         }
     }
 
+    /// Goes on where the area's scene leads once it's over, as
+    /// [`leave_by`](Session::leave_by) does where an exit leads: the
+    /// scene's `area` and `arrival` in place of the exit's params.
+    fn end_scene(&mut self) {
+        let level = self.game.world.level.clone();
+        let Some(scene) = &level.scene else {
+            return;
+        };
+        let arrival = scene.arrival.as_deref();
+        let Some(area) = &scene.area else {
+            return self.game.come_back(arrival);
+        };
+        if let Err(e) = self.go_to(area, arrival) {
+            report::warn(format!("can't go on to {area}: {e}"));
+            self.game.come_back(arrival);
+        }
+    }
+
     /// Goes on in the area `area` at the arrival called `arrival`, as in
     /// [`leave_by`](Session::leave_by).
     fn go_to(&mut self, area: &str, arrival: Option<&str>) -> Result<(), String> {
@@ -837,6 +855,7 @@ impl Session {
             },
             Outcome::GameOver => self.screen = Screen::game_over(),
             Outcome::Exited(exit) => self.leave_by(exit),
+            Outcome::Ended => self.end_scene(),
             _ => {}
         }
     }
@@ -2102,6 +2121,37 @@ mod tests {
         assert_eq!(s.level_path, level);
         assert!(s.left.is_empty());
         assert!(!s.game.world.flow.outcome.is_over());
+    }
+
+    #[test]
+    fn a_scene_goes_back_where_it_leads_once_it_s_over() {
+        let dir = areas("scene");
+        let (level, scene) = (dir.join("level.level"), dir.join("room.level"));
+        let room = std::fs::read_to_string(&scene).unwrap();
+        let played = room.replace(
+            "[[arrivals]]",
+            "[scene]\nlast = 60\nfade = 40\nfade_step = 2\narea = \"level\"\narrival = \"back\"\n\n[[arrivals]]",
+        );
+        std::fs::write(&scene, played).unwrap();
+        let mut s = session(LEVEL);
+        s.game.world.feel = Arc::new(generic_feel("classic-1").unwrap());
+        s.play_level(&level, None).unwrap();
+        s.screen = Screen::Playing;
+        until_in(&mut s, Action::Left.into(), &scene, 300);
+        // Right would pass the end marker, which leads back too, if the
+        // scene let it.
+        let right = input(Action::Right.into(), Action::Right.into());
+        for _ in 0..60 {
+            s.step(&right);
+        }
+        assert_eq!(s.level_path, scene, "still in the scene");
+        assert_eq!(s.game.world.brightness(), (1, 10));
+        s.step(&right);
+        assert_eq!(s.level_path, level);
+        assert_eq!(s.game.world.frame, 0);
+        assert_eq!(s.game.world.player.pos, clamber_level::Vec2::ints(600, 300));
+        assert!(s.left.is_empty());
+        assert_eq!(s.screen, Screen::Playing);
     }
 
     /// A pack folder with [`LEVEL`] as `levels/level-1.level` and a level
