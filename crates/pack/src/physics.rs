@@ -769,6 +769,15 @@ params! {
     /// How far the middle of the crouching pose's hurt box is in front
     /// of the player's position, px. Negative is behind.
     HurtCrouchOffset => "hurt_crouch_offset",
+    /// Above 0, in the carrying pose the hurt box is this wide instead of
+    /// `hurt_width`, its middle `hurt_carry_offset` in front of the
+    /// player's position, and the airborne pose never lifts it. The pose
+    /// lasts while the player carries an object after the pick-up, on the
+    /// ground and in the air. 0: carrying has the usual poses.
+    HurtCarryWidth => "hurt_carry_width",
+    /// How far the middle of the carrying pose's hurt box is in front of
+    /// the player's position, px. Negative is behind.
+    HurtCarryOffset => "hurt_carry_offset",
     /// A player standing still takes the fidget pose this many frames
     /// into standing, counting the first frame of standing as 0. Whole
     /// frames.
@@ -1690,6 +1699,7 @@ impl Param {
                 | Param::BounceOffset
                 | Param::HurtOffset
                 | Param::HurtFidgetOffset
+                | Param::HurtCarryOffset
                 | Param::HurtAirOffset
                 | Param::RollAttackOffset
                 | Param::GroundAttackOffset

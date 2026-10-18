@@ -104,7 +104,11 @@
 #   on the frames of a throw before it leaves them, but not the first,
 #   by `hit_thrower_early`, and carried, by `hit_thrower`, the way the
 #   player faces, it breaks there; carried, the player then carries
-#   nothing. With `meets_ball` and `meets_ball_early`, `[behind, ahead,
+#   nothing. With `hit_carried_turn`, carried (after the frame the
+#   carrying starts) it also breaks on a walker its `hit` box touches as
+#   if moving right, the box moved `hit_carried_turn` px right with the
+#   player facing left, and knocks the walker back as a thrown one
+#   moving right does; not on a frame the player bounces. With `meets_ball` and `meets_ball_early`, `[behind, ahead,
 #   above, below]` as for the thrower, chosen the same way, it meets a
 #   ball whose position at the end of the frame before, both rounded down
 #   across and up down, is inside: thrown, it removes the ball and goes
@@ -554,6 +558,10 @@ hit_early_time = 16
 hit_thrower = [36, 30, 23, 32]
 hit_thrower_early = [37, 55, 47, 65]
 hit_thrower_turn = 1
+# title-1's (spec/behavior/thrown-objects.md, "A carried object"): the
+# ranges for a player facing right are those of `hit` moving right, and
+# facing left they're moved 5 px left.
+hit_carried_turn = 5
 # title-1's (spec/behavior/thrown-objects.md, "Hitting a ball"), the
 # ranges of I and H turned around, early and late as for the thrower.
 # Moving left I is 1 less (the box moved 1 px right); upside down (the second and third
@@ -861,6 +869,7 @@ hit_early_time = 16
 hit_thrower = [36, 30, 23, 32]
 hit_thrower_early = [37, 55, 47, 65]
 hit_thrower_turn = 1
+hit_carried_turn = 5
 meets_ball = [26, 22, 30, 15]
 meets_ball_early = [27, 47, 54, 48]
 meets_ball_turn = -1

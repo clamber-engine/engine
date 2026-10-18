@@ -43,9 +43,12 @@
 //! from below; one-way ground breaks it as other ground does. In the hands
 //! during a throw and carried, it breaks on throwers, which it knocks
 //! out ([`things`](crate::things)); the player isn't held up, and the
-//! carrying pose isn't kept until a jump lands. Touching characters and
-//! other enemies isn't in the spec yet; it doesn't. Dropped, it falls
-//! straight down and rests where it lands.
+//! carrying pose isn't kept until a jump lands. Carried, it also breaks
+//! on walkers, which it knocks back, and then the carrying pose is kept
+//! until a jump lands, as `spec/behavior/thrown-objects.md` ("A carried
+//! object") describes. Touching characters and other enemies isn't in
+//! the spec yet; it doesn't. Dropped, it falls straight down and rests
+//! where it lands.
 //!
 //! An object that holds the missing character ([`Holder`]) moves the
 //! same way, but breaks sooner, as `spec/behavior/holder-breaking.md`

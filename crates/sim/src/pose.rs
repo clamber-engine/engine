@@ -45,7 +45,7 @@ use clamber_fixed::Fixed;
 use clamber_pack::{Param, Physics};
 
 use crate::archetype::{Poses, WalkerContact};
-use crate::player::{Player, State};
+use crate::player::{Act, Player, State};
 use crate::world::Event;
 
 /// A pose with its own ranges.
@@ -124,6 +124,9 @@ pub struct PoseClock {
     pub from: Fixed,
     /// How far below that it landed the last time; negative is above.
     pub drop: Fixed,
+    /// The object it carried broke on a walker while it was in the air,
+    /// so it keeps the carrying pose until it lands.
+    pub carried_air: bool,
 }
 
 impl Default for PoseClock {
@@ -141,6 +144,7 @@ impl Default for PoseClock {
             jump_held: 0,
             from: Fixed::ZERO,
             drop: Fixed::ZERO,
+            carried_air: false,
         }
     }
 }
@@ -180,6 +184,7 @@ pub(crate) fn note(player: &mut Player, events: &[Event], physics: &Physics) {
             clock.drop = player.pos.y - clock.from;
         }
         clock.from = player.pos.y;
+        clock.carried_air = false;
         clock.since_land = Some(clock.since_land.map_or(0, |n| n.saturating_add(1)));
     }
     if clock.since_land.is_none() && clock.air != Air::Fall && player.jump_hold {
@@ -343,6 +348,16 @@ pub fn hurt_crouching(player: &Player) -> bool {
         && player.jump_age.is_none()
         && player.ground_action.is_none()
         && (player.crouch.held > 0 || player.crouch.rising > 0)
+}
+
+/// Whether `player` has the carrying pose for the preset's hurt box at
+/// the end of the last step (spec/behavior/walker-contact.md,
+/// "Carrying"): from G + 15 of the pick-up while action stays held, on
+/// the ground and in the air, and after the object breaks on a walker in
+/// the air until the player lands (thrown-objects.md, "A carried
+/// object").
+pub fn hurt_carrying(player: &Player) -> bool {
+    player.hands.is_some_and(|h| h.act == Act::Carry) || player.pose.carried_air
 }
 
 /// Whether a player with `clock` is in the fidget pose at the end of the

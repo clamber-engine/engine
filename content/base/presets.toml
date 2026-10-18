@@ -178,6 +178,8 @@ hurt_fidget_width = 0
 hurt_fidget_offset = 0
 hurt_crouch_width = 0
 hurt_crouch_offset = 0
+hurt_carry_width = 0
+hurt_carry_offset = 0
 hurt_air_width = 0
 hurt_air_offset = 0
 hurt_land_hold = 0
@@ -700,6 +702,11 @@ hurt_fidget_width = 17
 hurt_fidget_offset = -9.5
 hurt_crouch_width = 18
 hurt_crouch_offset = 3
+# Carrying, the hurt box is 18 wide, 1 behind (walker-contact.md,
+# "Carrying"): each range 1 px in from the front and 5 px in from behind.
+# A carrying jump never takes the airborne pose.
+hurt_carry_width = 18
+hurt_carry_offset = -1
 hurt_air_width = 21
 hurt_air_offset = -1.5
 hurt_land_hold = 3

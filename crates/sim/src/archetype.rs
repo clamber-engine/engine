@@ -72,7 +72,10 @@ pub enum Behavior {
     /// knocks out throwers its `thrower` box holds, or its
     /// `thrower_early` box early on or in the hands during a throw
     /// ([`Hit::holds`]); moving left, both are turned around and then
-    /// moved `thrower_turn` px left. With `balls`, it meets balls. With a
+    /// moved `thrower_turn` px left. With a `carried_turn`, carried, it
+    /// breaks on walkers its `hit` box touches as if thrown right, moved
+    /// that many px right with the player facing left. With `balls`, it
+    /// meets balls. With a
     /// `holder`, it holds the missing character. With `opens`, it opens
     /// wall exits.
     Carry {
@@ -83,6 +86,7 @@ pub enum Behavior {
         thrower: Hit,
         thrower_early: Hit,
         thrower_turn: Fixed,
+        carried_turn: Option<Fixed>,
         balls: Option<Meets>,
         holder: Option<Holder>,
         opens: Option<Opens>,
@@ -1446,6 +1450,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "hit_thrower",
             "hit_thrower_early",
             "hit_thrower_turn",
+            "hit_carried_turn",
             "hit_ball",
             "hit_ball_early",
             "meets_ball",
@@ -1762,6 +1767,10 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 true => number("hit_thrower_turn")?,
                 false => Fixed::ZERO,
             };
+            let carried_turn = match table.contains_key("hit_carried_turn") {
+                true => Some(number("hit_carried_turn")?),
+                false => None,
+            };
             let hit_early_time = match get("hit_early_time")? {
                 Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => *n as u8,
                 _ => {
@@ -1826,6 +1835,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 thrower: hit("hit_thrower")?,
                 thrower_early: hit("hit_thrower_early")?,
                 thrower_turn,
+                carried_turn,
                 balls,
                 holder,
                 opens,
