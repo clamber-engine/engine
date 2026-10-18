@@ -575,8 +575,9 @@ bolt_response = 0.125
 
 # title-1's thrower and balls (spec/behavior/thrower.md). The spec
 # doesn't say how big either is; the sizes are Clamber's own and only
-# draw them. It doesn't say what speeds a placed ball gets either; the
-# level gives them.
+# draw them. A thrower's throws and a placed ball's speeds go with its
+# reference (spec/formats/placements.md, "Settings"); the level gives
+# them. The throws here are the default ones.
 [archetypes.thrower]
 behavior = "thrower"
 size = [24, 24]

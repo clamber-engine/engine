@@ -184,14 +184,19 @@ impl Kind {
         Kind::ALL.into_iter().find(|k| k.name() == name)
     }
 
-    /// The type and params of the entity that places an object of this
-    /// kind: the built-in archetype (`content/base/archetypes.toml`) with
-    /// the behavior the kind's behavior file describes, with title-1's
-    /// values from `spec/behavior/` where the archetype's own differ. What
-    /// the spec leaves to a definition (a walker's heading and its wait
-    /// before its first step, a placed ball's speeds) keeps the
-    /// archetype's values.
+    /// [`Kind::entity_with`] with every setting's default.
     pub fn entity(self) -> (&'static str, Table) {
+        self.entity_with(&KindSettings::default())
+    }
+
+    /// The type and params of the entity that places an object of this
+    /// kind with `settings`: the built-in archetype
+    /// (`content/base/archetypes.toml`) with the behavior the kind's
+    /// behavior file describes, with title-1's values from
+    /// `spec/behavior/` where the archetype's own differ, and the
+    /// settings (`placements.md`, "Settings") the kind has, each one not
+    /// given taking its default.
+    pub fn entity_with(self, settings: &KindSettings) -> (&'static str, Table) {
         let mut params = Table::new();
         let mut set = |key: &str, value: Value| {
             params.insert(key.into(), value);
@@ -218,10 +223,53 @@ impl Kind {
                 set("defeat_jump", Value::Integer(6));
                 set("defeat_gravity", Value::Float(0.4375));
                 set("defeat_max_fall", Value::Integer(8));
+                let heading = settings.heading.unwrap_or(Heading::Left);
+                set("facing", Value::String(heading.name().into()));
+                let range = match settings.patrol.unwrap_or(Patrol::None) {
+                    Patrol::None => vec![],
+                    Patrol::Between(a, b) => {
+                        vec![Value::Integer(a.into()), Value::Integer(b.into())]
+                    }
+                };
+                set("range", Value::Array(range));
+                // The walker waits that many frames, counting the one it
+                // appears on, before it moves.
+                set(
+                    "appear_wait",
+                    Value::Integer(settings.first_step.unwrap_or(1).into()),
+                );
                 WALKER
             }
-            Kind::Thrower => "thrower",
-            Kind::Ball => "ball",
+            Kind::Thrower => {
+                let throws = settings.throws.as_deref().unwrap_or(&DEFAULT_THROWS);
+                let (period, timetable) = timetable(throws);
+                let timetable = timetable
+                    .into_iter()
+                    .map(|(frame, vx)| {
+                        Value::Array(vec![
+                            Value::Integer(frame.into()),
+                            Value::Float(f64::from(vx) / 256.0),
+                            Value::Integer(THROW_VY),
+                        ])
+                    })
+                    .collect();
+                set("period", Value::Integer(period.into()));
+                set("throws", Value::Array(timetable));
+                "thrower"
+            }
+            Kind::Ball => {
+                let speed = |given: Option<i32>, default| {
+                    Value::Float(f64::from(given.unwrap_or(default)) / 256.0)
+                };
+                set(
+                    "velocity",
+                    Value::Array(vec![
+                        speed(settings.start_vx, DEFAULT_START_VX),
+                        speed(settings.start_vy, DEFAULT_START_VY),
+                    ]),
+                );
+                "ball"
+            }
             Kind::Bunch => "cluster",
             Kind::Letter(n) => {
                 set("letter", Value::Integer(n.into()));
@@ -451,6 +499,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::Stinger,
             ),
             (
+                "10c0e2b03ca2e4bd4b19e904df4a206746f1a8068c58b18485b70c2ffbee8a86",
+                Kind::Thrower,
+            ),
+            (
                 "12ddb2c3b0a218c0ccb5c1798e7094b5a2b61d21d2361da03b6f6286fa191e0a",
                 Kind::RestartBarrel,
             ),
@@ -503,6 +555,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::DownLaunchBarrel,
             ),
             (
+                "3d6edece3440402e518d12b9b530167bc00a8ea4c35137f0ffb9414dcbce3c2c",
+                Kind::Thrower,
+            ),
+            (
                 "3e1f6c2f24fa461bc637adec8e62fe520d4f2a69e7cf8e0d950610235d2e3486",
                 Kind::Letter(4),
             ),
@@ -511,8 +567,16 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::Stinger,
             ),
             (
+                "406919fff90e945a33f5cc43d8ac30037ff4c393cfa80eaba828d5955f523f63",
+                Kind::Thrower,
+            ),
+            (
                 "46a03d0df615a0aff54b9f2a823f9ead4e500b9ecdeb48c2fe2dfe37aa02431f",
                 Kind::Letter(2),
+            ),
+            (
+                "4799c125f8ce77f8cbcd9562a1c126036b80c0930f94ffe5c5b273a5ee6af2cc",
+                Kind::Thrower,
             ),
             (
                 "47a9fc70cf6be73792670830d89523401fe75b8ad5ade692f5fe8d534962429c",
@@ -535,6 +599,14 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::WallReturnEntrance,
             ),
             (
+                "5894d96cb527c55642142ea263c695df5028dc704583a4d0b29e20a2f3c6d895",
+                Kind::Thrower,
+            ),
+            (
+                "5d9b10becfc0595ae047545480de275256a32d63feb76eee0f71343b59ba4acf",
+                Kind::Thrower,
+            ),
+            (
                 "5fae0c706628b184dc3d2db99a589d70ce53d54750e685369dd03f73f71e7f06",
                 Kind::Stinger,
             ),
@@ -547,8 +619,16 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
                 Kind::Barrel,
             ),
             (
+                "72bc1c2e265a914fcfce4b9fd28df1243aa0c404bc95d3e185e030072236a427",
+                Kind::Thrower,
+            ),
+            (
                 "765a7a9517d401764d141421814606b3c711a924352de8ea10d9878433fe40de",
                 Kind::Stinger,
+            ),
+            (
+                "774c17b7d70e72c9f259f4b1cf4bac552f0a9ee7ed3fa62276229e5537da3b43",
+                Kind::Thrower,
             ),
             (
                 "7a0a5f16cbb9153611411aa5c6ed1aa024f8f2af6b87a221073c56f814c33e3d",
@@ -577,6 +657,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "9338801286daea12e1f30fd2478b61a44ef3325da9a893f865e2dff0b43c9cc7",
                 Kind::HiddenBarrel,
+            ),
+            (
+                "9448b2e77aec028a49942a6a03cc58479acad0fdb0ee19ca26d46eabe8512402",
+                Kind::Thrower,
             ),
             (
                 "96815bf167d1e7ae0187cf583b5e9cd05af19646c808ad1b8abb2fe09ad30e52",
@@ -696,6 +780,241 @@ pub fn kind_of(image: &[u8], reference: u16, rows: &[KindRow]) -> Option<(usize,
     })
 }
 
+/// A walker's heading when it appears.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Heading {
+    Left,
+    Right,
+}
+
+impl Heading {
+    pub fn name(self) -> &'static str {
+        match self {
+            Heading::Left => "left",
+            Heading::Right => "right",
+        }
+    }
+}
+
+/// A walker's patrol range.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Patrol {
+    /// It turns only where something else turns it.
+    None,
+    /// It turns at its start plus the first, and its start plus the
+    /// second (px, the first no more than 0, the second no less).
+    Between(i16, i16),
+}
+
+/// One of a thrower's throws: a ball with this `vx`, in 1/256 px per
+/// frame, then `wait` frames, 1 or more, to the next throw.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Throw {
+    pub vx: i32,
+    pub wait: u32,
+}
+
+/// The settings a kind fingerprint's settings row gives
+/// (`placements.md`, "Settings"). A setting that's `None` takes its
+/// default, and one the kind doesn't have is never given.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct KindSettings {
+    /// A walker's heading when it appears. Default left.
+    pub heading: Option<Heading>,
+    /// A walker's patrol range. Default none.
+    pub patrol: Option<Patrol>,
+    /// The frame of a walker's first step, counted from the one it
+    /// appears on: 0 or 1. Default 1.
+    pub first_step: Option<u8>,
+    /// A placed ball's speeds before its first frame of moves, in 1/256
+    /// px per frame. Defaults −300 and −768.
+    pub start_vx: Option<i32>,
+    pub start_vy: Option<i32>,
+    /// A thrower's throws, in order, repeating. Default
+    /// [`DEFAULT_THROWS`].
+    pub throws: Option<Vec<Throw>>,
+}
+
+const DEFAULT_START_VX: i32 = -300;
+const DEFAULT_START_VY: i32 = -768;
+
+/// The default throws, the first level's thrower's.
+pub const DEFAULT_THROWS: [Throw; 3] = [
+    Throw { vx: 0, wait: 31 },
+    Throw { vx: 800, wait: 111 },
+    Throw { vx: -800, wait: 31 },
+];
+
+/// The `vy` every thrown ball starts with (`thrower.md`, "A thrown
+/// ball").
+const THROW_VY: i64 = -7;
+
+/// The frame of a thrower's first throw, counted from the one it
+/// appears on.
+const FIRST_THROW: u32 = 2;
+
+/// The engine's timetable for `throws`: its period, the sum of the
+/// waits, and the frame of each throw in it, counted from the one the
+/// thrower appears on, with its `vx`. A timetable's frames are within its
+/// period, so with a period of 2 or less the first throw comes early;
+/// the spec's are all longer.
+pub fn timetable(throws: &[Throw]) -> (u32, Vec<(u32, i32)>) {
+    let period: u32 = throws.iter().map(|t| t.wait).sum();
+    let mut frame = FIRST_THROW;
+    let frames = throws
+        .iter()
+        .map(|t| {
+            let at = (frame % period, t.vx);
+            frame += t.wait;
+            at
+        })
+        .collect();
+    (period, frames)
+}
+
+/// A settings row: a kind fingerprint and the settings its objects start
+/// with.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SettingsRow {
+    pub fingerprint: Sha256Hash,
+    pub settings: KindSettings,
+}
+
+/// The settings rows for placement references in the image of `title`,
+/// from `spec/formats/locators.md`.
+pub fn settings_rows(title: &str) -> Vec<SettingsRow> {
+    let row = |hex: &str, settings| SettingsRow {
+        fingerprint: Sha256Hash::from_hex(hex).unwrap(),
+        settings,
+    };
+    let walker = |hex, heading, patrol, first_step| {
+        row(
+            hex,
+            KindSettings {
+                heading: Some(heading),
+                patrol: Some(patrol),
+                first_step: Some(first_step),
+                ..KindSettings::default()
+            },
+        )
+    };
+    let thrower = |hex, throws: &[(i32, u32)]| {
+        let throws = throws
+            .iter()
+            .map(|&(vx, wait)| Throw { vx, wait })
+            .collect();
+        row(
+            hex,
+            KindSettings {
+                throws: Some(throws),
+                ..KindSettings::default()
+            },
+        )
+    };
+    use Heading::{Left, Right};
+    match title {
+        "title-1" => vec![
+            walker(
+                "4cb625b24ccb2edc0d7487e5ff9aa9de2cd5409110383d64bfa5ff1a97a22170",
+                Left,
+                Patrol::Between(-128, 128),
+                1,
+            ),
+            walker(
+                "a18b370140438f25f467370655a5c802ccd40f07be7e5296c81570fd169a9add",
+                Left,
+                Patrol::None,
+                0,
+            ),
+            walker(
+                "b0b7540b3c061784c8c319b69b0c7db7ed9c67a84d094cefd7b05fa52dcbe7a4",
+                Left,
+                Patrol::None,
+                0,
+            ),
+            walker(
+                "bc061647de9b607ad9eb002282563c85bb821236cf557781087f987a0ba862aa",
+                Left,
+                Patrol::Between(-144, 144),
+                1,
+            ),
+            walker(
+                "c8337d0771ac9e0feb76d90747123b32fba93ad3fe8fc5db12cd8a1a647b5910",
+                Right,
+                Patrol::Between(-12, 240),
+                1,
+            ),
+            row(
+                "f85e5c914a63c73583c210056c33f883bcd8fecee32b42323bb458fb6f174819",
+                KindSettings {
+                    start_vx: Some(-300),
+                    start_vy: Some(-768),
+                    ..KindSettings::default()
+                },
+            ),
+            thrower(
+                "10c0e2b03ca2e4bd4b19e904df4a206746f1a8068c58b18485b70c2ffbee8a86",
+                &[(0, 79)],
+            ),
+            thrower(
+                "3d6edece3440402e518d12b9b530167bc00a8ea4c35137f0ffb9414dcbce3c2c",
+                &[(-304, 31), (0, 31), (304, 31), (800, 111), (-800, 31)],
+            ),
+            thrower(
+                "406919fff90e945a33f5cc43d8ac30037ff4c393cfa80eaba828d5955f523f63",
+                &[(0, 47)],
+            ),
+            thrower(
+                "4799c125f8ce77f8cbcd9562a1c126036b80c0930f94ffe5c5b273a5ee6af2cc",
+                &[(0, 111)],
+            ),
+            thrower(
+                "5894d96cb527c55642142ea263c695df5028dc704583a4d0b29e20a2f3c6d895",
+                &[(640, 31), (-640, 31), (0, 31)],
+            ),
+            thrower(
+                "5d9b10becfc0595ae047545480de275256a32d63feb76eee0f71343b59ba4acf",
+                &[(800, 111)],
+            ),
+            thrower(
+                "72bc1c2e265a914fcfce4b9fd28df1243aa0c404bc95d3e185e030072236a427",
+                &[(0, 31), (640, 79), (-640, 31)],
+            ),
+            thrower(
+                "774c17b7d70e72c9f259f4b1cf4bac552f0a9ee7ed3fa62276229e5537da3b43",
+                &[(0, 31), (544, 79), (-544, 31)],
+            ),
+            thrower(
+                "7a0a5f16cbb9153611411aa5c6ed1aa024f8f2af6b87a221073c56f814c33e3d",
+                &[(0, 31), (800, 111), (-800, 31)],
+            ),
+            thrower(
+                "9448b2e77aec028a49942a6a03cc58479acad0fdb0ee19ca26d46eabe8512402",
+                &[(-800, 31), (0, 31)],
+            ),
+        ],
+        _ => vec![],
+    }
+}
+
+/// The kind `reference` places in `image`, by `rows`, with the settings
+/// its fingerprint's row in `settings` gives, if it has one.
+pub fn object_of(
+    image: &[u8],
+    reference: u16,
+    rows: &[KindRow],
+    settings: &[SettingsRow],
+) -> Option<(Kind, KindSettings)> {
+    let (block, kind) = kind_of(image, reference, rows)?;
+    let fingerprint = candidate(image, reference, block)?;
+    let settings = settings
+        .iter()
+        .find(|r| r.fingerprint == fingerprint)
+        .map(|r| r.settings.clone())
+        .unwrap_or_default();
+    Some((kind, settings))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -789,6 +1108,7 @@ mod tests {
         let (_, table) = title
             .split_once("### Kind fingerprints: placement references")
             .unwrap();
+        let (table, _) = table.split_once("\n### ").unwrap();
         let want: Vec<KindRow> = table
             .lines()
             .filter_map(|l| {
@@ -799,9 +1119,289 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 57);
+        assert_eq!(want.len(), 66);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
+    }
+
+    /// A vector settings row's fingerprint and kind.
+    fn settings_row(row: &[String], settings: KindSettings) -> SettingsRow {
+        assert!(Kind::from_name(&row[1]).is_some(), "{}", row[1]);
+        SettingsRow {
+            fingerprint: Sha256Hash::from_hex(&row[0]).unwrap(),
+            settings,
+        }
+    }
+
+    fn given<T>(cell: &str, parse: impl Fn(&str) -> T) -> Option<T> {
+        (cell != "-").then(|| parse(cell))
+    }
+
+    fn heading(cell: &str) -> Heading {
+        match cell {
+            "left" => Heading::Left,
+            "right" => Heading::Right,
+            _ => panic!("heading {cell}"),
+        }
+    }
+
+    /// `none` or `a to b`, with `−` or `-` for minus.
+    fn patrol(cell: &str) -> Patrol {
+        if cell == "none" {
+            return Patrol::None;
+        }
+        let n = |s: &str| s.trim().replace('−', "-").parse().unwrap();
+        let (a, b) = cell.split_once(" to ").unwrap();
+        Patrol::Between(n(a), n(b))
+    }
+
+    /// Throws written `vx:wait`, separated by commas.
+    fn throws(cell: &str) -> Vec<Throw> {
+        cell.split(',')
+            .map(|t| {
+                let (vx, wait) = t.split_once(':').unwrap();
+                Throw {
+                    vx: vx.parse().unwrap(),
+                    wait: wait.parse().unwrap(),
+                }
+            })
+            .collect()
+    }
+
+    /// A row of `kinds-settings.tsv`, with the kind its reference places
+    /// and the params of the entity that places it.
+    type VectorObject = (Vec<String>, Option<(Kind, Table)>);
+
+    /// The objects of the vectors' references.
+    fn vector_objects(settings: &[SettingsRow]) -> Vec<VectorObject> {
+        let image = image();
+        let kind_rows = vector_rows();
+        rows("kinds-settings.tsv")
+            .into_iter()
+            .map(|row| {
+                let object = object_of(&image, reference(&row[0]), &kind_rows, settings)
+                    .map(|(kind, settings)| (kind, kind.entity_with(&settings).1));
+                (row, object)
+            })
+            .collect()
+    }
+
+    fn integers(value: &Value) -> Vec<i64> {
+        value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_integer().unwrap())
+            .collect()
+    }
+
+    /// A number param, in 1/256 px.
+    fn in_256ths(value: &Value) -> i64 {
+        let n = value
+            .as_float()
+            .or(value.as_integer().map(|n| n as f64))
+            .unwrap();
+        let n = n * 256.0;
+        assert_eq!(n.fract(), 0.0);
+        n as i64
+    }
+
+    #[test]
+    fn walker_settings_match_the_spec_vectors() {
+        let settings: Vec<SettingsRow> = rows("kinds-settings-rows.tsv")
+            .iter()
+            .map(|r| {
+                settings_row(
+                    r,
+                    KindSettings {
+                        heading: given(&r[2], heading),
+                        patrol: given(&r[3], patrol),
+                        first_step: given(&r[4], |c| c.parse().unwrap()),
+                        ..KindSettings::default()
+                    },
+                )
+            })
+            .collect();
+        for (row, object) in vector_objects(&settings) {
+            let got = match object {
+                Some((kind, params)) if params.contains_key("range") => {
+                    assert_eq!(kind.name(), row[1]);
+                    let range = integers(&params["range"]);
+                    [
+                        params["facing"].as_str().unwrap().to_string(),
+                        match range[..] {
+                            [] => "none".to_string(),
+                            [a, b] => format!("{a} to {b}"),
+                            _ => panic!("{range:?}"),
+                        },
+                        params["appear_wait"].as_integer().unwrap().to_string(),
+                    ]
+                }
+                _ => ["-", "-", "-"].map(String::from),
+            };
+            assert_eq!(&got[..], &row[2..], "{}", row[0]);
+        }
+    }
+
+    #[test]
+    fn ball_settings_match_the_spec_vectors() {
+        let settings: Vec<SettingsRow> = rows("kinds-ball-settings-rows.tsv")
+            .iter()
+            .map(|r| {
+                settings_row(
+                    r,
+                    KindSettings {
+                        start_vx: given(&r[2], |c| c.parse().unwrap()),
+                        start_vy: given(&r[3], |c| c.parse().unwrap()),
+                        ..KindSettings::default()
+                    },
+                )
+            })
+            .collect();
+        let want = rows("kinds-ball-settings.tsv");
+        for ((row, object), want) in vector_objects(&settings).into_iter().zip(want) {
+            assert_eq!(row[0], want[0]);
+            let got = match object {
+                Some((Kind::Ball, params)) => {
+                    let v = params["velocity"].as_array().unwrap();
+                    [in_256ths(&v[0]), in_256ths(&v[1])].map(|n| n.to_string())
+                }
+                _ => ["-", "-"].map(String::from),
+            };
+            assert_eq!(&got[..], &want[2..], "{}", want[0]);
+        }
+    }
+
+    #[test]
+    fn thrower_settings_match_the_spec_vectors() {
+        let settings: Vec<SettingsRow> = rows("kinds-thrower-settings-rows.tsv")
+            .iter()
+            .map(|r| {
+                settings_row(
+                    r,
+                    KindSettings {
+                        throws: given(&r[2], throws),
+                        ..KindSettings::default()
+                    },
+                )
+            })
+            .collect();
+        let image = image();
+        let kind_rows = vector_rows();
+        for row in rows("kinds-thrower-settings.tsv") {
+            let got = match object_of(&image, reference(&row[0]), &kind_rows, &settings) {
+                Some((Kind::Thrower, s)) => {
+                    let list = s.throws.as_deref().unwrap_or(&DEFAULT_THROWS);
+                    let list: Vec<String> = list
+                        .iter()
+                        .map(|t| format!("{}:{}", t.vx, t.wait))
+                        .collect();
+                    // The first seven throws by the engine's timetable.
+                    let params = Kind::Thrower.entity_with(&s).1;
+                    let period = params["period"].as_integer().unwrap();
+                    let timetable = params["throws"].as_array().unwrap();
+                    let mut first = Vec::new();
+                    for frame in 0.. {
+                        for throw in timetable {
+                            let throw = throw.as_array().unwrap();
+                            if throw[0].as_integer().unwrap() == frame % period {
+                                assert_eq!(throw[2].as_integer(), Some(THROW_VY));
+                                first.push(format!("{frame}:{}", in_256ths(&throw[1])));
+                            }
+                        }
+                        if first.len() >= 7 {
+                            break;
+                        }
+                    }
+                    [list.join(","), first.join(" ")]
+                }
+                _ => ["-", "-"].map(String::from),
+            };
+            assert_eq!(&got[..], &row[2..], "{}", row[0]);
+        }
+    }
+
+    /// The settings tables in title-1's section of `locators.md`.
+    #[test]
+    fn title_1_has_the_settings_in_the_spec() {
+        let path = format!(
+            "{}/../../spec/formats/locators.md",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let spec = std::fs::read_to_string(&path).unwrap();
+        let (_, title) = spec.split_once("## `title-1`").unwrap();
+        let (title, _) = title.split_once("\n## ").unwrap();
+        let (_, tables) = title
+            .split_once("### Settings: placement references")
+            .unwrap();
+        let want: Vec<SettingsRow> = tables
+            .lines()
+            .filter_map(|l| {
+                let cells: Vec<&str> = l.split('|').map(|c| c.trim().trim_matches('`')).collect();
+                let fingerprint = Sha256Hash::from_hex(cells.get(1)?)?;
+                let kind = Kind::from_name(cells[2]).unwrap();
+                let speed = |cell: &str| {
+                    let (_, n) = cell.split_once('(').unwrap();
+                    let (n, _) = n.split_once("/256").unwrap();
+                    n.replace('−', "-").parse().unwrap()
+                };
+                let settings = match kind {
+                    Kind::SmallWalker | Kind::MediumWalker | Kind::LargeWalker => KindSettings {
+                        heading: Some(heading(cells[3])),
+                        patrol: Some(patrol(&cells[4].replace('`', ""))),
+                        first_step: Some(cells[5].parse().unwrap()),
+                        ..KindSettings::default()
+                    },
+                    Kind::Ball => KindSettings {
+                        start_vx: Some(speed(cells[3])),
+                        start_vy: Some(speed(cells[4])),
+                        ..KindSettings::default()
+                    },
+                    Kind::Thrower => {
+                        let list = cells[3]
+                            .replace('−', "-")
+                            .replace('+', "")
+                            .replace(", ", ":")
+                            .replace("; ", ",");
+                        KindSettings {
+                            throws: Some(throws(&list)),
+                            ..KindSettings::default()
+                        }
+                    }
+                    _ => panic!("{kind} has no settings"),
+                };
+                Some(SettingsRow {
+                    fingerprint,
+                    settings,
+                })
+            })
+            .collect();
+        assert_eq!(want.len(), 16);
+        assert_eq!(settings_rows("title-1"), want);
+        assert!(settings_rows("title-2").is_empty());
+        // Every row's fingerprint is a kind row's.
+        let kinds = kind_rows("title-1");
+        assert!(
+            want.iter()
+                .all(|s| kinds.iter().any(|k| k.fingerprint == s.fingerprint))
+        );
+    }
+
+    /// The default throws are the thrower archetype's own timetable.
+    #[test]
+    fn the_default_throws_are_the_archetypes() {
+        let params = Kind::Thrower.entity().1;
+        assert_eq!(params["period"].as_integer(), Some(173));
+        let frames: Vec<(i64, i64)> = params["throws"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| {
+                let t = t.as_array().unwrap();
+                (t[0].as_integer().unwrap(), in_256ths(&t[1]))
+            })
+            .collect();
+        assert_eq!(frames, [(2, 0), (33, 800), (144, -800)]);
     }
 
     #[test]

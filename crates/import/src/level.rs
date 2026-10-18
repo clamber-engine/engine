@@ -22,7 +22,7 @@ use crate::{
     BANK_SIZE, Background, COLUMN_BANDS, Collectibles, Decoder, END, EXIT, GridPicture, Ground,
     Image, KEG, Known, LEVELS, Layout, LevelSong, Location, PackWriter, PaletteSet, Pictures,
     Placements, ScreenMap, StartRecord, TileSet, VIEW_HEIGHT, VIEW_WIDTH, ViewLimits, WALL_EXIT,
-    WALL_RETURN, kind_of, kind_rows, unpack, unpack_nibbles,
+    WALL_RETURN, kind_rows, object_of, settings_rows, unpack, unpack_nibbles,
 };
 
 /// Lines in a band.
@@ -485,7 +485,8 @@ impl LevelDecoder {
 
     /// The objects in the placement list at `list`, for a level whose
     /// bottom edge is at `bottom`, with their kinds where `title`'s kind
-    /// fingerprint rows give them, and the list's sections if it has them.
+    /// fingerprint rows give them and their settings, and the list's
+    /// sections if it has them.
     fn objects(
         &self,
         image: &Image,
@@ -495,7 +496,8 @@ impl LevelDecoder {
         let placements = Placements::read(bank_of(image, list), list.address)
             .map_err(|e| format!("the level's placement list: {e}"))?;
         let rows = kind_rows(&self.title);
-        let kind = |reference| kind_of(image.bytes(), reference, &rows).map(|(_, kind)| kind);
+        let settings = settings_rows(&self.title);
+        let kind = |reference| object_of(image.bytes(), reference, &rows, &settings);
         Ok(placements.objects(bottom, kind))
     }
 }

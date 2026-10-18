@@ -59,8 +59,9 @@ pub use ground::{Below, COLUMN_BANDS, Ground, Half, Layout, Surface, TITLE_2_ORI
 pub use image::{COPIER_HEADER, Catalog, Image, Known, MAX_IMAGE_SIZE, Outcome, Sha256Hash};
 pub use installed::{Installed, check_shareable, installed};
 pub use kinds::{
-    CRITTER, END, EXIT, FINGERPRINT_SIZE, KEG, Kind, KindRow, ROOM_ENTRANCE, SLING, WALKER,
-    WALL_EXIT, WALL_RETURN, candidate, kind_of, kind_rows,
+    CRITTER, DEFAULT_THROWS, END, EXIT, FINGERPRINT_SIZE, Heading, KEG, Kind, KindRow,
+    KindSettings, Patrol, ROOM_ENTRANCE, SLING, SettingsRow, Throw, WALKER, WALL_EXIT, WALL_RETURN,
+    candidate, kind_of, kind_rows, object_of, settings_rows, timetable,
 };
 pub use level::{
     CollectibleParts, FROM_LEVEL, LevelDecoder, LevelParts, PackedGround, ROOM_RETURN,

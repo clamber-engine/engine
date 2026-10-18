@@ -17,6 +17,7 @@ use clamber_level::{Entity, Section, Spot, Vec2};
 use toml::{Table, Value};
 
 use crate::Kind;
+use crate::kinds::KindSettings;
 use crate::kinds::{EXIT, WALKER};
 
 /// The kind of entity that starts the dimming, as in `clamber-sim`.
@@ -197,7 +198,8 @@ impl Placements {
     /// The objects as level entities, for a level whose bottom edge is at
     /// `bottom`. Each is at its entry's position (moved down by
     /// [`Kind::below_entry`]), the entity
-    /// [`Kind::entity`] gives for the kind `kind` gives its reference, or
+    /// [`Kind::entity_with`] gives for the kind and settings `kind` gives its
+    /// reference, or
     /// else of kind `placed-` and its reference in hex. A group's walkers,
     /// and its members of unknown kinds, get `group`, the group entry's
     /// index in the list plus one, so the walkers
@@ -205,7 +207,11 @@ impl Placements {
     /// level the group entry is at its first member). Entries that place
     /// nothing are [`DIM`] entities at their entry's position, and classes
     /// the spec doesn't cover have no entity.
-    pub fn entities(&self, bottom: i64, kind: impl Fn(u16) -> Option<Kind>) -> Vec<Entity> {
+    pub fn entities(
+        &self,
+        bottom: i64,
+        kind: impl Fn(u16) -> Option<(Kind, KindSettings)>,
+    ) -> Vec<Entity> {
         self.placed(bottom, kind).0
     }
 
@@ -233,7 +239,7 @@ impl Placements {
     pub fn objects(
         &self,
         bottom: i64,
-        kind: impl Fn(u16) -> Option<Kind>,
+        kind: impl Fn(u16) -> Option<(Kind, KindSettings)>,
     ) -> (Vec<Entity>, Vec<Section>) {
         let (entities, of_entry) = self.placed(bottom, kind);
         let sectioned = !self.records.is_empty();
@@ -287,13 +293,13 @@ impl Placements {
     fn placed(
         &self,
         bottom: i64,
-        kind: impl Fn(u16) -> Option<Kind>,
+        kind: impl Fn(u16) -> Option<(Kind, KindSettings)>,
     ) -> (Vec<Entity>, Vec<Vec<usize>>) {
         let mut ids = BTreeSet::new();
         let mut entity = |entry: Entry| {
             let (kind, params, below, id) = match kind(entry.reference) {
-                Some(kind) => {
-                    let (name, params) = kind.entity();
+                Some((kind, settings)) => {
+                    let (name, params) = kind.entity_with(&settings);
                     // Only the first of a kind gets its id.
                     let id = kind.id().filter(|&id| ids.insert(id));
                     (name.to_string(), params, kind.below_entry(), id)
@@ -688,7 +694,7 @@ mod tests {
 
     #[test]
     fn entities_are_at_their_entries() {
-        let kind = |r| (r == 0x1300).then_some(Kind::SmallWalker);
+        let kind = |r| (r == 0x1300).then(|| (Kind::SmallWalker, KindSettings::default()));
         let entities = read(&fragment()).unwrap().entities(BOTTOM, kind);
         let summary: Vec<(String, Vec2, Option<i64>)> = entities
             .iter()
@@ -720,7 +726,7 @@ mod tests {
     /// animal-crate.md: a crate's position is its entry's level y plus 1.
     #[test]
     fn an_animal_crate_is_1_px_below_its_entry() {
-        let kind = |r| (r == 0x2000).then_some(Kind::AnimalCrate);
+        let kind = |r| (r == 0x2000).then(|| (Kind::AnimalCrate, KindSettings::default()));
         let entities = read(&fragment()).unwrap().entities(BOTTOM, kind);
         let crate_ = entities.iter().find(|e| e.kind == "hutch").unwrap();
         assert_eq!(crate_.at, Vec2::ints(40, 313));
@@ -730,7 +736,7 @@ mod tests {
     /// back to it names. Reference 1234 is on two entries.
     #[test]
     fn the_first_wall_return_entrance_has_its_id() {
-        let kind = |r| (r == 0x1234).then_some(Kind::WallReturnEntrance);
+        let kind = |r| (r == 0x1234).then(|| (Kind::WallReturnEntrance, KindSettings::default()));
         let entities = read(&fragment()).unwrap().entities(BOTTOM, kind);
         let ids: Vec<(&str, Option<&str>)> = entities
             .iter()
@@ -744,7 +750,7 @@ mod tests {
     /// fragment's three entries with references 1234 and 2000 place exits.
     #[test]
     fn exits_need_the_views_rows() {
-        let kind = |r| (r == 0x1234 || r == 0x2000).then_some(Kind::Exit);
+        let kind = |r| (r == 0x1234 || r == 0x2000).then(|| (Kind::Exit, KindSettings::default()));
         let (entities, sections) = read(&fragment()).unwrap().objects(BOTTOM, kind);
         let rows: Vec<(String, bool)> = sections[0]
             .spots

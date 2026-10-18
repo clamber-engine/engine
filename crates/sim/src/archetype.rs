@@ -643,7 +643,7 @@ pub(crate) fn within(
 }
 
 /// The most throws a thrower can have.
-pub const MAX_THROWS: usize = 4;
+pub const MAX_THROWS: usize = 8;
 
 /// How a ball moves. Placed in a level, it starts at `velocity`. It falls
 /// under `gravity` up to `max_fall`. Falling onto a floor no more than
