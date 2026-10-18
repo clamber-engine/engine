@@ -284,6 +284,7 @@ letter_end_approach = 0
 letter_end_least = 0
 letter_end_lives_in = 0
 letter_end_lives_out = 0
+letter_end_lives_end = 0
 count_show_for = 0
 count_x = 0
 count_y = 0
@@ -810,8 +811,8 @@ count_life = 100
 # (letter 1), 24 apart, move right toward x 192 an eighth of the
 # distance left a frame, at least half a px; the letter taken last does
 # all of it a frame late. The lives display comes in from J + 7, shows
-# the new number from the first frame letter 4 is gone (G), and slides
-# back up from G + 122.
+# the new number from the first frame letter 4 is gone (G), slides
+# back up from G + 122 and is gone for good from G + 131.
 letter_count = 4
 letter_row_in = 2
 letter_row_slide = 8
@@ -831,6 +832,7 @@ letter_end_approach = 8
 letter_end_least = 0.5
 letter_end_lives_in = 7
 letter_end_lives_out = 122
+letter_end_lives_end = 131
 # The count display (count-display.md): shown while a pickup waits for
 # its steps and up to 59 frames after the latest one. The image's top
 # left is at (16, 8), the digits at x 32 and 40, y 8. When the count

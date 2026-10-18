@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
-use clamber_level::Level;
+use clamber_level::{Arrival, Level, Vec2};
 use clamber_sim::{
     Facing, Fixed, FlowEvent, InputFrame, LivesDisplay, Phase, START_LIVES, World, generic_feel,
     step,
@@ -551,4 +551,71 @@ fn an_item_taken_while_the_display_leaves_turns_it_back() {
     assert!(shown[q - 4..q + 7].iter().all(Option::is_none));
     assert_eq!(shown[q + 7], Some((8, -12)));
     assert_eq!(steps(&shown, q + 7), [q + 44, q + 60, q + 76]);
+}
+
+#[test]
+fn a_rising_item_holds_still_after_the_hit_and_keeps_its_speed() {
+    // extra-lives.md, "While the player is knocked out": it rises as
+    // usual on H, doesn't move on H + 1 to H + 10, and from H + 11 rises
+    // as if those ten frames hadn't happened.
+    let mut w = world_with(&[(X - 40, 337)], RISE, &walker(X + 60));
+    let mut ys = vec![w.things[0].pos.y];
+    let mut hit = None;
+    for n in 0..300 {
+        let was = w.player.knockout.is_some();
+        step_keys(&mut w, if hit.is_some() { &[] } else { &[Right] });
+        ys.push(w.things[0].pos.y);
+        if !was && w.player.knockout.is_some() {
+            hit = Some(n);
+        }
+    }
+    let h = hit.expect("never hit");
+    // ys[n + 1] is where it is at the end of frame n.
+    let risen = |n: usize| ys[n] - ys[n + 1];
+    let px = |n: i64| Fixed::from_bits((n << 32) / 256);
+    // It appeared on frame 0, so it rises n / 256 px on frame n.
+    let h64 = h as i64;
+    assert_eq!(risen(h), px(h64), "H");
+    for k in 1..=10 {
+        assert_eq!(risen(h + k), Fixed::ZERO, "H + {k}");
+    }
+    for k in 11..=40 {
+        assert_eq!(risen(h + k), px(h64 + k as i64 - 10), "H + {k}");
+    }
+}
+
+/// Coming back to `world`'s level through an exit, at `x` on the floor.
+fn back_at(world: &World, x: i32) -> World {
+    let arrival = Arrival {
+        name: "back".into(),
+        at: Vec2::ints(x, F),
+        walk: None,
+        entrance: None,
+        drop: false,
+    };
+    world.coming_back(&arrival)
+}
+
+#[test]
+fn a_rising_item_gone_untaken_is_there_again_after_an_exit() {
+    // exits.md, "Coming back to the level": whether it rose out of the
+    // level or went past the window's left edge, it's there again as
+    // when the level begins, and taking it gives its lives.
+    let params = "lives = 2, rise = 0.00390625";
+    for (x, way) in [(X + 100, None), (X - 40, Some(Right))] {
+        let mut w = world(&[(x, F)], params);
+        assert!(w.things[0].active);
+        while w.things[0].active {
+            assert!(!step_keys(&mut w, way.as_slice()), "taken at {x}");
+        }
+        assert_eq!(w.things[0].phase, Phase::Broken);
+        let lives = w.flow.lives;
+        let mut back = back_at(&w, x);
+        let thing = &back.things[0];
+        assert!(thing.active, "there again at {x}");
+        assert_eq!(thing.phase, Phase::Ready);
+        assert_eq!(thing.pos, back.level.entities[0].at);
+        assert!(step_keys(&mut back, &[]), "taken at {x}");
+        assert_eq!(back.flow.lives, lives + 2);
+    }
 }

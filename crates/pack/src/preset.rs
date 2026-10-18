@@ -567,6 +567,7 @@ mod tests {
                     | Param::LetterEndLeast
                     | Param::LetterEndLivesIn
                     | Param::LetterEndLivesOut
+                    | Param::LetterEndLivesEnd
                     | Param::CountShowFor
                     | Param::CountX
                     | Param::CountY

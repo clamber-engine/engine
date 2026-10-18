@@ -1117,6 +1117,9 @@ params! {
     /// first frame the last letter of the word is gone, and slides back
     /// up from this many frames after that. Whole frames.
     LetterEndLivesOut => "letter_end_lives_out",
+    /// With an ending, the lives display is gone for good this many
+    /// frames after it first shows the new number. Whole frames.
+    LetterEndLivesEnd => "letter_end_lives_end",
     /// Above 0, the world has a count display (see
     /// `clamber_sim::World::count_display`): the number shown follows the
     /// collectible count one step a frame, and the display is shown while

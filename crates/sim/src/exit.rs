@@ -226,11 +226,13 @@ impl World {
 /// A hidden object is gone once set off, whatever became of its item
 /// (`entity` is the level's entry for `thing`), an animal crate once
 /// broken, whatever became of the animal, and an object holding the
-/// missing character once it broke, in the hands or thrown.
+/// missing character once it broke, in the hands or thrown. A rising
+/// extra-life item that rose out of the level or went past the window's
+/// left edge untaken is there again.
 ///
 /// Engine choices where the spec says nothing: an extra-life item that
-/// rose away or was removed with the view without being taken is there
-/// again. An animal still ridden comes back with its rider.
+/// stays where it's placed is there again too if it went away untaken.
+/// An animal still ridden comes back with its rider.
 fn gone_for_good(thing: &Thing, entity: &Entity) -> bool {
     if thing.phase == Phase::Gone {
         return true;

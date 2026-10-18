@@ -37,7 +37,8 @@
 //!   enemies other than the one that hurt it hold still for the frames
 //!   it holds still after the hit. Throwers, knocked out or not, and
 //!   balls hold still then too, the one that hurt it as well, and no
-//!   ball is thrown, so they go on that many frames late.
+//!   ball is thrown, so they go on that many frames late. So do rising
+//!   collectibles, which then rise on at the speed they had.
 //! - With `bounce_holds_all`, nothing else moves on a bounce's frozen
 //!   frames (see [`holds_all`]), and goes on from where it was after.
 //! - While a character is being lost, things don't act on the player,
@@ -302,6 +303,14 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
             .archetype
             .is_some_and(|a| matches!(a.behavior, Behavior::Stinger(_)));
         if stinger && held.is_some() {
+            continue;
+        }
+        // So do rising collectibles, keeping their speed (extra-lives.md,
+        // "While the player is knocked out").
+        let rising = thing.archetype.is_some_and(
+            |a| matches!(a.behavior, Behavior::Collect { rise, .. } if rise > Fixed::ZERO),
+        );
+        if rising && held.is_some() {
             continue;
         }
         let thrown = thing

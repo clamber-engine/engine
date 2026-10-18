@@ -429,6 +429,7 @@ pub(crate) fn update(world: &mut World, hurt_by: Option<usize>, facing: Facing) 
             burst: burst.map(|b| frame + u32::from(frames(physics[b]))),
             before,
             after: flow.lives,
+            knocked: !fell,
         });
         flow.outcome = Outcome::Dying(DYING_FRAMES);
         flow.events.push(FlowEvent::Die);

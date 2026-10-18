@@ -128,6 +128,8 @@ pub struct LostLife {
     /// The lives before the loss, and after it.
     pub before: u8,
     pub after: u8,
+    /// Lost by a knock-out, not by falling out.
+    pub knocked: bool,
 }
 
 /// The letter row's ending, after the last letter of the word joined.
@@ -324,9 +326,19 @@ impl World {
     /// `n`: in with the lives before the loss, the image bursting, then
     /// in again with the lives after it, which stays. A display from a
     /// gain at rest on the frame of the loss stays as it is up to the
-    /// burst instead of sliding in. Engine choice where the spec says
-    /// nothing: one sliding in or out then gives way to this one.
+    /// burst instead of sliding in. A knock-out from just before the
+    /// letter row's ending on has its own (see
+    /// [`knocked_out_ending`](Self::knocked_out_ending)). Engine choice
+    /// where the spec says nothing: another display sliding in or out
+    /// then gives way to this one.
     fn lost_lives(&self, lost: LostLife, n: u32) -> Option<LivesDisplay> {
+        let hold = whole(self.player_physics()[Param::KnockoutHold]).saturating_sub(1);
+        if let Some(end) = self
+            .letter_end()
+            .filter(|e| lost.knocked && e.at <= n && e.at <= lost.at + hold + 1)
+        {
+            return self.knocked_out_ending(end, lost, hold, n);
+        }
         let physics = &self.feel.world;
         let int = |p: Param| i64::from(i32::try_from(physics[p].floor()).unwrap_or(0));
         let rest = int(Param::LivesY);
@@ -356,6 +368,78 @@ impl World {
             (rest, int(Param::LivesRise), 0, int(Param::LivesSpeed)),
         )?;
         Some(self.lives_at(number, y, n < burst || n >= again))
+    }
+
+    /// The lives display with the letter row's ending `end` and a
+    /// knock-out that began `hold` + 1 frames or less before the last
+    /// letter joined, or later, in the picture made on frame `n`
+    /// (letters.md, "While the player is knocked out").
+    ///
+    /// The number has a place on every frame, drawn or not: as without
+    /// the knock-out up to the hit, held there for `hold` frames, then
+    /// coming down from there to rest, leaving no more. From 3 frames
+    /// after the burst it comes in again from above, as after any lost
+    /// life. It shows the lives before the ending's life and the loss,
+    /// one less from 3 frames after the burst, and one more from when
+    /// the ending gives its life, a little later when that falls on the
+    /// frames held after the hit or those it comes in again on.
+    fn knocked_out_ending(
+        &self,
+        end: LetterEnd,
+        lost: LostLife,
+        hold: u32,
+        n: u32,
+    ) -> Option<LivesDisplay> {
+        let physics = &self.feel.world;
+        let int = |p: Param| i64::from(i32::try_from(physics[p].floor()).unwrap_or(0));
+        let (rest, rise) = (int(Param::LivesY), int(Param::LivesRise));
+        let (gone, speed) = (int(Param::LivesGone), int(Param::LivesSpeed));
+        let (into, out) = (int(Param::LetterEndLivesIn), int(Param::LetterEndLivesOut));
+        let (burst_for, again) = (int(Param::LostLivesBurstFor), int(Param::LostLivesAgain));
+        let (hold, n) = (i64::from(hold), i64::from(n));
+        let (joined, hit) = (i64::from(end.at), i64::from(lost.at));
+        let shows = joined + i64::from(self.letter_gone(end, self.letter_count()));
+        let burst = lost.burst.map_or(i64::MAX, i64::from);
+        // Where the number is while it waits to come in.
+        let off = rest - rise - speed * (again - burst_for);
+        let mut y = if hit < joined {
+            off
+        } else if hit < shows + out {
+            (rest - rise + speed * (hit - joined - into)).min(rest)
+        } else if hit < shows + int(Param::LetterEndLivesEnd) {
+            rest - speed * (hit - shows - out + 1)
+        } else {
+            off
+        };
+        for f in hit + hold + 1..=n {
+            y = if f == burst.saturating_add(burst_for) {
+                off
+            } else {
+                (y + speed).min(rest)
+            };
+        }
+        // When the number shown goes up for the ending's life.
+        let back = burst.saturating_add(again + int(Param::LivesSlide));
+        let up = if (hit + 1..=hit + hold).contains(&shows) {
+            hit + hold + 1
+        } else if (burst.saturating_add(burst_for + 1)..=back).contains(&shows) {
+            burst.saturating_add(LATE_LIFE)
+        } else {
+            shows
+        };
+        let mut number = if joined <= hit {
+            end.before
+        } else {
+            lost.before
+        };
+        if n >= burst.saturating_add(burst_for) {
+            number = number.saturating_sub(1);
+        }
+        if n >= up {
+            number = number.saturating_add(1);
+        }
+        let image = n < burst || n >= burst.saturating_add(again);
+        (y >= rest - gone).then(|| self.lives_at(number, y, image))
     }
 
     /// The lives display after a gain, in the picture made on frame `n`.
@@ -591,6 +675,12 @@ impl World {
 
 /// The most a display shows of a number: two digits.
 const MAX_SHOWN: u8 = 99;
+
+/// With a knock-out in the letter row's ending, the ending's life shown
+/// this many frames after the burst when it would have been shown while
+/// the lives number was away or coming in again (letters.md, "While the
+/// player is knocked out").
+const LATE_LIFE: i64 = 28;
 
 /// Where a letter moving in the ending is on each frame it moves, from
 /// `from` toward `to`: each frame 1 / `approach` of the distance left,
