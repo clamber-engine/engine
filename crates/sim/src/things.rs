@@ -210,7 +210,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         bounced_throwers.push(index);
     }
     let attacked = if attack_boxes && !frozen && !knocked(world) {
-        roll_attacks(world, &physics)
+        roll_attacks(world, &physics, previous)
     } else {
         Vec::new()
     };
@@ -1360,21 +1360,26 @@ fn bounce_on_boxes(world: &mut World, physics: &Physics) -> Vec<usize> {
 /// faced then: every frame of a timed roll before its `roll_end` frame,
 /// and the first `roll_attack_stop` frames of the stop after one. The
 /// box is `roll_attack_width` wide, centred `roll_attack_offset` in
-/// front of the player, as tall as the body. With several in reach, it
-/// defeats the first placed, or all of them on a boost's first frame.
-/// Returns the enemies defeated, which are put out of action once
-/// they've moved this frame.
-fn roll_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
+/// front of the player, as tall as the body. On a roll's first frame
+/// (its `roll_start`, or a boost's first frame) it reaches back to where
+/// the box was from `previous`, the player's position before this step.
+/// With several in reach, it defeats the first placed, or all of them on
+/// a boost's first frame. Returns the enemies defeated, which are put
+/// out of action once they've moved this frame.
+fn roll_attacks(world: &mut World, physics: &Physics, previous: Vec2) -> Vec<usize> {
     let player = &world.player;
     let stop = player.roll_stop > 0 && player.roll_stop <= frames(physics[Param::RollAttackStop]);
     if player.roll.is_none() && !stop {
         return Vec::new();
     }
-    let reach = attack_box(
-        world,
-        physics[Param::RollAttackWidth],
-        physics[Param::RollAttackOffset],
-    );
+    let width = physics[Param::RollAttackWidth];
+    let offset = physics[Param::RollAttackOffset];
+    let mut reach = attack_box(world, player.pos, width, offset);
+    if player.boosted || world.events.contains(&Event::RollStart) {
+        let (left, _, right, _) = attack_box(world, previous, width, offset);
+        reach.0 = reach.0.min(left);
+        reach.2 = reach.2.max(right);
+    }
     // Several in reach: only a boost's first frame defeats more than one.
     let most = if player.boosted { usize::MAX } else { 1 };
     strike(world, reach, |b| b.is_enemy(), |t| t.facing, most)
@@ -1400,15 +1405,25 @@ fn ground_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
     if width <= Fixed::ZERO || !attacking {
         return Vec::new();
     }
-    let reach = attack_box(world, width, physics[Param::GroundAttackOffset]);
+    let reach = attack_box(
+        world,
+        world.player.pos,
+        width,
+        physics[Param::GroundAttackOffset],
+    );
     strike(world, reach, |b| b.fall().is_some(), going, usize::MAX)
 }
 
-/// The player's attack box on whole pixels: `width` wide, centred
-/// `offset` in front of the player, as tall as the body.
-fn attack_box(world: &World, width: Fixed, offset: Fixed) -> (Fixed, Fixed, Fixed, Fixed) {
+/// The player's attack box on whole pixels with the player at `pos`:
+/// `width` wide, centred `offset` in front of it, as tall as the body.
+fn attack_box(
+    world: &World,
+    pos: Vec2,
+    width: Fixed,
+    offset: Fixed,
+) -> (Fixed, Fixed, Fixed, Fixed) {
     let player = &world.player;
-    let at = whole_pixels(player.pos);
+    let at = whole_pixels(pos);
     let middle = match player.facing {
         Facing::Left => at.x - offset,
         Facing::Right => at.x + offset,

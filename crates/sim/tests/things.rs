@@ -7,8 +7,8 @@ use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Presets};
 use clamber_sim::{
-    Air, Event, Facing, Fixed, FlowEvent, Gait, InputFrame, LAUNCH_REST, Outcome, Phase, ROLL,
-    Roll, RollSize, START_LIVES, State, World, generic_feel, step,
+    Air, Boost, Event, Facing, Fixed, FlowEvent, Gait, InputFrame, LAUNCH_REST, Outcome, Phase,
+    ROLL, Roll, RollSize, START_LIVES, State, World, generic_feel, step,
 };
 
 /// Ground at y = 400 from x = 0 to 600, with a wall from x = 100 to 120
@@ -1852,6 +1852,92 @@ fn classic_roll_defeat_ranges_by_walker_facing_and_heading() {
             );
         }
     }
+}
+
+/// rolling-into-walkers.md, "A roll's first frame": a classic-1 player
+/// at x = 300 facing right, set up by `setup`, steps once holding Action
+/// and Right (Right held before) next to a medium walker heading left at
+/// full speed from `start`. Returns I at the end of the frame and whether
+/// the walker was defeated on it, after checking the player wasn't hurt.
+fn classic_first_frame_at(setup: fn(&mut World), start: i32) -> (i64, bool) {
+    let mut w = world_on(
+        "classic-1",
+        [300, 400],
+        &medium_walker(&format!("{start}.5"), "1", "left"),
+    );
+    setup(&mut w);
+    let previous: Actions = Action::Right.into();
+    let held = Actions::from_iter([Action::Right, Action::Action]);
+    step(&mut w, &InputFrame::single(Frame::after(previous, held)));
+    assert!(!w.events.contains(&Event::Hurt), "start {start}");
+    let i = w.player.pos.x.floor() - w.things[0].pos.x.floor();
+    let defeated = w
+        .flow
+        .events
+        .iter()
+        .any(|e| matches!(e, FlowEvent::Defeat(_)));
+    (i, defeated)
+}
+
+/// The lowest and highest I at which [`classic_first_frame_at`] defeats
+/// the walker, checking that it does at every I between them.
+fn classic_first_frame_range(setup: fn(&mut World)) -> (i64, i64) {
+    let defeats: Vec<i64> = (240..380)
+        .map(|start| classic_first_frame_at(setup, start))
+        .filter(|&(_, defeated)| defeated)
+        .map(|(i, _)| i)
+        .collect();
+    let (low, high) = (
+        *defeats.iter().min().unwrap(),
+        *defeats.iter().max().unwrap(),
+    );
+    assert_eq!(defeats.len() as i64, high - low + 1, "{defeats:?}");
+    (low, high)
+}
+
+#[test]
+fn classic_roll_first_frame_reaches_back_by_the_move() {
+    // A normal roll started while walking at 2 px per frame defeats a
+    // medium walker heading left for I from -23 to 25 on S, not -23 to
+    // 23 as on later frames.
+    let walking = |w: &mut World| {
+        w.player.vel.x = Fixed::from_int(2);
+        w.player.state = State::Walk;
+    };
+    assert_eq!(classic_first_frame_range(walking), (-23, 25));
+
+    // A boost's first frame P reaches back by the 3 px moved on it; the
+    // same roll without a boost waiting doesn't.
+    fn rolling(w: &mut World) {
+        let speed = Fixed::from_int(3);
+        w.player.state = State::Roll;
+        w.player.vel.x = speed;
+        w.player.roll = Some(Roll {
+            left: 20,
+            dir: Facing::Right,
+            size: RollSize::Normal,
+            speed,
+            boosts: 0,
+            defeated: true,
+            held: true,
+            carry: false,
+            still: false,
+            stopped: false,
+            since_press: 10,
+            air: 0,
+            frame: 10,
+        });
+    }
+    let boosting = |w: &mut World| {
+        rolling(w);
+        w.player.boost = Some(Boost {
+            dir: Facing::Right,
+            size: RollSize::Normal,
+            boosts: 1,
+        });
+    };
+    assert_eq!(classic_first_frame_range(rolling), (-23, 23));
+    assert_eq!(classic_first_frame_range(boosting), (-23, 26));
 }
 
 /// rolling-into-walkers.md's examples: a classic-1 player walking right
