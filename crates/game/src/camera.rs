@@ -22,6 +22,17 @@ const LOOK_SPEED: f64 = 2.0;
 /// Vertical speed beyond which the camera looks ahead vertically, px/frame.
 const LOOK_Y_SPEED: f64 = 1.0;
 
+/// Frames of the player's motion the view looks further ahead by, so
+/// there's time to react to what's coming at speed.
+const LEAD_FRAMES: f64 = 12.0;
+
+/// The most the lead adds to the look-ahead, px, across and vertically.
+const MAX_LEAD: (f64, f64) = (80.0, 40.0);
+
+/// A move further than this in one frame, px, is a jump to a new place
+/// (a restart, say), not motion to look ahead of.
+const MAX_MOTION: f64 = 24.0;
+
 /// The view only moves vertically once the player is this far from where
 /// it's looking, px, so hops don't bob the screen.
 const BAND_Y: f64 = 40.0;
@@ -43,6 +54,8 @@ pub struct Camera {
     look: (f64, f64),
     /// The vertical position followed before rules apply.
     follow_y: f64,
+    /// Where the player's body was at the last update.
+    last: (f64, f64),
     rule: CameraRule,
     /// The rule being left and frames into the move away from it.
     leaving: Option<(CameraRule, u32)>,
@@ -61,7 +74,7 @@ impl Camera {
     /// view `view` units in size.
     pub fn with_view(world: &World, view: (u32, u32)) -> Camera {
         let rule = rule_at(world);
-        let look = (look_target(world, &rule).0, 0.0);
+        let look = (look_target(world, &rule, (0.0, 0.0)).0, 0.0);
         let free = across(world, offset(focus(world), look));
         let centre = windowed(world, apply(&rule, &world.level, free, view));
         Camera {
@@ -69,6 +82,7 @@ impl Camera {
             previous: centre,
             look,
             follow_y: free.1,
+            last: focus(world),
             rule,
             leaving: None,
             view,
@@ -85,7 +99,16 @@ impl Camera {
             self.rule = rule;
         }
 
-        let target = look_target(world, &self.rule);
+        let now = focus(world);
+        let motion = (now.0 - self.last.0, now.1 - self.last.1);
+        self.last = now;
+        let motion = if motion.0.abs().max(motion.1.abs()) > MAX_MOTION {
+            (0.0, 0.0)
+        } else {
+            motion
+        };
+
+        let target = look_target(world, &self.rule, motion);
         self.look = (
             approach(self.look.0, target.0, LOOK_SPEED),
             approach(self.look.1, target.1, LOOK_SPEED),
@@ -94,7 +117,9 @@ impl Camera {
         if world.view_middle_y().is_some() {
             self.follow_y = wanted.1;
         } else if world.player.grounded() {
-            self.follow_y = approach(self.follow_y, wanted.1, SETTLE_SPEED);
+            // At least as fast as the player goes up or down a slope.
+            let speed = SETTLE_SPEED + motion.1.abs();
+            self.follow_y = approach(self.follow_y, wanted.1, speed);
         }
         self.follow_y = self.follow_y.clamp(wanted.1 - BAND_Y, wanted.1 + BAND_Y);
         let free = (wanted.0, self.follow_y);
@@ -166,20 +191,33 @@ fn half(v: Fixed) -> Fixed {
 }
 
 /// Where the look-ahead offset is headed: ahead of the player's facing,
-/// and of its vertical motion while that's fast.
-fn look_target(world: &World, rule: &CameraRule) -> (f64, f64) {
+/// and of its vertical motion while that's fast, whether in the air or
+/// along a slope. Without a view of the world's own, it leads by
+/// [`LEAD_FRAMES`] of the player's `motion` this frame too, so the
+/// faster the player goes the further ahead it looks: across always,
+/// and vertically on the ground, up or down a slope (in the air that
+/// would bob the view with every hop).
+fn look_target(world: &World, rule: &CameraRule, motion: (f64, f64)) -> (f64, f64) {
     let ahead = rule.look_ahead.unwrap_or_default();
     let x = match world.player.facing {
         Facing::Left => -ahead.x.to_f64(),
         Facing::Right => ahead.x.to_f64(),
     };
-    let vy = world.player.vel.y.to_f64();
-    let y = if vy.abs() > LOOK_Y_SPEED {
-        ahead.y.to_f64().copysign(vy)
+    let y = if motion.1.abs() > LOOK_Y_SPEED {
+        ahead.y.to_f64().copysign(motion.1)
     } else {
         0.0
     };
-    (x, y)
+    if world.view.is_some() {
+        return (x, y);
+    }
+    let lead = |v: f64, max: f64| (v * LEAD_FRAMES).clamp(-max, max);
+    let lead_y = if world.player.grounded() {
+        lead(motion.1, MAX_LEAD.1)
+    } else {
+        0.0
+    };
+    (x + lead(motion.0, MAX_LEAD.0), y + lead_y)
 }
 
 fn offset(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
@@ -238,7 +276,7 @@ pub fn point(v: Vec2) -> (f64, f64) {
 mod tests {
     use std::sync::Arc;
 
-    use clamber_input::Action;
+    use clamber_input::{Action, Actions};
     use clamber_sim::{InputFrame, generic_feel, step};
 
     use super::*;
@@ -249,9 +287,13 @@ mod tests {
     }
 
     fn run(world: &mut World, camera: &mut Camera, held: Option<Action>, frames: u32) {
-        let mut previous = clamber_input::Actions::NONE;
+        let held = held.map_or(Actions::NONE, Into::into);
+        run_holding(world, camera, held, frames);
+    }
+
+    fn run_holding(world: &mut World, camera: &mut Camera, now: Actions, frames: u32) {
+        let mut previous = Actions::NONE;
         for _ in 0..frames {
-            let now = held.map_or(clamber_input::Actions::NONE, Into::into);
             step(
                 world,
                 &InputFrame::single(clamber_input::Frame::after(previous, now)),
@@ -377,9 +419,57 @@ mod tests {
         let mut camera = Camera::new(&w);
         w.player.pos = Vec2::ints(2010, 900);
         camera.update(&w);
+        // Moving 10 px also starts the look-ahead 2 px that way.
         assert_eq!(camera.top_left(0.0).0, 2000.0 - 192.0);
-        assert_eq!(camera.top_left(0.5).0, 2005.0 - 192.0);
-        assert_eq!(camera.top_left(1.0).0, 2010.0 - 192.0);
-        assert_eq!(camera.top_left(0.25).0, 2002.5 - 192.0);
+        assert_eq!(camera.top_left(0.5).0, 2006.0 - 192.0);
+        assert_eq!(camera.top_left(1.0).0, 2012.0 - 192.0);
+        assert_eq!(camera.top_left(0.25).0, 2003.0 - 192.0);
+    }
+
+    const DOWNHILL: &str = r#"
+        format = 1
+        size = [4000, 3000]
+        start = [200, 400]
+
+        [camera]
+        look_ahead = [32, 24]
+
+        [[collision]]
+        shape = "polygon"
+        points = [[0, 400], [400, 400], [2400, 1400], [2400, 3000], [0, 3000]]
+    "#;
+
+    #[test]
+    fn looks_further_ahead_and_down_running_fast_downhill() {
+        let mut w = world(DOWNHILL);
+        let mut camera = Camera::new(&w);
+        let run_right = Actions::from(Action::Right) | Action::Action.into();
+        run_holding(&mut w, &mut camera, run_right, 120);
+        assert!(w.player.grounded());
+        let (x, y) = focus(&w);
+        assert!(y > 500.0, "{y}");
+        // At top speed (5 px/frame across, 2.5 down): 12 frames of that
+        // ahead of the 32 and 24 the level asks for.
+        assert_eq!(camera.centre, (x + 32.0 + 60.0, y + 24.0 + 30.0));
+    }
+
+    #[test]
+    fn looks_only_as_far_ahead_as_the_level_asks_at_rest() {
+        let mut w = world(DOWNHILL);
+        let mut camera = Camera::new(&w);
+        let run_right = Actions::from(Action::Right) | Action::Action.into();
+        run_holding(&mut w, &mut camera, run_right, 120);
+        run(&mut w, &mut camera, None, 120);
+        let (x, y) = focus(&w);
+        assert_eq!(camera.centre, (x + 32.0, y));
+    }
+
+    #[test]
+    fn a_restart_is_not_motion_to_look_ahead_of() {
+        let mut w = world(WIDE);
+        let mut camera = Camera::new(&w);
+        w.player.pos = Vec2::ints(3000, 900);
+        camera.update(&w);
+        assert_eq!(camera.look, (0.0, 0.0));
     }
 }
