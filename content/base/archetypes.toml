@@ -253,7 +253,12 @@
 #   `land_ran` with Action and a direction held on the landing frame; left
 #   out, `land_hold`; `land_drop = [px, frames]` adds that many frames
 #   after landing more than so many px below where the player went into
-#   the air). In the
+#   the air). `roll_after = [on, stopped]` (left out: `[0, 0]`) keeps
+#   `roll` for so many frames after a roll ends, counting the first one
+#   after it, when it ran on into a run or not. With `upright_fall =
+#   true`, a fall after walking off a ledge without a face, and the
+#   frames after its landing, take the ranges on the ground instead of
+#   `air`. The ground action takes `stand`, also in the air. In the
 #   air after `jump`, `air_below = [[vy, below], ...]` lifts the lowest
 #   `below`: the first pair whose `vy` is at least the player's vertical
 #   speed gives it, past them all it's `air`'s. Only the character under
@@ -984,9 +989,9 @@ drawn_idle = false
 # after it's taken and on a bunch from the frame it's taken
 # (spec/behavior/count-display.md). The spec gives a bunch no window,
 # and doesn't cover whether a bunch appears with the view. Where the
-# spec doesn't cover what the player is doing (bouncing, falling without
-# a jump, carried down a face, landing while moving, and so on), the
-# reach is the one for the nearest pose above. A bunch taken stays gone
+# spec doesn't cover what the player is doing (bouncing, carried down a
+# face, landing while moving, and so on), the reach is the one for the
+# nearest pose above. A bunch taken stays gone
 # when play comes back to the level from another area, and a single is
 # there again (spec/behavior/exits.md, "Coming back to the level").
 [archetypes.spark]
@@ -1054,6 +1059,11 @@ jump_early = 6
 land_hold = 4
 land_ran = 1
 land_drop = [64, 1]
+# The rolling ranges to R + 8 of the stop after a roll, and to R + 2
+# when it runs on, still in the roll (bunches.md, "After a roll").
+roll_after = [0, 9]
+# Falling without a jump stands (bunches.md, "Falling without a jump").
+upright_fall = true
 
 # A letter of the level's word (spec/behavior/letters.md): entities set
 # which with `letter`, from 1 to the preset's `letter_count`. It's
@@ -1061,7 +1071,9 @@ land_drop = [64, 1]
 # (the same as a bunch's, the Down + Action ground action standing).
 # It joins the letters taken 30 frames after: the spec measured 30, 31
 # and 33 and leaves the exact frame open. It adds nothing to the count.
-# Landing wasn't measured for letters, so it's a bunch's. The size is
+# Landing and the stop after a roll are a bunch's (letters.md takes
+# bunches.md's ranges for the states it covers), and falling without a
+# jump stands, as letters.md measured. The size is
 # Clamber's own and only draws it. Taken, it stays gone when play comes
 # back to the level from another area (spec/behavior/exits.md).
 [archetypes.letter]
@@ -1087,6 +1099,8 @@ jump_early = 6
 land_hold = 4
 land_ran = 1
 land_drop = [64, 1]
+roll_after = [0, 9]
+upright_fall = true
 
 # A golden figure (spec/behavior/figure.md): taken, it adds one to the
 # relic count (the spec's figure count) and nothing to the collectible

@@ -966,6 +966,13 @@ pub struct Reach {
     /// More than this many px lower, so many frames more. `None`: no
     /// landing is longer.
     pub land_drop: Option<(i32, u8)>,
+    /// `roll` goes on for so many frames after a roll ends, counting the
+    /// first one after it: when it runs on into a run, then when it
+    /// doesn't.
+    pub roll_after: (u8, u8),
+    /// A fall after walking off a ledge without a face, and the frames
+    /// after its landing, have the ranges on the ground instead of `air`.
+    pub upright_fall: bool,
 }
 
 /// The most `air_below` steps a [`Reach`] can have.
@@ -3347,6 +3354,8 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         "land_hold",
         "land_ran",
         "land_drop",
+        "roll_after",
+        "upright_fall",
     ];
     if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
         return Err(format!("{path}.{key}: no such value"));
@@ -3429,6 +3438,24 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         }
         Some(_) => return Err(format!("{path}.land_drop: expected [px, frames]")),
     };
+    let roll_after = match table.get("roll_after") {
+        None => (0, 0),
+        Some(Value::Array(pair)) if pair.len() == 2 => {
+            let n = |i: usize| match &pair[i] {
+                Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
+                _ => Err(format!(
+                    "{path}.roll_after[{i}]: expected a whole number of frames, 0 to 255"
+                )),
+            };
+            (n(0)?, n(1)?)
+        }
+        Some(_) => return Err(format!("{path}.roll_after: expected [on, stopped]")),
+    };
+    let upright_fall = match table.get("upright_fall") {
+        None => false,
+        Some(Value::Boolean(b)) => *b,
+        Some(_) => return Err(format!("{path}.upright_fall: expected true or false")),
+    };
     Ok(Reach {
         stand: span("stand")?,
         walk: span("walk")?,
@@ -3442,6 +3469,8 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         land_hold,
         land_ran,
         land_drop,
+        roll_after,
+        upright_fall,
     })
 }
 

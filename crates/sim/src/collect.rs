@@ -79,6 +79,7 @@ use clamber_pack::Param;
 use crate::archetype::{Arrive, Behavior, MAX_LETTERS, Reach, Span};
 use crate::flow::{Flow, FlowEvent, Outcome};
 use crate::player::{Facing, Player, State, frames};
+use crate::pose::Air;
 use crate::view::{self, View};
 use crate::world::{Event, Phase, World};
 
@@ -1086,7 +1087,8 @@ fn take(world: &mut World, start: Option<View>) {
 
 /// The offsets `player` takes a collectible from, by what it's doing at
 /// the end of a step. Down held on the ground for `crouch_start` frames
-/// (above 0) is crouching.
+/// (above 0) is crouching. The ground action stands, also in the air
+/// after it goes over a ledge.
 pub(crate) fn span(reach: &Reach, player: &Player, crouch_start: u8) -> Span {
     if let Some(age) = player.jump_age {
         if age < reach.jump_early {
@@ -1094,16 +1096,26 @@ pub(crate) fn span(reach: &Reach, player: &Player, crouch_start: u8) -> Span {
         }
         return air(reach, player.vel.y);
     }
-    if !player.grounded() {
+    if player.ground_action.is_some() {
+        return reach.stand;
+    }
+    let clock = &player.pose;
+    let upright = reach.upright_fall && clock.upright_fall && clock.air == Air::Fall;
+    if !upright && !player.grounded() {
         return air(reach, player.vel.y);
     }
-    if player
-        .since_land
-        .is_some_and(|n| n < land_hold(reach, player))
+    if !upright
+        && player
+            .since_land
+            .is_some_and(|n| n < land_hold(reach, player))
     {
         return reach.air;
     }
-    if player.state == State::Roll || player.roll.is_some() {
+    let (on, stopped) = reach.roll_after;
+    let rolled = clock
+        .rolled
+        .is_some_and(|(n, ran_on)| n <= if ran_on { on } else { stopped });
+    if player.state == State::Roll || player.roll.is_some() || rolled {
         return reach.roll;
     }
     if crouch_start > 0 && player.crouch.held >= crouch_start {
