@@ -24,6 +24,14 @@
 //!   is less than it less the speed part, the target is 1 px further
 //!   left.
 //!
+//! With `view_pull_share` above 0, the view follows across by pull and
+//! goal instead: it aims `view_back` (`view_back_left`)
+//! left of the player whatever the speed, its speed is pulled toward the
+//! aim by a limited amount each step and held to how far the aim moved
+//! plus part of the lag behind the step before's aim, and it settles
+//! exactly on the aim. On the steps it holds still after a defeat, the
+//! aim is still taken.
+//!
 //! With `view_begin_back` above 0, the view starts when an area begins
 //! on the target of a lead standing still with `view_begin_back` in
 //! place of `view_back` (whatever the facing), kept inside the picture's
@@ -69,6 +77,10 @@
 //! their right less the view's width, while the view itself moves on
 //! past them. The player is stopped `end_stop` px inside the range the
 //! picture can show (see [`stops`]).
+//!
+//! Things appear and are removed by the view, and thrown objects, balls
+//! and items leave by it, only with `appear_by_view` above 0 ([`by_view`]);
+//! otherwise they're all in the level from the start, as without a view.
 //!
 //! The camera rule is chosen by the player's position, not just its `x`
 //! as the spec's list of limits is.
@@ -135,6 +147,9 @@ pub struct View {
     /// What the picture's left edge is kept between, if anything (see
     /// [`ends`]).
     pub ends: Option<(i64, i64)>,
+    /// Where the left edge aimed on the step before, when it follows by
+    /// pull and goal.
+    pub aim: Fixed,
 }
 
 impl View {
@@ -162,8 +177,10 @@ impl View {
         } else {
             Fixed::ZERO
         };
+        let left = target(&still, physics, None);
         View {
-            left: target(&still, physics, None),
+            left,
+            aim: left,
             speed: Fixed::ZERO,
             hold: 0,
             top,
@@ -214,8 +231,12 @@ impl View {
         if defeated {
             self.hold = frames(physics[Param::ViewHold]);
         }
+        let pulled = physics[Param::ViewPullShare] > Fixed::ZERO;
         if self.hold > 0 {
             self.hold -= 1;
+            if pulled {
+                self.aim = to_grain(target(player, physics, None));
+            }
             return;
         }
         let knocked = u16::from(frames(physics[Param::ViewKnockoutHold]));
@@ -224,6 +245,10 @@ impl View {
         }
         if vertical(physics) {
             self.follow_y(player, level, physics);
+        }
+        if pulled {
+            self.pull(player, physics);
+            return;
         }
         let gap = target(player, physics, begin.back) - self.left;
         let aim = div_floor(gap, whole(physics[Param::ViewShare]));
@@ -236,6 +261,64 @@ impl View {
         let grain = POS_GRAIN.to_bits();
         let moved = self.speed.to_bits() * times / grain * grain;
         self.left += Fixed::from_bits(moved);
+    }
+
+    /// One step of following `player` across by pull and goal, with
+    /// `view_pull_share` above 0. Everything is in [`POS_GRAIN`]s:
+    ///
+    /// 1. The aim is `view_back` (`view_back_left` facing left) left of
+    ///    the player.
+    /// 2. The pull is the gap from the left edge to the aim divided by
+    ///    `view_pull_share`, rounded down, kept within `view_pull_max`
+    ///    either way.
+    /// 3. The lag is the gap from the left edge to the step before's aim:
+    ///    whole if it's smaller than `view_lag_keep` either way, and
+    ///    otherwise divided by `view_lag_share`, rounded down, and kept
+    ///    `view_lag_min` or more from 0.
+    /// 4. The goal is how far the aim moved plus the lag.
+    /// 5. With no goal the speed becomes 0. Otherwise the pull is added
+    ///    to it, and then it's halved, rounded down, if it's the other
+    ///    way from the goal (0 counting as forward), or kept from going
+    ///    past the goal if not.
+    /// 6. The left edge moves by the speed.
+    fn pull(&mut self, player: &Player, physics: &Physics) {
+        let grain = POS_GRAIN.to_bits();
+        let units = |v: Fixed| v.to_bits().div_euclid(grain);
+        let aim = units(to_grain(target(player, physics, None)));
+        let left = units(self.left);
+        let before = units(self.aim);
+        let most = units(physics[Param::ViewPullMax]);
+        let pull = (aim - left)
+            .div_euclid(whole(physics[Param::ViewPullShare]))
+            .clamp(-most, most);
+        let lag = before - left;
+        let keep = units(physics[Param::ViewLagKeep]);
+        let lag = if (-keep..keep).contains(&lag) {
+            lag
+        } else {
+            let least = units(physics[Param::ViewLagMin]);
+            let part = lag.div_euclid(whole(physics[Param::ViewLagShare]));
+            if lag > 0 {
+                part.max(least)
+            } else {
+                part.min(-least)
+            }
+        };
+        let goal = aim - before + lag;
+        let speed = units(self.speed);
+        let speed = if goal == 0 {
+            0
+        } else {
+            let speed = speed + pull;
+            match (speed < 0, goal < 0) {
+                (true, false) | (false, true) => speed.div_euclid(2),
+                (false, false) => speed.min(goal),
+                (true, true) => speed.max(goal),
+            }
+        };
+        self.speed = Fixed::from_bits(speed * grain);
+        self.left += self.speed;
+        self.aim = Fixed::from_bits(aim * grain);
     }
 
     /// One step of following `player` vertically.
@@ -408,6 +491,11 @@ fn div_floor(v: Fixed, by: i64) -> Fixed {
     Fixed::from_bits(v.to_bits().div_euclid(by))
 }
 
+/// `v` rounded down to [`POS_GRAIN`].
+fn to_grain(v: Fixed) -> Fixed {
+    round_down(v, POS_GRAIN)
+}
+
 fn round_down(v: Fixed, grain: Fixed) -> Fixed {
     let grain = grain.to_bits();
     Fixed::from_bits(v.to_bits().div_euclid(grain) * grain)
@@ -443,6 +531,12 @@ pub(crate) fn stops(x: Fixed, vx: Fixed, level: &Level, physics: &Physics) -> bo
 /// Whether the world has a view: its preset's `view_width` is above 0.
 pub(crate) fn enabled(physics: &Physics) -> bool {
     physics[Param::ViewWidth] > Fixed::ZERO
+}
+
+/// Whether things appear and are removed by the view, and leave by it:
+/// the world has a view and its preset's `appear_by_view` is above 0.
+pub(crate) fn by_view(physics: &Physics) -> bool {
+    enabled(physics) && physics[Param::AppearByView] > Fixed::ZERO
 }
 
 /// Moves the view after the player has, if there is one, as `begin`
@@ -618,6 +712,9 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 /// appear again. Things that aren't removed by the view stay gone once
 /// they leave by their own rule.
 pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) {
+    if !by_view(&world.player_physics()) {
+        return;
+    }
     let (left, physics) = window(&world.level, &world.feel, left, &world.player_physics());
     walkers_by(world, &physics, (left, top), appear);
 }
@@ -1191,6 +1288,105 @@ mod tests {
         view.follow(&moved_down, &level, &physics, false, Begin::default());
         assert!(view.left > fx(929.0));
         assert!(view.top > top);
+    }
+
+    fn physics_2() -> Physics {
+        clamber_pack::Presets::builtin().world("classic-2").unwrap()
+    }
+
+    /// Follows `player(frame)` on `classic-2` from a view settled on a
+    /// player standing at 1000 facing right, checking `V` and `S` (in
+    /// 1/256 px per frame) on the frames `rows` give.
+    fn follow_2(player_at: impl Fn(u32) -> Player, rows: &[(u32, f64, i32)]) {
+        let physics = physics_2();
+        let level = level();
+        let mut view = View::settled(&player(1000.0, 0.0, Facing::Right), &level, &physics);
+        assert_eq!((view.left, view.aim), (fx(944.0), fx(944.0)));
+        let last = rows.last().unwrap().0;
+        let mut next = rows.iter().peekable();
+        for f in 1..=last {
+            view.follow(&player_at(f), &level, &physics, false, Begin::default());
+            if let Some(&(_, left, speed)) = next.next_if(|r| r.0 == f) {
+                assert_eq!(view.left, fx(left), "frame {f}");
+                assert_eq!(view.speed, Fixed::from_ratio_pow2(speed, 8), "frame {f}");
+            }
+        }
+    }
+
+    #[test]
+    fn title_2_follows_a_player_moving_right() {
+        // view.md, "Examples (`title-2`)", (a).
+        follow_2(
+            |f| player(1000.0 + 2.0 * f64::from(f), 2.0, Facing::Right),
+            &[
+                (1, 944.125, 32),
+                (2, 944.4921875, 94),
+                (3, 945.203125, 182),
+                (5, 947.75, 374),
+                (10, 958.88671875, 599),
+                (20, 981.3046875, 557),
+                (40, 1023.23046875, 525),
+                (60, 1063.90625, 520),
+                (62, 1068.0, 512),
+                (100, 1144.0, 512),
+            ],
+        );
+    }
+
+    #[test]
+    fn title_2_follows_a_player_turning_left() {
+        // view.md, "Examples (`title-2`)", (b): settled on the aim from
+        // frame 96, with no speed from frame 97.
+        follow_2(
+            |_| player(1000.0, 0.0, Facing::Left),
+            &[
+                (1, 943.625, -96),
+                (2, 942.875, -192),
+                (3, 941.75, -288),
+                (5, 938.375, -480),
+                (10, 923.6796875, -882),
+                (20, 899.0859375, -463),
+                (30, 886.19140625, -243),
+                (40, 879.4296875, -127),
+                (60, 874.0234375, -35),
+                (97, 872.0, 0),
+                (100, 872.0, 0),
+            ],
+        );
+    }
+
+    #[test]
+    fn title_2_holds_still_after_a_defeat_but_aims() {
+        // view.md, "Frames on which the view stays still (`title-2`)":
+        // `V` and `S` keep their values on B and B + 1, and `P` becomes
+        // the aim.
+        let physics = physics_2();
+        let level = level();
+        let mut view = View::settled(&player(1000.0, 0.0, Facing::Right), &level, &physics);
+        view.follow(
+            &player(1002.0, 2.0, Facing::Right),
+            &level,
+            &physics,
+            false,
+            Begin::default(),
+        );
+        let (left, speed) = (view.left, view.speed);
+        for (f, defeated) in [(1004.0, true), (1006.0, false)] {
+            let p = player(f, 2.0, Facing::Right);
+            view.follow(&p, &level, &physics, defeated, Begin::default());
+            assert_eq!(
+                (view.left, view.speed, view.aim),
+                (left, speed, fx(f - 56.0))
+            );
+        }
+        view.follow(
+            &player(1008.0, 2.0, Facing::Right),
+            &level,
+            &physics,
+            false,
+            Begin::default(),
+        );
+        assert!(view.left > left);
     }
 
     /// A player at 1000 with its feet at `feet`, falling at `vy`, on the

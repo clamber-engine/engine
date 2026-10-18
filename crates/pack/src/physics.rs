@@ -1253,6 +1253,22 @@ params! {
     ViewShakePeriod => "view_shake_period",
     /// See `view_shake_count`. px.
     ViewShakeSize => "view_shake_size",
+    /// Above 0, the view follows across by pull and goal instead (see
+    /// `clamber_sim::View`): it aims `view_back` (`view_back_left`) left
+    /// of the player, and each frame its speed is pulled by the gap to
+    /// the aim divided by this, held to the frame's goal. Whole frames.
+    ViewPullShare => "view_pull_share",
+    /// The most the pull changes the view's speed by in a frame.
+    /// px/frame.
+    ViewPullMax => "view_pull_max",
+    /// The goal takes a gap between the view and the previous frame's
+    /// aim smaller than this either way whole... px.
+    ViewLagKeep => "view_lag_keep",
+    /// ... and a larger one divided by this, but at least
+    /// `view_lag_min` either way. Whole frames.
+    ViewLagShare => "view_lag_share",
+    /// See `view_lag_share`. px.
+    ViewLagMin => "view_lag_min",
     /// A walker's start is near the view from this far left of the view's
     /// left edge. Whole px.
     AppearLeft => "appear_left",
@@ -1271,6 +1287,11 @@ params! {
     /// ... or this far right of the view's right edge or further. Whole
     /// px.
     RemoveRight => "remove_right",
+    /// Above 0, with a view, things appear and are removed by it, and
+    /// thrown objects, balls and items leave by it (see
+    /// `clamber_sim::View`). 0: things are in the level from the start
+    /// and don't leave by the view. Flag.
+    AppearByView => "appear_by_view",
     /// Above 0, the objects that can be there at once (see
     /// `clamber_sim::Placing`): each placed object in a level's sections
     /// takes a place while it's there, as do thrown balls and animals out

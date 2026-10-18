@@ -236,7 +236,7 @@ fn become_item(thing: &mut Thing, hidden: &Hidden) {
 /// standing, once they're outside the window placed objects appear in.
 /// They don't come back.
 pub(crate) fn leave(world: &mut World, physics: &Physics) {
-    let (left, physics) = match world.view {
+    let (left, physics) = match world.view.filter(|_| view::by_view(physics)) {
         Some(v) => {
             let (left, physics) = view::window(&world.level, &world.feel, v.x(), physics);
             (Some(left), physics)

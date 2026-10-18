@@ -409,11 +409,13 @@ impl World {
         // With a view, walkers whose start is near it are in the level as
         // placed, and the others appear later. Things in sections appear
         // from the first step.
-        let placing = view.and_then(|v| {
+        // Without things appearing by the view, they're all there.
+        let by_view = view.filter(|_| view::by_view(&physics));
+        let placing = by_view.and_then(|v| {
             let placed = Placed::of(&level)?;
             Some(Placing::begin(Arc::new(placed), v.y()))
         });
-        if let Some(v) = view {
+        if let Some(v) = by_view {
             let (left, physics) = view::window(&level, &feel, v.x(), &physics);
             let present = view::at_start(&things, &level, left, &physics);
             for (thing, present) in things.iter_mut().zip(present) {
@@ -476,12 +478,13 @@ impl World {
     /// their start: those near a view `width` px wide with its left edge
     /// at level x `left`, by the same rules as the world's own view
     /// (see [`View`]), with the view's top where it is now. Nothing
-    /// changes. Without a view there are none.
+    /// changes. Without a view, or when things don't appear by it
+    /// (`appear_by_view`), there are none.
     ///
     /// This is for showing more than the view does without things popping
     /// in: they can be drawn where they'll appear before they do.
     pub fn would_appear(&self, left: i64, width: i64) -> Vec<Thing> {
-        match self.view {
+        match self.view.filter(|_| view::by_view(&self.player_physics())) {
             Some(view) => view::would_appear(self, (left, view.y()), width),
             None => Vec::new(),
         }
@@ -501,8 +504,8 @@ impl World {
     /// that shows more than the view draws this much of the level, here,
     /// so nothing pops in.
     pub fn window(&self) -> Option<(i64, i64)> {
-        let view = self.view?;
         let physics = self.feel.world;
+        let view = self.view.filter(|_| view::by_view(&physics))?;
         let picture = physics[Param::ViewWidth].floor();
         let (left, physics) = view::window(&self.level, &self.feel, view.x(), &physics);
         let width = physics[Param::ViewWidth].floor();

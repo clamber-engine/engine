@@ -271,6 +271,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     // Balls leave by where the view was at the start of the step.
     let picture = world
         .view
+        .filter(|_| view::by_view(&physics))
         .map(|v| Picture::of(v, &world.level, &world.feel, &physics));
     let ending = world.ending.is_some();
     // Critters fly by the world's frame and where the picture was, and
@@ -327,7 +328,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     if let Some(&at) = freed.first() {
         join::start(world, at);
     }
-    if let Some(view) = world.view {
+    if let Some(view) = world.view.filter(|_| view::by_view(&physics)) {
         // Thrown objects are removed far from the view as walkers are.
         let (left, wide) = view::window(&world.level, &world.feel, view.x(), &physics);
         for thing in world.things.iter_mut().filter(|t| t.active) {

@@ -611,12 +611,18 @@ mod tests {
                     | Param::ViewShakeDelay
                     | Param::ViewShakePeriod
                     | Param::ViewShakeSize
+                    | Param::ViewPullShare
+                    | Param::ViewPullMax
+                    | Param::ViewLagKeep
+                    | Param::ViewLagShare
+                    | Param::ViewLagMin
                     | Param::AppearLeft
                     | Param::AppearRight
                     | Param::AppearAbove
                     | Param::AppearBelow
                     | Param::RemoveLeft
                     | Param::RemoveRight
+                    | Param::AppearByView
                     | Param::Places
                     | Param::Pictures
                     | Param::EndReach

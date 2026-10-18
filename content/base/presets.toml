@@ -328,12 +328,18 @@ view_shake_count = 0
 view_shake_delay = 0
 view_shake_period = 0
 view_shake_size = 0
+view_pull_share = 0
+view_pull_max = 0
+view_lag_keep = 0
+view_lag_share = 0
+view_lag_min = 0
 appear_left = 0
 appear_right = 0
 appear_above = 0
 appear_below = 0
 remove_left = 0
 remove_right = 0
+appear_by_view = 0
 places = 0
 pictures = 0
 end_reach = 0
@@ -845,6 +851,7 @@ appear_above = 31
 appear_below = 32
 remove_left = 128
 remove_right = 129
+appear_by_view = 1
 # Placed objects wait for one of 12 places, and those of class 1 entries
 # for one of 11 pictures too (placements.md, "How many objects can be
 # there").
@@ -1051,7 +1058,12 @@ ground_action_time = 0
 # defeat's frame, and the player and every walker hold still for 2
 # frames after it. With Action held on the defeat's frame, the roll eases
 # toward 1 px per frame more for 31 new frames, then carries on into
-# running; otherwise it goes on where it was.
+# running; otherwise it goes on where it was. The view (view.md, "In
+# `title-2`") follows across by pull and goal, 56 px behind a player
+# facing right and 128 px behind one facing left, and holds still for 2
+# frames after a defeat. The first level's sway isn't in yet, and the
+# view doesn't move vertically. walker-view.md covers `title-1` only, so
+# things don't appear by the view (`appear_by_view` 0).
 [presets.classic-2]
 label = "Classic 2"
 description = "Placeholder: plays like Default until measured values are available."
@@ -1150,6 +1162,15 @@ knockout_hop_at = 48
 knockout_hop = 2.5
 knockout_hop_slowing = 0.125
 knockout_time = 190
+view_width = 256
+view_back = 56
+view_back_left = 128
+view_pull_share = 16
+view_pull_max = 0.375
+view_lag_keep = 0.125
+view_lag_share = 16
+view_lag_min = 0.03125
+view_hold = 2
 
 [presets.classic-3]
 label = "Classic 3"
