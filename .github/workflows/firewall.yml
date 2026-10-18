@@ -47,6 +47,9 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q libudev-dev libasound2-dev libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev
 
+      - name: Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
@@ -69,6 +72,9 @@ jobs:
         shell: bash
         run: |
           if [ -f crates/game/Cargo.toml ]; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Rust build cache
+        if: steps.game.outputs.exists == 'true'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Build
         if: steps.game.outputs.exists == 'true'
         run: cargo build --release --locked -p clamber-game --all-features
@@ -139,6 +145,9 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q libudev-dev libasound2-dev libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev mesa-vulkan-drivers
+      - name: Rust build cache
+        if: steps.capture.outputs.exists == 'true'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Capture
         if: steps.capture.outputs.exists == 'true'
         run: bash tools/capture.sh "$RUNNER_TEMP/media"
