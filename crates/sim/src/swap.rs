@@ -154,14 +154,14 @@ impl Recent {
 /// Goes on with the swap under way, or starts one on a swap press that
 /// can. Returns whether this step was a swap step, which the player
 /// doesn't move on by itself. On the frame the other character becomes
-/// the player it isn't: the new player moves as usual, but no swap press
-/// counts on it.
+/// the player it isn't: the new player moves as usual, and no swap press
+/// counts on it, but a tandem press can with `swap_tandem_on_end`.
 pub(crate) fn update(world: &mut World, physics: &Physics, input: &Frame) -> bool {
     let Some(other) = world.other.clone() else {
         world.recent.kept = false;
         return false;
     };
-    let mut swap = match world.swap.take() {
+    let swap = match world.swap.take() {
         Some(mut swap) => {
             swap.frame += 1;
             swap
@@ -191,8 +191,26 @@ pub(crate) fn update(world: &mut World, physics: &Physics, input: &Frame) -> boo
     };
     if swap.frame >= swap.end {
         hand_over(world, &swap);
-        return false;
+        // After a swap in which the second character was the player, a
+        // tandem press on this frame starts the next swap (`controls.md`).
+        let tandem =
+            physics[Param::SwapTandemOnEnd] > Fixed::ZERO && input.pressed.contains(Action::Tandem);
+        let Some(other) = world.other.clone().filter(|_| tandem) else {
+            return false;
+        };
+        let physics = world.player_physics();
+        if refusal(world, &physics, &other).is_some() {
+            return false;
+        }
+        let swap = start(world, &physics, input, false, &other);
+        return go_on(world, swap);
     }
+    go_on(world, swap)
+}
+
+/// Moves both characters on the swap's frame, which is before its end.
+/// Returns true: this was a swap step.
+fn go_on(world: &mut World, mut swap: Swap) -> bool {
     let player = &mut world.player;
     let to = swap.player.step(swap.frame, player.pos);
     player.vel = Vec2::new(to.x - player.pos.x, to.y - player.pos.y);
@@ -227,7 +245,9 @@ enum Refusal {
 fn refusal(world: &World, physics: &Physics, other: &Other) -> Option<Refusal> {
     let p = &world.player;
     let recent = &world.recent;
-    if !p.grounded() || recent.landed {
+    // A rider doesn't swap; its tandem press gets off the animal instead
+    // (`controls.md`).
+    if !p.grounded() || recent.landed || p.riding.is_some() {
         return Some(Refusal::End);
     }
     let height = physics[Param::SwapHeight];

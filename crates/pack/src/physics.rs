@@ -814,6 +814,10 @@ params! {
     /// A swap press up to this many frames after the frame down is let go
     /// doesn't start a swap. Whole frames.
     SwapRiseWait => "swap_rise_wait",
+    /// Above 0, after a swap in which this character was the player, a
+    /// tandem press on the frame the other character becomes the player
+    /// starts the next swap. 0: no swap press counts on that frame.
+    SwapTandemOnEnd => "swap_tandem_on_end",
     /// Above 0, a hit while the other character is in the level loses
     /// the hit character instead of a life: on the hit frame it stops
     /// where it is, facing right, with this upward speed, then flies

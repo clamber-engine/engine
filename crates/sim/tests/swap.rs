@@ -298,6 +298,50 @@ fn a_tandem_swap_never_keeps_the_jumps_gravity() {
     assert_eq!(rows[78].character, 1);
 }
 
+/// The row of a press of `key` on E + `after` of a swap started by Swap
+/// with `player` under control, and the frame E falls on.
+fn press_after_a_swap(player: usize, key: Action, after: usize) -> (Row, usize) {
+    let mut play = Play::new(player, v(400.0, 400.0), Facing::Right, v(420.0, 400.0));
+    let rows = play.swap(90);
+    let end = rows.iter().position(|r| r.character != player).unwrap();
+    let mut play = Play::new(player, v(400.0, 400.0), Facing::Right, v(420.0, 400.0));
+    play.swap(end + after);
+    (play.step(&[key]), end)
+}
+
+#[test]
+fn after_the_second_characters_swap_tandem_counts_on_e() {
+    // Difference 3: with the second character the player, E = Q + 72 and
+    // a tandem press on E itself starts the next swap; Swap from E + 1.
+    let (row, end) = press_after_a_swap(1, T, 0);
+    assert_eq!(end, 72);
+    assert_eq!((row.character, row.state), (0, State::Swap));
+    assert_eq!(row.pos, v(400.0, 400.0));
+    let (row, _) = press_after_a_swap(1, S, 0);
+    assert_ne!(row.state, State::Swap);
+    let (row, _) = press_after_a_swap(1, S, 1);
+    assert_eq!(row.state, State::Swap);
+
+    // The swap started on E runs as any other started by the first
+    // character: it ends on its own Q + 79.
+    let mut play = Play::new(1, v(400.0, 400.0), Facing::Right, v(420.0, 400.0));
+    play.swap(72);
+    let mut rows = vec![play.step(&[T])];
+    rows.extend(play.idle(80));
+    assert!(rows[..79].iter().all(|r| r.character == 0));
+    assert_eq!(rows[79].character, 1);
+    assert_eq!(rows[79].pos, v(400.0, 400.0));
+}
+
+#[test]
+fn after_the_first_characters_swap_tandem_waits_for_e_plus_1() {
+    let (row, end) = press_after_a_swap(0, T, 0);
+    assert_eq!(end, 79);
+    assert_ne!(row.state, State::Swap);
+    let (row, _) = press_after_a_swap(0, T, 1);
+    assert_eq!(row.state, State::Swap);
+}
+
 #[test]
 fn holding_tandem_after_a_refused_press_does_nothing() {
     let mut play = Play::flat();

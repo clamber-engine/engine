@@ -9,7 +9,8 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_sim::{
-    Behavior, Facing, Fixed, InputFrame, Phase, RidePart, Riding, State, World, generic_feel, step,
+    Behavior, Facing, Fixed, InputFrame, Other, Phase, RidePart, Riding, State, World,
+    generic_feel, step,
 };
 
 const L: Action = Action::Left;
@@ -668,4 +669,31 @@ fn no_jump_or_uphill_turn_on_a_face() {
     let mut play = Play::columns(face_floor, (60.0, 33.0), (0, 0), Facing::Right, &[]);
     play.step(&[J]);
     assert_eq!(play.part(), RidePart::Jump(0));
+}
+
+/// Swap does nothing while riding (controls.md, "Tandem in `title-1`").
+#[test]
+fn swap_does_nothing_while_riding() {
+    let mut play = Play::flat(0, Facing::Right, &[]);
+    let world = &mut play.world;
+    Arc::make_mut(&mut world.feel)
+        .roster
+        .push(clamber_pack::CharacterFeel {
+            physics: clamber_pack::Presets::builtin()
+                .slot("classic-1", 1)
+                .unwrap(),
+            abilities: Default::default(),
+        });
+    let at = world.player.pos;
+    world.other = Some(Other::new(1, at, Facing::Left, at));
+    play.step(&[]);
+    play.step(&[Action::Swap]);
+    assert!(play.world.swap.is_none());
+    assert_ne!(play.world.player.state, State::Swap);
+    assert!(play.world.player.riding.is_some());
+    // Nor does Tandem, which gets off instead; getting off isn't in the
+    // spec frame by frame yet.
+    play.step(&[]);
+    play.step(&[Action::Tandem]);
+    assert!(play.world.swap.is_none());
 }

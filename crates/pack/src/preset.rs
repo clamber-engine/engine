@@ -489,6 +489,7 @@ mod tests {
                     | Param::SwapHeight
                     | Param::SwapCrouchWait
                     | Param::SwapRiseWait
+                    | Param::SwapTandemOnEnd
                     | Param::LoseJump
                     | Param::LoseRunSpeed
                     | Param::TakeoverWait

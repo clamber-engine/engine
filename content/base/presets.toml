@@ -202,6 +202,7 @@ swap_hop = 0
 swap_height = 0
 swap_crouch_wait = 0
 swap_rise_wait = 0
+swap_tandem_on_end = 0
 lose_jump = 0
 lose_run_speed = 0
 takeover_wait = 0
@@ -642,6 +643,7 @@ swap_hop = 0.99609375
 swap_height = 8
 swap_crouch_wait = 22
 swap_rise_wait = 9
+swap_tandem_on_end = 0
 # Losing a character (losing-a-character.md) and protection
 # (protection.md).
 lose_jump = 8
@@ -955,6 +957,7 @@ swap_jump_wait = 0
 swap_lag = 1
 swap_crouch_wait = 21
 swap_rise_wait = 12
+swap_tandem_on_end = 1
 roll_time = 24
 roll_slow_speed = 1.125
 roll_speed = 3.375
