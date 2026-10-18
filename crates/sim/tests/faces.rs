@@ -707,9 +707,7 @@ fn classic_2_coasting_down_the_face() {
 
 #[test]
 fn classic_2_walking_down_then_holding_uphill() {
-    let mut world = ground_in("classic-2", face_64, 219.75);
-    world.player.vel.x = fx(-2.25);
-    world.player.facing = Facing::Left;
+    let mut world = walking_down_the_face();
     let mut held: Vec<&[Action]> = vec![&[Action::Left]; 4];
     held.extend([&[Action::Right][..]; 18]);
     let mut facings = Vec::new();
@@ -720,9 +718,9 @@ fn classic_2_walking_down_then_holding_uphill() {
         facings.push(world.player.facing);
     }
     for (frame, x, y, vx) in [
-        (1, 217.5, -64, -576),
-        (2, 215.25, -61, -576),
-        (3, 213.0, -53, -576),
+        (1, 217.40234375, -64, -562),
+        (2, 215.203125, -61, -563),
+        (3, 213.0, -53, -564),
         (4, 211.0, -45, -512),
         (5, 209.40625, -37, -408),
         (6, 208.16796875, -33, -317),
@@ -748,11 +746,19 @@ fn classic_2_walking_down_then_holding_uphill() {
     assert!(facings[..17].iter().all(|&f| f == Facing::Left));
 }
 
+/// The example "Walking down, then holding uphill", from a speed the
+/// limits keep on frame 3: the example's own start, 2.25 px per frame,
+/// is limited there to 2 (spec#48). From frame 3 on it's the example.
+fn walking_down_the_face() -> World {
+    let mut world = ground_in("classic-2", face_64, 219.59765625);
+    world.player.vel.x = fx(-560.0 / 256.0);
+    world.player.facing = Facing::Left;
+    world
+}
+
 #[test]
 fn classic_2_crossing_three_face_columns_leaves_the_face() {
-    let mut world = ground_in("classic-2", face_64, 219.75);
-    world.player.vel.x = fx(-2.25);
-    world.player.facing = Facing::Left;
+    let mut world = walking_down_the_face();
     let rows = rows_holding(&mut world, &[Action::Left], 5);
     assert_eq!(rows[3], (fx(211.0), -512, Fixed::from_int(-45), true));
     // L: 8 px down, not 3.4375, with the pull's speed under the limit.
@@ -1492,4 +1498,146 @@ fn a_roll_stopped_before_a_ledge_pushes_off_away_from_it() {
             (fx(285.875), -544),
         ]
     );
+}
+
+/// A `classic-2` world on [`face_64`] standing at `x` with `vx` (1/256),
+/// as at the end of a landing frame: the next frame is a face frame with
+/// no pull.
+fn landed_on_face_64(x: f64, vx: i64) -> World {
+    let mut world = ground_in("classic-2", face_64, x);
+    world.player.vel.x = fx(vx as f64 / 256.0);
+    world
+}
+
+#[test]
+fn classic_2_limits_come_before_the_block_after_a_landing() {
+    // 233/256 is kept, and it goes into the higher column 207: blocked.
+    let mut world = landed_on_face_64(206.21875, 184);
+    let rows = rows_holding(&mut world, &[Action::Right], 2);
+    assert_eq!(rows[0], (fx(206.0), 0, Fixed::from_int(-25), true));
+    // Then the pull: 40/256, limited to 0.75 down the face.
+    assert_eq!(rows[1], (fx(205.25), -192, Fixed::from_int(-21), true));
+    // 331/256 is limited to 0.75 down the face, so nothing blocks it.
+    let mut world = landed_on_face_64(206.65625, 296);
+    let rows = rows_holding(&mut world, &[Action::Right], 1);
+    assert_eq!(rows[0], (fx(205.90625), -192, Fixed::from_int(-21), true));
+}
+
+/// A piece of floor: how far down its `n`th column is, px.
+type Piece = fn(i32) -> i32;
+
+/// Floor going down to the right over the piece of columns 96 to 111 by
+/// `piece(n)` px at its `n`th column, then a step down of `drop` px onto
+/// flat floor, or with `onto_slope` a 1-in-4 slope, from column 112.
+fn step_down(piece: Piece, drop: i32, onto_slope: bool) -> impl Fn(i32) -> Option<i32> {
+    move |c| {
+        Some(match c {
+            ..96 => 0,
+            96..112 => piece(c - 96),
+            _ => piece(15) + drop + if onto_slope { (c - 112).min(15) / 4 } else { 0 },
+        })
+    }
+}
+
+/// One frame walking right from column 111 of [`step_down`] into column
+/// 112: whether still grounded, and how far down the feet went.
+fn step_down_frame(piece: Piece, drop: i32, onto_slope: bool) -> (bool, Fixed) {
+    let mut world = ground_in("classic-2", step_down(piece, drop, onto_slope), 111.5);
+    world.player.vel.x = fx(1.0);
+    let before = world.player.pos.y;
+    hold(&mut world, &[Action::Right]);
+    assert_eq!(world.player.pos.x, fx(112.65625));
+    (world.player.grounded(), world.player.pos.y - before)
+}
+
+#[test]
+fn classic_2_the_floor_is_followed_down_by_the_reach_of_its_piece() {
+    // `steep-faces.md`, "Following the floor down (`title-2`)".
+    let pieces: [(&str, Piece, i32); 6] = [
+        ("flat", |_| 0, 3),
+        ("1-in-4", |n| n / 4, 3),
+        ("1-in-2", |n| n / 2, 3),
+        ("2-in-3", |n| 2 * n / 3, 4),
+        ("1-in-1", |n| n, 5),
+        ("2-in-1", |n| 2 * n, 6),
+    ];
+    for (name, piece, reach) in pieces {
+        for (onto_slope, most) in [(false, reach), (true, reach + 3)] {
+            let followed = step_down_frame(piece, most, onto_slope);
+            assert_eq!(
+                followed,
+                (true, Fixed::from_int(most)),
+                "{name} {onto_slope}"
+            );
+            // 1 px more leaves the ground, down the reach and a frame of
+            // gravity.
+            let left = step_down_frame(piece, most + 1, onto_slope);
+            let fall = Fixed::from_int(reach) + fx(0.4375);
+            assert_eq!(left, (false, fall), "{name} {onto_slope}");
+        }
+    }
+}
+
+/// Flat floor at y = 0 to column 111, then flat floor `drop` px lower.
+fn flat_step(drop: i32) -> impl Fn(i32) -> Option<i32> {
+    move |c| Some(if c < 112 { 0 } else { drop })
+}
+
+#[test]
+fn classic_2_after_leaving_at_a_small_step_down_the_fall_has_no_step() {
+    // `steep-faces.md`, "Steps down from flat floor": (x, y, vy, ground).
+    let rows = |drop, frames| {
+        let mut world = ground_in("classic-2", flat_step(drop), 110.37109375);
+        world.player.vel.x = fx(457.0 / 256.0);
+        (0..frames)
+            .map(|_| {
+                hold(&mut world, &[Action::Right]);
+                let p = &world.player;
+                let y = p.pos.y - Fixed::from_int(FLOOR);
+                (p.pos.x, y, grains(p.vel.y), p.grounded())
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        rows(4, 3),
+        [
+            (fx(112.2109375), fx(3.4375), 1, false),
+            (fx(114.1015625), fx(3.87890625), 113, false),
+            (fx(116.03515625), fx(4.0), 0, true),
+        ]
+    );
+    let deep = rows(8, 4);
+    let ys: Vec<_> = deep.iter().map(|r| (r.1, r.2, r.3)).collect();
+    assert_eq!(
+        ys,
+        [
+            (fx(3.4375), 1, false),
+            (fx(4.875), 368, false),
+            (fx(6.75), 480, false),
+            (fx(8.0), 0, true),
+        ]
+    );
+}
+
+#[test]
+fn classic_2_a_step_down_onto_a_slope_is_walked_down() {
+    // A 1-in-4 slope whose first columns are 4 px lower, and a 2-in-3
+    // slope whose first column is 6 px lower.
+    let slope_at = |drop: i32, piece: Piece| {
+        move |c: i32| {
+            Some(if c < 112 {
+                0
+            } else {
+                drop + piece((c - 112).min(15))
+            })
+        }
+    };
+    for (drop, piece) in [(4, (|n| n / 4) as Piece), (6, |n| 2 * n / 3)] {
+        let mut world = ground_in("classic-2", slope_at(drop, piece), 110.37109375);
+        world.player.vel.x = fx(457.0 / 256.0);
+        hold(&mut world, &[Action::Right]);
+        let p = &world.player;
+        assert!(p.grounded(), "{drop}");
+        assert_eq!(p.pos.y, Fixed::from_int(FLOOR + drop));
+    }
 }

@@ -447,7 +447,11 @@ mod tests {
                     | Param::FaceMinSpeed
                     | Param::FaceTurns
                     | Param::FaceLeaveDrop
+                    | Param::FaceKeptFraction
                     | Param::FollowDrop
+                    | Param::FollowSteepSlope
+                    | Param::FollowOntoSlope
+                    | Param::LeaveStepNear
                     | Param::HurtWidth
                     | Param::HurtOffset
                     | Param::HurtJumpTime

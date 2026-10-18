@@ -151,6 +151,37 @@ pub(crate) fn sloped(level: &Level, column: i64, feet: Fixed, slope: Fixed, piec
     })
 }
 
+/// How much the floor of the sloped piece holding `column` changes per
+/// column on average, as seen by a body with its feet at `feet`: over
+/// the neighbouring columns of the piece, neither part of a steep face,
+/// whose floors differ by `slope` or less. 0 if the piece isn't sloped
+/// (see [`sloped`]).
+pub(crate) fn gradient(level: &Level, column: i64, feet: Fixed, slope: Fixed, piece: i64) -> Fixed {
+    if piece <= 0 || !sloped(level, column, feet, slope, piece) {
+        return Fixed::ZERO;
+    }
+    let first = column.div_euclid(piece) * piece;
+    let floors: Vec<_> = (first..first + piece)
+        .map(|c| {
+            floor(level, c, feet)
+                .map(|f| f.y)
+                .filter(|_| face(level, c, feet, slope).is_none())
+        })
+        .collect();
+    let changes: Vec<_> = floors
+        .windows(2)
+        .filter_map(|w| match w {
+            [Some(a), Some(b)] if (*a - *b).abs() <= slope => Some((*a - *b).abs()),
+            _ => None,
+        })
+        .collect();
+    let total = changes.iter().fold(Fixed::ZERO, |sum, &c| sum + c);
+    match changes.len() as i64 {
+        0 => Fixed::ZERO,
+        n => Fixed::from_bits(total.to_bits() / n),
+    }
+}
+
 /// Where the ground is under the middle of `column`, from the top down.
 pub(crate) fn spans(level: &Level, column: i64) -> Vec<Span> {
     level.collision.spans(middle(column))

@@ -1079,6 +1079,7 @@ impl Player {
             None
         };
         let face = start_face.filter(|_| self.state != State::Roll);
+        let start_column = columns::column(self.pos.x);
         let face_rolls = physics[Param::FaceRolls] > Fixed::ZERO && slope > Fixed::ZERO;
         let roll_face = start_face.filter(|_| face_rolls && self.roll.is_some());
         // For jumps, with `face_jump_wait`, a frame that moves onto a face
@@ -1650,7 +1651,7 @@ impl Player {
                 Fixed::ZERO
             } else if drifting {
                 physics[Param::LeaveFallSpeed]
-            } else if fall_step && !waits {
+            } else if fall_step && !waits && !self.floor_just_below(level, physics) {
                 physics[Param::LeaveStepSpeed]
             } else {
                 self.vel.y + gravity
@@ -1712,6 +1713,12 @@ impl Player {
                 }
             }
         } else if !airborne {
+            // From a steep sloped piece the ground is followed farther
+            // down, and leaving it drops as much farther.
+            let steeper = match face {
+                None if slope > Fixed::ZERO => steeper(level, start_column, feet, physics),
+                _ => Fixed::ZERO,
+            };
             let drop = if let Some(on) = off_spring {
                 on.values.leave_drop
             } else if face_leave {
@@ -1719,16 +1726,27 @@ impl Player {
             } else if self.roll.is_some_and(|r| r.leave_hovers(r.frame, physics)) {
                 physics[Param::LeaveFallSpeed]
             } else {
-                physics[Param::LeaveDrop]
+                physics[Param::LeaveDrop] + steeper
             };
             // By columns, the floor is the one under the middle of the
             // player's column, and off a face it's followed down less far.
             let (x, below) = if slope > Fixed::ZERO {
+                let column = columns::column(self.pos.x);
                 let below = match physics[Param::FollowDrop] {
-                    d if d > Fixed::ZERO && face.is_none() => d,
+                    d if d > Fixed::ZERO && face.is_none() => {
+                        // Onto a slope or a face, farther.
+                        let piece = physics[Param::SlopePiece].floor();
+                        let onto_slope = columns::face(level, column, feet, slope).is_some()
+                            || (piece > 0 && columns::sloped(level, column, feet, slope, piece));
+                        let onto = match onto_slope {
+                            true => physics[Param::FollowOntoSlope],
+                            false => Fixed::ZERO,
+                        };
+                        d + steeper + onto
+                    }
                     _ => STEP,
                 };
-                (columns::middle(columns::column(self.pos.x)), below)
+                (columns::middle(column), below)
             } else {
                 (self.pos.x, STEP)
             };
@@ -2823,6 +2841,17 @@ impl Player {
     /// speed limited by the physics given first (`face_speed_limit`,
     /// `face_min_speed`). With a `rise` given, a column whose floor is
     /// more than that above the body's feet stops it too.
+    /// Whether, with `leave_step_near`, the floor of the column this
+    /// frame's move goes into is that close below the feet or closer.
+    fn floor_just_below(&self, level: &Level, physics: &Physics) -> bool {
+        let near = physics[Param::LeaveStepNear];
+        let feet = self.pos.y;
+        near > Fixed::ZERO
+            && columns::spans(level, columns::column(self.pos.x + self.vel.x))
+                .iter()
+                .any(|s| s.top >= feet && s.top - feet <= near)
+    }
+
     pub(crate) fn move_by_columns(
         &mut self,
         level: &Level,
@@ -2830,6 +2859,11 @@ impl Player {
         face: Option<(i32, &Physics)>,
         rise: Option<Fixed>,
     ) -> Fixed {
+        // On a face the speed is limited first, and the limited speed is
+        // the one stopped by a rise.
+        if let Some((way, physics)) = face {
+            self.vel.x = limit_on_face(self.vel.x, way, physics);
+        }
         if self.vel.x == Fixed::ZERO {
             return Fixed::ZERO;
         }
@@ -2863,9 +2897,6 @@ impl Player {
         }
         if falls {
             self.through = self.ground;
-        }
-        if let Some((way, physics)) = face {
-            self.vel.x = limit_on_face(self.vel.x, way, physics);
         }
         // Walls that aren't ground, such as segments, still stop the
         // feet.
@@ -3200,14 +3231,38 @@ impl Reach {
     }
 }
 
-/// A speed `vx` on a steep face falling `way` (-1 or 1), held between
-/// `face_min_speed` and `face_speed_limit` down the face.
+/// How much farther than `follow_drop` the ground is followed down from
+/// `column`, by how steep its sloped piece is (`follow_steep_slope`).
+fn steeper(level: &Level, column: i64, feet: Fixed, physics: &Physics) -> Fixed {
+    let steep = physics[Param::FollowSteepSlope];
+    if steep <= Fixed::ZERO || physics[Param::FollowDrop] <= Fixed::ZERO {
+        return Fixed::ZERO;
+    }
+    let slope = physics[Param::FaceSlope];
+    let piece = physics[Param::SlopePiece].floor();
+    match columns::gradient(level, column, feet, slope, piece) {
+        g if g >= steep => Fixed::ONE + Fixed::from_int(g.floor() as i32),
+        _ => Fixed::ZERO,
+    }
+}
+
+/// A speed `vx` on a steep face falling `way` (-1 or 1), kept from
+/// `face_min_speed` to just under `face_speed_limit` down the face, or
+/// with a fraction `face_kept_fraction` keeps, and otherwise limited.
 fn limit_on_face(vx: Fixed, way: i32, physics: &Physics) -> Fixed {
     let way = Fixed::from_int(way);
     let down = vx * way;
     let limit = physics[Param::FaceSpeedLimit];
     let min = physics[Param::FaceMinSpeed];
-    if limit > Fixed::ZERO && down > limit {
+    let kept = physics[Param::FaceKeptFraction];
+    // Up the face, a speed down it counts from the whole pixel above.
+    let up = -down;
+    let fraction = up - Fixed::from_int(up.floor() as i32);
+    if (min..limit).contains(&down)
+        || (kept > Fixed::ZERO && (fraction == Fixed::ZERO || fraction > kept))
+    {
+        vx
+    } else if limit > Fixed::ZERO && down >= limit {
         physics[Param::FaceLimitedSpeed] * way
     } else if min > Fixed::ZERO && down < min {
         min * way
@@ -3751,6 +3806,47 @@ mod tests {
 
     fn physics() -> Physics {
         clamber_pack::Presets::builtin().world("default").unwrap()
+    }
+
+    /// `steep-faces.md`, "Speed on a face (`title-2`)": the limits on a
+    /// face falling left, for every measured speed `s` (1/256), and on
+    /// one falling right.
+    #[test]
+    fn classic_2_limits_on_a_face_keep_some_speeds() {
+        let p = clamber_pack::Presets::builtin().world("classic-2").unwrap();
+        let limit =
+            |s: i64, way| (limit_on_face(Fixed::from_bits(s << 24), way, &p).to_bits()) >> 24;
+        let table: [(i64, i64, Option<i64>); 15] = [
+            (-1154, -1088, Some(-512)),
+            (-1087, -1024, None),
+            (-1023, -832, Some(-512)),
+            (-831, -768, None),
+            (-767, -576, Some(-512)),
+            (-575, -192, None),
+            (-191, -64, Some(-192)),
+            (-63, 0, None),
+            (1, 192, Some(-192)),
+            (193, 256, None),
+            (257, 448, Some(-192)),
+            (449, 512, None),
+            (513, 704, Some(-192)),
+            (769, 960, Some(-192)),
+            (1025, 1090, Some(-192)),
+        ];
+        for (from, to, after) in table {
+            for s in from..=to {
+                assert_eq!(limit(s, -1), after.unwrap_or(s), "{s}");
+            }
+        }
+        // Falling right, downhill speeds the other way round.
+        for s in 19..=448 {
+            let after = match s {
+                ..=62 | 196.. => s,
+                68..=190 => 192,
+                _ => continue,
+            };
+            assert_eq!(limit(s, 1), after, "{s}");
+        }
     }
 
     #[test]
