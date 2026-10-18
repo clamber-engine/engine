@@ -110,6 +110,22 @@ pub struct LivesStep {
     pub after: u8,
 }
 
+/// A life lost by a hit or a fall-out, for the lives display
+/// (count-display.md, "Losing a life").
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct LostLife {
+    /// The step the life was lost on: the hit, or the fall-out.
+    pub at: u32,
+    /// The step the display first slides in on.
+    pub into: u32,
+    /// The step the image bursts on, once it's known: after a hit, from
+    /// the step the knock-out's flight stops.
+    pub burst: Option<u32>,
+    /// The lives before the loss, and after it.
+    pub before: u8,
+    pub after: u8,
+}
+
 /// The letter row's ending, after the last letter of the word joined.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LetterEnd {
@@ -177,6 +193,9 @@ pub struct LivesDisplay {
     pub number: u8,
     pub x: i32,
     pub y: i32,
+    /// Whether the image beside the number is drawn: not while it bursts
+    /// after a lost life.
+    pub image: bool,
     /// Each digit is this far right of the one before.
     pub gap: i32,
 }
@@ -285,14 +304,60 @@ impl World {
     /// drawn in it: after the number shown went from `count_life` less
     /// one to 0, with the letter row's ending, or after a collectible
     /// giving lives was taken, sliding in and out. Of those, the one that
-    /// started last.
+    /// started last. From a lost life on, the display for it instead.
     pub fn lives_display(&self) -> Option<LivesDisplay> {
-        let physics = &self.feel.world;
-        let int = |p: Param| i64::from(i32::try_from(physics[p].floor()).unwrap_or(0));
-        if whole(physics[Param::CountShowFor]) == 0 {
+        if whole(self.feel.world[Param::CountShowFor]) == 0 {
             return None;
         }
         let n = self.frame.checked_sub(1)?;
+        match self.flow.lost.filter(|l| l.at <= n) {
+            Some(lost) => self.lost_lives(lost, n),
+            None => self.gained_lives(n),
+        }
+    }
+
+    /// The lives display after a lost life, in the picture made on frame
+    /// `n`: in with the lives before the loss, the image bursting, then
+    /// in again with the lives after it, which stays. A display from a
+    /// gain at rest on the frame of the loss stays as it is up to the
+    /// burst instead of sliding in. Engine choice where the spec says
+    /// nothing: one sliding in or out then gives way to this one.
+    fn lost_lives(&self, lost: LostLife, n: u32) -> Option<LivesDisplay> {
+        let physics = &self.feel.world;
+        let int = |p: Param| i64::from(i32::try_from(physics[p].floor()).unwrap_or(0));
+        let rest = int(Param::LivesY);
+        let burst = lost.burst.map_or(i64::MAX, i64::from);
+        let hidden = burst.saturating_add(int(Param::LostLivesBurstFor));
+        let again = burst.saturating_add(int(Param::LostLivesAgain));
+        let n = i64::from(n);
+        let held = self
+            .gained_lives(lost.at)
+            .filter(|d| i64::from(d.y) == rest && n < hidden);
+        if let Some(held) = held {
+            let shown = self.gained_lives(u32::try_from(n).unwrap_or(u32::MAX));
+            return Some(LivesDisplay {
+                number: shown.map_or(held.number, |d| d.number),
+                image: n < burst,
+                ..held
+            });
+        }
+        let (from, number) = if n < hidden {
+            (i64::from(lost.into), lost.before)
+        } else {
+            (again, lost.after)
+        };
+        let y = slide_y(
+            n - from,
+            (0, int(Param::LivesSlide), i64::MAX),
+            (rest, int(Param::LivesRise), 0, int(Param::LivesSpeed)),
+        )?;
+        Some(self.lives_at(number, y, n < burst || n >= again))
+    }
+
+    /// The lives display after a gain, in the picture made on frame `n`.
+    fn gained_lives(&self, n: u32) -> Option<LivesDisplay> {
+        let physics = &self.feel.world;
+        let int = |p: Param| i64::from(i32::try_from(physics[p].floor()).unwrap_or(0));
         let step = self.flow.lives_step.filter(|s| s.at <= n);
         let end = self.letter_end().filter(|e| e.at <= n);
         let item = self.flow.life_item.filter(|s| s.at <= n);
@@ -350,15 +415,23 @@ impl World {
                 int(Param::LivesSpeed),
             ),
         )?;
+        Some(self.lives_at(number, y, true))
+    }
+
+    /// The lives display showing `number` lives with its top at `y`.
+    fn lives_at(&self, number: u8, y: i64, image: bool) -> LivesDisplay {
+        let physics = &self.feel.world;
+        let int = |p: Param| i32::try_from(physics[p].floor()).unwrap_or(0);
         let number = number.min(MAX_SHOWN);
-        let gap = int(Param::LivesDigitGap) as i32;
+        let gap = int(Param::LivesDigitGap);
         let digits = if number >= 10 { 2 } else { 1 };
-        Some(LivesDisplay {
+        LivesDisplay {
             number,
-            x: int(Param::LivesX) as i32 - (digits - 1) * gap / 2,
+            x: int(Param::LivesX) - (digits - 1) * gap / 2,
             y: i32::try_from(y).unwrap_or(i32::MAX),
+            image,
             gap,
-        })
+        }
     }
 
     /// The letter row's ending, if the world shows one and it has begun.

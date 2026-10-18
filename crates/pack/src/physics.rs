@@ -1171,6 +1171,26 @@ params! {
     /// The lives display slides back up from this many frames after it
     /// first shows the new number. Whole frames.
     LifeItemLivesOut => "life_item_lives_out",
+    /// Above 0, after a hit that costs a life the lives display is first
+    /// drawn this many frames after the hit, sliding in as from
+    /// `lives_in`, with the lives before the loss. 0: no display for a
+    /// lost life. Whole frames.
+    LostLivesIn => "lost_lives_in",
+    /// The same after falling out of the level, from the frame the
+    /// player is out. Whole frames.
+    LostLivesFallIn => "lost_lives_fall_in",
+    /// After a hit, the image beside the number bursts this many frames
+    /// after the knock-out's flight stops. Whole frames.
+    LostLivesBurst => "lost_lives_burst",
+    /// After falling out, the image bursts this many frames after the
+    /// frame the player is out. Whole frames.
+    LostLivesFallBurst => "lost_lives_fall_burst",
+    /// The number stays drawn without the image for this many frames from
+    /// the burst, and isn't drawn after them. Whole frames.
+    LostLivesBurstFor => "lost_lives_burst_for",
+    /// The display slides in again, with the lives after the loss, this
+    /// many frames after the burst, and stays at `lives_y`. Whole frames.
+    LostLivesAgain => "lost_lives_again",
     /// Above 0, the image of a taken `relic` is shown flying to its
     /// resting place (see `clamber_sim::World::relic_image`): each frame
     /// it covers this part of the distance left, 1 / `relic_approach`.

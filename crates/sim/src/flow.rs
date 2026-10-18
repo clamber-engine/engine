@@ -42,7 +42,9 @@ use clamber_level::Vec2;
 use clamber_pack::Param;
 
 use crate::archetype::Behavior;
-use crate::collect::{self, LetterEnd, LetterShow, LivesStep, Pickup, Release, RelicFlight};
+use crate::collect::{
+    self, LetterEnd, LetterShow, LivesStep, LostLife, Pickup, Release, RelicFlight,
+};
 use crate::hits;
 use crate::keg;
 use crate::loss;
@@ -170,6 +172,9 @@ pub struct Flow {
     /// The step the last collectible giving lives was taken on, for the
     /// lives display.
     pub life_item: Option<LivesStep>,
+    /// The last life lost, for the lives display, until play comes
+    /// back.
+    pub lost: Option<LostLife>,
     /// The image of the relic taken last, for
     /// [`World::relic_image`](crate::World::relic_image).
     pub relic_flight: Option<RelicFlight>,
@@ -244,9 +249,25 @@ pub(crate) fn dying(world: &mut World) -> bool {
         }
         world.flow.outcome = Outcome::Playing;
         world.flow.hits_taken = 0;
+        world.flow.lost = None;
         world.flow.events.push(FlowEvent::Respawn);
     }
     true
+}
+
+/// On the step a knock-out's flight stops, sets when the lives display
+/// for the life it cost bursts.
+pub(crate) fn flight_stopped(world: &mut World) {
+    let stopped = world.player.knockout.is_some_and(|k| k.rest.is_some());
+    let burst = frames(world.feel.world[Param::LostLivesBurst]);
+    if let Some(lost) = world
+        .flow
+        .lost
+        .as_mut()
+        .filter(|l| stopped && l.burst.is_none())
+    {
+        lost.burst = Some(world.frame + u32::from(burst));
+    }
 }
 
 /// On the step the player comes back after a lost life, once the view
@@ -385,13 +406,29 @@ pub(crate) fn update(world: &mut World, hurt_by: Option<usize>, facing: Facing) 
         // The hit costs a hit point instead of a life.
         return;
     }
+    let frame = world.frame;
     let flow = &mut world.flow;
     if hurt {
         world.player.state = State::Hurt;
     }
     if hurt || fell {
         flow.recovery = None;
+        let before = flow.lives;
         flow.lives = flow.lives.saturating_sub(1);
+        let physics = &world.feel.world;
+        let (into, burst) = if fell {
+            (Param::LostLivesFallIn, Some(Param::LostLivesFallBurst))
+        } else {
+            (Param::LostLivesIn, None)
+        };
+        let into = frames(physics[into]);
+        flow.lost = (into > 0).then(|| LostLife {
+            at: frame,
+            into: frame + u32::from(into),
+            burst: burst.map(|b| frame + u32::from(frames(physics[b]))),
+            before,
+            after: flow.lives,
+        });
         flow.outcome = Outcome::Dying(DYING_FRAMES);
         flow.events.push(FlowEvent::Die);
     }

@@ -301,6 +301,12 @@ life_item_lives_in = 0
 life_item_lives_step = 0
 life_item_lives_every = 0
 life_item_lives_out = 0
+lost_lives_in = 0
+lost_lives_fall_in = 0
+lost_lives_burst = 0
+lost_lives_fall_burst = 0
+lost_lives_burst_for = 0
+lost_lives_again = 0
 relic_approach = 0
 relic_size = 0
 relic_x = 0
@@ -848,6 +854,19 @@ life_item_lives_in = 7
 life_item_lives_step = 44
 life_item_lives_every = 16
 life_item_lives_out = 122
+# After a lost life (count-display.md, "Losing a life") the lives number
+# comes in with the lives before the loss 18 frames after a hit, or 7
+# after falling out, the image beside it bursts 31 frames after the
+# knock-out's third landing (122 before the level's last frame), or 35
+# after falling out, and is not drawn on the 3 frames from then; the
+# number comes in again with the lives after the loss 11 frames after
+# the burst and stays at y 10.
+lost_lives_in = 18
+lost_lives_fall_in = 7
+lost_lives_burst = 31
+lost_lives_fall_burst = 35
+lost_lives_burst_for = 3
+lost_lives_again = 11
 # The taken figure's image (figure.md): its 34 px box flies from where
 # the figure was to (74, 2), covering about an eighth of the distance
 # left each frame, rests there for 63 frames, then rises 4 px a frame.

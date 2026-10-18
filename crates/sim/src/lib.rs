@@ -110,8 +110,8 @@ pub use archetype::{
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
 pub use collect::{
-    CountDisplay, LetterEnd, LetterRow, LetterShow, LivesDisplay, LivesStep, Pickup, Release,
-    RelicFlight, RelicImage,
+    CountDisplay, LetterEnd, LetterRow, LetterShow, LivesDisplay, LivesStep, LostLife, Pickup,
+    Release, RelicFlight, RelicImage,
 };
 pub use critter::CRITTER;
 pub use dimming::{DIM, Dimming};

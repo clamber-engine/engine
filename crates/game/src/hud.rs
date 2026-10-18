@@ -134,7 +134,9 @@ fn draw_count(canvas: &mut dyn Surface, left: i32, count: &CountDisplay) {
 /// image), then each digit from its place.
 fn draw_lives(canvas: &mut dyn Surface, left: i32, lives: &LivesDisplay) {
     let x = left + lives.x;
-    draw_icon_on_line(canvas, Icon::Life, (x - ICON - 1, lives.y + 4));
+    if lives.image {
+        draw_icon_on_line(canvas, Icon::Life, (x - ICON - 1, lives.y + 4));
+    }
     for (k, digit) in lives.number.to_string().chars().enumerate() {
         let x = x + lives.gap * k as i32;
         draw_text(canvas, x, lives.y + 4, &digit.to_string(), COUNT);

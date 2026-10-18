@@ -1357,6 +1357,7 @@ fn advance(world: &mut World, input: &InputFrame) {
         world
             .player
             .knocked_out(&world.level, &physics, &mut world.events);
+        flow::flight_stopped(world);
         things::update(world, start_pos, frozen);
     } else {
         // What hurting a swapping player does isn't in the spec yet;

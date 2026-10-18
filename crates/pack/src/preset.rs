@@ -584,6 +584,12 @@ mod tests {
                     | Param::LifeItemLivesStep
                     | Param::LifeItemLivesEvery
                     | Param::LifeItemLivesOut
+                    | Param::LostLivesIn
+                    | Param::LostLivesFallIn
+                    | Param::LostLivesBurst
+                    | Param::LostLivesFallBurst
+                    | Param::LostLivesBurstFor
+                    | Param::LostLivesAgain
                     | Param::RelicApproach
                     | Param::RelicSize
                     | Param::RelicX
