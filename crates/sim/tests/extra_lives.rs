@@ -450,3 +450,105 @@ fn a_lost_life_from_100_shows_99_before_and_after() {
     assert_eq!(w.flow.lives, 99);
     assert!(!numbers.is_empty() && numbers.iter().all(|&n| n == 99));
 }
+
+/// Two `lives = 3` items taken on frames `p1` and `p2` with 5 lives
+/// before (extra-lives.md, "Several items"): the lives display in the
+/// picture made on each frame from 0 to 499.
+fn two_items(p1: usize, p2: usize) -> Vec<Option<(u8, i32)>> {
+    let mut w = world(&[(X + 60, F - 200), (X + 90, F - 200)], "lives = 3");
+    w.flow.lives = 5;
+    let mut shown = Vec::new();
+    for n in 0..500 {
+        for (i, p) in [p1, p2].into_iter().enumerate() {
+            if n == p {
+                w.things[i].pos = w.player.pos;
+            }
+        }
+        step_keys(&mut w, &[]);
+        shown.push(w.lives_display().map(|d| (d.number, d.y)));
+    }
+    assert_eq!(w.flow.lives, 11);
+    shown
+}
+
+/// The frames the number shown changed on, after `from`.
+fn steps(shown: &[Option<(u8, i32)>], from: usize) -> Vec<usize> {
+    let number = |n: usize| shown[n].map(|d| d.0);
+    (from + 1..shown.len())
+        .filter(|&n| number(n - 1).is_some() && number(n).is_some() && number(n) != number(n - 1))
+        .collect()
+}
+
+#[test]
+fn an_item_taken_while_steps_are_due_holds_them_until_its_arrival() {
+    // The spec's example with Clamber's arrival 34 frames after each
+    // pickup: the first image arrives on 134 and 6 shows from 144. The
+    // second, taken on 145, holds 145 to 178, so the next step comes on
+    // the 16th frame not held after 144.
+    let shown = two_items(100, 145);
+    assert_eq!(shown[106], None);
+    let ys: Vec<i32> = (107..=112).map(|n| shown[n].unwrap().1).collect();
+    assert_eq!(ys, [-12, -8, -4, 0, 4, 8]);
+    assert_eq!(shown[143], Some((5, 10)));
+    assert_eq!(shown[144], Some((6, 10)));
+    assert_eq!(steps(&shown, 144), [194, 210, 226, 242, 258]);
+    assert_eq!(shown[258], Some((11, 10)));
+    assert_eq!(shown[258 + 121], Some((11, 10)));
+    let ys: Vec<i32> = (380..=385).map(|n| shown[n].unwrap().1).collect();
+    assert_eq!(ys, [6, 2, -2, -6, -10, -14]);
+    assert!(shown[386..].iter().all(Option::is_none));
+}
+
+#[test]
+fn an_item_taken_on_the_frame_after_the_last_step_steps_on_its_arrival() {
+    // The first item's steps are on 144, 160 and 176 (E).
+    let shown = two_items(100, 177);
+    assert_eq!(steps(&shown, 100), [144, 160, 176, 211, 227, 243]);
+    // A frame later, the next step is 10 frames after the arrival.
+    let shown = two_items(100, 178);
+    assert_eq!(steps(&shown, 100), [144, 160, 176, 222, 238, 254]);
+    assert!(shown[176..=254 + 121].iter().all(|d| d.unwrap().1 == 10));
+}
+
+#[test]
+fn items_taken_together_step_from_the_later_arrival() {
+    let shown = two_items(100, 100);
+    assert_eq!(steps(&shown, 100), [144, 160, 176, 192, 208, 224]);
+    let shown = two_items(100, 120);
+    assert_eq!(steps(&shown, 100), [164, 180, 196, 212, 228, 244]);
+}
+
+#[test]
+fn an_item_taken_while_the_display_leaves_turns_it_back() {
+    // E = 176: leaving from 298 at y 6, 2, -2, ...
+    let shown = two_items(100, 176 + 124);
+    assert_eq!(shown[299].unwrap().1, 2);
+    assert_eq!(shown[300].unwrap().1, 6);
+    assert_eq!(shown[301].unwrap().1, 10);
+    assert_eq!(steps(&shown, 176), [344, 360, 376]);
+    assert!(shown[301..=376 + 121].iter().all(|d| d.unwrap().1 == 10));
+    assert_eq!(shown[376 + 122].unwrap().1, 6);
+
+    // Taken on E + 122, it stays at 10.
+    let shown = two_items(100, 176 + 122);
+    assert!(
+        shown[298..=342 + 32 + 121]
+            .iter()
+            .all(|d| d.unwrap().1 == 10)
+    );
+
+    // Taken on E + 131, from y -26: not drawn at -22 and -18.
+    let shown = two_items(100, 176 + 131);
+    assert_eq!(shown[306], None);
+    assert_eq!(shown[307], None);
+    assert_eq!(shown[308], None);
+    assert_eq!(shown[309], Some((8, -14)));
+    assert_eq!(shown[315], Some((8, 10)));
+
+    // Taken on E + 132, a new display comes in as for a single item.
+    let q = 176 + 132;
+    let shown = two_items(100, q);
+    assert!(shown[q - 4..q + 7].iter().all(Option::is_none));
+    assert_eq!(shown[q + 7], Some((8, -12)));
+    assert_eq!(steps(&shown, q + 7), [q + 44, q + 60, q + 76]);
+}

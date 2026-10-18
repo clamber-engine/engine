@@ -169,9 +169,10 @@ pub struct Flow {
     /// The step `shown` last went from `count_life` less one to 0 on,
     /// for the lives display.
     pub lives_step: Option<LivesStep>,
-    /// The step the last collectible giving lives was taken on, for the
-    /// lives display.
-    pub life_item: Option<LivesStep>,
+    /// The collectibles giving lives taken since the lives display for
+    /// them last started, in the order they were taken, for the lives
+    /// display.
+    pub life_items: Vec<LivesStep>,
     /// The last life lost, for the lives display, until play comes
     /// back.
     pub lost: Option<LostLife>,

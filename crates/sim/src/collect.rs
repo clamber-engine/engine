@@ -47,11 +47,14 @@
 //! A collectible that gives `lives` adds them on the step it's taken,
 //! and the lives display comes in and steps up to the new number one
 //! at a time (see [`World::lives_display`]). One that's there `once` is
-//! gone for good when it's taken.
+//! gone for good when it's taken. Taken while that display is shown,
+//! another holds its steps until its image arrives, and brings it back
+//! down if it's leaving.
 //!
 //! A letter taken while the row is shown, before its last frame at rest,
 //! keeps it there for as long as if it had been taken first; one taken
-//! later brings in another row, while the first slides out.
+//! later brings in another row, while the first slides out. A letter
+//! after that acts on the row brought in last.
 //!
 //! Engine choices where the spec says nothing: a letter taken during the
 //! ending shows the row for it instead, and a third row coming in while
@@ -361,7 +364,7 @@ impl World {
         let int = |p: Param| i64::from(i32::try_from(physics[p].floor()).unwrap_or(0));
         let step = self.flow.lives_step.filter(|s| s.at <= n);
         let end = self.letter_end().filter(|e| e.at <= n);
-        let item = self.flow.life_item.filter(|s| s.at <= n);
+        let item = self.flow.life_items.first().filter(|s| s.at <= n);
         let latest = [step.map(|s| s.at), end.map(|e| e.at), item.map(|s| s.at)]
             .into_iter()
             .flatten()
@@ -371,21 +374,8 @@ impl World {
         // the number it shows.
         let (into, out, number) = match (step, end, item) {
             (_, _, Some(s)) if s.at == latest => {
-                let (first, every) = (
-                    int(Param::LifeItemLivesStep),
-                    int(Param::LifeItemLivesEvery).max(1),
-                );
-                let gained = i64::from(s.after - s.before);
-                let steps = if since < first {
-                    0
-                } else {
-                    ((since - first) / every + 1).min(gained)
-                };
-                (
-                    int(Param::LifeItemLivesIn),
-                    first + every * (gained - 1).max(0) + int(Param::LifeItemLivesOut),
-                    s.before.saturating_add(steps as u8),
-                )
+                let (number, y) = self.item_lives(n)?;
+                return y.map(|y| self.lives_at(number, y, true));
             }
             (_, Some(e), _) if e.at == latest => {
                 let gone = i64::from(self.letter_gone(e, self.letter_count()));
@@ -417,6 +407,81 @@ impl World {
             ),
         )?;
         Some(self.lives_at(number, y, true))
+    }
+
+    /// The lives display for the collectibles giving lives taken since it
+    /// last started, in the picture made on frame `n`: the number shown,
+    /// and the top of the number if it's drawn. None once it has ended,
+    /// or before it starts.
+    ///
+    /// Frames from the one an item is taken on to its image's arrival
+    /// are held; the number shown goes up one at a time, counting only
+    /// frames that aren't held (extra-lives.md, "Several items").
+    fn item_lives(&self, n: u32) -> Option<(u8, Option<i64>)> {
+        let items = &self.flow.life_items;
+        let first = items.first().filter(|s| s.at <= n)?;
+        let physics = &self.feel.world;
+        let int = |p: Param| i64::from(i32::try_from(physics[p].floor()).unwrap_or(0));
+        let (into, slide) = (int(Param::LifeItemLivesIn), int(Param::LivesSlide));
+        let (rest, rise) = (int(Param::LivesY), int(Param::LivesRise));
+        let (gone, speed) = (int(Param::LivesGone), int(Param::LivesSpeed));
+        let (out, end) = (int(Param::LifeItemLivesOut), int(Param::LifeItemLivesEnd));
+        let arrive = whole(physics[Param::LifeItemLivesArrive]);
+        let first_step = whole(physics[Param::LifeItemLivesStep]);
+        let every = whole(physics[Param::LifeItemLivesEvery]);
+        let (mut shown, mut lives) = (first.before, first.before);
+        // The first frame no item taken so far holds.
+        let mut free_from = 0;
+        // Free frames until the next step, counting the one it's on.
+        let mut wait: Option<u32> = None;
+        // The last step, which made the number shown the lives.
+        let mut last: Option<u32> = None;
+        let mut y = None;
+        // Turned back while leaving, it comes down to rest.
+        let mut down = false;
+        let mut taken = items.iter().peekable();
+        for f in first.at..=n {
+            let leaving = last.is_some_and(|e| shown == lives && i64::from(f - e) >= out);
+            while let Some(s) = taken.next_if(|s| s.at == f) {
+                lives = s.after;
+                free_from = free_from.max(f + arrive);
+                if last.is_some_and(|e| e + 1 == f) {
+                    // Taken on the frame after the last step, the next
+                    // comes on the first free frame.
+                    wait = Some(1);
+                }
+                down |= leaving;
+            }
+            if f >= free_from {
+                match wait {
+                    Some(w) if w > 1 => wait = Some(w - 1),
+                    Some(_) => {
+                        shown = shown.saturating_add(1);
+                        wait = (shown < lives).then_some(every);
+                        last = (shown == lives).then_some(f).or(last);
+                    }
+                    None if shown < lives => wait = Some(first_step),
+                    None => {}
+                }
+            }
+            let since = i64::from(f - first.at);
+            y = if since < into + slide {
+                (since >= into).then(|| rest - rise + speed * (since - into))
+            } else if down {
+                let to = y.unwrap_or(rest).saturating_add(speed).min(rest);
+                down = to < rest;
+                Some(to)
+            } else if let Some(e) = last.filter(|_| shown == lives) {
+                let after = i64::from(f - e);
+                if after >= end {
+                    return None;
+                }
+                Some(rest - speed * (after - out + 1).max(0))
+            } else {
+                Some(rest)
+            };
+        }
+        Some((shown, y.filter(|&y| y >= rest - gone)))
     }
 
     /// The lives display showing `number` lives with its top at `y`.
@@ -793,6 +858,14 @@ fn take(world: &mut World, start: Option<View>) {
     let player = &world.player;
     let crouch_start = frames(world.player_physics()[Param::CrouchStart]);
     let walking_out = world.ending.is_some();
+    // An item taken once the lives display for the ones before has
+    // ended starts another.
+    let mut items_ended = world
+        .flow
+        .life_items
+        .first()
+        .is_some_and(|s| s.at < world.frame)
+        && world.item_lives(world.frame - 1).is_none();
     let x = player.pos.x.floor();
     let feet = -(-player.pos.y).floor();
     for (i, thing) in world
@@ -863,7 +936,11 @@ fn take(world: &mut World, start: Option<View>) {
             for _ in before..flow.lives {
                 flow.events.push(FlowEvent::Life);
             }
-            flow.life_item = Some(LivesStep {
+            if items_ended {
+                flow.life_items.clear();
+                items_ended = false;
+            }
+            flow.life_items.push(LivesStep {
                 at: world.frame,
                 before,
                 after: flow.lives,

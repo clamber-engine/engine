@@ -583,9 +583,11 @@ mod tests {
                     | Param::LivesDigitGap
                     | Param::LivesChange
                     | Param::LifeItemLivesIn
+                    | Param::LifeItemLivesArrive
                     | Param::LifeItemLivesStep
                     | Param::LifeItemLivesEvery
                     | Param::LifeItemLivesOut
+                    | Param::LifeItemLivesEnd
                     | Param::LostLivesIn
                     | Param::LostLivesFallIn
                     | Param::LostLivesBurst

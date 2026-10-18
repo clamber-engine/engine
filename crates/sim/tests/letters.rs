@@ -250,6 +250,61 @@ fn a_letter_taken_on_the_rows_end_or_later_brings_in_a_second_row() {
     assert_eq!(ys[223], [4, -12]);
 }
 
+/// With no letter taken before, each `(frame, letter)` is taken on its
+/// frame. Gives the y of each row drawn in the picture made on each
+/// frame.
+fn letters_at(taken: &[(usize, u8)]) -> Vec<Vec<i32>> {
+    let spots: Vec<_> = (0..taken.len() as i32)
+        .zip(taken)
+        .map(|(i, &(_, k))| (X + 1000 + 500 * i, F - 10, k))
+        .collect();
+    let mut w = world(&spots);
+    let mut ys = Vec::new();
+    for n in 0..500 {
+        for (i, &(p, _)) in taken.iter().enumerate() {
+            if n == p {
+                w.things[i].pos = w.player.pos;
+            }
+        }
+        idle(&mut w);
+        ys.push(w.letter_rows().iter().map(|r| r.y).collect());
+    }
+    ys
+}
+
+#[test]
+fn a_letter_on_the_next_frame_or_earlier_in_the_word_moves_the_end() {
+    for taken in [[(100, 4), (101, 1)], [(100, 3), (101, 1)]] {
+        let ys = letters_at(&taken);
+        assert!(ys[110..=222].iter().all(|y| y == &[12]), "{taken:?}");
+        let out: Vec<_> = (223..=228).map(|n| ys[n][0]).collect();
+        assert_eq!(out, [8, 4, 0, -4, -8, -12]);
+        assert!(ys[229..].iter().all(Vec::is_empty));
+    }
+    let ys = letters_at(&[(100, 3), (150, 1)]);
+    assert!(ys[110..=271].iter().all(|y| y == &[12]));
+    assert!(ys[278..].iter().all(Vec::is_empty));
+}
+
+#[test]
+fn a_third_letter_acts_on_the_row_brought_in_last() {
+    let ys = letters_at(&[(100, 1), (160, 2), (260, 3)]);
+    assert!(ys[110..=381].iter().all(|y| y == &[12]));
+    let out: Vec<_> = (382..=387).map(|n| ys[n][0]).collect();
+    assert_eq!(out, [8, 4, 0, -4, -8, -12]);
+    assert!(ys[388..].iter().all(Vec::is_empty));
+
+    // Letter 2 on the first row's end brings in a second row; letter 3
+    // while both are drawn moves the second row's end.
+    let ys = letters_at(&[(100, 1), (221, 2), (226, 3)]);
+    let first: Vec<_> = (222..=227).map(|n| ys[n][0]).collect();
+    assert_eq!(first, [8, 4, 0, -4, -8, -12]);
+    assert!(ys[231..=347].iter().all(|y| y == &[12]));
+    let out: Vec<_> = (348..=353).map(|n| ys[n][0]).collect();
+    assert_eq!(out, [8, 4, 0, -4, -8, -12]);
+    assert!(ys[354..].iter().all(Vec::is_empty));
+}
+
 #[test]
 fn the_default_preset_has_no_letter_row() {
     let level = r#"

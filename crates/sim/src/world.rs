@@ -898,13 +898,10 @@ impl World {
             }
             None => out.push(0),
         }
-        match f.life_item {
-            Some(l) => {
-                out.push(1);
-                out.extend(l.at.to_le_bytes());
-                out.extend([l.before, l.after]);
-            }
-            None => out.push(0),
+        count(&mut out, f.life_items.len());
+        for l in &f.life_items {
+            out.extend(l.at.to_le_bytes());
+            out.extend([l.before, l.after]);
         }
         match f.relic_flight {
             Some(r) => {

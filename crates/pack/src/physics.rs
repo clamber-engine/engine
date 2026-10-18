@@ -1171,15 +1171,24 @@ params! {
     /// first drawn this many frames after, sliding in as from `lives_in`.
     /// Whole frames.
     LifeItemLivesIn => "life_item_lives_in",
-    /// The lives display shows the lives before the item until this many
-    /// frames after it's taken, then one more every
-    /// `life_item_lives_every` frames up to the new number. Whole frames.
+    /// A taken collectible giving `lives` holds the lives display's steps
+    /// from the frame it's taken until this many frames after, when its
+    /// image reaches the display. Whole frames.
+    LifeItemLivesArrive => "life_item_lives_arrive",
+    /// The lives display shows one more, up to the number of lives, on
+    /// this many frames after the first frame no item holds on which it
+    /// shows fewer, counting only frames no item holds; then one more
+    /// every `life_item_lives_every` such frames. Whole frames.
     LifeItemLivesStep => "life_item_lives_step",
     /// See `life_item_lives_step`. Whole frames.
     LifeItemLivesEvery => "life_item_lives_every",
     /// The lives display slides back up from this many frames after it
-    /// first shows the new number. Whole frames.
+    /// first shows the number of lives. Whole frames.
     LifeItemLivesOut => "life_item_lives_out",
+    /// The lives display ends this many frames after it first shows the
+    /// number of lives; a collectible giving `lives` taken before then
+    /// brings it back down. Whole frames.
+    LifeItemLivesEnd => "life_item_lives_end",
     /// Above 0, after a hit that costs a life the lives display is first
     /// drawn this many frames after the hit, sliding in as from
     /// `lives_in`, with the lives before the loss. 0: no display for a

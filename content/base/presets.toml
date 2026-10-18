@@ -300,9 +300,11 @@ lives_x = 0
 lives_digit_gap = 0
 lives_change = 0
 life_item_lives_in = 0
+life_item_lives_arrive = 0
 life_item_lives_step = 0
 life_item_lives_every = 0
 life_item_lives_out = 0
+life_item_lives_end = 0
 lost_lives_in = 0
 lost_lives_fall_in = 0
 lost_lives_burst = 0
@@ -853,14 +855,20 @@ lives_x = 220
 lives_digit_gap = 10
 lives_change = 25
 # After an extra-life item (extra-lives.md) the lives number comes in
-# the same way from 7 frames after it's taken, steps up by one every 16
-# frames from S, and slides back up from 122 frames after showing the
-# new number. The spec measured S from 41 to 47 frames after, by where
-# the item was in the picture, and doesn't cover how; Clamber takes 44.
+# the same way from 7 frames after it's taken. Each item's image reaches
+# the display A frames after it's taken, and the frames before are held
+# ("Several items"): the number steps up by one on the 10th frame not
+# held after the first one on which it's below the lives, then every 16
+# such frames, and slides back up from 122 frames after the last step,
+# ending on the 131st. The spec measured A from 31 to 37 frames after
+# (S = A + 10 from 41 to 47), by where the item was in the picture, and
+# doesn't cover how; Clamber takes 34.
 life_item_lives_in = 7
-life_item_lives_step = 44
+life_item_lives_arrive = 34
+life_item_lives_step = 10
 life_item_lives_every = 16
 life_item_lives_out = 122
+life_item_lives_end = 131
 # After a lost life (count-display.md, "Losing a life") the lives number
 # comes in with the lives before the loss 18 frames after a hit, or 7
 # after falling out, the image beside it bursts 31 frames after the
