@@ -358,3 +358,69 @@ fn the_ranges_turn_around_facing_left() {
     assert!(touches(1021, Facing::Left));
     assert!(!touches(1022, Facing::Left));
 }
+
+/// Touches the keg walking right, turns to face left, and leaves the
+/// level by a knock-out or by falling out; frame 0 of the resume.
+fn left_facing_left(knocked_out: bool) -> Play {
+    let mut play = Play::new(900);
+    for _ in 0..120 {
+        play.step(&[R]);
+        if play.touched() {
+            break;
+        }
+    }
+    for _ in 0..40 {
+        play.step(&[Action::Left]);
+    }
+    for _ in 0..10 {
+        play.step(&[]);
+    }
+    assert_eq!(play.world.player.facing, Facing::Left);
+    if !knocked_out {
+        play.fall_out();
+        return play;
+    }
+    play.world.player.hurt_ahead = Some(0);
+    play.step(&[]);
+    assert!(play.world.player.knockout.is_some());
+    assert_eq!(play.world.player.facing, Facing::Left);
+    for _ in 0..600 {
+        if play.step(&[]).contains(&FlowEvent::Respawn) {
+            return play;
+        }
+    }
+    panic!("never came back");
+}
+
+/// restart-barrel.md, "Resuming": the player faces right on frame 0 and
+/// until an input turns it, though it was knocked out or fell out facing
+/// left. Holding Left from frame 2 starts a turn on frame 63, and it
+/// faces left from 67. With the same inputs, the resumed frames are the
+/// same after a fall-out as after a knock-out.
+#[test]
+fn it_resumes_facing_right_however_it_left() {
+    let resume = |knocked_out: bool, keys: &[Action]| {
+        let mut play = left_facing_left(knocked_out);
+        let p = &play.world.player;
+        let mut frames = vec![(p.pos, p.facing, p.turn)];
+        for frame in 1..=140 {
+            play.step(if frame >= 2 { keys } else { &[] });
+            let p = &play.world.player;
+            frames.push((p.pos, p.facing, p.turn));
+        }
+        frames
+    };
+    for keys in [&[][..], &[R], &[Action::Left]] {
+        let after_fall = resume(false, keys);
+        assert_eq!(resume(true, keys), after_fall, "{keys:?}");
+        let facing_left: Vec<usize> = (0..after_fall.len())
+            .filter(|&n| after_fall[n].1 == Facing::Left)
+            .collect();
+        if keys == [Action::Left] {
+            assert!(after_fall[62].2.is_none() && after_fall[63].2.is_some());
+            assert_eq!(facing_left[0], 67);
+        } else {
+            assert!(facing_left.is_empty(), "{keys:?}");
+        }
+    }
+}

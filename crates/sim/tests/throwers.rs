@@ -627,3 +627,112 @@ fn a_falling_thrower_goes_on_while_a_character_is_lost() {
         assert!(compared > 20 && same > 20, "hold {hold}: {compared} {same}");
     }
 }
+
+/// Walks (or runs, with Action) left from 1800, with a ball placed at
+/// `x`, until it comes into the window: where its x was from the
+/// start-of-frame view's left edge on that frame, and whether it was
+/// there at the end of the frame, with its x then. `None` if it never
+/// came in.
+fn appears_walking_left(x: i32, run: bool) -> Option<(i64, Option<Fixed>)> {
+    let ball = format!(
+        "[[entities]]\ntype = \"ball\"\nat = [{x}, 300]\n\
+        params = {{ velocity = [-1.171875, -3] }}\n"
+    );
+    let mut play = Play::new(world(1800, &ball));
+    let keys: &[Action] = if run {
+        &[Action::Left, Action::Action]
+    } else {
+        &[Action::Left]
+    };
+    for _ in 0..600 {
+        let left = play.world.view.unwrap().x();
+        play.step(keys);
+        let b = &play.world.things[0];
+        if b.phase != Phase::Ready {
+            let seen = b.active.then_some(b.pos.x);
+            // It appears only once, so it doesn't come back while the view
+            // goes on moving left.
+            if seen.is_none() {
+                for _ in 0..120 {
+                    play.step(keys);
+                    assert!(!play.world.things[0].active, "{x}: came back");
+                }
+            }
+            return Some((i64::from(x) - left, seen));
+        }
+    }
+    None
+}
+
+/// thrower.md, "Balls placed in a level": with the view moving left, a
+/// ball starting left comes into the window at `x` - `V` = -31 or a
+/// little more. "Leaving the picture" applies on its appearance frame, to
+/// the position one frame on: at -31 and -30 it's removed then and never
+/// seen; at -29 or more it's seen, one frame on.
+#[test]
+fn a_placed_ball_coming_in_on_the_left_can_leave_on_the_frame_it_appears() {
+    let mut by_offset = BTreeMap::new();
+    for run in [false, true] {
+        for x in (900..1100).step_by(7) {
+            let (offset, seen) = appears_walking_left(x, run).expect("came into the window");
+            assert!((-31..=-27).contains(&offset), "{x}: {offset}");
+            assert_eq!(seen.is_some(), offset >= -29, "{x}: at {offset}");
+            if let Some(at) = seen {
+                assert_eq!(at, Fixed::from_int(x) - f(1.171875), "one frame on");
+            }
+            *by_offset.entry(offset).or_insert(0) += 1;
+        }
+    }
+    // Both cases came up.
+    assert!(by_offset.keys().any(|&o| o < -29), "{by_offset:?}");
+    assert!(by_offset.keys().any(|&o| o >= -29), "{by_offset:?}");
+}
+
+/// [`appears_walking`] with both characters, the other one 30 px behind,
+/// and the lead hit on `hit` with it there, so a character is lost.
+fn appears_walking_pair(hit: Option<u32>, steps: u32) -> Option<(u32, i64, i64)> {
+    let ball = "[[entities]]\ntype = \"ball\"\nat = [700, 300]\n\
+        params = { velocity = [-1.171875, -3] }\n";
+    let mut play = Play::new(pair(200, 170, ball));
+    let mut before = play.world.view.unwrap().x();
+    for frame in 0..steps {
+        if hit == Some(frame) {
+            play.world.player.hurt_ahead = Some(0);
+        }
+        let left = play.world.view.unwrap().x();
+        play.step(&[Action::Right]);
+        if hit == Some(frame) {
+            assert!(play.world.losing(), "a character is lost on H");
+        }
+        let b = &play.world.things[0];
+        if b.active {
+            assert_eq!(b.pos.x, f(700.0) - f(1.171875), "one frame on");
+            return Some((frame, left, before));
+        }
+        before = left;
+    }
+    None
+}
+
+/// thrower.md, "While a character is lost": a placed ball that isn't
+/// there yet on H appears by the usual rule with the view of the run
+/// with the hit, one frame on and not held; on H itself, as without the
+/// hit.
+#[test]
+fn a_placed_ball_appears_after_a_character_is_lost_by_that_run_s_view() {
+    let (on, ..) = appears_walking_pair(None, 400).expect("appears without a hit");
+    let mut seen = 0;
+    for early in 0..=20 {
+        let h = on - early;
+        let Some((frame, left, before)) = appears_walking_pair(Some(h), on + 200) else {
+            continue;
+        };
+        if early == 0 {
+            assert_eq!(frame, on, "on H as without the hit");
+        }
+        assert!(frame >= on, "{early} early: not before");
+        assert!(700 - left <= 288 && 700 - before > 288, "{early} early");
+        seen += 1;
+    }
+    assert!(seen > 1, "{seen}");
+}

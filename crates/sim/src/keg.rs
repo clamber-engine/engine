@@ -18,7 +18,9 @@
 //! higher, inside the keg, and not drawn. The keg shakes, and bursts on
 //! frame `burst` as when broken; from the frame after, the player is in
 //! the air and in play, falling as any fall does, except that a jump can
-//! start after landing `land_lockout` frames sooner. The picture is black
+//! start after landing `land_lockout` frames sooner. Its gait goes on in
+//! the fall as off a ledge where the ground simply ends, so a turn there
+//! takes as long as on the ground. The picture is black
 //! until `fade_from` and fades in from there ([`World::brightness`]).
 //!
 //! Engine choices where the spec says nothing:
@@ -276,6 +278,7 @@ pub(crate) fn hold(world: &mut World) -> bool {
         player.sling = None;
         player.rope_fall = false;
         player.state = State::Fall;
+        player.keg_fall = true;
     }
     player.vel = Vec2::default();
     if r.frame == burst {

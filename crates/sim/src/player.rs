@@ -227,6 +227,9 @@ pub struct Player {
     pub rolled_jump: bool,
     /// Falling after walking off the ground, until landing.
     pub walked_off: bool,
+    /// Falling out of a restart barrel, until landing: the gait goes on
+    /// in the air, as off a ledge where the ground simply ends.
+    pub keg_fall: bool,
     /// The last walk-off started from a frame on a steep face.
     pub walked_off_face: bool,
     /// The last walk-off was a roll's.
@@ -360,6 +363,7 @@ impl Player {
             face_switch: None,
             rolled_jump: false,
             walked_off: false,
+            keg_fall: false,
             walked_off_face: false,
             rolled_off: false,
             ran: false,
@@ -429,6 +433,7 @@ impl Player {
         self.coyote = None;
         self.jump_age = None;
         self.walked_off = false;
+        self.keg_fall = false;
         self.fall_step = false;
         self.fall_facing = 0;
         self.jump_hold = false;
@@ -453,6 +458,7 @@ impl Player {
         self.frozen = freeze;
         self.jump_age = None;
         self.walked_off = false;
+        self.keg_fall = false;
         self.fall_step = false;
         self.fall_facing = 0;
         self.jump_hold = true;
@@ -518,6 +524,7 @@ impl Player {
             self.face_press = false;
             self.jump_age = None;
             self.walked_off = false;
+            self.keg_fall = false;
             self.fall_step = false;
             self.fall_facing = 0;
             self.unseated = false;
@@ -646,6 +653,7 @@ impl Player {
         self.takeoff = false;
         self.takeoff_wait = None;
         self.walked_off = false;
+        self.keg_fall = false;
         self.fall_step = false;
         self.fall_facing = 0;
         self.hop = None;
@@ -795,6 +803,7 @@ impl Player {
         self.jump_hold = false;
         self.face_press = false;
         self.walked_off = false;
+        self.keg_fall = false;
         self.fall_step = false;
         self.fall_facing = 0;
         let back = match toward {
@@ -1361,7 +1370,9 @@ impl Player {
         // where the ground simply ends, the gait goes on as on the ground.
         let keep_walk_off_facing =
             self.walked_off && physics[Param::WalkOffKeepsFacing] > Fixed::ZERO;
-        let air_gait = strides && keep_walk_off_facing && !self.walked_off_face && !self.rolled_off;
+        let air_gait = strides
+            && ((keep_walk_off_facing && !self.walked_off_face && !self.rolled_off)
+                || self.keg_fall);
         let striding = strides
             && !busy.keep_facing
             && acting.is_none()
@@ -1994,6 +2005,7 @@ impl Player {
         } else {
             self.walked_off || events.contains(&Event::LeaveGround)
         };
+        self.keg_fall &= !events.contains(&Event::JumpStart) && !self.grounded();
         if self.grounded() {
             self.hop = None;
         }

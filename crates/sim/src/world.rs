@@ -1007,6 +1007,7 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     out.push(p.rolled_jump.into());
     out.extend([
         p.walked_off.into(),
+        p.keg_fall.into(),
         p.fall_step.into(),
         p.fall_facing,
         p.ran.into(),
