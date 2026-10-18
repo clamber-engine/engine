@@ -40,6 +40,25 @@ and button prompts. Captured with `tools/capture/ui-tour.scn` and
 | ![Controls screen before](docs/ui/controls-before.jpg) | ![Controls screen after](docs/ui/controls-after.jpg) |
 | ![HUD before](docs/ui/hud-before.jpg) | ![HUD after](docs/ui/hud-after.jpg) |
 
+## The first level, decorated
+
+The first level before the decoration pass (#197, at 6337ad8) and
+after it (at 6941aeb). The collision underneath stays simple; over it
+go grass lips, roots and rocks, props in front of and behind the
+player, and layered parallax backgrounds. The level now runs from the
+jungle floor up into the treetops and through a cave. The opening is
+captured with `tools/capture/first-tour.scn`; the treetops and the cave
+with the inputs of `tests/playthrough/first-level.scn`, played from the
+title screen. All with `--preset default`.
+
+| Before | After |
+|---|---|
+| ![The opening before](docs/level/opening-before.jpg) | ![The opening after](docs/level/opening-after.jpg) |
+
+| Treetops | Cave |
+|---|---|
+| ![The treetops](docs/level/treetops.jpg) | ![The cave](docs/level/cave.jpg) |
+
 ## Status
 
 Early setup. The first level is playable: see [`PLAYING.md`](PLAYING.md)
