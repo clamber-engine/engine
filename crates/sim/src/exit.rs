@@ -28,12 +28,19 @@
 //! and F + `exit_fade_time` is the area's last frame
 //! ([`Outcome::Exited`]).
 //!
+//! A lead riding the animal is taken over too, and rides through the
+//! walk-out with the animal under it. In the areas the exit leads to it's
+//! on foot without the animal, and coming back to the level it rides
+//! from frame 0 ([`World::coming_back_from`]).
+//!
 //! Engine choices where the spec says nothing: an exit takes over a lead
 //! only from `exit_leave_at` px left of it rightwards, and not a lead in
 //! a state the reaches above don't cover (crouching after the slide has
 //! stopped, the stop after a roll, turning facing left, the ground
-//! action, riding, on a spring), on a steep face, hurt, knocked out,
-//! swapping or losing a character. During the walk-out things go on
+//! action, on a spring), on a steep face, hurt, knocked out, swapping or
+//! losing a character. A rider on the floor is taken over by the reach
+//! for standing: `exit_reach` facing left and `exit_reach_right` facing
+//! right, or `wall_exit_reach` and `wall_exit_reach_left` by a wall exit. During the walk-out things go on
 //! moving but don't touch the characters, nothing is collected, and the
 //! other character goes on following. An object still in the lead's
 //! hands at the end of T, its throw begun or not, is let go on T + 1 and
@@ -81,6 +88,7 @@ use crate::follow::{self, Lead};
 use crate::hidden;
 use crate::loss;
 use crate::player::{Crouch, Facing, Player, State, frames};
+use crate::ride::Riding;
 use crate::things;
 use crate::view::{self, Begin};
 use crate::world::{Event, Phase, Thing, World};
@@ -135,7 +143,8 @@ impl World {
     /// off, with the item each released wherever it is, crates holding an
     /// animal once broken, with the animal, and objects holding the
     /// missing character once broken. Everything else is there again, as
-    /// at the level's start.
+    /// at the level's start. A lead that left riding the animal rides it
+    /// from frame 0, the animal under it.
     ///
     /// # Panics
     ///
@@ -157,6 +166,17 @@ impl World {
                     _ => Phase::Gone,
                 };
             }
+            if old.phase == Phase::Ridden {
+                new.phase = Phase::Ridden;
+                new.active = true;
+                new.pos = world.player.pos;
+            }
+        }
+        if let Some(riding) = self.player.riding {
+            world.player.riding = Some(Riding {
+                mount: None,
+                ..Riding::new(riding.ride, world.player.pos.y)
+            });
         }
         world
     }
@@ -200,8 +220,6 @@ impl World {
     }
 }
 
-/// Starts the walk-out if an exit takes over the lead at the end of this
-/// step.
 /// Whether `thing`, as play left the level, stays gone when it comes
 /// back (exits.md, "Coming back to the level").
 ///
@@ -212,8 +230,7 @@ impl World {
 ///
 /// Engine choices where the spec says nothing: an extra-life item that
 /// rose away or was removed with the view without being taken is there
-/// again. An animal still ridden isn't counted, as an exit doesn't take
-/// over a rider.
+/// again. An animal still ridden comes back with its rider.
 fn gone_for_good(thing: &Thing, entity: &Entity) -> bool {
     if thing.phase == Phase::Gone {
         return true;
@@ -231,6 +248,8 @@ fn gone_for_good(thing: &Thing, entity: &Entity) -> bool {
     }
 }
 
+/// Starts the walk-out if an exit takes over the lead at the end of this
+/// step.
 pub(crate) fn take_over(world: &mut World) {
     let physics = world.player_physics();
     let player = &world.player;
@@ -241,7 +260,6 @@ pub(crate) fn take_over(world: &mut World) {
         && world.swap.is_none()
         && !world.losing()
         && player.knockout.is_none()
-        && player.riding.is_none()
         && player.spring.is_none()
         && player.ground.is_some()
         && !world.events.contains(&Event::Hurt);
@@ -298,6 +316,15 @@ pub(crate) fn take_over(world: &mut World) {
 fn reach(player: &Player, physics: &Physics, way: Facing) -> Option<i64> {
     if player.ground_action.is_some() || player.roll_stop > 0 {
         return None;
+    }
+    if player.riding.is_some() {
+        let param = match (way, player.facing) {
+            (Facing::Left, Facing::Left) => Param::ExitReach,
+            (Facing::Left, Facing::Right) => Param::ExitReachRight,
+            (Facing::Right, Facing::Right) => Param::WallExitReach,
+            (Facing::Right, Facing::Left) => Param::WallExitReachLeft,
+        };
+        return Some(physics[param].floor());
     }
     let rolling = player.state == State::Roll || player.roll.is_some();
     let crouching = player.crouch.held > 0;

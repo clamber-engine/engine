@@ -93,6 +93,15 @@ pub(crate) fn update(world: &mut World, physics: &Physics, frozen: bool, untouch
     }
 }
 
+/// Puts a ridden animal under its rider.
+pub(crate) fn under_rider(world: &mut World) {
+    for thing in world.things.iter_mut() {
+        if thing.active && thing.phase == Phase::Ridden {
+            thing.pos = world.player.pos;
+        }
+    }
+}
+
 /// The player's offsets from a crate or animal at `(x, y)`: its `x`
 /// rounded down less `x`, and `y` less its feet line, all whole px.
 fn offsets(world: &World, x: Fixed, y: Fixed) -> (i64, i64) {

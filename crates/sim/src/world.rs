@@ -20,6 +20,7 @@ use crate::exit::{self, Leaving};
 use crate::flow::{self, Flow, FlowEvent, Outcome};
 use crate::follow::{self, Lead, Mode};
 use crate::hits;
+use crate::hutch;
 use crate::join::{self, Join};
 use crate::keg::{self, Burst, Resume};
 use crate::loss::{self, Loss, Lost};
@@ -1203,6 +1204,14 @@ fn rope_bytes(out: &mut Vec<u8>, r: &Rope) {
 /// Advances the world one logic frame (1/60 s). Once the level is
 /// complete or the game is over, nothing changes.
 pub fn step(world: &mut World, input: &InputFrame) {
+    advance(world, input);
+    // A ridden animal is under its rider on every frame, those on which
+    // everything else waits too.
+    hutch::under_rider(world);
+}
+
+/// One logic frame of [`step`].
+fn advance(world: &mut World, input: &InputFrame) {
     world.events.clear();
     world.hit_by = None;
     world.flow.events.clear();
