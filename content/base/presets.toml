@@ -350,6 +350,8 @@ exit_reach = 0
 exit_reach_roll = 0
 exit_reach_crouch = 0
 exit_reach_right = 0
+exit_reach_carry = 0
+exit_reach_carry_right = 0
 wall_exit_reach = 0
 wall_exit_reach_roll = 0
 wall_exit_reach_crouch = 0
@@ -867,7 +869,8 @@ end_onward_fade_from = 1
 end_onward_hold = 1
 # Exits (exits.md): an exit takes over a lead on the ground, not moving
 # right, from 39 above it to 35 below it, within a reach that depends on
-# its state and facing. The lead walks left 2 px a frame; once it is 4 px
+# its state and facing (and is shorter standing still carrying an
+# object). The lead walks left 2 px a frame; once it is 4 px
 # left of the exit the view stops and the picture fades from 15 to 0 a
 # step every 2 frames, and the area's last frame is 30 after that one.
 exit_walk_speed = 2
@@ -875,6 +878,8 @@ exit_reach = 31
 exit_reach_roll = 29
 exit_reach_crouch = 34
 exit_reach_right = 37
+exit_reach_carry = 30
+exit_reach_carry_right = 32
 # Wall exits (wall-exits.md) lead right, with every reach 2 px shorter
 # than an exit's turned around, and a crouching lead in reach whether it
 # still slides or not; the rest is as for exits.

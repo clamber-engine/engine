@@ -27,7 +27,9 @@
 //!   after the end marker is let go then the same way, moving from the
 //!   next, as `spec/behavior/level-end.md` ("An object in the lead's
 //!   hands") describes, and is also removed at `end_let_go_right` and
-//!   `end_let_go_above`.
+//!   `end_let_go_above`. So is one still in the hands on the walk-out's
+//!   first step after an exit, as `spec/behavior/exits.md` ("An object
+//!   in the lead's hands") describes, removed only as at a knock-out.
 //!
 //! Thrown, it bounces on the floor and then rolls along it, breaks
 //! against faces and walls, and hits walkers, as
@@ -131,9 +133,12 @@ pub(crate) fn after(world: &mut World, input: &Frame) {
         return;
     };
     // With a `let_go_speed`, an object still in the hands on the
-    // walk-out's first step is let go then.
+    // walk-out's first step, after the end marker or an exit, is let go
+    // then.
     let let_go_speed = physics[Param::LetGoSpeed] > Fixed::ZERO;
-    let walking_out = world.ending.is_some_and(|e| e.frame >= 1) && let_go_speed;
+    let walking_out = (world.ending.is_some_and(|e| e.frame >= 1)
+        || world.leaving.is_some_and(|l| l.frame >= 1))
+        && let_go_speed;
     if !can_hold(world) || walking_out {
         world.player.hands = None;
         let facing = world.player.facing;

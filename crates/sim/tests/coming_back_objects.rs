@@ -367,3 +367,44 @@ fn a_thrown_plain_barrel_is_not_taken_for_a_holder() {
     assert_gone(&w, HOLDER);
     assert_there_again(&w, BARREL);
 }
+
+/// A thrower knocked out by the ground action, a bounce or a roll is
+/// there again, in whichever phase of being knocked out play left it; so
+/// is the placed ball after it appeared and was removed (exits.md,
+/// "Coming back to the level"; thrower.md, "Balls placed in a level").
+#[test]
+fn a_knocked_out_thrower_and_a_removed_placed_ball_are_there_again() {
+    let knocked_out = [
+        Phase::Knocked { vy: None },
+        Phase::Knocked {
+            vy: Some(Fixed::from_int(3)),
+        },
+        Phase::Falling {
+            vy: Fixed::from_int(2),
+            hold: 3,
+        },
+        Phase::Defeated(4),
+        Phase::Defeated(1),
+    ];
+    for phase in knocked_out {
+        for active in [true, false] {
+            let mut w = alone();
+            w.things[THROWER].active = active;
+            w.things[THROWER].phase = phase;
+            assert_there_again(&w, THROWER);
+        }
+    }
+    for phase in [
+        Phase::Ready,
+        Phase::Flying {
+            vy: Fixed::from_int(-3),
+            ignoring: None,
+            kept: false,
+        },
+    ] {
+        let mut w = alone();
+        w.things[BALL].active = false;
+        w.things[BALL].phase = phase;
+        assert_there_again(&w, BALL);
+    }
+}

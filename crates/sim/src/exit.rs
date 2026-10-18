@@ -11,7 +11,9 @@
 //! running facing left (the landing frame of a jump or fall is one of
 //! those), `exit_reach_roll` rolling facing left, `exit_reach_crouch`
 //! crouching and still sliding facing left, and `exit_reach_right`
-//! standing or turning facing right. At the end of T the lead's `y` is
+//! standing or turning facing right; standing still carrying an object,
+//! `exit_reach_carry` facing left and `exit_reach_carry_right` facing
+//! right. At the end of T the lead's `y` is
 //! the exit's plus 1. It takes over only while it's there: placed in a
 //! spot, it appears and is removed with the view, rows and all
 //! (placements.md, "Exits"; see [`view::walkers`]).
@@ -32,9 +34,11 @@
 //! stopped, the stop after a roll, turning facing left, the ground
 //! action, riding, on a spring), on a steep face, hurt, knocked out,
 //! swapping or losing a character. During the walk-out things go on
-//! moving but don't touch the characters, nothing is collected, an
-//! object in the hands stays there, and the other character goes on
-//! following. Where play goes after the exit is up to whatever runs the
+//! moving but don't touch the characters, nothing is collected, and the
+//! other character goes on following. An object still in the lead's
+//! hands at the end of T, its throw begun or not, is let go on T + 1 and
+//! falls away touching nothing from T + 2, as after the end marker
+//! ([`carry`]). Where play goes after the exit is up to whatever runs the
 //! world: an exit's `area` param names another area of the pack
 //! ([`area`]), and its `arrival` param the [`Arrival`] there, or in this
 //! level without an `area`, that play comes into next
@@ -295,13 +299,18 @@ fn reach(player: &Player, physics: &Physics, way: Facing) -> Option<i64> {
     let rolling = player.state == State::Roll || player.roll.is_some();
     let crouching = player.crouch.held > 0;
     let upright = matches!(player.state, State::Idle | State::Walk | State::Run);
+    let carrying = player.hands.is_some() && player.vel.x == Fixed::ZERO && upright;
     let param = match (way, player.facing) {
         (Facing::Left, Facing::Left) if player.turn.is_some() => return None,
         (Facing::Left, Facing::Left) if rolling => Param::ExitReachRoll,
         (Facing::Left, Facing::Left) if crouching && player.vel.x != Fixed::ZERO => {
             Param::ExitReachCrouch
         }
+        (Facing::Left, Facing::Left) if carrying && !crouching => Param::ExitReachCarry,
         (Facing::Left, Facing::Left) if upright && !crouching => Param::ExitReach,
+        (Facing::Left, Facing::Right) if carrying && !rolling && !crouching => {
+            Param::ExitReachCarryRight
+        }
         (Facing::Left, Facing::Right) if upright && !rolling && !crouching => Param::ExitReachRight,
         (Facing::Right, Facing::Right) if player.turn.is_some() => return None,
         (Facing::Right, Facing::Right) if rolling => Param::WallExitReachRoll,
@@ -369,6 +378,7 @@ pub(crate) fn step(world: &mut World) {
         follow::update(world, Lead::of(&world.player));
     }
     leaving.frame += 1;
+    world.leaving = Some(leaving);
     let previous = world.player.pos;
     walk(
         &mut world.player,

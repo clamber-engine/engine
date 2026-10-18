@@ -1326,6 +1326,12 @@ params! {
     ExitReachCrouch => "exit_reach_crouch",
     /// ... a lead standing or turning, facing right. Whole px.
     ExitReachRight => "exit_reach_right",
+    /// ... a lead standing still carrying an object, facing left. Whole
+    /// px.
+    ExitReachCarry => "exit_reach_carry",
+    /// ... a lead standing still carrying an object, facing right. Whole
+    /// px.
+    ExitReachCarryRight => "exit_reach_carry_right",
     /// An open wall exit takes over a lead standing, walking or running
     /// and facing right, or on the frame it lands, with its `x` rounded
     /// down this far left of the wall exit or less. Whole px.
