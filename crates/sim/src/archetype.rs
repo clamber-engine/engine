@@ -169,6 +169,9 @@ pub enum Behavior {
     /// A launch barrel, which catches the player, holds it and shoots it
     /// out (see [`sling`](crate::sling)).
     Sling(Sling),
+    /// A critter: scenery that flies about, perching now and then (see
+    /// [`critter`](crate::critter)).
+    Critter(Critter),
     /// Scenery: it stands where it's placed and nothing touches it. With
     /// a view, it appears and is removed as a thrower does, and comes
     /// back each time its start is near the view again (signs.md).
@@ -330,6 +333,32 @@ pub struct Sling {
     pub gravity: Fixed,
     pub max_fall: Fixed,
 }
+
+/// A critter (spec/behavior/critter.md): scenery that flies towards a
+/// target and perches on reaching it. It perches when its `x` rounded
+/// down less the target's is within `perch_across` and its drawn `y`
+/// rounded up less the target's within `perch_down`, and stays there for
+/// `perch` frames, flying again on the last. Its next target is then
+/// `hop` from the old one across, at level y `hop` down, and it sets off
+/// at `launch` (+y down). Its drawn `y` is its flight height raised by
+/// `flutter`, one value a frame in turn, at place (frame + `flutter_from`)
+/// of the list on each of the world's frames. A critter there at the
+/// world's first frame waits `settle` frames before flying.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Critter {
+    pub perch_across: (i32, i32),
+    pub perch_down: (i32, i32),
+    pub perch: u16,
+    pub hop: (i32, i32),
+    pub launch: Vec2,
+    pub flutter: [u8; MAX_FLUTTER],
+    pub flutter_len: u8,
+    pub flutter_from: u8,
+    pub settle: u8,
+}
+
+/// The most values a critter's flutter can have.
+pub const MAX_FLUTTER: usize = 16;
 
 /// A hidden object (spec/behavior/hidden-objects.md). Offsets from it are
 /// whole px: `across`, the player's `x` rounded down less its own, and
@@ -1411,6 +1440,16 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "gravity",
             "max_fall",
         ],
+        "critter" => &[
+            "perch_across",
+            "perch_down",
+            "perch",
+            "hop",
+            "launch",
+            "flutter",
+            "flutter_from",
+            "settle",
+        ],
         "collect" => &[
             "worth",
             "release_every",
@@ -1818,6 +1857,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         "spring" => Behavior::Spring(parse_spring(table, path)?),
         "rope" => Behavior::Rope(parse_rope(table, path)?),
         "sling" => Behavior::Sling(parse_sling(table, path)?),
+        "critter" => Behavior::Critter(parse_critter(table, path)?),
         "scenery" => Behavior::Scenery,
         _ => Behavior::Launcher {
             velocity: pair("velocity")?,
@@ -2224,6 +2264,82 @@ fn parse_sling(table: &Table, path: &str) -> Result<Sling, String> {
         steer_response,
         gravity: positive("gravity")?,
         max_fall: positive("max_fall")?,
+    })
+}
+
+/// Reads a critter's values. Errors start with `path`.
+fn parse_critter(table: &Table, path: &str) -> Result<Critter, String> {
+    let get = |key: &str| {
+        table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))
+    };
+    let whole = |v: &Value, at: &str| match v {
+        Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+        _ => Err(format!("{at}: expected a whole number of px")),
+    };
+    let pair = |key: &str| {
+        let at = format!("{path}.{key}");
+        match get(key)? {
+            Value::Array(items) if items.len() == 2 => Ok((
+                whole(&items[0], &format!("{at}[0]"))?,
+                whole(&items[1], &format!("{at}[1]"))?,
+            )),
+            _ => Err(format!("{at}: expected two whole numbers of px")),
+        }
+    };
+    let range = |key: &str| {
+        let (lo, hi) = pair(key)?;
+        if lo > hi {
+            return Err(format!(
+                "{path}.{key}: the first must not be above the second"
+            ));
+        }
+        Ok((lo, hi))
+    };
+    let count = |key: &str, max: i64| match get(key)? {
+        Value::Integer(n) if (0..=max).contains(n) => Ok(*n),
+        _ => Err(format!("{path}.{key}: expected a whole number, 0 to {max}")),
+    };
+    let at = format!("{path}.launch");
+    let launch = match get("launch")? {
+        Value::Array(items) if items.len() == 2 => {
+            let n = |i: usize| {
+                clamber_pack::read_number(&items[i], "", &format!("{at}[{i}]"))
+                    .map_err(|e| e.message)
+            };
+            Vec2::new(n(0)?, n(1)?)
+        }
+        _ => return Err(format!("{at}: expected [x, y]")),
+    };
+    let at = format!("{path}.flutter");
+    let mut flutter = [0; MAX_FLUTTER];
+    let flutter_len = match get("flutter")? {
+        Value::Array(items) if (1..=MAX_FLUTTER).contains(&items.len()) => {
+            for (i, item) in items.iter().enumerate() {
+                flutter[i] = match item {
+                    Value::Integer(n) if (0..=255).contains(n) => *n as u8,
+                    _ => return Err(format!("{at}[{i}]: expected 0 to 255 px")),
+                };
+            }
+            items.len() as u8
+        }
+        _ => return Err(format!("{at}: expected 1 to {MAX_FLUTTER} values")),
+    };
+    let perch = count("perch", i64::from(u16::MAX))? as u16;
+    if perch == 0 {
+        return Err(format!("{path}.perch: must be at least 1"));
+    }
+    Ok(Critter {
+        perch_across: range("perch_across")?,
+        perch_down: range("perch_down")?,
+        perch,
+        hop: pair("hop")?,
+        launch,
+        flutter,
+        flutter_len,
+        flutter_from: count("flutter_from", 255)? as u8,
+        settle: count("settle", 255)? as u8,
     })
 }
 

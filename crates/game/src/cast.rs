@@ -355,6 +355,7 @@ fn thing_animation(world: &World, thing: &Thing) -> Option<&'static str> {
         | Phase::Placed
         | Phase::Flying { .. }
         | Phase::Swaying { .. }
+        | Phase::Flitting { .. }
         | Phase::Rope { .. }
         | Phase::Caught(_)
         | Phase::Broken

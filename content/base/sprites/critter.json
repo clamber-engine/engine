@@ -1,0 +1,168 @@
+{
+  "frames": [
+    {
+      "filename": "critter fly 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 74,
+        "h": 78
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 5,
+        "w": 74,
+        "h": 78
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "critter fly 1",
+      "frame": {
+        "x": 78,
+        "y": 2,
+        "w": 73,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 13,
+        "w": 73,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "critter fly 2",
+      "frame": {
+        "x": 153,
+        "y": 2,
+        "w": 78,
+        "h": 51
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26,
+        "y": 28,
+        "w": 78,
+        "h": 51
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "critter fly 3",
+      "frame": {
+        "x": 233,
+        "y": 2,
+        "w": 76,
+        "h": 51
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 29,
+        "y": 27,
+        "w": 76,
+        "h": 51
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "critter fly 4",
+      "frame": {
+        "x": 311,
+        "y": 2,
+        "w": 78,
+        "h": 51
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26,
+        "y": 28,
+        "w": 78,
+        "h": 51
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    },
+    {
+      "filename": "critter fly 5",
+      "frame": {
+        "x": 391,
+        "y": 2,
+        "w": 73,
+        "h": 68
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 31,
+        "y": 13,
+        "w": 73,
+        "h": 68
+      },
+      "sourceSize": {
+        "w": 140,
+        "h": 130
+      },
+      "duration": 33,
+      "ticks": 2
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "critter.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 466,
+      "h": 82
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "fly",
+        "from": 0,
+        "to": 5,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 70,
+        "y": 65
+      },
+      "scale": 5,
+      "normals": "critter-normals.png"
+    }
+  }
+}

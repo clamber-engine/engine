@@ -36,6 +36,9 @@
 //! A launch barrel catches the player, holds it and shoots it out
 //! ([`SLING`]).
 //!
+//! A critter flies about near the view, perching now and then, and
+//! touches nothing ([`CRITTER`]).
+//!
 //! A character missing from the level joins the player when an object
 //! holding it breaks ([`Join`]).
 //!
@@ -63,6 +66,7 @@ mod archetype;
 mod carry;
 mod collect;
 mod columns;
+mod critter;
 mod dimming;
 mod ending;
 mod entrance;
@@ -96,11 +100,11 @@ mod world;
 
 pub use archetype::{
     AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
-    Entrance, Fall, HIDDEN_ITEMS, Hidden, Hit, Holder, Hutch, KEG_PIECES, Keg, MAX_AIR_STEPS,
-    MAX_ARRIVE_RULES, MAX_HOP_STEPS, MAX_LETTERS, MAX_RESPONSE_PARTS, MAX_SHAKE_STAGES,
-    MAX_SPRING_RUNS, MAX_STRIKE_FRAMES, MAX_THROWS, MAX_TURN_PARTS, Offsets, Opens, Poses, Reach,
-    Response, Ride, RiderReach, Rope, Sling, Span, Spring, Stinger, Throw, ThrowerContact,
-    WalkerContact,
+    Critter, Entrance, Fall, HIDDEN_ITEMS, Hidden, Hit, Holder, Hutch, KEG_PIECES, Keg,
+    MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_FLUTTER, MAX_HOP_STEPS, MAX_LETTERS, MAX_RESPONSE_PARTS,
+    MAX_SHAKE_STAGES, MAX_SPRING_RUNS, MAX_STRIKE_FRAMES, MAX_THROWS, MAX_TURN_PARTS, Offsets,
+    Opens, Poses, Reach, Response, Ride, RiderReach, Rope, Sling, Span, Spring, Stinger, Throw,
+    ThrowerContact, WalkerContact,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
@@ -108,6 +112,7 @@ pub use collect::{
     CountDisplay, LetterEnd, LetterRow, LivesDisplay, LivesStep, Pickup, Release, RelicFlight,
     RelicImage,
 };
+pub use critter::CRITTER;
 pub use dimming::{DIM, Dimming};
 pub use ending::{END, Ending};
 pub use entrance::Entering;

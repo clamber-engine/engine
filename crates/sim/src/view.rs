@@ -516,6 +516,14 @@ pub(crate) fn near(start: i64, left: i64, physics: &Physics) -> bool {
     (from..=to).contains(&start)
 }
 
+/// Whether `x` (whole px) is near a view whose left edge is at `left`
+/// (whole px), however far left the view is (critter.md, "Removal").
+fn within(x: i64, left: i64, physics: &Physics) -> bool {
+    let width = physics[Param::ViewWidth].floor();
+    let from = left - physics[Param::AppearLeft].floor();
+    (from..=left + width + physics[Param::AppearRight].floor()).contains(&x)
+}
+
 /// Whether a walker at `x` (whole px) is far enough from a view whose
 /// left edge is at `left` (whole px) to be removed.
 pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
@@ -622,7 +630,16 @@ pub(crate) fn would_appear(world: &World, (left, top): (i64, i64), width: i64) -
         .things
         .iter()
         .zip(after.things)
-        .filter(|(before, after)| !before.active && after.active)
+        // A critter appears across the top of the picture, not at its
+        // start, as it starts to fly.
+        .filter(|(before, after)| {
+            !before.active
+                && after.active
+                && !matches!(
+                    after.archetype.map(|a| a.behavior),
+                    Some(Behavior::Critter(_))
+                )
+        })
         .map(|(_, mut thing)| {
             if let Some(entity) = level.entities.get(thing.index) {
                 // A stinger is put at its start once it moves.
@@ -719,6 +736,7 @@ fn walkers_by(world: &mut World, physics: &Physics, (left, top): (i64, i64), app
             Behavior::Thrower { .. }
             | Behavior::Ball(_)
             | Behavior::Stinger(_)
+            | Behavior::Critter(_)
             | Behavior::Scenery
             | Behavior::Collect { once: true, .. }
                 if appear && by_view && start_near =>
@@ -747,6 +765,18 @@ fn walkers_by(world: &mut World, physics: &Physics, (left, top): (i64, i64), app
                     && far(thing.pos.x.floor(), left, &physics) =>
             {
                 thing.active = false;
+                removed(thing.index);
+            }
+            // A critter leaves once neither its start nor itself, after
+            // its move, is near, and starts afresh when it comes back.
+            Behavior::Critter(_)
+                if !appear
+                    && thing.active
+                    && !start_near
+                    && !within(thing.pos.x.floor(), left, &physics) =>
+            {
+                thing.active = false;
+                thing.phase = Phase::Ready;
                 removed(thing.index);
             }
             _ => {}
@@ -937,7 +967,7 @@ fn arrive(thing: &mut Thing, start: Vec2) {
 /// Whether each thing is in the level at the start of a level with a
 /// view whose left edge is at `left`: walkers only when their start, or
 /// another start in their group, is near the view, throwers, stingers,
-/// scenery and collectibles there `once` only when theirs is, and balls
+/// critters, scenery and collectibles there `once` only when theirs is, and balls
 /// not yet; everything else is.
 pub(crate) fn at_start(things: &[Thing], level: &Level, left: i64, physics: &Physics) -> Vec<bool> {
     let walker = |thing: &Thing| match thing.archetype.map(|a| a.behavior) {
@@ -956,6 +986,7 @@ pub(crate) fn at_start(things: &[Thing], level: &Level, left: i64, physics: &Phy
             Some(
                 Behavior::Thrower { .. }
                 | Behavior::Stinger(_)
+                | Behavior::Critter(_)
                 | Behavior::Scenery
                 | Behavior::Collect { once: true, .. },
             ) => near_start(t),

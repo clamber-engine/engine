@@ -93,6 +93,7 @@ use clamber_pack::{Param, Physics};
 use crate::archetype::{Archetype, Behavior, Fall, Response};
 use crate::carry;
 use crate::columns;
+use crate::critter;
 use crate::exit;
 use crate::flow::{FlowEvent, overlap};
 use crate::hidden;
@@ -267,8 +268,19 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         .view
         .map(|v| Picture::of(v, &world.level, &world.feel, &physics));
     let ending = world.ending.is_some();
+    // Critters fly by the world's frame and where the picture was, and
+    // hold still on the frames that hold walkers still.
+    let frame = world.frame;
+    let view = world.view.map_or((0, 0), |v| (v.x(), v.y()));
+    let critters_held = held.is_some() || waiting || held_by_bounce || held_by_roll;
     let mut freed = Vec::new();
     for thing in world.things.iter_mut().filter(|t| t.active) {
+        if let Some(Behavior::Critter(critter)) = thing.archetype.map(|a| a.behavior) {
+            if !critters_held && let Some(entity) = world.level.entities.get(thing.index) {
+                critter::step(thing, entity.at, &critter, frame, view);
+            }
+            continue;
+        }
         let enemy = thing.archetype.is_some_and(|a| a.behavior.is_enemy());
         if held.is_some_and(|by| enemy && by != Some(thing.index)) || (waiting && enemy) {
             continue;
@@ -494,6 +506,8 @@ fn advance(
             }
             return false;
         }
+        // Critters move in `update`.
+        Phase::Flitting { .. } => return false,
         Phase::Ready => {
             if let Behavior::Stinger(stinger) = archetype.behavior {
                 stinger::start(thing, level.entities[thing.index].at, &stinger);
@@ -551,6 +565,7 @@ fn advance(
         | Behavior::Spring(_)
         | Behavior::Rope(_)
         | Behavior::Sling(_)
+        | Behavior::Critter(_)
         | Behavior::Scenery => {}
     }
     false

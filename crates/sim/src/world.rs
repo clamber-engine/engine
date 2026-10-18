@@ -211,6 +211,13 @@ pub enum Phase {
     /// player in `reach` at the end of the last step (see
     /// [`rope`](crate::rope)).
     Rope { target: Fixed, reach: bool },
+    /// A critter flying at `uy` down at flight height `z`, towards
+    /// `target` (whole px; see [`critter`](crate::critter)).
+    Flitting {
+        uy: Fixed,
+        z: Fixed,
+        target: (i32, i32),
+    },
     /// Gone for good: it doesn't appear with the view again.
     Gone,
     /// A wall exit a thrown object opened (see [`exit`](crate::exit)).
@@ -637,6 +644,7 @@ impl World {
                 Phase::Open => [22, 0],
                 Phase::Caught(since) => [23, since],
                 Phase::LetGo { wait, .. } => [24, wait],
+                Phase::Flitting { .. } => [25, 0],
             });
             if let Phase::Wobbling { thrown, .. } = t.phase {
                 out.push(thrown.map_or(0, |n| n.saturating_add(1)));
@@ -652,6 +660,12 @@ impl World {
             }
             if let Phase::Rope { target, .. } = t.phase {
                 fixed(&mut out, target);
+            }
+            if let Phase::Flitting { uy, z, target } = t.phase {
+                fixed(&mut out, uy);
+                fixed(&mut out, z);
+                out.extend(target.0.to_le_bytes());
+                out.extend(target.1.to_le_bytes());
             }
             if let Phase::Swaying { vy, tx, ty } = t.phase {
                 for v in [vy, tx, ty] {

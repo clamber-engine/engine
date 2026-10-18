@@ -360,9 +360,7 @@ impl Kind {
             // signs.md: it has no values of its own. How it's drawn isn't
             // covered, so both of the first level's signs look the same.
             Kind::Sign => "signpost",
-            // critter.md: it does nothing to play, and how it flies and
-            // where it appears aren't covered, so it's placed as an
-            // entity that nothing acts on and that isn't drawn.
+            // critter.md: the values are the archetype's own.
             Kind::Critter => CRITTER,
             // extra-lives.md: the ranges are the archetype's own. The
             // rising kinds speed up by 1/256 px a frame each frame.
@@ -459,7 +457,7 @@ pub const ROOM_ENTRANCE: &str = "room-entrance";
 /// The archetype launch barrels are.
 pub const SLING: &str = "sling";
 
-/// The kind of entity a critter is: no archetype's.
+/// The archetype critters are, as in `clamber-sim`.
 pub const CRITTER: &str = "critter";
 
 /// The archetype restart barrels are.
@@ -1413,24 +1411,15 @@ mod tests {
         assert_eq!(HIDDEN, clamber_sim::HIDDEN);
         assert_eq!(EXIT, clamber_sim::EXIT);
         assert_eq!(WALL_EXIT, clamber_sim::WALL_EXIT);
+        assert_eq!(CRITTER, clamber_sim::CRITTER);
         for kind in Kind::ALL {
             let (name, params) = kind.entity();
             if kind == Kind::EndMarker {
                 assert_eq!(name, END);
                 continue;
             }
-            if [
-                Kind::Exit,
-                Kind::WallExit,
-                Kind::RoomReturnEntrance,
-                Kind::Critter,
-            ]
-            .contains(&kind)
-            {
-                assert!(
-                    [EXIT, WALL_EXIT, ROOM_ENTRANCE, CRITTER].contains(&name),
-                    "{kind}"
-                );
+            if [Kind::Exit, Kind::WallExit, Kind::RoomReturnEntrance].contains(&kind) {
+                assert!([EXIT, WALL_EXIT, ROOM_ENTRANCE].contains(&name), "{kind}");
                 assert!(!Archetypes::builtin().names().any(|n| n == name));
                 continue;
             }

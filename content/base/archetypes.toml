@@ -435,6 +435,23 @@
 #   frame, and its speed down grows by `gravity` up to `max_fall`. Nothing
 #   held makes a difference before the flight. After a catch, the sling
 #   catches no one for `rest` frames.
+# - `critter`: scenery that flies. It appears as scenery does, but
+#   somewhere across the top of the picture, at a random speed across of
+#   up to 2 px a frame either way and down of up to 2 px a frame, and
+#   flies towards its start: each frame its speed across closes 1/32 of
+#   the gap to 1/16 of the distance across, and its speed down 1/64 of
+#   the gap to 1/64 of the distance down, rounded to 1/256 px a frame.
+#   It's drawn `flutter` px (one value a frame in turn, from place
+#   `flutter_from` at the world's first frame) above its flight height.
+#   On ending a frame with its x rounded down less its target's within
+#   `perch_across = [low, high]` and its drawn y rounded up less its
+#   target's within `perch_down`, it perches: it stays there for `perch`
+#   frames, flying again on the last, at `launch = [x, y]`, towards a new
+#   target `hop = [across, y]` px across from the old one at level y
+#   `y`. One there on the world's first frame stands `settle` frames at
+#   its start's height first. It's removed once neither it nor its start
+#   is near the view, and appears afresh the next time its start is.
+#   It holds still on frames that hold walkers still.
 # - `scenery`: stands where it's placed and nothing touches it: it isn't
 #   in anyone's way, never hurts and is never taken. With a view, it's in
 #   the level while its position is near the view, as a thrower is, and
@@ -1032,6 +1049,21 @@ air = [-20, 20, -8, 52]
 air_below = []
 jump_early = 6
 land_hold = 0
+
+# title-1's critter (spec/behavior/critter.md). The size is Clamber's
+# own: it's what's drawn, and touches nothing.
+[archetypes.critter]
+behavior = "critter"
+size = [16, 12]
+offset = 0
+perch_across = [-4, 3]
+perch_down = [-3, 4]
+perch = 360
+hop = [-64, -16]
+launch = [2, 1]
+flutter = [0, 2, 4, 6, 7, 5, 3, 1]
+flutter_from = 2
+settle = 41
 
 # title-1's sign (spec/behavior/signs.md): scenery. The size is Clamber's
 # own: it's what's drawn, and touches nothing.
