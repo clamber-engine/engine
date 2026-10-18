@@ -387,19 +387,19 @@ pub(crate) fn holder(archetype: &Archetype) -> Option<Holder> {
 }
 
 /// A thrown object's frame once its `vx` has eased: it breaks if this
-/// move would take it into a column it runs into as into a wall (see
-/// [`columns::hits_side`]); otherwise it moves across, and then down
+/// move would take it into a column that breaks it (see
+/// [`columns::breaks_object`]); otherwise it moves across, and then down
 /// under gravity in the air or along the floor rolling. In the air, it
 /// touches the floor once it's moving down and ends less than `margin`
 /// above it, and is put on it: falling at `bounce_min` or faster before
 /// this frame, it bounces up at `bounce` of that speed; slower, it rolls
 /// from then on. Rolling off the floor, it falls again.
 ///
-/// One that `holds` the missing character breaks instead of bouncing,
-/// and also on passing such a column on the way to another. Against a
-/// wall it stays where it is across but still falls in its own column,
-/// and touching the floor there, is put on it. Returns whether it broke
-/// holding the character; it's left where it broke.
+/// One that `holds` the missing character breaks instead of bouncing.
+/// Breaking against a wall, it stays where it is across but still falls
+/// in its own column, and touching the floor there, is put on it.
+/// Returns whether it broke holding the character; it's left where it
+/// broke.
 fn bounce_and_roll(
     level: &Level,
     thing: &mut Thing,
@@ -412,14 +412,7 @@ fn bounce_and_roll(
     let to = column(x);
     let dir = if flight.right() { 1 } else { -1 };
     let from = column(pos.x);
-    let wall = if holds {
-        (1..=(to - from).abs()).any(|n| {
-            let into = from + i64::from(dir) * n;
-            columns::hits_side(level, into - i64::from(dir), into, dir, pos.y, slope)
-        })
-    } else {
-        to != from && columns::hits_side(level, from, to, dir, pos.y, slope)
-    };
+    let wall = columns::breaks_object(level, from, to, dir, pos.y, slope);
     if wall && holds {
         let (y, touch) = fall(level, from, pos.y, &mut flight);
         thing.pos = Vec2::new(pos.x, touch.unwrap_or(y));

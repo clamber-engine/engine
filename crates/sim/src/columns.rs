@@ -314,27 +314,52 @@ pub(crate) fn blocks(
     }
 }
 
-/// Whether a thrown object at `feet` moving `dir` (-1 or 1) from column
-/// `from` runs into `column` as into a wall: the column is part of a
-/// steep face climbing the way the object moves, and its floor for the
-/// object ([`object_floor`]) is higher than the feet; or its floor is
-/// higher than the feet and climbs into it from `from` by more than a
-/// step, or there's no floor at `from` to climb from. One-way ground is
-/// run into as other ground is.
-pub(crate) fn hits_side(
+/// The ground holding a thrown object's `y` in `column`, or else the
+/// nearest below, down to two steps: as [`object_floor`], however far
+/// above `y` its top is. Breaking sees the floor this way
+/// (thrown-objects.md, "Breaking against a wall").
+fn object_ground(level: &Level, column: i64, y: Fixed) -> Option<Span> {
+    spans(level, column)
+        .into_iter()
+        .find(|s| s.bottom >= y)
+        .filter(|s| s.top <= y + STEP + STEP)
+}
+
+/// Whether a thrown object at `y` moving `dir` (-1 or 1) breaks on a move
+/// from column `from` to column `to` (thrown-objects.md, "Breaking
+/// against a wall"). It does when `to` is part of a steep face climbing
+/// the way it moves whose floor ([`object_ground`]) is higher than `y`,
+/// by any amount. It also does when the floor of `to` is more than a
+/// step higher than `y`, if that ground isn't one-way or the move passes
+/// such a face column on the way, but not while it's inside one-way
+/// ground in `from`, which it can only have come up into from below.
+/// Moves within a column don't break it.
+pub(crate) fn breaks_object(
     level: &Level,
     from: i64,
-    column: i64,
+    to: i64,
     dir: i32,
-    feet: Fixed,
+    y: Fixed,
     slope: Fixed,
 ) -> bool {
-    let higher = object_floor(level, column, feet).is_some_and(|f| f.y < feet);
-    if higher && face(level, column, feet, slope) == Some(-dir) {
+    if from == to {
+        return false;
+    }
+    let higher = |column: i64| object_ground(level, column, y).filter(|s| s.top < y);
+    let face_up = |column: i64| {
+        higher(column).is_some_and(|s| face(level, column, s.top, slope) == Some(-dir))
+    };
+    if face_up(to) {
         return true;
     }
-    floor(level, column, feet).is_some_and(|f| f.y < feet)
-        && rise(level, from, column, feet).is_none_or(|h| h > STEP)
+    let Some(end) = higher(to).filter(|s| s.top < y - STEP) else {
+        return false;
+    };
+    if higher(from).is_some_and(|s| s.one_way) {
+        return false;
+    }
+    let dir = i64::from(dir);
+    !end.one_way || (1..=(to - from).abs()).any(|n| face_up(from + dir * n))
 }
 
 /// Whether the floor `ahead` columns from `column` in direction `dir` is
@@ -531,30 +556,79 @@ mod tests {
     }
 
     #[test]
-    fn faces_and_walls_are_hit_from_the_side_but_slopes_arent() {
+    fn faces_and_walls_break_thrown_objects_but_slopes_dont() {
         // Flat, then a face rising to the right from 1 px up.
         let level = staircase(&[0, 0, -1, -5, -9, -13]);
         let feet = Fixed::ZERO;
-        assert!(!hits_side(&level, 0, 1, 1, feet, slope()));
-        assert!(hits_side(&level, 1, 2, 1, feet, slope()));
-        assert!(hits_side(&level, 3, 4, 1, Fixed::from_int(-5), slope()));
-        // More than a step below a face column's floor, it isn't there.
-        assert!(!hits_side(&level, 3, 4, 1, feet, slope()));
+        let breaks =
+            |level: &Level, from, to, feet| breaks_object(level, from, to, 1, feet, slope());
+        assert!(!breaks(&level, 0, 1, feet));
+        assert!(breaks(&level, 1, 2, feet));
+        assert!(breaks(&level, 3, 4, Fixed::from_int(-5)));
+        // However much higher a face column's floor is.
+        assert!(breaks(&level, 3, 4, feet));
+        assert!(breaks(&level, 4, 5, Fixed::from_int(12)));
         // Level with its floor or above it, nothing is hit.
-        assert!(!hits_side(&level, 1, 2, 1, Fixed::from_int(-1), slope()));
+        assert!(!breaks(&level, 1, 2, Fixed::from_int(-1)));
+        // Within a column, nothing is hit.
+        assert!(!breaks(&level, 2, 2, feet));
         // Going the other way, the face falls.
         let falling = staircase(&[-13, -9, -5, -1, 0, 0]);
-        assert!(!hits_side(&falling, 1, 2, 1, Fixed::ZERO, slope()));
+        assert!(!breaks(&falling, 1, 2, Fixed::ZERO));
         let gentle = staircase(&[0, 0, 0, 0, -1, -1, -1, -1, -2]);
         for c in 0..9 {
-            assert!(
-                !hits_side(&gentle, c - 1, c, 1, Fixed::ZERO, slope()),
-                "{c}"
-            );
+            assert!(!breaks(&gentle, c - 1, c, Fixed::ZERO), "{c}");
         }
         let wall = staircase(&[0, 0, -64, -64]);
-        assert!(hits_side(&wall, 1, 2, 1, Fixed::ZERO, slope()));
-        assert!(!hits_side(&wall, 0, 1, 1, Fixed::ZERO, slope()));
+        assert!(breaks(&wall, 1, 2, Fixed::ZERO));
+        assert!(!breaks(&wall, 0, 1, Fixed::ZERO));
+        // Up to a step below its top, a wall is landed on, not hit.
+        assert!(!breaks(&wall, 1, 2, Fixed::from_int(-56)));
+        assert!(breaks(&wall, 1, 2, Fixed::from_int(-55)));
+    }
+
+    /// A platform from column 10 whose left edge climbs as a face of 4
+    /// steps of 4 px to its top 16 px above the floor at 0, then flat on
+    /// to column 30, and another as high from column 50 to 60 with
+    /// upright sides, both `one_way` or not.
+    fn edge(one_way: bool) -> Level {
+        let mut points = vec![[10, 4]];
+        for k in 0..4 {
+            points.extend([[10 + k, -4 * k], [11 + k, -4 * k]]);
+        }
+        points.extend([[14, -16], [30, -16], [30, 4]]);
+        let src = format!(
+            "format = 1\nname = \"edge\"\nsize = [100, 100]\nstart = [0, 0]\n\
+             [[collision]]\nshape = \"rect\"\nrect = [-50, 0, 150, 50]\n\
+             [[collision]]\nshape = \"polygon\"\npoints = {points:?}\n\
+             one_way = {one_way}\n\
+             [[collision]]\nshape = \"rect\"\nrect = [50, -16, 10, 20]\n\
+             one_way = {one_way}\n"
+        );
+        Level::from_toml_str(&src, "edge").unwrap()
+    }
+
+    /// thrown-objects.md, "A floor more than 8 px higher": a move into a
+    /// column more than a step higher that isn't a face column breaks it
+    /// when that ground isn't one-way, or when the move passes a face
+    /// column; not inside one-way ground it came up into from below.
+    #[test]
+    fn a_floor_more_than_a_step_higher_breaks_thrown_objects() {
+        for one_way in [false, true] {
+            let level = edge(one_way);
+            let breaks = |from, to, feet: i32| {
+                breaks_object(&level, from, to, 1, Fixed::from_int(feet), slope())
+            };
+            // Past the whole face into its top, 16 px higher.
+            assert!(breaks(8, 16, 0), "{one_way}");
+            // Into the top from no lower than a step below it.
+            assert!(!breaks(8, 16, -8), "{one_way}");
+            // Into the top past no face column.
+            assert_eq!(breaks(49, 50, 0), !one_way, "{one_way}");
+            assert_eq!(breaks(45, 52, 0), !one_way, "{one_way}");
+            // Inside the platform, moving on through it.
+            assert_eq!(breaks(14, 18, -4), !one_way, "{one_way}");
+        }
     }
 
     #[test]

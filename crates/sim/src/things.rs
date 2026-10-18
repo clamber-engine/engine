@@ -265,6 +265,8 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     // Throwers and balls stop then too, the one that hurt it as well,
     // and none is thrown.
     let thrower_held = held.is_some() || held_by_bounce_all;
+    // Objects meet balls where they were at the end of the last step.
+    let balls = ball_places(world);
     if !thrower_held {
         throwers::throw(world);
     }
@@ -325,6 +327,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     }
     freed.extend(throw_hits(world));
     freed.extend(hands_hits(world, &physics));
+    meet_balls(world, &balls, &physics);
     if let Some(&at) = freed.first() {
         join::start(world, at);
     }
@@ -974,6 +977,96 @@ fn hands_hits(world: &mut World, physics: &Physics) -> Option<Vec2> {
         world.player.hands = None;
     }
     None
+}
+
+/// Each ball there is now: its index, where it is, and the part of its
+/// turn it's in ([`Contact::part`](crate::Contact::part)).
+fn ball_places(world: &World) -> Vec<(usize, Vec2, Option<usize>)> {
+    world
+        .things
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t.active)
+        .filter_map(|(i, t)| match t.archetype.map(|a| a.behavior) {
+            Some(Behavior::Ball(ball)) => {
+                let part = ball.contact.and_then(|c| c.part(t.clock));
+                Some((i, t.pos, part))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Objects holding nothing meet the balls in `before`, by where each was
+/// and the part of its turn it was in at the end of the last step, with
+/// the object where it is now (thrown-objects.md, "Hitting a ball"; see
+/// [`Meets`](crate::Meets)). Every ball an object meets is gone. A thrown
+/// one goes on as without them. One in the hands during a throw, after
+/// its first frame and before it leaves them, or carried, breaks, and the
+/// throw goes on without it; carried, the player is no longer carrying
+/// it.
+fn meet_balls(world: &mut World, before: &[(usize, Vec2, Option<usize>)], physics: &Physics) {
+    if before.is_empty() {
+        return;
+    }
+    let hands = world.player.hands;
+    let release = frames(physics[Param::ThrowRelease]);
+    for i in 0..world.things.len() {
+        let object = &world.things[i];
+        let Some(Behavior::Carry {
+            balls: Some(meets),
+            holder: None,
+            hit_early_time,
+            ..
+        }) = object.archetype.map(|a| a.behavior)
+        else {
+            continue;
+        };
+        if !object.active {
+            continue;
+        }
+        let (pos, right, early, held) = match object.phase {
+            Phase::Thrown(flight) if flight.thrown => (
+                object.pos,
+                flight.right(),
+                flight.age <= hit_early_time,
+                false,
+            ),
+            Phase::Held => {
+                let Some(hands) = hands.filter(|h| h.thing == i) else {
+                    continue;
+                };
+                let throwing = hands.act == Act::Throw && hands.frame > 0 && hands.frame < release;
+                if !throwing && hands.act != Act::Carry {
+                    continue;
+                }
+                let right = world.player.facing == Facing::Right;
+                (carry::in_hands(&world.player), right, throwing, true)
+            }
+            _ => continue,
+        };
+        let met: Vec<usize> = before
+            .iter()
+            .filter(|&&(ball, at, part)| {
+                world.things[ball].active && meets.holds(pos, right, early, at, part)
+            })
+            .map(|&(ball, ..)| ball)
+            .collect();
+        if met.is_empty() {
+            continue;
+        }
+        // What appears in a ball's place isn't in the spec.
+        for ball in met {
+            world.things[ball].active = false;
+        }
+        if held {
+            // Its pieces aren't in the spec.
+            world.things[i].active = false;
+            if hands.is_some_and(|h| h.act == Act::Carry) {
+                world.player.hands = None;
+            }
+        }
+    }
 }
 
 /// Whether a walker of `archetype` at `pos` facing `facing` is in a

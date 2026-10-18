@@ -614,3 +614,230 @@ fn is_lifted_onto_a_platform_a_step_above_it() {
     assert_eq!(y, f(300.0));
     assert!(vy < Fixed::ZERO);
 }
+
+/// A ball placed out of the way, which tests put where they want with
+/// [`put_ball`].
+const BALL: &str = "[[entities]]\ntype = \"ball\"\nat = [1000, 100]";
+
+/// Puts the ball (`things[1]`) at `pos`, falling at `vy` (before the
+/// next step's gravity), after `steps` steps of its turn.
+fn put_ball(play: &mut Play, pos: Vec2, vy: Fixed, steps: u32) {
+    let ball = &mut play.world.things[1];
+    ball.active = true;
+    ball.pos = pos;
+    ball.vx = Fixed::ZERO;
+    ball.clock = steps;
+    ball.phase = Phase::Flying {
+        vy,
+        ignoring: None,
+        kept: false,
+    };
+}
+
+/// thrown-objects.md, "Hitting a ball", "Example": a ball falling
+/// straight down 74 px right of the object's start is hit on Q + 24,
+/// not before, and the object goes on as without it.
+#[test]
+fn removes_a_ball_and_goes_on() {
+    let mut play = Play::new(&level(&format!("{FLAT}\n{BALL}")));
+    play.throw_to(21);
+    let start = play.world.things[0].pos;
+    assert_eq!(start, Vec2::new(f(200.0), f(346.0)));
+    // At the end of Q + 21, in the fourth part of its turn.
+    put_ball(
+        &mut play,
+        Vec2::new(start.x + f(74.0), start.y - f(30.0)),
+        f(3.0625),
+        22,
+    );
+    let mut control = Play {
+        world: play.world.clone(),
+        held: play.held,
+    };
+    control.world.things[1].active = false;
+    for (n, ball_y) in [(22, -26.5), (23, -22.5625), (24, 0.0), (25, 0.0)] {
+        play.step(&[]);
+        control.step(&[]);
+        let ball = &play.world.things[1];
+        assert_eq!(ball.active, n < 24, "Q + {n}");
+        if ball.active {
+            assert_eq!(ball.pos.y - start.y, f(ball_y), "Q + {n}");
+        }
+        assert!(play.world.things[0].active, "Q + {n}");
+        assert_eq!(play.world.things[0].pos, control.world.things[0].pos);
+        assert_eq!(play.world.things[0].phase, control.world.things[0].phase);
+    }
+    assert_eq!(play.world.things[0].pos.x - start.x, f(50.2109375));
+}
+
+/// Throws the crate, right or left, and before Q + `n` (from 22) puts
+/// the ball, `steps` steps into its turn, `i` px left of where the
+/// object ends the frame (I, both `x` rounded down) and `h` px below it
+/// (H, both `y` rounded up). Returns whether the ball was hit on that
+/// frame. Without a view, the ball isn't removed for leaving the
+/// picture.
+fn ball_hit(right: bool, n: usize, steps: u32, i: i64, h: i64) -> bool {
+    let mut play = Play::new(&level(&format!("{FLAT}\n{BALL}")));
+    if !right {
+        play.world.player.facing = Facing::Left;
+    }
+    play.throw_to(n - 1);
+    play.world.view = None;
+    let mut control = Play {
+        world: play.world.clone(),
+        held: play.held,
+    };
+    control.world.things[1].active = false;
+    control.step(&[]);
+    let object = control.world.things[0].pos;
+    let up = |v: Fixed| -(-v).floor();
+    let x = object.x.floor() - i;
+    let y = up(object.y) + h;
+    put_ball(
+        &mut play,
+        Vec2::new(
+            Fixed::from_int(x as i32) + f(0.75),
+            Fixed::from_int(y as i32) - f(0.25),
+        ),
+        Fixed::ZERO,
+        steps,
+    );
+    // Without the object, nothing else removes the ball.
+    let mut alone = Play {
+        world: play.world.clone(),
+        held: play.held,
+    };
+    alone.world.things[0].active = false;
+    alone.step(&[]);
+    assert!(
+        alone.world.things[1].active,
+        "alone: right {right} Q + {n} steps {steps} I {i} H {h}"
+    );
+    play.step(&[]);
+    assert_eq!(play.world.things[0].pos, object);
+    assert!(play.world.things[0].active);
+    !play.world.things[1].active
+}
+
+/// thrown-objects.md, "When a ball is hit": the ranges of I and H, ends
+/// included, early (t up to 16) and late, moving right and left, in
+/// each part of the ball's turn.
+#[test]
+fn hits_a_ball_in_the_measured_ranges() {
+    for (right, n, (i_from, i_to), (h_from, h_to)) in [
+        (true, 22, (-47, 27), (-54, 48)),
+        (true, 37, (-47, 27), (-54, 48)),
+        (true, 38, (-22, 26), (-30, 15)),
+        (false, 22, (-28, 46), (-54, 48)),
+        (false, 38, (-27, 21), (-30, 15)),
+    ] {
+        // Steps into the first to fourth parts, and the shifts of I
+        // and H there.
+        for (steps, di, dh) in [(0, 0, 0), (9, 0, -3), (15, 1, -3), (21, 1, 0)] {
+            let (i_from, i_to, h_from, h_to) = (i_from + di, i_to + di, h_from + dh, h_to + dh);
+            for (i, h, want) in [
+                (i_from, 0, true),
+                (i_to, 0, true),
+                (i_from - 1, 0, false),
+                (i_to + 1, 0, false),
+                (0, h_from, true),
+                (0, h_to, true),
+                (0, h_from - 1, false),
+                (0, h_to + 1, false),
+            ] {
+                let got = ball_hit(right, n, steps, i, h);
+                assert_eq!(got, want, "right {right} Q + {n} steps {steps} I {i} H {h}");
+            }
+        }
+    }
+}
+
+/// thrown-objects.md, "What happens on a hit": in the hands during a
+/// throw, from Q + 1 to Q + 20, it breaks on a ball by the early
+/// ranges and removes it, and the throw goes on as without it. Not on
+/// Q or Q + 21.
+#[test]
+fn breaks_on_a_ball_in_the_hands() {
+    for n in 0..=21 {
+        let mut play = Play::new(&level(&format!("{FLAT}\n{BALL}")));
+        if n > 0 {
+            play.throw_to(n - 1);
+        }
+        let mut control = Play {
+            world: play.world.clone(),
+            held: play.held,
+        };
+        control.world.things[1].active = false;
+        let mut ahead = Play {
+            world: control.world.clone(),
+            held: control.held,
+        };
+        ahead.step(&[]);
+        let head = ahead.world.things[0].pos;
+        // 47 px right of where the object ends the step, the early
+        // range's end.
+        put_ball(
+            &mut play,
+            Vec2::new(head.x + f(47.0), head.y),
+            Fixed::ZERO,
+            0,
+        );
+        play.step(&[]);
+        control.step(&[]);
+        let hit = (1..=20).contains(&n);
+        assert_eq!(play.world.things[1].active, !hit, "Q + {n}");
+        assert_eq!(play.world.things[0].active, !hit, "Q + {n}");
+        if hit {
+            assert_eq!(play.world.player.pos, control.world.player.pos);
+            assert_eq!(play.world.player.hands, control.world.player.hands);
+            play.throw_to(30);
+            control.throw_to(30);
+            assert_eq!(play.world.player.pos, control.world.player.pos);
+            assert_eq!(play.world.player.state, control.world.player.state);
+            assert!(!play.world.things[0].active);
+        }
+    }
+}
+
+/// thrown-objects.md, "What happens on a hit": carried, it breaks on a
+/// ball by the late ranges, the way the player faces, and the player
+/// carries nothing from then on.
+#[test]
+fn breaks_on_a_ball_while_carried() {
+    let mut play = Play::new(&level(&format!("{FLAT}\n{BALL}")));
+    play.world.player.facing = Facing::Left;
+    let mut control = Play {
+        world: play.world.clone(),
+        held: play.held,
+    };
+    control.world.things[1].active = false;
+    control.step(&[A]);
+    let head = control.world.things[0].pos;
+    let up = |v: Fixed| -(-v).floor();
+    // Facing left, I of 22 isn't hit; 21, the late range's end, is.
+    let at = |i: i64| {
+        Vec2::new(
+            Fixed::from_int((head.x.floor() - i) as i32),
+            Fixed::from_int(up(head.y) as i32),
+        )
+    };
+    let mut miss = Play {
+        world: play.world.clone(),
+        held: play.held,
+    };
+    put_ball(&mut miss, at(22), Fixed::ZERO, 0);
+    miss.step(&[A]);
+    assert!(miss.world.things[1].active);
+    assert!(miss.world.things[0].active);
+    put_ball(&mut play, at(21), Fixed::ZERO, 0);
+    play.step(&[A]);
+    assert!(!play.world.things[1].active);
+    assert!(!play.world.things[0].active);
+    assert!(play.world.player.hands.is_none());
+    for _ in 0..30 {
+        assert_eq!(play.world.player.pos, control.world.player.pos);
+        play.step(&[]);
+        control.step(&[]);
+    }
+    assert!(play.world.player.hands.is_none());
+}

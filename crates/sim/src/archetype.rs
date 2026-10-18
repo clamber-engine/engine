@@ -72,8 +72,9 @@ pub enum Behavior {
     /// knocks out throwers its `thrower` box holds, or its
     /// `thrower_early` box early on or in the hands during a throw
     /// ([`Hit::holds`]); moving left, both are turned around and then
-    /// moved `thrower_turn` px left. With a `holder`, it holds the missing
-    /// character. With `opens`, it opens wall exits.
+    /// moved `thrower_turn` px left. With `balls`, it meets balls. With a
+    /// `holder`, it holds the missing character. With `opens`, it opens
+    /// wall exits.
     Carry {
         reach: Grab,
         hit: Hit,
@@ -82,6 +83,7 @@ pub enum Behavior {
         thrower: Hit,
         thrower_early: Hit,
         thrower_turn: Fixed,
+        balls: Option<Meets>,
         holder: Option<Holder>,
         opens: Option<Opens>,
     },
@@ -845,6 +847,21 @@ pub struct Offsets {
 }
 
 impl Contact {
+    /// Which part of its turn, from 0, a ball is in after `steps` steps;
+    /// `None` without parts.
+    pub fn part(&self, steps: u32) -> Option<usize> {
+        let parts = &self.turn[..usize::from(self.turn_parts)];
+        let cycle: u32 = parts.iter().map(|p| p.0).sum();
+        let mut at = if cycle > 0 { steps % cycle } else { 0 };
+        for (n, &(length, ..)) in parts.iter().enumerate() {
+            if at < length {
+                return Some(n);
+            }
+            at -= length;
+        }
+        None
+    }
+
     /// The offsets a ball reaches a player in `pose` facing `facing`
     /// from, after `steps` steps of its turn.
     pub fn reach(&self, pose: Pose, facing: Facing, steps: u32) -> Offsets {
@@ -860,16 +877,9 @@ impl Contact {
             Facing::Right => (from, to),
             Facing::Left => (self.mirror - to, self.mirror - from),
         };
-        let parts = &self.turn[..usize::from(self.turn_parts)];
-        let cycle: u32 = parts.iter().map(|p| p.0).sum();
-        let (mut at, mut shift) = (if cycle > 0 { steps % cycle } else { 0 }, (0, 0));
-        for &(length, x, y) in parts {
-            if at < length {
-                shift = (x, y);
-                break;
-            }
-            at -= length;
-        }
+        let shift = self
+            .part(steps)
+            .map_or((0, 0), |n| (self.turn[n].1, self.turn[n].2));
         Offsets {
             across: (across.0 + shift.0, across.1 + shift.0),
             above: (base.above.0 + shift.1, base.above.1 + shift.1),
@@ -1090,6 +1100,48 @@ impl Hit {
             (x - ahead, x + behind)
         };
         (from..=to).contains(&tx) && (y - self.above.floor()..=y + self.below.floor()).contains(&ty)
+    }
+}
+
+/// When an object holding nothing meets a ball (thrown-objects.md,
+/// "Hitting a ball"): thrown, or in the hands during a throw, its `early`
+/// box holds where the ball was at the end of the step before, for its
+/// first `hit_early_time` frames out of the hands; later, or carried, its
+/// `hit` box does ([`Hit::holds`]), the way it was thrown or the player
+/// faces. Moving left, the box is turned around and then moved `turn` px
+/// left. While the ball is in the nth part of its turn
+/// ([`Contact::part`]), the box is moved by the nth of `parts` (none
+/// past the last): `across` px left and `above` px down, so that the
+/// ranges of the object's `x` less the ball's and of the ball's `y` less
+/// the object's move by that much. Thrown, it removes the ball and goes
+/// on; in the hands, it breaks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Meets {
+    pub hit: Hit,
+    pub early: Hit,
+    pub turn: Fixed,
+    pub parts: [(i32, i32); MAX_TURN_PARTS],
+}
+
+impl Meets {
+    /// Whether an object at `pos`, moving right if `right`, early on if
+    /// `early`, meets a ball that was at `ball` in the `part` of its turn.
+    pub fn holds(
+        &self,
+        pos: Vec2,
+        right: bool,
+        early: bool,
+        ball: Vec2,
+        part: Option<usize>,
+    ) -> bool {
+        let (across, above) = part.map_or((0, 0), |n| self.parts[n]);
+        let turn = if right { Fixed::ZERO } else { self.turn };
+        let at = Vec2::new(
+            pos.x - turn - Fixed::from_int(across),
+            pos.y + Fixed::from_int(above),
+        );
+        let hit = if early { self.early } else { self.hit };
+        hit.holds(at, right, ball)
     }
 }
 
@@ -1389,6 +1441,10 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "hit_thrower_turn",
             "hit_ball",
             "hit_ball_early",
+            "meets_ball",
+            "meets_ball_early",
+            "meets_ball_turn",
+            "meets_ball_parts",
             "holder_reach",
             "holder_look",
             "holder_still",
@@ -1730,6 +1786,21 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 }),
                 Some(_) => return Err(format!("{path}.holds_character: expected true or false")),
             };
+            let balls = match table.contains_key("meets_ball") {
+                false => None,
+                true => Some(Meets {
+                    hit: hit("meets_ball")?,
+                    early: hit("meets_ball_early")?,
+                    turn: match table.contains_key("meets_ball_turn") {
+                        true => number("meets_ball_turn")?,
+                        false => Fixed::ZERO,
+                    },
+                    parts: match table.get("meets_ball_parts") {
+                        None => [(0, 0); MAX_TURN_PARTS],
+                        Some(value) => parse_shifts(value, &format!("{path}.meets_ball_parts"))?,
+                    },
+                }),
+            };
             let opens = match (
                 table.contains_key("hit_wall_exit"),
                 table.contains_key("hit_wall_exit_early"),
@@ -1748,6 +1819,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 thrower: hit("hit_thrower")?,
                 thrower_early: hit("hit_thrower_early")?,
                 thrower_turn,
+                balls,
                 holder,
                 opens,
             }
@@ -3083,6 +3155,38 @@ fn parse_contact(value: &Value, path: &str) -> Result<Contact, String> {
         turn_parts: parts.len() as u8,
         poses: parse_poses(table, path)?,
     })
+}
+
+/// Reads `[[across, above], ...]`, up to [`MAX_TURN_PARTS`] pairs of
+/// whole px, one for each part of a ball's turn. Errors start with
+/// `path`.
+fn parse_shifts(value: &Value, path: &str) -> Result<[(i32, i32); MAX_TURN_PARTS], String> {
+    let expected = || format!("{path}: expected a list of up to {MAX_TURN_PARTS} [across, above]");
+    let Value::Array(items) = value else {
+        return Err(expected());
+    };
+    if items.len() > MAX_TURN_PARTS {
+        return Err(expected());
+    }
+    let whole = |v: &Value, at: &str| match v {
+        Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+        _ => Err(format!("{at}: expected a whole number")),
+    };
+    let mut shifts = [(0, 0); MAX_TURN_PARTS];
+    for (i, item) in items.iter().enumerate() {
+        let at = format!("{path}[{i}]");
+        let Value::Array(pair) = item else {
+            return Err(format!("{at}: expected [across, above]"));
+        };
+        let [x, y] = pair.as_slice() else {
+            return Err(format!("{at}: expected [across, above]"));
+        };
+        shifts[i] = (
+            whole(x, &format!("{at}[0]"))?,
+            whole(y, &format!("{at}[1]"))?,
+        );
+    }
+    Ok(shifts)
 }
 
 /// Reads a thrower's [`ThrowerContact`] table. Errors start with `path`.

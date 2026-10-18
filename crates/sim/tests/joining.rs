@@ -206,7 +206,14 @@ fn flies_on_an_arc_above_the_line() {
 /// appears at (50, 12).
 #[test]
 fn breaks_against_a_wall_after_falling_in_place() {
-    let face = "[[collision]]\nshape = \"rect\"\nrect = [260, 350, 200, 50]";
+    // The face climbs 4 px a column from 50 px up, then is flat.
+    let mut points = vec![[260, 400]];
+    for k in 0..5 {
+        let y = 350 - 4 * k;
+        points.extend([[260 + k, y], [261 + k, y]]);
+    }
+    points.extend([[460, 334], [460, 400]]);
+    let face = format!("[[collision]]\nshape = \"polygon\"\npoints = {points:?}");
     let mut play = Play::new(&level(&format!("{FLAT}\n{face}")));
     play.throw_to(25);
     let start = Vec2::new(f(200.0), f(346.0));
