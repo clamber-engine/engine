@@ -267,18 +267,19 @@ impl Game {
         canvas.light(&lighting(level, origin, canvas.view()));
         let behind = self.world.behind_scenery();
         let dim = self.world.dim_step();
+        let time = (self.world.frame as f64 + alpha) / clamber_sim::STEPS_PER_SECOND as f64;
         if behind {
             // The characters go behind the scenery, the back layers that
             // move with the world, but in front of backdrops.
             let back = |l: &Layer| l.depth == Depth::Back;
             let scenery = |l: &Layer| l.parallax == Vec2::ints(1, 1);
             self.art
-                .draw_some(canvas, level, origin, dim, |l| back(l) && !scenery(l));
+                .draw_some(canvas, level, origin, dim, time, |l| back(l) && !scenery(l));
             self.draw_characters(canvas, alpha, origin);
             self.art
-                .draw_some(canvas, level, origin, dim, |l| back(l) && scenery(l));
+                .draw_some(canvas, level, origin, dim, time, |l| back(l) && scenery(l));
         } else {
-            self.art.draw(canvas, level, Depth::Back, origin, dim);
+            self.art.draw(canvas, level, Depth::Back, origin, dim, time);
         }
         if self.debug {
             for region in &level.regions {
@@ -328,7 +329,8 @@ impl Game {
             self.draw_characters(canvas, alpha, origin);
         }
         self.draw_things(canvas, &to_screen, true);
-        self.art.draw(canvas, level, Depth::Front, origin, dim);
+        self.art
+            .draw(canvas, level, Depth::Front, origin, dim, time);
         draw_hud(canvas, &self.world);
         self.draw_relic_image(canvas);
         let (now, full) = self.world.brightness();

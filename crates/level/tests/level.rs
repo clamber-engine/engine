@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use clamber_level::{
-    Area, Depth, Dir, Fixed, LayerContent, Level, Lighting, Rect, Shape, Tile, Vec2, tiled,
+    Area, Depth, Dir, Fixed, LayerContent, Level, Lighting, Prop, Rect, Shape, Sway, Tile, Vec2,
+    tiled,
 };
 use clamber_pack::{Adjust, Param};
 
@@ -32,7 +33,7 @@ fn reads_every_part() {
     assert_eq!(l.size, v(1600.0, 600.0));
 
     let names: Vec<_> = l.layers.iter().map(|l| l.name.as_str()).collect();
-    assert_eq!(names, ["sky", "ground tiles", "fog"]);
+    assert_eq!(names, ["sky", "ground tiles", "fog", "ferns"]);
     assert_eq!(l.layers[0].parallax, v(0.25, 0.5));
     assert_eq!(l.layers[2].depth, Depth::Front);
     assert_eq!(l.layers[2].offset, v(0.0, -32.0));
@@ -78,6 +79,28 @@ fn reads_every_part() {
         panic!("expected an image");
     };
     assert_eq!(*normals, None);
+    assert_eq!((l.layers[0].opacity, l.layers[2].opacity), (1.0, 0.5));
+    assert_eq!(l.layers[0].sway, None);
+    assert_eq!(
+        l.layers[3].sway,
+        Some(Sway {
+            amount: 1.5,
+            period: 3.0
+        })
+    );
+    let LayerContent::Props(props) = &l.layers[3].content else {
+        panic!("expected props");
+    };
+    assert_eq!(
+        props[1],
+        Prop {
+            image: "props/tree.png".into(),
+            normals: Some("props/tree-normals.png".into()),
+            at: v(300.5, 480.0),
+            flip: true,
+        }
+    );
+    assert_eq!((props[0].normals.as_deref(), props[0].flip), (None, false));
 
     assert_eq!(l.lighting.ambient, [0x40, 0x48, 0x58]);
     assert_eq!(l.lighting.key.direction, [1.0, -2.0, 1.0]);
@@ -289,7 +312,28 @@ fn format_errors() {
         level_err("[[regions]]\nrect = [0, 0, 5, 5]\nphysics = { gravty = 1 }\n")
             .contains("regions[0].physics.gravty: unknown movement parameter")
     );
-    assert!(level_err("[[layers]]\nname = \"a\"\n").contains("give either `image` or `tiles`"));
+    assert!(
+        level_err("[[layers]]\nname = \"a\"\n").contains("give one of `image`, `tiles` or `props`")
+    );
+    assert!(
+        level_err("[[layers]]\nname = \"a\"\nimage = \"a.png\"\nprops = []\n")
+            .contains("give one of")
+    );
+    assert!(
+        level_err("[[layers]]\nname = \"a\"\nimage = \"a.png\"\nopacity = 1.5\n")
+            .contains("layers[0].opacity: must be from 0 to 1")
+    );
+    assert!(
+        level_err("[[layers]]\nname = \"a\"\nprops = []\nsway = { amount = 1, period = 0 }\n")
+            .contains("layers[0].sway.period: must be positive")
+    );
+    assert!(
+        level_err("[[layers]]\nname = \"t\"\nsway = { amount = 1, period = 2 }\ntiles = { tileset = \"t.png\", tile_size = [8, 8], columns = 1, data = [0] }\n")
+            .contains("layers[0].sway: is for image and props layers")
+    );
+    assert!(
+        level_err("[[layers]]\nname = \"p\"\nprops = [{ image = \"p.png\" }]\n").contains("at")
+    );
     assert!(
         level_err("[[layers]]\nname = \"a\"\nimage = \"a.png\"\n[[layers]]\nname = \"a\"\nimage = \"b.png\"\n")
             .contains("a layer named `a` already exists")
@@ -411,9 +455,10 @@ fn imports_tiled_map() {
         panic!("expected an image layer");
     };
     assert!(repeat_x);
-    // group offset and parallax combine with the layer's own
+    // group offset, parallax and opacity combine with the layer's own
     assert_eq!(l.layers[1].offset, v(8.0, 4.0));
     assert_eq!(l.layers[1].parallax, v(0.5, 1.0));
+    assert_eq!((l.layers[0].opacity, l.layers[1].opacity), (1.0, 0.25));
     let tiles = |i: usize| match &l.layers[i].content {
         LayerContent::Tiles(t) => t.clone(),
         _ => panic!("expected tiles"),

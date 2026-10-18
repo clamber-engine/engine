@@ -175,6 +175,7 @@ impl SpriteBank {
             },
             flash: sprite.flash,
             opacity: sprite.opacity,
+            lean: 0.0,
             normals: entry.normals.clone(),
         });
     }

@@ -81,6 +81,7 @@ pub fn draw_icon(surface: &mut dyn Surface, icon: Icon, (x, y): (f32, f32), size
         flip: Flip::default(),
         flash: None,
         opacity: 255,
+        lean: 0.0,
         normals: None,
     });
 }

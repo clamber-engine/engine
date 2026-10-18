@@ -54,6 +54,16 @@ depth = "front"
 image = "fg/fog.png"
 parallax = [1.5, 1]
 offset = [0, -32]
+opacity = 0.5
+
+[[layers]]
+name = "ferns"
+depth = "front"
+sway = { amount = 1.5, period = 3 }
+props = [
+  { image = "props/fern.png", at = [40, 500] },
+  { image = "props/tree.png", normals = "props/tree-normals.png", at = [300.5, 480], flip = true },
+]
 
 [[arrivals]]
 name = "from-the-cave"

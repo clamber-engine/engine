@@ -1,17 +1,19 @@
-//! Level layers: images and tiles, scrolled with parallax.
+//! Level layers: images, tiles and props, scrolled with parallax.
 //!
 //! A layer's top left is drawn at its offset less the view's top left
 //! scaled by its parallax, so a parallax of 1 moves with the world and 0
-//! stays put on screen. Its image covers one world unit per `scale`
-//! texels, filtered smoothly unless the layer is pixel art, and is lit by
-//! the level's lights if it has a normal map. A layer that dims is drawn
-//! in the colours of the dimming's step (`crate::dim`).
+//! stays put on screen. Its images cover one world unit per `scale`
+//! texels, filtered smoothly unless the layer is pixel art, and are lit
+//! by the level's lights if they have a normal map. A layer that dims is
+//! drawn in the colours of the dimming's step (`crate::dim`). A layer
+//! that sways leans each image about its bottom edge, by the time alone,
+//! so it never touches the simulation.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use clamber_level::{Depth, Layer, LayerContent, Level, Tile, TileLayer, Tileset};
+use clamber_level::{Depth, Layer, LayerContent, Level, Prop, Sway, Tile, TileLayer, Tileset};
 use clamber_sprite::{Rect, RgbaImage, decode_png};
 
 use crate::camera::point;
@@ -35,23 +37,24 @@ impl LayerArt {
     /// level file's folder, and checks the tiles are in their tilesets.
     pub fn load(level: &Level, dir: &Path) -> Result<LayerArt, String> {
         let mut art = LayerArt::default();
-        let mut images: BTreeMap<&str, RgbaImage> = BTreeMap::new();
+        let mut decoded: BTreeMap<&str, RgbaImage> = BTreeMap::new();
         for layer in &level.layers {
-            for path in [Some(image_path(layer)), normals_path(layer)]
+            for path in images(layer)
                 .into_iter()
+                .flat_map(|(image, normals)| [Some(image), normals])
                 .flatten()
             {
                 if art.get(path, layer.pixel_art).is_some() {
                     continue;
                 }
-                if !images.contains_key(path) {
+                if !decoded.contains_key(path) {
                     let file = dir.join(path);
                     let err = |e: String| format!("{}: {e}", file.display());
                     let bytes = std::fs::read(&file).map_err(|e| err(e.to_string()))?;
                     let image = decode_png(&bytes).map_err(|e| err(e.0))?;
-                    images.insert(path, image.to_rgba());
+                    decoded.insert(path, image.to_rgba());
                 }
-                art.insert(path, images[path].clone(), layer.pixel_art);
+                art.insert(path, decoded[path].clone(), layer.pixel_art);
             }
         }
         art.check(level)?;
@@ -71,9 +74,11 @@ impl LayerArt {
 
     fn check(&self, level: &Level) -> Result<(), String> {
         for layer in &level.layers {
-            let image = self.get(image_path(layer), layer.pixel_art);
-            let normals = normals_path(layer).and_then(|p| self.get(p, layer.pixel_art));
-            if let (Some(image), Some(normals)) = (image, normals) {
+            for (image, normals) in images(layer) {
+                let get = |p| self.get(p, layer.pixel_art);
+                let (Some(image), Some(normals)) = (get(image), normals.and_then(get)) else {
+                    continue;
+                };
                 let size = |t: &Texture| (t.width(), t.height());
                 if size(image) != size(normals) {
                     return Err(format!(
@@ -123,7 +128,8 @@ impl LayerArt {
 
     /// Draws `level`'s layers at `depth` in order, for a view whose top
     /// left is at `origin` in world units, with the dimming at step
-    /// `dim.0` of `dim.1`. Layers whose image isn't here are skipped.
+    /// `dim.0` of `dim.1`, `time` seconds into the level. Images that
+    /// aren't here are skipped.
     pub fn draw(
         &self,
         surface: &mut dyn Surface,
@@ -131,50 +137,122 @@ impl LayerArt {
         depth: Depth,
         origin: (f64, f64),
         dim: (u32, u32),
+        time: f64,
     ) {
-        self.draw_some(surface, level, origin, dim, |l| l.depth == depth);
+        self.draw_some(surface, level, origin, dim, time, |l| l.depth == depth);
     }
 
     /// Draws the layers `keep` says to, in order, for a view whose top
-    /// left is at `origin`, with the dimming at step `dim.0` of `dim.1`.
+    /// left is at `origin`, with the dimming at step `dim.0` of `dim.1`,
+    /// `time` seconds into the level.
     pub fn draw_some(
         &self,
         surface: &mut dyn Surface,
         level: &Level,
         origin: (f64, f64),
         dim: (u32, u32),
+        time: f64,
         keep: impl Fn(&Layer) -> bool,
     ) {
         for layer in level.layers.iter().filter(|l| keep(l)) {
             let dim = if layer.dim { dim } else { (0, 0) };
-            let Some(texture) = self.dimmed(image_path(layer), layer.pixel_art, dim) else {
-                continue;
-            };
-            let normals = normals_path(layer).and_then(|p| self.get(p, layer.pixel_art));
-            let art = Art {
-                texture: &texture,
-                normals,
+            let art = |(image, normals): (&str, Option<&str>)| {
+                let texture = self.dimmed(image, layer.pixel_art, dim)?;
+                let normals = normals.and_then(|p| self.get(p, layer.pixel_art)).cloned();
+                Some((texture, normals))
             };
             let (offset, parallax) = (point(layer.offset), point(layer.parallax));
             let at = (
                 (offset.0 - origin.0 * parallax.0) as f32,
                 (offset.1 - origin.1 * parallax.1) as f32,
             );
-            let scale = layer.scale as f32;
+            let look = Look {
+                scale: layer.scale as f32,
+                opacity: (layer.opacity.clamp(0.0, 1.0) * 255.0).round() as u8,
+                sway: layer.sway,
+                time,
+            };
             match &layer.content {
                 LayerContent::Image {
-                    repeat_x, repeat_y, ..
-                } => draw_image(surface, art, scale, at, (*repeat_x, *repeat_y)),
-                LayerContent::Tiles(tiles) => draw_tiles(surface, art, scale, tiles, at),
+                    path,
+                    normals,
+                    repeat_x,
+                    repeat_y,
+                } => {
+                    let Some((texture, normals)) = art((path, normals.as_deref())) else {
+                        continue;
+                    };
+                    let art = Art {
+                        texture: &texture,
+                        normals: normals.as_ref(),
+                    };
+                    let lean = look.lean(offset.0, texture.height() as f32 / look.scale);
+                    draw_image(surface, art, look, lean, at, (*repeat_x, *repeat_y));
+                }
+                LayerContent::Tiles(tiles) => {
+                    let set = &tiles.tileset;
+                    let Some((texture, normals)) = art((&set.image, set.normals.as_deref())) else {
+                        continue;
+                    };
+                    let art = Art {
+                        texture: &texture,
+                        normals: normals.as_ref(),
+                    };
+                    draw_tiles(surface, art, look, tiles, at);
+                }
+                LayerContent::Props(props) => {
+                    for prop in props {
+                        let Some((texture, normals)) = art((&prop.image, prop.normals.as_deref()))
+                        else {
+                            continue;
+                        };
+                        let art = Art {
+                            texture: &texture,
+                            normals: normals.as_ref(),
+                        };
+                        draw_prop(surface, art, look, prop, at);
+                    }
+                }
             }
         }
     }
 }
 
-fn image_path(layer: &Layer) -> &str {
+/// Each image a layer draws, and its normal map if it has one.
+fn images(layer: &Layer) -> Vec<(&str, Option<&str>)> {
     match &layer.content {
-        LayerContent::Image { path, .. } => path,
-        LayerContent::Tiles(tiles) => &tiles.tileset.image,
+        LayerContent::Image { path, normals, .. } => vec![(path, normals.as_deref())],
+        LayerContent::Tiles(tiles) => {
+            vec![(&tiles.tileset.image, tiles.tileset.normals.as_deref())]
+        }
+        LayerContent::Props(props) => props
+            .iter()
+            .map(|p| (p.image.as_str(), p.normals.as_deref()))
+            .collect(),
+    }
+}
+
+/// How a layer's images are drawn, whatever they are.
+#[derive(Clone, Copy)]
+struct Look {
+    /// Texels per view unit.
+    scale: f32,
+    opacity: u8,
+    sway: Option<Sway>,
+    time: f64,
+}
+
+impl Look {
+    /// How far right the top of an image `height` units tall leans, for
+    /// an image at `x` in the layer: neighbours swing out of step.
+    fn lean(&self, x: f64, height: f32) -> f32 {
+        let Some(sway) = self.sway else {
+            return 0.0;
+        };
+        let phase = std::f64::consts::TAU * self.time / sway.period + x / 29.0;
+        // A taller image leans further, but never more than half its
+        // height, so a short tuft doesn't fold over.
+        (sway.amount * phase.sin()).clamp(-height as f64 / 2.0, height as f64 / 2.0) as f32
     }
 }
 
@@ -185,20 +263,15 @@ struct Art<'a> {
     normals: Option<&'a Arc<Texture>>,
 }
 
-fn normals_path(layer: &Layer) -> Option<&str> {
-    match &layer.content {
-        LayerContent::Image { normals, .. } => normals.as_deref(),
-        LayerContent::Tiles(tiles) => tiles.tileset.normals.as_deref(),
-    }
-}
-
 fn draw_image(
     surface: &mut dyn Surface,
     Art { texture, normals }: Art,
-    scale: f32,
+    look: Look,
+    lean: f32,
     at: (f32, f32),
     repeat: (bool, bool),
 ) {
+    let scale = look.scale;
     let (w, h) = (texture.width(), texture.height());
     if w == 0 || h == 0 {
         return;
@@ -229,20 +302,62 @@ fn draw_image(
                 ],
                 flip: Flip::default(),
                 flash: None,
-                opacity: 255,
+                opacity: look.opacity,
+                lean,
                 normals: normals.cloned(),
             });
         }
     }
 }
 
+fn draw_prop(
+    surface: &mut dyn Surface,
+    Art { texture, normals }: Art,
+    look: Look,
+    prop: &Prop,
+    at: (f32, f32),
+) {
+    let (w, h) = (texture.width(), texture.height());
+    if w == 0 || h == 0 {
+        return;
+    }
+    let size = (w as f32 / look.scale, h as f32 / look.scale);
+    let foot = point(prop.at);
+    let lean = look.lean(foot.0, size.1);
+    let left = at.0 + foot.0 as f32 - size.0 / 2.0;
+    let bottom = at.1 + foot.1 as f32;
+    let dst = [left, bottom - size.1, left + size.0, bottom];
+    let view = surface.view();
+    let reach = lean.abs();
+    if dst[2] + reach < 0.0 || dst[0] - reach > view.0 as f32 || dst[3] < 0.0 {
+        return;
+    }
+    if dst[1] > view.1 as f32 {
+        return;
+    }
+    surface.quad(&Quad {
+        texture: texture.clone(),
+        src: Rect { x: 0, y: 0, w, h },
+        dst,
+        flip: Flip {
+            x: prop.flip,
+            ..Flip::default()
+        },
+        flash: None,
+        opacity: look.opacity,
+        lean,
+        normals: normals.cloned(),
+    });
+}
+
 fn draw_tiles(
     surface: &mut dyn Surface,
     Art { texture, normals }: Art,
-    scale: f32,
+    look: Look,
     tiles: &TileLayer,
     at: (f32, f32),
 ) {
+    let scale = look.scale;
     let set = &tiles.tileset;
     let image = &texture.levels[0];
     let (tw, th) = (
@@ -290,7 +405,8 @@ fn draw_tiles(
                 dst: [left, top, right, bottom],
                 flip,
                 flash: None,
-                opacity: 255,
+                opacity: look.opacity,
+                lean: 0.0,
                 normals: normals.cloned(),
             });
         }
@@ -359,7 +475,7 @@ mod tests {
     fn draw(art: &LayerArt, level: &Level, depth: Depth, origin: (f64, f64)) -> Canvas {
         let mut canvas = Canvas::new(8, 6);
         canvas.clear(BG);
-        art.draw(&mut canvas, level, depth, origin, (0, 0));
+        art.draw(&mut canvas, level, depth, origin, (0, 0), 0.0);
         canvas
     }
 
@@ -480,6 +596,67 @@ mod tests {
         assert!(canvas.pixels.iter().all(|&c| c == BG));
     }
 
+    const PROPS: &str = "[[layers]]\nname = \"ferns\"\npixel_art = true\noffset = [1, 0]\n\
+        props = [{ image = \"fern.png\", at = [2, 4] }, { image = \"fern.png\", at = [5, 6], flip = true }]\n";
+
+    #[test]
+    fn places_props_by_the_middle_of_their_bottom_edge() {
+        let mut art = LayerArt::default();
+        art.insert("fern.png", coords(2, 3), true);
+        let canvas = draw(&art, &level(PROPS), Depth::Back, (0.0, 0.0));
+        let grid: Vec<Vec<_>> = (0..6)
+            .map(|y| (0..8).map(|x| canvas.get(x, y).unwrap()).collect())
+            .collect();
+        // From the layer's offset of 1: the first from (2, 1) to (4, 4),
+        // the second mirrored from (5, 3) to (7, 6).
+        #[rustfmt::skip]
+        assert_eq!(grid, [
+            [BG, BG, BG, BG, BG, BG, BG, BG],
+            [BG, BG, at(0, 0), at(1, 0), BG, BG, BG, BG],
+            [BG, BG, at(0, 1), at(1, 1), BG, BG, BG, BG],
+            [BG, BG, at(0, 2), at(1, 2), BG, at(1, 0), at(0, 0), BG],
+            [BG, BG, BG, BG, BG, at(1, 1), at(0, 1), BG],
+            [BG, BG, BG, BG, BG, at(1, 2), at(0, 2), BG],
+        ]);
+    }
+
+    #[test]
+    fn draws_a_layer_at_its_opacity() {
+        let level = level(
+            "[[layers]]\nname = \"leaves\"\nimage = \"white.png\"\npixel_art = true\nopacity = 0.5\n",
+        );
+        let mut white = RgbaImage::new(8, 6);
+        white.data.fill([255, 255, 255, 255]);
+        let mut art = LayerArt::default();
+        art.insert("white.png", white, true);
+        let canvas = draw(&art, &level, Depth::Back, (0.0, 0.0));
+        // Half of white over the background's 9.
+        assert_eq!(canvas.get(3, 3), Some(rgb(132, 132, 132)));
+    }
+
+    #[test]
+    fn sways_by_the_time_leaning_the_top_about_the_bottom() {
+        let level = level(
+            "[[layers]]\nname = \"reed\"\npixel_art = true\nsway = { amount = 2, period = 4 }\n\
+             props = [{ image = \"reed.png\", at = [3, 5] }]\n",
+        );
+        let mut art = LayerArt::default();
+        art.insert("reed.png", coords(2, 4), true);
+        let rows = |time: f64| {
+            let mut canvas = Canvas::new(8, 6);
+            canvas.clear(BG);
+            art.draw(&mut canvas, &level, Depth::Back, (0.0, 0.0), (0, 0), time);
+            let first = |y: i32| (0..8).find(|&x| canvas.get(x, y) != Some(BG));
+            [first(1), first(4)]
+        };
+        // Leaning furthest right a quarter of the way through a swing and
+        // furthest left at three quarters; the bottom row stays put.
+        assert_eq!(rows(1.0), [Some(4), Some(2)]);
+        assert_eq!(rows(3.0), [Some(0), Some(2)]);
+        // The same at any time is the same picture.
+        assert_eq!(rows(5.0), rows(1.0));
+    }
+
     #[test]
     fn loads_images_beside_the_level() {
         let dir = std::env::temp_dir().join(format!("clamber-layers-{}", std::process::id()));
@@ -544,7 +721,7 @@ mod tests {
         art.insert("b.png", solid, true);
         let shown = |dim| {
             let mut canvas = Canvas::new(8, 6);
-            art.draw(&mut canvas, &level, Depth::Back, (0.0, 0.0), dim);
+            art.draw(&mut canvas, &level, Depth::Back, (0.0, 0.0), dim, 0.0);
             (canvas.get(0, 0).unwrap(), canvas.get(7, 5).unwrap())
         };
         let colour_of = |[r, g, b, _]: Rgba| rgb(r, g, b);

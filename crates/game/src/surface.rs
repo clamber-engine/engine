@@ -181,6 +181,9 @@ pub struct Quad {
     /// How opaque it's drawn, from 0 (not at all) to 255 (as its texels
     /// are).
     pub opacity: u8,
+    /// How far right the top edge is drawn of where `dst` puts it, in view
+    /// units, the bottom edge staying put: a lean, as for a plant swaying.
+    pub lean: f32,
     /// A normal map laid out like `texture`, to light it by. Flashes
     /// aren't lit.
     pub normals: Option<Arc<Texture>>,

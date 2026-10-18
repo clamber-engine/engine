@@ -99,20 +99,21 @@ impl Canvas {
     fn sharp_quad(&mut self, quad: &Quad) {
         let s = self.scale as f32;
         let snap = |v: f32| (v * s + 0.5).floor() as i32;
-        let [l, t, r, b] = quad.dst.map(snap);
-        if r <= l || b <= t {
+        let [l0, t, r0, b] = quad.dst.map(snap);
+        if r0 <= l0 || b <= t {
             return;
         }
         let image = &quad.texture.levels[0];
         let src = quad.src;
         let size = quad.flip.size((src.w as f32, src.h as f32));
-        let (xs, ys) = (
-            l.max(0)..r.min(self.width as i32),
-            t.max(0)..b.min(self.height as i32),
-        );
-        for y in ys {
+        let lean = quad.lean * s;
+        for y in t.max(0)..b.min(self.height as i32) {
             let v = (y - t) as f32 + 0.5;
-            for x in xs.clone() {
+            // Each row shifted by its share of the lean, whole pixels at a
+            // time so the texels keep their shape.
+            let shift = (lean * (1.0 - v / (b - t) as f32)).round() as i32;
+            let (l, r) = (l0 + shift, r0 + shift);
+            for x in l.max(0)..r.min(self.width as i32) {
                 let u = (x - l) as f32 + 0.5;
                 let at = (u * size.0 / (r - l) as f32, v * size.1 / (b - t) as f32);
                 let (sx, sy) = quad.flip.source(at, (src.w as f32, src.h as f32));
@@ -165,11 +166,14 @@ impl Canvas {
             ((src.y + src.h) as f32 / shrink).max(lo.1 + 1.0),
         );
         let pixel = |v: f32| (v - 0.5).ceil() as i32;
-        let xs = pixel(l).max(0)..pixel(r).min(self.width as i32);
+        let lean = quad.lean * s;
         let ys = pixel(t).max(0)..pixel(b).min(self.height as i32);
         for y in ys {
-            let v = (y as f32 + 0.5 - t) / (b - t) * size.1;
-            for x in xs.clone() {
+            let down = (y as f32 + 0.5 - t) / (b - t);
+            let v = down * size.1;
+            let shift = lean * (1.0 - down);
+            let (l, r) = (l + shift, r + shift);
+            for x in pixel(l).max(0)..pixel(r).min(self.width as i32) {
                 let u = (x as f32 + 0.5 - l) / (r - l) * size.0;
                 let (sx, sy) = quad.flip.source((u, v), (src.w as f32, src.h as f32));
                 let at = ((src.x as f32 + sx) / shrink, (src.y as f32 + sy) / shrink);
@@ -418,6 +422,35 @@ mod tests {
     use super::*;
 
     const RED: Color = rgb(255, 0, 0);
+
+    #[test]
+    fn leans_smooth_quads_row_by_row() {
+        let mut image = RgbaImage::new(2, 4);
+        image.data.fill([255, 0, 0, 255]);
+        let quad = Quad {
+            texture: crate::surface::Texture::new(image, false),
+            src: clamber_sprite::Rect {
+                x: 0,
+                y: 0,
+                w: 2,
+                h: 4,
+            },
+            dst: [2.0, 0.0, 4.0, 4.0],
+            flip: Default::default(),
+            flash: None,
+            opacity: 255,
+            lean: 2.0,
+            normals: None,
+        };
+        let mut canvas = Canvas::new(8, 4);
+        canvas.quad(&quad);
+        let first = |y: i32| (0..8).find(|&x| canvas.get(x, y) == Some(RED));
+        // Each row's centre shifted by its share: 1.75, 1.25, 0.75, 0.25.
+        assert_eq!(
+            [first(0), first(1), first(2), first(3)],
+            [Some(4), Some(3), Some(3), Some(2)]
+        );
+    }
 
     #[test]
     fn fits_by_whole_pixels_and_centres() {

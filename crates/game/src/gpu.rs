@@ -1029,14 +1029,17 @@ impl Mesh {
         // scrolling between them don't shift against each other or
         // change shape from frame to frame (#190).
         let pixels = self.pixels;
-        let [l, t, r, b] = match pixels > 0.0 {
-            true => quad.dst.map(|v| (v * pixels).round() / pixels),
-            false => quad.dst,
+        let snap = |v: f32| match pixels > 0.0 {
+            true => (v * pixels).round() / pixels,
+            false => v,
         };
+        let [l, t, r, b] = quad.dst.map(snap);
+        let lean = snap(quad.lean);
         let corner = |cx: f32, cy: f32| {
             let (sx, sy) = quad.flip.source((cx * drawn.0, cy * drawn.1), (w, h));
             let uv = ((x + sx) / size.0, (y + sy) / size.1);
-            ((l + (r - l) * cx, t + (b - t) * cy), (uv, bounds))
+            let left = l + lean * (1.0 - cy);
+            ((left + (r - l) * cx, t + (b - t) * cy), (uv, bounds))
         };
         let batch = Some((texture.id(), normals));
         let on = |b: bool| if b { 1.0 } else { 0.0 };
@@ -1210,6 +1213,7 @@ mod tests {
             flip: Flip::default(),
             flash: None,
             opacity: 255,
+            lean: 0.0,
             normals: None,
         };
         // Corners as left, top, right and bottom.
@@ -1238,6 +1242,31 @@ mod tests {
     }
 
     #[test]
+    fn leans_the_top_edge_and_keeps_the_bottom() {
+        let quad = Quad {
+            texture: Texture::new(Pixels::new(8, 8), false),
+            src: Rect {
+                x: 0,
+                y: 0,
+                w: 8,
+                h: 8,
+            },
+            dst: [1.0, 2.0, 9.0, 10.0],
+            flip: Flip::default(),
+            flash: None,
+            opacity: 255,
+            lean: -1.5,
+            normals: None,
+        };
+        let mut mesh = Mesh::default();
+        mesh.quad(&quad, None);
+        let mut at: Vec<(f32, f32)> = mesh.floats.chunks(FLOATS).map(|v| (v[0], v[1])).collect();
+        at.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        at.dedup();
+        assert_eq!(at, [(-0.5, 2.0), (1.0, 10.0), (7.5, 2.0), (9.0, 10.0)]);
+    }
+
+    #[test]
     fn draws_pixel_art_sharp_and_the_rest_smooth() {
         let mut image = Pixels::new(2, 1);
         image.data = vec![[255, 0, 0, 255], [0, 0, 255, 255]];
@@ -1256,6 +1285,7 @@ mod tests {
             },
             flash: None,
             opacity: 255,
+            lean: 0.0,
             normals: None,
         };
         let mut list = DrawList::new((2, 1));
@@ -1330,6 +1360,7 @@ mod tests {
                 },
                 flash: None,
                 opacity: 255,
+                lean: 0.0,
                 normals: Some(Texture::new(normals.clone(), false)),
             });
         }

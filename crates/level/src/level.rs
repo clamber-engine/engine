@@ -210,6 +210,22 @@ pub struct Layer {
     /// The layer's colours change with the level's dimming, when a preset
     /// has one.
     pub dim: bool,
+    /// How opaque the layer is drawn, from 0 (not at all) to 1 (as its
+    /// images are), so leaves in front of the player don't hide what's
+    /// behind them.
+    pub opacity: f64,
+    /// Each of the layer's images leaning from side to side, if it sways.
+    pub sway: Option<Sway>,
+}
+
+/// Images leaning from side to side about their bottom edge, as plants
+/// and leaves do in a breeze. It's only drawn: nothing in the world moves.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sway {
+    /// How far an image's top moves to either side, in world units.
+    pub amount: f64,
+    /// Seconds for one swing there and back.
+    pub period: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
@@ -234,6 +250,24 @@ pub enum LayerContent {
         repeat_y: bool,
     },
     Tiles(TileLayer),
+    /// Images placed anywhere, such as trees, logs and ferns, in order.
+    Props(Vec<Prop>),
+}
+
+/// An image placed in a props layer. Like all layers it has no effect on
+/// collision.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Prop {
+    /// Relative to the level file.
+    pub image: String,
+    /// A normal map laid out like the image, to shade it by the level's
+    /// lights.
+    pub normals: Option<String>,
+    /// Where the middle of the image's bottom edge goes, from the layer's
+    /// top left: where a plant meets the ground.
+    pub at: Vec2,
+    /// Drawn mirrored left to right.
+    pub flip: bool,
 }
 
 /// Tiles: a drawing convenience. They have no effect on collision.
@@ -568,12 +602,32 @@ struct LayerFile {
     #[serde(default)]
     repeat: [bool; 2],
     tiles: Option<TilesFile>,
+    props: Option<Vec<PropFile>>,
     #[serde(default = "one")]
     scale: u32,
     #[serde(default)]
     pixel_art: bool,
     #[serde(default)]
     dim: bool,
+    opacity: Option<N>,
+    sway: Option<SwayFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PropFile {
+    image: String,
+    normals: Option<String>,
+    at: [N; 2],
+    #[serde(default)]
+    flip: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SwayFile {
+    amount: N,
+    period: N,
 }
 
 fn one() -> u32 {
@@ -1048,14 +1102,14 @@ impl Reader<'_> {
         if l.scale == 0 {
             return Err(self.err(&format!("{at}.scale"), "must be at least 1"));
         }
-        let content = match (l.image, l.tiles) {
-            (Some(path), None) => LayerContent::Image {
+        let content = match (l.image, l.tiles, l.props) {
+            (Some(path), None, None) => LayerContent::Image {
                 path,
                 normals: l.normals,
                 repeat_x: l.repeat[0],
                 repeat_y: l.repeat[1],
             },
-            (None, Some(t)) => {
+            (None, Some(t), None) => {
                 if l.normals.is_some() {
                     return Err(self.err(
                         &format!("{at}.normals"),
@@ -1089,7 +1143,49 @@ impl Reader<'_> {
                     tiles: t.data.into_iter().map(Tile).collect(),
                 })
             }
-            _ => return Err(self.err(at, "give either `image` or `tiles`")),
+            (None, None, Some(props)) => {
+                if l.normals.is_some() {
+                    return Err(self.err(
+                        &format!("{at}.normals"),
+                        "is for image layers; give props' normals with each prop",
+                    ));
+                }
+                LayerContent::Props(
+                    props
+                        .into_iter()
+                        .map(|p| Prop {
+                            image: p.image,
+                            normals: p.normals,
+                            at: v2(p.at),
+                            flip: p.flip,
+                        })
+                        .collect(),
+                )
+            }
+            _ => return Err(self.err(at, "give one of `image`, `tiles` or `props`")),
+        };
+        let opacity = match l.opacity {
+            Some(n) if n.0 < Fixed::ZERO || n.0 > Fixed::ONE => {
+                return Err(self.err(&format!("{at}.opacity"), "must be from 0 to 1"));
+            }
+            Some(n) => n.0.to_f64(),
+            None => 1.0,
+        };
+        let sway = match l.sway {
+            Some(_) if matches!(content, LayerContent::Tiles(_)) => {
+                return Err(self.err(
+                    &format!("{at}.sway"),
+                    "is for image and props layers; tiles would come apart",
+                ));
+            }
+            Some(s) if s.period.0 <= Fixed::ZERO => {
+                return Err(self.err(&format!("{at}.sway.period"), "must be positive"));
+            }
+            Some(s) => Some(Sway {
+                amount: s.amount.0.to_f64(),
+                period: s.period.0.to_f64(),
+            }),
+            None => None,
         };
         Ok(Layer {
             name: l.name,
@@ -1100,6 +1196,8 @@ impl Reader<'_> {
             scale: l.scale,
             pixel_art: l.pixel_art,
             dim: l.dim,
+            opacity,
+            sway,
         })
     }
 
@@ -1497,6 +1595,15 @@ impl Level {
             if l.dim {
                 lt.insert("dim".into(), Value::Boolean(true));
             }
+            if l.opacity != 1.0 {
+                lt.insert("opacity".into(), float(l.opacity));
+            }
+            if let Some(sway) = &l.sway {
+                let mut st = Table::new();
+                st.insert("amount".into(), float(sway.amount));
+                st.insert("period".into(), float(sway.period));
+                lt.insert("sway".into(), Value::Table(st));
+            }
             match &l.content {
                 LayerContent::Image {
                     path,
@@ -1530,6 +1637,21 @@ impl Level {
                         .collect();
                     tt.insert("data".into(), Value::Array(data));
                     lt.insert("tiles".into(), Value::Table(tt));
+                }
+                LayerContent::Props(props) => {
+                    let props = props.iter().map(|p| {
+                        let mut pt = Table::new();
+                        pt.insert("image".into(), Value::String(p.image.clone()));
+                        if let Some(n) = &p.normals {
+                            pt.insert("normals".into(), Value::String(n.clone()));
+                        }
+                        pt.insert("at".into(), pair(p.at));
+                        if p.flip {
+                            pt.insert("flip".into(), Value::Boolean(true));
+                        }
+                        Value::Table(pt)
+                    });
+                    lt.insert("props".into(), Value::Array(props.collect()));
                 }
             }
             Value::Table(lt)

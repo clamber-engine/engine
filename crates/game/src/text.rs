@@ -345,6 +345,7 @@ fn draw_layer(
                     flip: Flip::default(),
                     flash: Some(flash),
                     opacity: 255,
+                    lean: 0.0,
                     normals: None,
                 });
             }

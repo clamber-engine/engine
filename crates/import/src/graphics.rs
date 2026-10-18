@@ -731,6 +731,8 @@ fn layer(name: &str, parallax: Vec2, offset: Vec2, content: LayerContent) -> Lay
         // Its colours are the background's rows, which the dimming
         // changes (`spec/behavior/dimming.md`).
         dim: true,
+        opacity: 1.0,
+        sway: None,
     }
 }
 

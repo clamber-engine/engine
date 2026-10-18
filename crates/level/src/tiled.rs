@@ -7,7 +7,9 @@
 //! - **Tile layers** become tile layers, split in one per tileset used.
 //! - **Image layers** become image layers, keeping parallax, offset and
 //!   repeat.
-//! - **Group layers** are flattened, combining their offsets and parallax.
+//! - **Group layers** are flattened, combining their offsets, parallax and
+//!   opacity.
+//! - Tile and image layers keep their opacity.
 //! - Tile and image layers are drawn as pixel art, one texel per world unit.
 //! - A layer property `depth` (`"back"` or `"front"`, default back) puts the
 //!   layer behind or in front of entities.
@@ -70,6 +72,7 @@ struct TLayer {
     offsety: f64,
     parallaxx: Option<f64>,
     parallaxy: Option<f64>,
+    opacity: Option<f64>,
     // tile layers
     width: Option<u32>,
     data: Option<Json>,
@@ -239,7 +242,7 @@ pub fn import(
         layer_names: Vec::new(),
     };
     for layer in &map.layers {
-        out.layer(layer, (0.0, 0.0), (1.0, 1.0))?;
+        out.layer(layer, (0.0, 0.0), (1.0, 1.0), 1.0)?;
     }
 
     let mut level = Table::new();
@@ -318,8 +321,10 @@ impl Out<'_> {
         l: &TLayer,
         offset: (f64, f64),
         parallax: (f64, f64),
+        opacity: f64,
     ) -> Result<(), LevelError> {
         let offset = (offset.0 + l.offsetx, offset.1 + l.offsety);
+        let opacity = (opacity * l.opacity.unwrap_or(1.0)).clamp(0.0, 1.0);
         let parallax = (
             parallax.0 * l.parallaxx.unwrap_or(1.0),
             parallax.1 * l.parallaxy.unwrap_or(1.0),
@@ -344,12 +349,15 @@ impl Out<'_> {
                 t.insert("offset".into(), floats(&[offset.0, offset.1]));
             }
             t.insert("pixel_art".into(), Value::Boolean(true));
+            if opacity < 1.0 {
+                t.insert("opacity".into(), Value::Float(opacity));
+            }
             t
         };
         match l.kind.as_str() {
             "group" => {
                 for child in &l.layers {
-                    self.layer(child, offset, parallax)?;
+                    self.layer(child, offset, parallax, opacity)?;
                 }
             }
             "imagelayer" => {

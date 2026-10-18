@@ -107,9 +107,10 @@ fn the_cast_sheets_are_rendered_with_their_animations() {
     }
 }
 
-/// The first level's terrain and backgrounds are rendered by
+/// The first level's terrain, backgrounds and props are rendered by
 /// `tools/render-art.sh` at the sprites' scale: the tiles with a normal
-/// map, and each background as wide as the view, so it tiles across it.
+/// map, and each repeating background as wide as the view, so it tiles
+/// across it.
 #[test]
 fn the_first_level_is_drawn_with_rendered_art() {
     let path = content_dir().join(DEFAULT_LEVEL);
@@ -124,11 +125,14 @@ fn the_first_level_is_drawn_with_rendered_art() {
                 assert!(tiles.tileset.normals.is_some(), "{}", layer.name);
                 assert_eq!(tiles.tileset.tile_width, 16 * layer.scale);
             }
-            LayerContent::Image { path, .. } => {
-                let bytes = std::fs::read(dir.join(path)).unwrap();
-                let image = decode_png(&bytes).unwrap();
-                assert_eq!(image.width(), 384 * layer.scale, "{}", layer.name);
+            LayerContent::Image { path, repeat_x, .. } => {
+                if *repeat_x {
+                    let bytes = std::fs::read(dir.join(path)).unwrap();
+                    let image = decode_png(&bytes).unwrap();
+                    assert_eq!(image.width(), 384 * layer.scale, "{}", layer.name);
+                }
             }
+            LayerContent::Props(_) => {}
         }
     }
 }
