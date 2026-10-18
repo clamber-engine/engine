@@ -327,6 +327,11 @@ impl LegWalker {
         self.walk.is_some()
     }
 
+    /// The node the lead is walking to, if it's walking.
+    pub fn heading(&self) -> Option<usize> {
+        self.walk.as_ref().map(|w| w.to)
+    }
+
     /// Frames counted since the map appeared.
     pub fn frame(&self) -> u64 {
         self.frame

@@ -569,15 +569,15 @@ impl App {
         })
     }
 
-    /// The least time between frames now: none during play with vsync,
-    /// as presenting waits for the display, and less often behind
-    /// menus and out of focus.
+    /// The least time between frames now: none during play or on the
+    /// level map with vsync, as presenting waits for the display, and
+    /// less often behind menus and out of focus.
     fn frame_interval(&self) -> std::time::Duration {
         let vsync = matches!(
             self.window.as_ref().map(|s| &s.output),
             Some(Output::Gpu(gpu)) if gpu.vsync()
         );
-        let active = self.focused && self.session.screen == Screen::Playing;
+        let active = self.focused && matches!(self.session.screen, Screen::Playing | Screen::Map);
         display::frame_interval(vsync, active)
     }
 

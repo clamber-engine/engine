@@ -1,6 +1,7 @@
 //! The screens around a level: title, pause, controls, options,
 //! credits, importing a game, the games to play, level complete and game
-//! over, and moving between them and play.
+//! over, the level map between levels for a pack that has one
+//! ([`MapPlay`]), and moving between them and play.
 //!
 //! Menus read the same neutral actions as play, from every player at
 //! once, so a keyboard or a gamepad alone can drive them (see
@@ -24,6 +25,7 @@ use crate::feels::Feels;
 use crate::game::Game;
 use crate::hud::{COUNT, GEM, RELIC_ICON, relic_total};
 use crate::import::{After, Games, Importing, PERSONAL, Pick, Picked, Picker};
+use crate::map::{MapPlay, MapStep};
 use crate::menu::{Choice, Menu};
 use crate::prefs::{Prefs, Volume};
 use crate::report;
@@ -98,6 +100,8 @@ pub enum Screen {
     Importing(Importing, Box<Screen>),
     /// Choosing a game to play, and the screen to go back to.
     Games(Games, Box<Screen>),
+    /// The session's level map ([`Session::map`]).
+    Map,
 }
 
 /// The music a screen plays.
@@ -151,7 +155,7 @@ impl Screen {
         match self {
             Screen::Title(_) => Some(Tune::Title),
             Screen::Playing | Screen::Paused(_) => Some(Tune::Level),
-            Screen::Complete(_) | Screen::GameOver(_) => None,
+            Screen::Complete(_) | Screen::GameOver(_) | Screen::Map => None,
             Screen::Controls(_, from)
             | Screen::Movement(_, from)
             | Screen::Options(_, from)
@@ -211,6 +215,10 @@ pub struct Session {
     /// Where imported packs go, if anywhere.
     pub packs_dir: Option<PathBuf>,
     pub importer: Arc<Importer>,
+    /// The level map of the pack being played, if it has one: a new game
+    /// begins on it, and finishing a level entered from it goes back
+    /// there.
+    pub map: Option<MapPlay>,
 }
 
 impl Session {
@@ -234,6 +242,7 @@ impl Session {
             pack: None,
             packs_dir: None,
             importer: Arc::new(Importer::builtin()),
+            map: None,
         }
     }
 
@@ -262,6 +271,7 @@ impl Session {
         }
         let frame = everyone(input);
         match self.screen {
+            Screen::Map => return self.step_map(&frame),
             Screen::Picker(..) => return self.step_picker(&frame),
             Screen::Importing(..) => return self.step_importing(&frame),
             Screen::Games(..) => return self.step_games(&frame),
@@ -393,6 +403,12 @@ impl Session {
         };
         match item {
             Item::Resume => self.screen = Screen::Playing,
+            Item::Start if self.map.is_some() => {
+                if let Some(map) = &mut self.map {
+                    map.new_game();
+                }
+                self.screen = Screen::Map;
+            }
             Item::Start | Item::Restart => {
                 self.first_area();
                 self.game.restart();
@@ -557,8 +573,39 @@ impl Session {
         self.game = self.load(path, pack.as_ref())?;
         self.level_path = path.to_path_buf();
         self.left.clear();
+        self.map = match pack.as_ref().map(|p| MapPlay::load(&p.dir)) {
+            Some(Ok(map)) => map,
+            Some(Err(e)) => {
+                report::warn(format!("the level map can't be played: {e}"));
+                None
+            }
+            None => None,
+        };
         self.pack = pack;
         Ok(())
+    }
+
+    /// Runs a frame of the level map, beginning a level entered there.
+    fn step_map(&mut self, frame: &Frame) {
+        let Some(map) = &mut self.map else {
+            self.screen = Screen::title();
+            return;
+        };
+        let MapStep::Begin(path) = map.step(frame.held) else {
+            return;
+        };
+        match self.load(&path, self.pack.as_ref()) {
+            Ok(game) => {
+                self.game = game;
+                self.level_path = path;
+                self.left.clear();
+                self.screen = Screen::Playing;
+            }
+            Err(e) => {
+                report::warn(format!("can't play {}: {e}", path.display()));
+                self.screen = Screen::title();
+            }
+        }
     }
 
     /// The level at `path` with the movement being played, and `pack`'s
@@ -726,7 +773,13 @@ impl Session {
         }
         self.cues.extend(cues(&self.game.world));
         match self.game.world.flow.outcome {
-            Outcome::Complete => self.screen = Screen::complete(),
+            Outcome::Complete => match &mut self.map {
+                Some(map) if map.playing() => {
+                    map.finished();
+                    self.screen = Screen::Map;
+                }
+                _ => self.screen = Screen::complete(),
+            },
             Outcome::GameOver => self.screen = Screen::game_over(),
             Outcome::Exited(exit) => self.leave_by(exit),
             _ => {}
@@ -745,9 +798,11 @@ impl Session {
     /// which are laid out for its view.
     pub fn look(&self) -> Look {
         match self.screen {
-            Screen::Playing | Screen::Paused(_) | Screen::Complete(_) | Screen::GameOver(_) => {
-                self.game.look
-            }
+            Screen::Playing
+            | Screen::Paused(_)
+            | Screen::Complete(_)
+            | Screen::GameOver(_)
+            | Screen::Map => self.game.look,
             _ => Look::RENDERED,
         }
     }
@@ -755,6 +810,10 @@ impl Session {
     /// Draws the game and the screen over it into `canvas`, whose view
     /// should be [`look`](Session::look)'s.
     pub fn draw(&self, canvas: &mut dyn Surface, alpha: f64) {
+        if let (Screen::Map, Some(map)) = (&self.screen, &self.map) {
+            map.draw(canvas);
+            return;
+        }
         let playing = self.screen == Screen::Playing;
         self.game.draw(canvas, if playing { alpha } else { 1.0 });
         if playing {
@@ -764,7 +823,7 @@ impl Session {
 
         let centre = canvas.view().0 as i32 / 2;
         let (menu, top) = match &self.screen {
-            Screen::Playing => return,
+            Screen::Playing | Screen::Map => return,
             Screen::Controls(controls, _) => {
                 controls.draw(canvas, centre, &self.input);
                 return;
@@ -956,6 +1015,8 @@ mod tests {
     use clamber_input::{Actions, Key};
     use clamber_level::Level;
     use clamber_sim::{World, generic_feel};
+
+    use crate::map::{LEVEL_MAP, MapPhase};
 
     use super::*;
 
@@ -1871,6 +1932,259 @@ mod tests {
         assert_eq!(s.level_path, level);
         assert!(s.left.is_empty());
         assert!(!s.game.world.flow.outcome.is_over());
+    }
+
+    /// A pack folder with [`LEVEL`] as `levels/level-1.level` and a level
+    /// map: a new game walks from `s` to the warp `k`, which leads to the
+    /// level node `f`; finishing `f` opens the path down to `n`.
+    fn map_pack(name: &str) -> PathBuf {
+        let dir = scratch(name);
+        std::fs::create_dir_all(dir.join("levels")).unwrap();
+        std::fs::create_dir_all(dir.join("maps")).unwrap();
+        std::fs::write(dir.join("levels/level-1.level"), LEVEL).unwrap();
+        let map = r#"
+            format = 1
+            id = "level-map"
+            size = [512, 256]
+            mode = "legs"
+            start = "s"
+
+            [legs]
+            leg_frames = 64
+            remember = 31
+            page_width = 256
+            page_wait = 64
+            appear_offset = [8, 0]
+            appear_wait = 64
+            y_up = true
+            fade_step = 2
+
+            [legs.finish.first]
+            black = 49
+            still = [163, 50]
+            gate = 242
+
+            [legs.finish.again]
+            black = 52
+            gate = 64
+
+            [legs.new_game]
+            walk = 64
+            toward = "right"
+
+            [[nodes]]
+            id = "s"
+            kind = "waypoint"
+            at = [100, 40]
+
+            [[nodes]]
+            id = "k"
+            kind = "warp"
+            map = "level-map"
+            node = "f"
+            at = [172, 40]
+
+            [[nodes]]
+            id = "f"
+            kind = "level"
+            level = "levels/level-1.level"
+            exits = ["normal"]
+            at = [60, 200]
+            onward = "down"
+
+            [[nodes]]
+            id = "n"
+            kind = "waypoint"
+            at = [60, 150]
+
+            [[paths]]
+            from = "s"
+            to = "k"
+            leave = ["right"]
+            back = ["left"]
+            back_unlock = { flag = "never" }
+
+            [[paths]]
+            from = "f"
+            to = "n"
+            leave = ["down"]
+            back = ["up"]
+            unlock = { cleared = "f" }
+        "#;
+        std::fs::write(dir.join(LEVEL_MAP), map).unwrap();
+        dir
+    }
+
+    /// Runs `frames` frames with `held(frame)` held, from `before` held,
+    /// returning what was held last.
+    fn hold(
+        s: &mut Session,
+        before: Actions,
+        frames: u32,
+        held: impl Fn(u32) -> Actions,
+    ) -> Actions {
+        let mut before = before;
+        for f in 0..frames {
+            let now = held(f);
+            s.step(&input(before, now));
+            before = now;
+        }
+        before
+    }
+
+    fn map_of(s: &Session) -> &MapPlay {
+        s.map.as_ref().expect("a level map")
+    }
+
+    /// The node the lead stands at or last stood at, and whether the map
+    /// shows.
+    fn lead(s: &Session) -> (String, bool) {
+        let map = map_of(s);
+        match &map.phase {
+            MapPhase::Shown(screen) => (map.map.nodes[screen.lead.node].id.clone(), true),
+            _ => (String::new(), false),
+        }
+    }
+
+    /// Plays the level until it's over, holding Right.
+    fn finish_level(s: &mut Session) {
+        let right = Actions::from(Action::Right);
+        let mut before = Actions::NONE;
+        while s.screen == Screen::Playing {
+            s.step(&input(before, right));
+            before = right;
+            assert!(s.game.world.frame < 600, "never reached the goal");
+        }
+    }
+
+    /// spec/behavior/level-map.md, "A new game", its example: the map
+    /// before the first level, which begins on the frame after the black
+    /// ones.
+    #[test]
+    fn a_new_game_begins_on_the_level_map() {
+        let dir = map_pack("map-new-game");
+        let mut s = session(LEVEL);
+        s.map = MapPlay::load(&dir).unwrap();
+        s.step(&press(Action::Jump));
+        assert_eq!(s.screen, Screen::Map, "Start shows the map");
+        assert_eq!(s.tune(), None);
+        let jump = Actions::from(Action::Jump);
+        let down = Actions::from(Action::Down);
+        let at = |f: u32| match f {
+            100 | 140 | 230 | 240 => jump,
+            180..=200 => down,
+            _ => Actions::NONE,
+        };
+        let mut before = Actions::NONE;
+        let mut canvas = Game::canvas();
+        s.draw(&mut canvas, 1.0);
+        assert!(
+            canvas.pixels.iter().all(|&p| p == 0),
+            "black before frame 0"
+        );
+        for f in 0..272 {
+            before = hold(&mut s, before, 1, |_| at(f));
+            let (node, shown) = lead(&s);
+            match f {
+                126 => assert_eq!(node, "s", "still walking on {f}"),
+                127 | 171 => assert_eq!(node, "k", "at the warp on {f}"),
+                172 | 271 => assert_eq!(node, "f", "at the level on {f}"),
+                _ => {}
+            }
+            assert!(shown, "the map on {f}");
+            assert_eq!(s.screen, Screen::Map, "frame {f}");
+        }
+        let mut lit = Game::canvas();
+        s.step(&idle());
+        assert_eq!(s.screen, Screen::Playing, "the level begins on P + 32");
+        assert_eq!(s.level_path, dir.join("levels/level-1.level"));
+        assert_eq!(s.game.world.frame, 0);
+        assert!(map_of(&s).playing());
+
+        // the map at full brightness
+        let map = s.map.as_mut().unwrap();
+        map.new_game();
+        for _ in 0..40 {
+            map.step(Actions::NONE);
+        }
+        map.draw(&mut lit);
+        assert!(lit.pixels.iter().any(|&p| p != 0), "a stand-in picture");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The map's first frame on the step `black` after the level's last.
+    fn until_shown(s: &mut Session) -> u32 {
+        let mut steps = 0;
+        while !lead(s).1 {
+            s.step(&idle());
+            steps += 1;
+            assert!(steps < 100, "the map never appears");
+        }
+        steps
+    }
+
+    /// spec/behavior/level-map.md, "After finishing a level": the map
+    /// after the black frames, the level recorded and Down given at the
+    /// gate; a press at a node that isn't a level does nothing; and
+    /// entering the level again and finishing it, the shorter times.
+    #[test]
+    fn finishing_a_level_goes_back_to_the_map() {
+        let dir = map_pack("map-finish");
+        let mut s = session(LEVEL);
+        s.map = MapPlay::load(&dir).unwrap();
+        s.step(&press(Action::Jump));
+        let jump = Actions::from(Action::Jump);
+        hold(&mut s, Actions::NONE, 273, |f| match f {
+            140 | 240 => jump,
+            _ => Actions::NONE,
+        });
+        assert_eq!(s.screen, Screen::Playing);
+
+        finish_level(&mut s);
+        assert_eq!(s.screen, Screen::Map, "no complete screen");
+        assert!(map_of(&s).progress.cleared_by("level-map:f", "normal"));
+        assert_eq!(until_shown(&mut s), 49);
+        // frame 0 was the last step; the walk down starts on the gate
+        hold(&mut s, Actions::NONE, 241, |_| Actions::NONE);
+        let walking = |s: &Session| match &map_of(s).phase {
+            MapPhase::Shown(screen) => screen.lead.walking(),
+            _ => false,
+        };
+        assert!(!walking(&s), "not before the gate");
+        s.step(&idle());
+        assert!(walking(&s), "Down given on the gate");
+        hold(&mut s, Actions::NONE, 80, |_| Actions::NONE);
+        assert_eq!(lead(&s).0, "n");
+
+        // a waypoint can't be entered
+        let before = hold(&mut s, Actions::NONE, 1, |_| jump);
+        hold(&mut s, before, 60, |_| Actions::NONE);
+        assert_eq!(s.screen, Screen::Map);
+        assert_eq!(lead(&s), ("n".to_string(), true));
+
+        // back up to the level, into it and out again
+        let up = Actions::from(Action::Up);
+        let before = hold(&mut s, Actions::NONE, 1, |_| up);
+        let before = hold(&mut s, before, 80, |_| Actions::NONE);
+        assert_eq!(lead(&s).0, "f");
+        hold(&mut s, before, 1, |_| jump);
+        hold(&mut s, jump, 32, |_| Actions::NONE);
+        assert_eq!(s.screen, Screen::Playing);
+        finish_level(&mut s);
+        assert_eq!(until_shown(&mut s), 52, "finished before");
+        hold(&mut s, Actions::NONE, 63, |_| Actions::NONE);
+        assert!(!walking(&s));
+        s.step(&idle());
+        assert!(walking(&s), "the gate is 64 when finished before");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_new_game_without_a_level_map_plays_the_level() {
+        let mut s = session(LEVEL);
+        s.step(&press(Action::Jump));
+        assert_eq!(s.screen, Screen::Playing);
+        assert!(s.map.is_none());
     }
 
     #[test]

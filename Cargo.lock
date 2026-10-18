@@ -320,6 +320,7 @@ dependencies = [
  "clamber-sim",
  "clamber-sprite",
  "clamber-trace",
+ "clamber-worldmap",
  "gif",
  "png",
  "pollster",

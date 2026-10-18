@@ -25,6 +25,8 @@
 //! The title screen also imports a game the player owns, picked with a
 //! [`Picker`], as a personal pack, and lists the packs to play
 //! ([`Games`]).
+//! A pack with a level map begins a new game on it and goes back to it
+//! after each level ([`MapPlay`]).
 //!
 //! What happens in play becomes [`Cue`]s, which [`Audio`] plays from a
 //! [`SoundList`], along with music: the title's on the title screen and
@@ -51,6 +53,7 @@ mod hud;
 mod import;
 pub mod keys;
 mod layers;
+mod map;
 mod menu;
 mod music;
 mod prefs;
@@ -82,6 +85,7 @@ pub use gpu::Gpu;
 pub use hud::draw_hud;
 pub use import::{Games, Importing, Picker};
 pub use layers::LayerArt;
+pub use map::{LEVEL_MAP, MapPhase, MapPlay, MapStep};
 pub use menu::{Choice, Menu};
 pub use music::{DEFAULT_MUSIC, MusicList, MusicTrack};
 pub use prefs::{Display, Prefs, Volume};
