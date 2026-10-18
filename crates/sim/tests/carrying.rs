@@ -6,7 +6,7 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_pack::Fixed;
-use clamber_sim::{Act, Event, Facing, InputFrame, Phase, World, generic_feel, step};
+use clamber_sim::{Act, Event, Facing, FlowEvent, InputFrame, Phase, World, generic_feel, step};
 
 use Action::{Down, Jump, Left, Right, Up};
 
@@ -467,7 +467,16 @@ fn falling_out_of_the_level_drops_the_object() {
     play.hold(&[A], 100);
     assert!(play.world.player.hands.is_none());
     assert!(matches!(play.world.things[0].phase, Phase::Thrown(_)));
-    // It falls on once the game goes on, out of the level.
-    play.hold(&[], 300);
-    assert!(!play.world.things[0].active);
+    // When the player comes back, it's at its entry's place again
+    // (`resume_afresh`).
+    for _ in 0..300 {
+        play.step(&[]);
+        if play.world.flow.events.contains(&FlowEvent::Respawn) {
+            break;
+        }
+    }
+    let object = &play.world.things[0];
+    assert!(object.active);
+    assert_eq!(object.phase, Phase::Ready);
+    assert_eq!(object.pos, play.world.level.entities[0].at);
 }

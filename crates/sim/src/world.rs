@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_fixed::Fixed;
-use clamber_level::{Arrival, Level, Vec2};
+use clamber_level::{Arrival, Entity, Level, Vec2};
 use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 
 use crate::archetype::{Archetype, ArchetypeError, Archetypes, Behavior, Rope, Sling, Spring};
@@ -106,6 +106,34 @@ pub struct Thing {
     /// Steps a walker that just appeared waits before it moves.
     pub wait: u8,
     pub phase: Phase,
+}
+
+impl Thing {
+    /// Entity `index`, `entity`, as it is at the level's start.
+    pub(crate) fn placed(index: usize, entity: &Entity, archetype: Option<Archetype>) -> Thing {
+        // A walker starts out at full speed.
+        let (facing, vx) = match archetype.map(|a| a.behavior) {
+            Some(Behavior::Walker { facing, speed, .. }) => match facing {
+                Facing::Left => (facing, -speed),
+                Facing::Right => (facing, speed),
+            },
+            _ => (Facing::Right, Fixed::ZERO),
+        };
+        Thing {
+            index,
+            kind: entity.kind.clone(),
+            pos: entity.at,
+            active: true,
+            archetype,
+            facing,
+            heading: facing,
+            turn: 0,
+            vx,
+            clock: 0,
+            wait: 0,
+            phase: Phase::Ready,
+        }
+    }
 }
 
 /// What an archetype thing is doing besides its behavior.
@@ -311,28 +339,7 @@ impl World {
             .map(|(index, e)| {
                 let path = format!("entities[{index}]");
                 let archetype = archetypes.resolve(e, &level.name, &path)?;
-                // A walker starts out at full speed.
-                let (facing, vx) = match archetype.map(|a| a.behavior) {
-                    Some(Behavior::Walker { facing, speed, .. }) => match facing {
-                        Facing::Left => (facing, -speed),
-                        Facing::Right => (facing, speed),
-                    },
-                    _ => (Facing::Right, Fixed::ZERO),
-                };
-                Ok(Thing {
-                    index,
-                    kind: e.kind.clone(),
-                    pos: e.at,
-                    active: true,
-                    archetype,
-                    facing,
-                    heading: facing,
-                    turn: 0,
-                    vx,
-                    clock: 0,
-                    wait: 0,
-                    phase: Phase::Ready,
-                })
+                Ok(Thing::placed(index, e, archetype))
             })
             .collect::<Result<_, _>>()?;
         // A level with an entrance begins as an area does (view.md, "When
@@ -1119,6 +1126,7 @@ pub fn step(world: &mut World, input: &InputFrame) {
         if world.flow.events.contains(&FlowEvent::Respawn) {
             view::restart(world);
             keg::begin(world);
+            flow::afresh(world);
             world.dimming = None;
         } else if follow::due(world).is_some() {
             // The other character goes on following a player that fell

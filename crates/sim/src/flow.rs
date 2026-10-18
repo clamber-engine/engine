@@ -8,7 +8,7 @@
 //!   player comes back after losing a life. Its `at` is where the
 //!   player's feet go.
 //! - `gem` and `relic`: picked up and counted; relics are the rare ones.
-//!   Pickups stay picked up after losing a life.
+//!   Pickups stay picked up after losing a life, unless `resume_afresh`.
 //!
 //! Getting hurt, by touching a hazard surface or an enemy
 //! ([`things`](crate::things)), or falling below the level costs a life,
@@ -20,18 +20,33 @@
 //! if the physics say so (`knockout_jump`), then comes back at the last
 //! checkpoint reached, or the level's start. Losing the last life ends
 //! the world with [`Outcome::GameOver`].
+//!
+//! With `resume_afresh` above 0, the level's things are as at its start
+//! when the player comes back ([`afresh`]), as restart-barrel.md has it
+//! after a knock-out ("What is there again after a knock-out"): the
+//! counts, the lives and the restart points reached are kept, the
+//! letters taken only when play comes back at a restart point (and
+//! those letters stay gone), and the lead is the character that was
+//! leading. Engine choices where the spec says nothing: this is so
+//! after any lost life, a fall-out too; restart barrels and entrances
+//! stay as they were; letters still joining are forgotten, and are in
+//! the level again; and after an exit, what an exit kept gone
+//! (exits.md) is there again too.
 
 use clamber_fixed::Fixed;
 use clamber_level::Vec2;
 
 use clamber_pack::Param;
 
+use crate::archetype::Behavior;
 use crate::collect::{self, LetterEnd, LivesStep, Pickup, Release, RelicFlight};
 use crate::keg;
 use crate::loss;
 use crate::player::{Facing, Knockout, Player, State, frames};
+use crate::sections::Placing;
 use crate::swap::Other;
-use crate::world::{Event, World};
+use crate::view;
+use crate::world::{Event, Phase, Thing, World};
 
 pub const GOAL: &str = "goal";
 pub const CHECKPOINT: &str = "checkpoint";
@@ -214,6 +229,67 @@ pub(crate) fn dying(world: &mut World) -> bool {
         world.flow.events.push(FlowEvent::Respawn);
     }
     true
+}
+
+/// On the step the player comes back after a lost life, once the view
+/// is where it starts: with `resume_afresh` above 0, the level's things
+/// are as at its start, there or not by that view, but for restart
+/// barrels and entrances. Coming back at a restart point, the letters
+/// taken stay gone; at the level's start, none are taken any more.
+pub(crate) fn afresh(world: &mut World) {
+    if world.feel.world[Param::ResumeAfresh] <= Fixed::ZERO {
+        return;
+    }
+    let level = world.level.clone();
+    let flow = &mut world.flow;
+    let at_restart = !flow.checkpoints.is_empty();
+    if !at_restart {
+        flow.letters = 0;
+        flow.letter_taken = None;
+        flow.letter_end = None;
+    }
+    flow.joining.clear();
+    let letters = flow.letters;
+    // Thrown balls come after the level's entities.
+    world.things.truncate(level.entities.len());
+    let mut fresh = vec![false; world.things.len()];
+    for (thing, fresh) in world.things.iter_mut().zip(&mut fresh) {
+        match thing.archetype.map(|a| a.behavior) {
+            Some(Behavior::Keg(_) | Behavior::Entrance(_)) => {}
+            Some(Behavior::Collect { letter, .. })
+                if letter > 0
+                    && letters & 1u8.checked_shl(u32::from(letter) - 1).unwrap_or(0) != 0 =>
+            {
+                thing.active = false;
+                thing.phase = Phase::Gone;
+            }
+            _ => {
+                *thing = Thing::placed(thing.index, &level.entities[thing.index], thing.archetype);
+                *fresh = true;
+            }
+        }
+    }
+    world.bursts.clear();
+    world.waiting.clear();
+    let Some(v) = world.view else {
+        return;
+    };
+    let physics = world.player_physics();
+    let present = view::at_start(&world.things, &level, v.x(), &physics);
+    for ((thing, present), fresh) in world.things.iter_mut().zip(present).zip(&fresh) {
+        thing.active &= present || !fresh;
+    }
+    if let Some(placing) = &mut world.placing {
+        *placing = Placing::begin(placing.placed.clone(), v.y());
+        for ((thing, spot), fresh) in world
+            .things
+            .iter_mut()
+            .zip(&placing.placed.spot_of)
+            .zip(&fresh)
+        {
+            thing.active &= spot.is_none() || !fresh;
+        }
+    }
 }
 
 /// Applies what the player touched during the step just taken.

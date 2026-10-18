@@ -643,6 +643,7 @@ mod tests {
                     | Param::WalkInFadeSteps
                     | Param::FallOutDepth
                     | Param::FallOutTime
+                    | Param::ResumeAfresh
                     | Param::DimSteps
                     | Param::DimStepTime
                     | Param::DimDelay

@@ -1340,6 +1340,11 @@ params! {
     /// falls out on, with input ignored and the player and the view
     /// still. 0: as for any lost life. Whole frames.
     FallOutTime => "fall_out_time",
+    /// Above 0, play coming back after a lost life finds the level's
+    /// things as at its start, but for restart points already broken
+    /// and, coming back at one, the letters taken. 0: they stay as
+    /// they were.
+    ResumeAfresh => "resume_afresh",
     /// Above 0, a level's `dim` entity starts the dimming of the level's
     /// background once it's near the view (see `clamber_sim::Dimming`),
     /// and this is its number of steps. 0: no dimming. Whole steps.

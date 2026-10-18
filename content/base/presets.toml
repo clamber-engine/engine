@@ -359,6 +359,7 @@ walk_in_fade_step = 0
 walk_in_fade_steps = 0
 fall_out_depth = 0
 fall_out_time = 0
+resume_afresh = 0
 dim_steps = 0
 dim_step_time = 0
 dim_delay = 0
@@ -863,6 +864,10 @@ walk_in_fade_steps = 15
 # frame is 96 frames after that one.
 fall_out_depth = 48
 fall_out_time = 96
+# What is there again after a knock-out (restart-barrel.md): the level's
+# things as at its start, but the restart barrel once broken and, coming
+# back at the restart point, the letters taken.
+resume_afresh = 1
 # The dimming near the first level's end (dimming.md): 32 steps 8 frames
 # apart, the first on a frame at least 4 after the dim entry comes into
 # the window. The spec doesn't say where the 8-frame cycle sits; the
