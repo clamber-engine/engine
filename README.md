@@ -26,6 +26,20 @@ Placeholder art; nothing here is final.
 | ![](https://github.com/clamber-engine/engine/blob/media/shot-1.png?raw=true) | ![](https://github.com/clamber-engine/engine/blob/media/shot-2.png?raw=true) |
 | ![](https://github.com/clamber-engine/engine/blob/media/shot-3.png?raw=true) | ![](https://github.com/clamber-engine/engine/blob/media/shot-4.png?raw=true) |
 
+## UI graphics pass
+
+The title screen, the Controls screen and the HUD before the UI
+graphics pass (#198, at 52ce088) and after it (at 0d0ece3). Pixel text
+and icons gave way to a vector font, a 3D-rendered logo, icons, panels
+and button prompts. Captured with `tools/capture/ui-tour.scn` and
+`tools/capture/first-tour.scn`, with `--preset default`.
+
+| Before | After |
+|---|---|
+| ![Title screen before](docs/ui/title-before.jpg) | ![Title screen after](docs/ui/title-after.jpg) |
+| ![Controls screen before](docs/ui/controls-before.jpg) | ![Controls screen after](docs/ui/controls-after.jpg) |
+| ![HUD before](docs/ui/hud-before.jpg) | ![HUD after](docs/ui/hud-after.jpg) |
+
 ## Status
 
 Early setup. The first level is playable: see [`PLAYING.md`](PLAYING.md)

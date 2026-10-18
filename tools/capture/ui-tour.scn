@@ -1,0 +1,18 @@
+# clamber-scenario v1
+#
+# The README's UI before-and-after shots: the title screen once its
+# intro has settled, then the Controls screen. Nothing happens on the
+# way, so the capture's screenshots fall on evenly spaced frames: steps
+# 0, 30, 90 (the title) and 150 (Controls).
+id: ui-tour
+summary: The title screen and the Controls screen, for the README
+requires: content/base/levels/first.level
+start: the title screen, before the level starts
+frames: 240
+
+[inputs]
+100       D
+106       D
+112       D
+118       D
+126       J         # Controls
