@@ -493,14 +493,17 @@ pub(crate) fn far(x: i64, left: i64, physics: &Physics) -> bool {
 ///   its start, at rest, heading the way it was placed. It waits its
 ///   `appear_wait` steps, counting this one, before it moves.
 /// - After things move, each walker whose start isn't near the view and
-///   that is far from it is removed. One that hadn't been defeated comes
-///   back afresh when its start is near the view again.
+///   that is far from it is removed, and comes back afresh when its
+///   start is near the view again. A defeated walker is removed by its
+///   own position instead, wherever its start is (see
+///   [`things`](crate::things)), and never comes back.
 ///
 /// The walkers of a group (the same `group` above 0) appear together
 /// when any of their starts is near the view (walker-view.md, "Groups").
 /// The spec doesn't say how a group is removed; the engine's own rule is
 /// that its walkers are removed together, once none of their starts is
-/// near the view and every one of them in the level is far from it.
+/// near the view and every one of them in the level that isn't defeated
+/// is far from it.
 ///
 /// At the start of the level, walkers whose start is near the view are
 /// in the level as placed, at full speed, and the others aren't.
@@ -593,7 +596,8 @@ pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) 
             let start = level.entities[thing.index].at.x.floor();
             let (near_any, far_all) = groups.entry(group).or_insert((false, true));
             *near_any |= near(start, left, &physics);
-            *far_all &= !thing.active || far(thing.pos.x.floor(), left, &physics);
+            *far_all &=
+                !thing.active || defeated(thing) || far(thing.pos.x.floor(), left, &physics);
         }
     }
     for thing in &mut world.things {
@@ -612,7 +616,7 @@ pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) 
             if in_spot(thing.index).is_none() && start_near {
                 arrive(thing, start);
             }
-        } else if thing.active && !start_near && far {
+        } else if thing.active && !defeated(thing) && !start_near && far {
             thing.active = false;
             removed(thing.index);
         }
@@ -696,6 +700,12 @@ pub(crate) fn walkers(world: &mut World, (left, top): (i64, i64), appear: bool) 
             removed(thing.index);
         }
     }
+}
+
+/// Whether `thing` is a defeated walker, which leaves by its own position
+/// instead (see [`things`](crate::things)).
+fn defeated(thing: &Thing) -> bool {
+    matches!(thing.phase, Phase::Falling { .. } | Phase::Knocked { .. })
 }
 
 /// How the view removes a placed object while it's still as it appeared

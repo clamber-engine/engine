@@ -804,7 +804,10 @@ fn classic_bounced_walker_jumps_holds_still_and_falls_through_the_floor() {
         .expect("bounces on some walker");
     let mut w = world_on("classic-1", [300, 300], &walker(x));
     let mut rows = Vec::new();
+    let mut views = Vec::new();
     for _ in 0..b + 60 {
+        let view = w.view.expect("classic-1 has a view");
+        views.push((view.x(), view.y()));
         hold(&mut w, Actions::NONE, 1);
         let t = &w.things[0];
         let vy = match t.phase {
@@ -835,8 +838,10 @@ fn classic_bounced_walker_jumps_holds_still_and_falls_through_the_floor() {
         assert_eq!(facing, Facing::Left);
         assert!(active);
     }
-    // It falls no faster than 8 px a frame, and is gone once below the
-    // level, which ends 200 px under the floor.
+    // It falls no faster than 8 px a frame, and is gone once it has left
+    // the window around the picture as it was at the start of the frame
+    // (walker-view.md, "Defeated walkers falling out"): here through its
+    // bottom edge, 256 px below the picture's top.
     let falls = rows
         .windows(2)
         .filter(|p| p[1].3)
@@ -844,8 +849,13 @@ fn classic_bounced_walker_jumps_holds_still_and_falls_through_the_floor() {
     assert!(falls.clone().all(|dy| dy <= fx(8.0)));
     assert!(falls.clone().any(|dy| dy == fx(8.0)));
     let gone = rows.iter().position(|r| !r.3).expect("gone");
-    assert!(rows[gone - 1].0.y - fx(12.0) <= fx(600.0));
-    assert!(rows[gone].0.y - fx(12.0) > fx(600.0));
+    let below = |n: usize| rows[n].0.y - Fixed::from_int(views[n].1 as i32);
+    let across = |n: usize| rows[n].0.x.floor() - views[n].0;
+    for n in [gone - 1, gone] {
+        assert!((-31..=288).contains(&across(n)), "{}", across(n));
+    }
+    assert!(below(gone - 1) <= fx(256.0), "{:?}", below(gone - 1));
+    assert!(below(gone) > fx(256.0), "{:?}", below(gone));
     // A defeated walker never comes back, even after the player loses a
     // life.
     hold(&mut w, Actions::NONE, 600);

@@ -77,8 +77,13 @@
 //! on the next step, by the player's pose (see
 //! [`throwers`](crate::throwers)). The same things stop them.
 //!
-//! A defeated walker jumps up and falls out of the level (see [`fall`]);
-//! other defeated enemies show as defeated for [`DEFEATED_FRAMES`], then
+//! A defeated walker jumps up and falls out of the level (see [`fall`]).
+//! With a view, it's removed on the first step it falls on, after it
+//! moves, that its own position is outside the window around the picture
+//! as it was at the start of the step: left or right of it, or below its
+//! bottom edge (see [`fall_out`]). That's from the step after the hold
+//! for one bounced on or rolled into, and from the second after the hit
+//! for one hit by a thrown object. Other defeated enemies show as defeated for [`DEFEATED_FRAMES`], then
 //! are gone. They stay gone after the player loses a life.
 
 use clamber_fixed::Fixed;
@@ -97,6 +102,7 @@ use crate::player::{Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, frames,
 use crate::pose::{self, Stance};
 use crate::ride;
 use crate::rope;
+use crate::sections::Window;
 use crate::sling;
 use crate::spring;
 use crate::stinger;
@@ -420,6 +426,9 @@ fn advance(
             {
                 thing.active = false;
             }
+            if archetype.behavior.is_walker() && hold == 0 {
+                fall_out(thing, physics, picture);
+            }
             return false;
         }
         Phase::Fired(since) => {
@@ -448,6 +457,10 @@ fn advance(
             } = archetype.behavior
             {
                 knocked(level, thing, &archetype, response, range, defeat, vy);
+                // From the step after it moved along the floor.
+                if vy.is_some() {
+                    fall_out(thing, physics, picture);
+                }
             }
             return false;
         }
@@ -643,6 +656,16 @@ fn fall(
     thing.pos = Vec2::new(thing.pos.x + thing.vx, thing.pos.y + by);
     thing.phase = Phase::Falling { vy: next, hold: 0 };
     if thing.pos.y - archetype.size.y > level.size.y {
+        thing.active = false;
+    }
+}
+
+/// Removes a defeated walker that has left the window around the
+/// picture where it was at the start of the step, wherever its start is
+/// (walker-view.md, "Defeated walkers falling out"). Only with a view,
+/// and only on the steps it falls on.
+fn fall_out(thing: &mut Thing, physics: &Physics, picture: Option<Picture>) {
+    if picture.is_some_and(|p| p.lost(thing.pos, &Window::of(physics))) {
         thing.active = false;
     }
 }

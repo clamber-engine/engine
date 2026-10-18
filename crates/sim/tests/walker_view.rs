@@ -247,3 +247,116 @@ fn a_group_near_the_view_at_the_start_is_all_there() {
     let w = group(&[600, 700]);
     assert!(w.things.iter().all(|t| !t.active));
 }
+
+/// One step with the view's left edge at `left` and its top at `top`
+/// when it starts. Returns whether the walker is in the level after it.
+fn step_in(world: &mut World, left: i32, top: i32) -> bool {
+    world.view = Some(View {
+        left: Fixed::from_int(left),
+        top: Fixed::from_int(top),
+        ..View::default()
+    });
+    step(world, &InputFrame::default());
+    world.things[0].active
+}
+
+/// The walker in the level, defeated and falling in `phase`, at `x`
+/// after the next step's move, with nothing else moving it across.
+fn falling(phase: Phase, x: f64) -> World {
+    let mut w = world("left", 0);
+    step_at(&mut w, 712);
+    let walker = &mut w.things[0];
+    walker.phase = phase;
+    walker.vx = Fixed::ZERO;
+    walker.pos.x = fx(x);
+    w
+}
+
+const FALLING: Phase = Phase::Falling {
+    vy: Fixed::ZERO,
+    hold: 0,
+};
+
+/// walker-view.md, "Defeated walkers falling out": removed once its `x`
+/// rounded down, after the frame's move, is more than 31 px left of the
+/// picture or more than 288 px right of its left edge, by the view at
+/// the start of the frame.
+#[test]
+fn a_defeated_walker_is_removed_once_it_leaves_the_window_across() {
+    for (x, stays) in [
+        (1000.0 - 31.0, true),
+        (1000.0 - 31.5, false),
+        (1000.0 - 32.0, false),
+        (1000.0 + 288.75, true),
+        (1000.0 + 289.0, false),
+    ] {
+        let mut w = falling(FALLING, x);
+        assert_eq!(step_in(&mut w, 1000, 300), stays, "X - V of {x} - 1000");
+    }
+}
+
+/// The same below the picture: its `y` with its fraction more than 256
+/// px below the picture's top, after the frame's move.
+#[test]
+fn a_defeated_walker_is_removed_once_it_leaves_the_window_below() {
+    for (below, stays) in [(256.0, true), (256.0625, false)] {
+        let mut w = falling(FALLING, 1100.0);
+        // Where it would be after the move from 400.
+        let mut probe = w.clone();
+        step_in(&mut probe, 1000, 0);
+        let moved = probe.things[0].pos.y - w.things[0].pos.y;
+        w.things[0].pos.y = fx(300.0 + below) - moved;
+        assert_eq!(step_in(&mut w, 1000, 300), stays, "{below} below");
+        if stays {
+            assert_eq!(w.things[0].pos.y, fx(556.0));
+        }
+    }
+}
+
+/// Where its start is doesn't matter: a defeated walker in the window
+/// stays even with its start far outside it, and one outside it goes
+/// even with its start inside.
+#[test]
+fn where_a_defeated_walkers_start_is_doesnt_matter() {
+    // Start 1000: S - V of -300 and X - V of 0, then 10 and 310.
+    let mut w = falling(FALLING, 1300.0);
+    assert!(step_in(&mut w, 1300, 200), "start out, walker in: stays");
+    let mut w = falling(FALLING, 1300.0);
+    assert!(!step_in(&mut w, 990, 200), "start in, walker out: removed");
+}
+
+/// On the frames before its first falling one it stays wherever it is:
+/// while it holds still after a bounce or a roll, and on the frame after
+/// a thrown object hit it, when it moves along the floor. It's removed
+/// on the first one checked if it's still outside then.
+#[test]
+fn a_defeated_walker_isnt_removed_before_its_first_falling_frame() {
+    let holding = Phase::Falling {
+        vy: fx(-6.0),
+        hold: 1,
+    };
+    let hit = Phase::Knocked { vy: None };
+    for phase in [holding, hit] {
+        for x in [1000.0 - 200.0, 1000.0 + 300.0] {
+            let mut w = falling(phase, x);
+            assert!(step_in(&mut w, 1000, 200), "{phase:?} at {x}: stays");
+            assert!(!step_in(&mut w, 1000, 200), "{phase:?} at {x}: removed");
+        }
+    }
+}
+
+/// A walker hit by a thrown object, from the second frame after the hit
+/// on, leaves by the same window.
+#[test]
+fn a_walker_hit_by_a_thrown_object_leaves_by_the_window() {
+    for (x, stays) in [(1000.0 - 31.0, true), (1000.0 - 32.0, false)] {
+        let mut w = falling(Phase::Knocked { vy: Some(fx(-6.0)) }, x);
+        // Knocked back, it eases toward its glide; keep it in place.
+        w.things[0].pos.x = fx(x);
+        let mut probe = w.clone();
+        step_in(&mut probe, 1000, 200);
+        let moved = probe.things[0].pos.x - w.things[0].pos.x;
+        w.things[0].pos.x = fx(x) - moved;
+        assert_eq!(step_in(&mut w, 1000, 200), stays, "X - V of {x} - 1000");
+    }
+}

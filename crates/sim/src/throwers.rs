@@ -18,7 +18,8 @@
 //! (spec/behavior/ball-contact.md); it isn't affected itself. It can
 //! hurt on the step it appears, which the spec doesn't cover.
 //!
-//! While the player is knocked out, the thrower, knocked out or not, and
+//! While the player is knocked out, the thrower, knocked out or not
+//! (whether by a bounce, a roll or the ground action), and
 //! every ball stop on the frames the player holds still after the hit
 //! (`knockout_hold`), and no ball is thrown, so all of them go on that
 //! many frames late (thrower.md, "While the player is knocked out"). The
@@ -48,6 +49,7 @@ use crate::archetype::{Archetypes, Ball, Behavior};
 use crate::columns;
 use crate::player::{Facing, State, ceil, frames};
 use crate::pose::{self, Pose};
+use crate::sections::Window;
 use crate::view::View;
 use crate::world::{Event, Phase, Thing, World};
 
@@ -87,6 +89,18 @@ impl Picture {
         let down =
             self.height == 0 || (-i64::from(top)..=self.height + i64::from(bottom)).contains(&y);
         across && down
+    }
+
+    /// Whether a defeated walker at `pos` has left `window` around the
+    /// picture (walker-view.md, "Defeated walkers falling out"): its `x`
+    /// rounded down is left or right of it, or its `y` is below the
+    /// window's bottom edge. Never below with a view that doesn't move
+    /// vertically, and never above: the spec doesn't cover a defeated
+    /// walker above the picture.
+    pub(crate) fn lost(self, pos: Vec2, window: &Window) -> bool {
+        let x = pos.x.floor() - self.left;
+        let below = self.height != 0 && ceil(pos.y) - self.top > *window.down.end();
+        !window.across.contains(&x) || below
     }
 
     /// Whether `pos`, with its `y` rounded down, is `depth` or more below
