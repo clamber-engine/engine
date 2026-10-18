@@ -176,6 +176,7 @@ impl Kind {
     pub fn id(self) -> Option<&'static str> {
         match self {
             Kind::WallReturnEntrance => Some(WALL_RETURN),
+            Kind::RoomReturnEntrance => Some(ROOM_ENTRANCE),
             _ => None,
         }
     }
@@ -317,12 +318,14 @@ impl Kind {
                 );
                 set("rise", Value::Integer(6));
                 set("steer_from", Value::Integer(7));
+                set("drawn_idle", Value::Boolean(true));
                 ENTRANCE
             }
-            // level-start.md, "Coming back from the room": coming in from
-            // the level map it does nothing and isn't drawn. The engine
-            // doesn't come back from the room through it yet (#217).
-            Kind::RoomReturnEntrance => ROOM_ENTRANCE,
+            // level-start.md, "Coming back from the room": the
+            // characters come out of it, as out of the level's entrance,
+            // only when play comes back to the level from its room.
+            // Entering from the level map it does nothing and isn't drawn.
+            Kind::RoomReturnEntrance => ENTRANCE,
             // launch-barrel.md: the one that shoots left has the
             // archetype's own values. The one that shoots down holds
             // for 28 frames, shoots at the same speed down for a frame
@@ -451,8 +454,9 @@ pub const WALL_EXIT: &str = "wall-exit";
 /// coming back from the area behind the first wall exit names.
 pub const WALL_RETURN: &str = "wall-return";
 
-/// The kind of entity a room-return entrance is: no archetype's.
-pub const ROOM_ENTRANCE: &str = "room-entrance";
+/// The id of the first room-return entrance's entity, which the arrival
+/// coming back from the first level's room names.
+pub const ROOM_ENTRANCE: &str = "room-return";
 
 /// The archetype launch barrels are.
 pub const SLING: &str = "sling";
@@ -1418,8 +1422,8 @@ mod tests {
                 assert_eq!(name, END);
                 continue;
             }
-            if [Kind::Exit, Kind::WallExit, Kind::RoomReturnEntrance].contains(&kind) {
-                assert!([EXIT, WALL_EXIT, ROOM_ENTRANCE].contains(&name), "{kind}");
+            if [Kind::Exit, Kind::WallExit].contains(&kind) {
+                assert!([EXIT, WALL_EXIT].contains(&name), "{kind}");
                 assert!(!Archetypes::builtin().names().any(|n| n == name));
                 continue;
             }
@@ -1474,8 +1478,12 @@ mod tests {
                 (Kind::RestartBarrel, behavior) => {
                     assert!(matches!(behavior, Behavior::Keg(_)), "{kind}")
                 }
-                (Kind::Entrance, behavior) => {
-                    assert!(matches!(behavior, Behavior::Entrance(_)), "{kind}")
+                (Kind::Entrance | Kind::RoomReturnEntrance, Behavior::Entrance(e)) => {
+                    assert!(!e.drawn_idle, "{kind}")
+                }
+                (Kind::WallReturnEntrance, Behavior::Entrance(e)) => assert!(e.drawn_idle),
+                (Kind::Entrance | Kind::RoomReturnEntrance | Kind::WallReturnEntrance, _) => {
+                    panic!("{kind} isn't an entrance")
                 }
                 (Kind::Tyre, behavior) => {
                     assert!(matches!(behavior, Behavior::Spring(_)), "{kind}")

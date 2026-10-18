@@ -375,6 +375,18 @@ impl World {
             things[e.entrance].active = false;
             things[e.entrance].phase = Phase::Broken;
         }
+        // An entrance that doesn't act isn't drawn, unless it says so
+        // (level-start.md, "Coming back from the room").
+        let acting = entering.map(|e| e.entrance);
+        for thing in &mut things {
+            if let Some(Behavior::Entrance(v)) = thing.archetype.map(|a| a.behavior)
+                && Some(thing.index) != acting
+                && thing.phase == Phase::Ready
+                && !v.drawn_idle
+            {
+                thing.active = false;
+            }
+        }
         let view = view::enabled(&physics).then(|| {
             if entering.is_some() || walk.is_some() {
                 View::begun(&player, &level, &physics)

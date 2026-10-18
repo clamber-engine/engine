@@ -746,6 +746,21 @@ mod tests {
         assert_eq!(ids, [("entrance", Some("wall-return")), ("entrance", None)]);
     }
 
+    /// level-start.md, "Coming back from the room": the first
+    /// room-return entrance is an entrance with the id the arrival coming
+    /// back from the room names.
+    #[test]
+    fn the_first_room_return_entrance_has_its_id() {
+        let kind = |r| (r == 0x1234).then(|| (Kind::RoomReturnEntrance, KindSettings::default()));
+        let entities = read(&fragment()).unwrap().entities(BOTTOM, kind);
+        let ids: Vec<(&str, Option<&str>)> = entities
+            .iter()
+            .filter(|e| e.kind == crate::kinds::ENTRANCE)
+            .map(|e| (e.kind.as_str(), e.id.as_deref()))
+            .collect();
+        assert_eq!(ids, [("entrance", Some("room-return")), ("entrance", None)]);
+    }
+
     /// placements.md, "Exits": an exit needs the vertical window. Here the
     /// fragment's three entries with references 1234 and 2000 place exits.
     #[test]

@@ -454,7 +454,8 @@ pub struct Keg {
 /// frames after the throw until it lands, its speed across eases toward
 /// the air's target speed by `steer_response` of the gap. The picture
 /// fades in from black over the level's first frames, a step every
-/// `fade_step` frames up to `fade_steps`.
+/// `fade_step` frames up to `fade_steps`. One that doesn't act, because
+/// play came in at another, is drawn only if `drawn_idle`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Entrance {
     pub burst: u8,
@@ -471,6 +472,7 @@ pub struct Entrance {
     pub piece_gravity: Fixed,
     pub flash_rise: Fixed,
     pub burst_time: u8,
+    pub drawn_idle: bool,
 }
 
 /// How many pieces a keg breaks into.
@@ -1377,6 +1379,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "piece_gravity",
             "flash_rise",
             "burst_time",
+            "drawn_idle",
         ],
         "hidden" => &[
             "across",
@@ -2002,6 +2005,11 @@ fn parse_entrance(table: &Table, path: &str) -> Result<Entrance, String> {
         piece_gravity: positive("piece_gravity")?,
         flash_rise: number("flash_rise")?,
         burst_time: frames("burst_time")?,
+        drawn_idle: match table.get("drawn_idle") {
+            None | Some(Value::Boolean(false)) => false,
+            Some(Value::Boolean(true)) => true,
+            Some(_) => return Err(format!("{path}.drawn_idle: expected true or false")),
+        },
     };
     if entrance.burst > entrance.throw {
         return Err(format!("{path}: `burst` can't be after `throw`"));

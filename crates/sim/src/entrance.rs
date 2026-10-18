@@ -23,9 +23,12 @@
 //!   when coming back from the area behind the first level's first wall
 //!   exit (wall-exits.md): with its own values, the characters wait at
 //!   the arrival's point, not the entrance's, and are thrown out from
-//!   there. Otherwise it's a placed thing that is drawn and does nothing. An arrival that names an
-//!   entity that isn't an entrance begins with the characters in play at
-//!   its point.
+//!   there, as when coming back from the first level's room
+//!   (level-start.md). An entrance that doesn't act is a placed thing
+//!   that does nothing, and isn't drawn unless its `drawn_idle` says so
+//!   (level-start.md, "Coming back from the room"). An arrival that names
+//!   an entity that isn't an entrance begins with the characters in play
+//!   at its point.
 //! - Up to and including the throw's frame, everything else waits too,
 //!   as while the player is in a keg, but the view.
 //!

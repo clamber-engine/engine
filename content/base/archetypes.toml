@@ -861,7 +861,9 @@ fidget_time = [239, 180, 457]
 # target by `steer_response` of the gap. The picture fades in from black
 # in `fade_steps` steps `fade_step` frames apart. The spec doesn't say
 # how big the entrance is or how its pieces and flash move: `size` and
-# the pieces' values are Clamber's own, a keg's.
+# the pieces' values are Clamber's own, a keg's. An entrance that doesn't
+# act, because play came into the level at another, is drawn only with
+# `drawn_idle` (level-start.md, "Coming back from the room").
 [archetypes.entrance]
 behavior = "entrance"
 size = [24, 24]
@@ -880,6 +882,7 @@ pieces = [[2, 4.75], [-1, 5.75], [-2, 4.75], [1, 6.25]]
 piece_gravity = 0.25
 flash_rise = 0.5
 burst_time = 40
+drawn_idle = false
 
 # Collectibles with title-1's measured values. `spark`: a single
 # collectible (spec/behavior/collectibles.md), drawn 16 x 16 around its

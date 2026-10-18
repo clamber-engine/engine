@@ -22,8 +22,8 @@ use clamber_level::{
 use crate::{
     BANK_SIZE, Background, COLUMN_BANDS, Collectibles, Decoder, END, EXIT, GridPicture, Ground,
     Image, KEG, Known, LEVELS, Layout, LevelSong, Location, Optional, PackWriter, PaletteSet,
-    Pictures, Placements, ScreenMap, Skipped, StartRecord, TileSet, VIEW_HEIGHT, VIEW_WIDTH,
-    ViewLimits, WALL_EXIT, WALL_RETURN, kind_rows, object_of, settings_rows, unpack,
+    Pictures, Placements, ROOM_ENTRANCE, ScreenMap, Skipped, StartRecord, TileSet, VIEW_HEIGHT,
+    VIEW_WIDTH, ViewLimits, WALL_EXIT, WALL_RETURN, kind_rows, object_of, settings_rows, unpack,
     unpack_nibbles,
 };
 
@@ -539,7 +539,7 @@ impl LevelDecoder {
                     name: name.into(),
                     at: Vec2::new(px(x), px(y)),
                     walk,
-                    entrance: None,
+                    entrance: return_entrance(name, &level.entities),
                 });
             }
         }
@@ -664,9 +664,39 @@ impl Decoder for LevelDecoder {
     }
 }
 
+/// The entrance the characters come out of at the arrival `name`:
+/// level-start.md has them thrown out of the room-return entrance coming
+/// back from the room, where the level has one.
+fn return_entrance(name: &str, entities: &[Entity]) -> Option<String> {
+    (name == ROOM_RETURN
+        && entities
+            .iter()
+            .any(|e| e.id.as_deref() == Some(ROOM_ENTRANCE)))
+    .then(|| ROOM_ENTRANCE.into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// level-start.md, "Coming back from the room": out of the
+    /// room-return entrance, where there is one, and only from the room.
+    #[test]
+    fn coming_back_from_the_room_is_out_of_the_room_return_entrance() {
+        let entity = |id: Option<&str>| Entity {
+            kind: crate::kinds::ENTRANCE.into(),
+            id: id.map(Into::into),
+            at: Vec2::ints(100, 300),
+            params: Default::default(),
+        };
+        let both = [entity(None), entity(Some(ROOM_ENTRANCE))];
+        assert_eq!(
+            return_entrance(ROOM_RETURN, &both).as_deref(),
+            Some(ROOM_ENTRANCE)
+        );
+        assert_eq!(return_entrance(SCENE_RETURN, &both), None);
+        assert_eq!(return_entrance(ROOM_RETURN, &both[..1]), None);
+    }
 
     /// wall-exits.md: the first wall exit is the one further left.
     #[test]

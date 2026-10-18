@@ -13,7 +13,7 @@ const R: Action = Action::Right;
 const A: Action = Action::Action;
 
 /// The wall-return entrance's values, as the importer gives them.
-const WALL_RETURN: &str = "throw_speed = [3.75, 2], rise = 6, steer_from = 7";
+const WALL_RETURN: &str = "throw_speed = [3.75, 2], rise = 6, steer_from = 7, drawn_idle = true";
 
 /// The arrival's point. The entrance is 16 px left of it and 2 px lower,
 /// as in the first level, and the floor 21 px below it.
@@ -122,8 +122,8 @@ fn thrown_out_of_the_wall_return_entrance() {
     assert!(play.world.player_drawn());
     assert!(!play.world.things[1].active);
     assert_eq!(play.world.things[1].phase, Phase::Broken);
-    // The level's own entrance takes no part.
-    assert!(play.world.things[0].active);
+    // The level's own entrance takes no part, and isn't drawn.
+    assert!(!play.world.things[0].active);
     assert_ne!(play.world.things[0].phase, Phase::Broken);
     for n in 1..=6 {
         play.step(&[]);
@@ -183,7 +183,7 @@ fn the_picture_fades_in() {
 }
 
 /// "Entering from the level map": the level begins out of its own
-/// entrance, and the wall-return entrance never bursts.
+/// entrance, and the wall-return entrance is drawn but never bursts.
 #[test]
 fn from_the_level_map_it_does_nothing() {
     let feel = Arc::new(generic_feel("classic-1").unwrap());
@@ -192,6 +192,7 @@ fn from_the_level_map_it_does_nothing() {
     for frame in 0..200 {
         step(&mut world, &InputFrame::single(Frame::default()));
         assert!(world.bursts.iter().all(|b| b.thing == 0), "frame {frame}");
+        assert!(world.things[1].active, "frame {frame}");
     }
     assert!(world.entering.is_none());
     assert!(world.player.grounded());
