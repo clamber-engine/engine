@@ -1,0 +1,603 @@
+{
+  "frames": [
+    {
+      "filename": "prompts key 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 108,
+        "h": 104
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 8,
+        "w": 108,
+        "h": 104
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts pill 0",
+      "frame": {
+        "x": 112,
+        "y": 2,
+        "w": 112,
+        "h": 74
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 4,
+        "y": 23,
+        "w": 112,
+        "h": 74
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts trigger 0",
+      "frame": {
+        "x": 226,
+        "y": 2,
+        "w": 88,
+        "h": 102
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 16,
+        "y": 10,
+        "w": 88,
+        "h": 102
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts face-letters-south 0",
+      "frame": {
+        "x": 316,
+        "y": 2,
+        "w": 104,
+        "h": 105
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 9,
+        "w": 104,
+        "h": 105
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts face-letters-east 0",
+      "frame": {
+        "x": 422,
+        "y": 2,
+        "w": 104,
+        "h": 105
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 9,
+        "w": 104,
+        "h": 105
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts face-letters-west 0",
+      "frame": {
+        "x": 528,
+        "y": 2,
+        "w": 104,
+        "h": 105
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 9,
+        "w": 104,
+        "h": 105
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts face-letters-north 0",
+      "frame": {
+        "x": 634,
+        "y": 2,
+        "w": 104,
+        "h": 105
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 9,
+        "w": 104,
+        "h": 105
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts face-shapes-south 0",
+      "frame": {
+        "x": 740,
+        "y": 2,
+        "w": 104,
+        "h": 105
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 9,
+        "w": 104,
+        "h": 105
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts face-shapes-east 0",
+      "frame": {
+        "x": 846,
+        "y": 2,
+        "w": 104,
+        "h": 105
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 9,
+        "w": 104,
+        "h": 105
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts face-shapes-west 0",
+      "frame": {
+        "x": 952,
+        "y": 2,
+        "w": 104,
+        "h": 105
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 9,
+        "w": 104,
+        "h": 105
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts face-shapes-north 0",
+      "frame": {
+        "x": 1058,
+        "y": 2,
+        "w": 104,
+        "h": 105
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 8,
+        "y": 9,
+        "w": 104,
+        "h": 105
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts dpad-up 0",
+      "frame": {
+        "x": 1164,
+        "y": 2,
+        "w": 108,
+        "h": 109
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 5,
+        "w": 108,
+        "h": 109
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts dpad-down 0",
+      "frame": {
+        "x": 1274,
+        "y": 2,
+        "w": 108,
+        "h": 109
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 6,
+        "w": 108,
+        "h": 109
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts dpad-left 0",
+      "frame": {
+        "x": 1384,
+        "y": 2,
+        "w": 109,
+        "h": 108
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 5,
+        "y": 6,
+        "w": 109,
+        "h": 108
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts dpad-right 0",
+      "frame": {
+        "x": 1495,
+        "y": 2,
+        "w": 109,
+        "h": 108
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 6,
+        "y": 6,
+        "w": 109,
+        "h": 108
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts stick-up 0",
+      "frame": {
+        "x": 1606,
+        "y": 2,
+        "w": 76,
+        "h": 93
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 22,
+        "y": 5,
+        "w": 76,
+        "h": 93
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts stick-down 0",
+      "frame": {
+        "x": 1684,
+        "y": 2,
+        "w": 76,
+        "h": 94
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 22,
+        "y": 22,
+        "w": 76,
+        "h": 94
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts stick-left 0",
+      "frame": {
+        "x": 1762,
+        "y": 2,
+        "w": 94,
+        "h": 76
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 4,
+        "y": 22,
+        "w": 94,
+        "h": 76
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts stick-right 0",
+      "frame": {
+        "x": 1858,
+        "y": 2,
+        "w": 94,
+        "h": 76
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 22,
+        "y": 22,
+        "w": 94,
+        "h": 76
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    },
+    {
+      "filename": "prompts stick-press 0",
+      "frame": {
+        "x": 2,
+        "y": 113,
+        "w": 100,
+        "h": 100
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 10,
+        "y": 10,
+        "w": 100,
+        "h": 100
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 120
+      },
+      "duration": 17,
+      "ticks": 1
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "prompts.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1954,
+      "h": 215
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "key",
+        "from": 0,
+        "to": 0,
+        "direction": "forward"
+      },
+      {
+        "name": "pill",
+        "from": 1,
+        "to": 1,
+        "direction": "forward"
+      },
+      {
+        "name": "trigger",
+        "from": 2,
+        "to": 2,
+        "direction": "forward"
+      },
+      {
+        "name": "face-letters-south",
+        "from": 3,
+        "to": 3,
+        "direction": "forward"
+      },
+      {
+        "name": "face-letters-east",
+        "from": 4,
+        "to": 4,
+        "direction": "forward"
+      },
+      {
+        "name": "face-letters-west",
+        "from": 5,
+        "to": 5,
+        "direction": "forward"
+      },
+      {
+        "name": "face-letters-north",
+        "from": 6,
+        "to": 6,
+        "direction": "forward"
+      },
+      {
+        "name": "face-shapes-south",
+        "from": 7,
+        "to": 7,
+        "direction": "forward"
+      },
+      {
+        "name": "face-shapes-east",
+        "from": 8,
+        "to": 8,
+        "direction": "forward"
+      },
+      {
+        "name": "face-shapes-west",
+        "from": 9,
+        "to": 9,
+        "direction": "forward"
+      },
+      {
+        "name": "face-shapes-north",
+        "from": 10,
+        "to": 10,
+        "direction": "forward"
+      },
+      {
+        "name": "dpad-up",
+        "from": 11,
+        "to": 11,
+        "direction": "forward"
+      },
+      {
+        "name": "dpad-down",
+        "from": 12,
+        "to": 12,
+        "direction": "forward"
+      },
+      {
+        "name": "dpad-left",
+        "from": 13,
+        "to": 13,
+        "direction": "forward"
+      },
+      {
+        "name": "dpad-right",
+        "from": 14,
+        "to": 14,
+        "direction": "forward"
+      },
+      {
+        "name": "stick-up",
+        "from": 15,
+        "to": 15,
+        "direction": "forward"
+      },
+      {
+        "name": "stick-down",
+        "from": 16,
+        "to": 16,
+        "direction": "forward"
+      },
+      {
+        "name": "stick-left",
+        "from": 17,
+        "to": 17,
+        "direction": "forward"
+      },
+      {
+        "name": "stick-right",
+        "from": 18,
+        "to": 18,
+        "direction": "forward"
+      },
+      {
+        "name": "stick-press",
+        "from": 19,
+        "to": 19,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 60,
+        "y": 60
+      },
+      "scale": 10
+    }
+  }
+}

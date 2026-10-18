@@ -1,4 +1,6 @@
-use clamber_input::{Action, Actions, Axis, Device, Event, Input, Key, PadId, PadInput, Settings};
+use clamber_input::{
+    Action, Actions, Axis, Device, Event, Input, Key, PadId, PadInput, PadStyle, Settings,
+};
 
 fn key(key: Key, down: bool) -> Event {
     Event::Key { key, down }
@@ -292,4 +294,29 @@ fn cancelled_remap_changes_nothing() {
     assert!(input.handle(key(Key::KeyX, true)).is_none());
     assert_eq!(input.settings(), &Settings::builtin());
     assert_eq!(input.tick()[0].held, Action::Action.into());
+}
+
+#[test]
+fn pad_style_follows_the_pad_in_use() {
+    let mut input = Input::new(Settings::builtin());
+    assert_eq!(input.pad_style(0), PadStyle::Letters, "no pad");
+    input.handle(Event::PadConnected(PadId(0)));
+    input.handle(Event::PadStyle {
+        pad: PadId(0),
+        style: PadStyle::Shapes,
+    });
+    input.handle(Event::PadConnected(PadId(1)));
+    assert_eq!(input.pad_style(0), PadStyle::Shapes, "the first connected");
+    input.handle(Event::PadButton {
+        pad: PadId(1),
+        input: PadInput::South,
+        down: true,
+    });
+    assert_eq!(input.pad_style(0), PadStyle::Letters, "the one used last");
+
+    input.set_active_players(2);
+    assert_eq!(input.pad_style(0), PadStyle::Shapes, "each player's own");
+    assert_eq!(input.pad_style(1), PadStyle::Letters);
+    input.handle(Event::PadDisconnected(PadId(0)));
+    assert_eq!(input.pad_style(0), PadStyle::Letters);
 }

@@ -87,7 +87,7 @@ pub fn draw_cursor(surface: &mut dyn Surface, (x, y): (f32, f32), age: u32) {
 /// side (across and down) drawn `units` view units wide, as rendered,
 /// and the rest stretched. A border of 0 slices nothing off that way.
 /// Borders shrink to fit a `dst` too small for them.
-fn draw_sliced(
+pub(crate) fn draw_sliced(
     surface: &mut dyn Surface,
     art: &UiArt,
     src: Rect,

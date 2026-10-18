@@ -23,7 +23,7 @@ mod settings;
 
 pub use action::{Action, Actions, Frame};
 pub use buffer::JumpBuffer;
-pub use device::{Axis, Device, Event, Key, PadId, PadInput};
+pub use device::{Axis, Device, Event, Key, PadId, PadInput, PadStyle};
 #[cfg(feature = "gamepad")]
 pub use gamepad::Gamepads;
 pub use router::{Input, Remap, Remapped};

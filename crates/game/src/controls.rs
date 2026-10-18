@@ -8,11 +8,12 @@
 //! so does waiting [`TIMEOUT`] frames, since every key on the device
 //! being remapped binds.
 
-use clamber_input::{Action, Device, Frame, Input, MAX_PLAYERS, Remapped, Settings};
+use clamber_input::{Action, Device, Frame, Input, MAX_PLAYERS, PadStyle, Remapped, Settings};
 
 use crate::camera::VIEW;
 use crate::canvas::{Color, rgb};
 use crate::panel::{draw_cursor, draw_highlight, draw_panel};
+use crate::prompts::{GAP, draw_prompt, label, prompt_width};
 use crate::surface::Surface;
 use crate::text::{ADVANCE, GLYPH, LINE, draw_text, draw_text_centred, fit_end, text_size};
 
@@ -260,17 +261,29 @@ impl Controls {
                         let waiting = remap.is_some_and(|r| {
                             r.player == self.player && r.action == action && r.device == device
                         });
-                        let (text, cell) = if waiting {
-                            ("...".to_string(), WAITING)
-                        } else {
-                            let picked = selected && device == self.device;
-                            let names = bindings.names(action, device);
-                            (fit(&names, width), if picked { SELECTED } else { ITEM })
-                        };
                         if selected && device == self.device {
                             cursor(canvas, x);
                         }
-                        draw_text(canvas, x, y, &text, cell);
+                        if waiting {
+                            draw_text(canvas, x, y, "...", WAITING);
+                            continue;
+                        }
+                        let names = bindings.names(action, device);
+                        if names.is_empty() {
+                            draw_text(canvas, x, y, "-", ITEM);
+                            continue;
+                        }
+                        let style = input.pad_style(self.player);
+                        let shown = fit(&names, style, width);
+                        let middle = y as f32 + GLYPH.1 as f32 / 2.0;
+                        let mut left = x as f32;
+                        for name in &names[..shown] {
+                            left += draw_prompt(canvas, name, style, (left, middle)) + GAP;
+                        }
+                        if shown < names.len() {
+                            let more = format!("+{}", names.len() - shown);
+                            draw_text(canvas, left.round() as i32, y, &more, ITEM);
+                        }
                     }
                 }
                 Row::Reset => draw_text(canvas, ACTION_X, y, "Reset to defaults", color),
@@ -304,58 +317,28 @@ impl Controls {
     }
 }
 
-/// A short, readable label for an input's settings-file name:
-/// `KeyZ` is `Z`, `DPadLeft` is `DPAD LEFT`, `LeftStickUp` is
-/// `L STICK UP`.
-pub fn label(name: &str) -> String {
-    let name = ["Key", "Digit"]
-        .iter()
-        .find_map(|p| name.strip_prefix(p).filter(|rest| !rest.is_empty()))
-        .unwrap_or(name);
-    let name = name.replace("DPad", "Dpad");
-    let mut words: Vec<String> = Vec::new();
-    for c in name.chars() {
-        match words.last_mut() {
-            Some(word) if !c.is_ascii_uppercase() => word.push(c),
-            _ => words.push(c.to_string()),
-        }
+/// How many of the inputs, from the first, fit in `width` view units
+/// as prompts, leaving room to say how many more there are. One always
+/// shows.
+fn fit(names: &[&str], style: PadStyle, width: i32) -> usize {
+    let width = width as f32;
+    // From the left to the end of each prompt.
+    let mut ends = Vec::new();
+    let mut used = -GAP;
+    for name in names {
+        used += GAP + prompt_width(name, style);
+        ends.push(used);
     }
-    if words.len() > 1 {
-        for side in ["Left", "Right"] {
-            if words[0] == side {
-                words[0] = side[..1].to_string();
-            }
-        }
+    if ends.last().is_none_or(|&end| end <= width) {
+        return names.len();
     }
-    words.join(" ").to_uppercase()
-}
-
-/// As many of the inputs as fit in `width` view units, then how many
-/// more there are.
-fn fit(names: &[&str], width: i32) -> String {
-    if names.is_empty() {
-        return "-".to_string();
-    }
-    let labels: Vec<String> = names.iter().map(|n| label(n)).collect();
-    let mut text = String::new();
-    for (i, l) in labels.iter().enumerate() {
-        let joined = if text.is_empty() {
-            l.clone()
-        } else {
-            format!("{text}, {l}")
-        };
-        let rest = labels.len() - i - 1;
-        let more = if rest > 0 {
-            format!(" +{rest}")
-        } else {
-            String::new()
-        };
-        if text_size(&format!("{joined}{more}")).0 > width && !text.is_empty() {
-            return format!("{text} +{}", labels.len() - i);
-        }
-        text = joined;
-    }
-    text
+    (1..names.len())
+        .rev()
+        .find(|&shown| {
+            let more = text_size(&format!("+{}", names.len() - shown)).0 as f32;
+            ends[shown - 1] + GAP + more <= width
+        })
+        .unwrap_or(1)
 }
 
 #[cfg(test)]
@@ -384,34 +367,21 @@ mod tests {
     }
 
     #[test]
-    fn labels_inputs() {
-        assert_eq!(label("KeyZ"), "Z");
-        assert_eq!(label("Digit4"), "4");
-        assert_eq!(label("Space"), "SPACE");
-        assert_eq!(label("ArrowLeft"), "ARROW LEFT");
-        assert_eq!(label("ShiftLeft"), "SHIFT LEFT");
-        assert_eq!(label("F11"), "F11");
-        assert_eq!(label("DPadLeft"), "DPAD LEFT");
-        assert_eq!(label("LeftStickLeft"), "L STICK LEFT");
-        assert_eq!(label("RightShoulder"), "R SHOULDER");
-        assert_eq!(label("South"), "SOUTH");
-    }
-
-    #[test]
     fn fits_bindings_in_a_column() {
-        let w = |text: &str| text_size(text).0;
-        assert_eq!(fit(&[], 10), "-");
-        assert_eq!(fit(&["KeyZ", "Space"], w("Z, SPACE")), "Z, SPACE");
-        assert_eq!(fit(&["KeyZ", "Space"], w("Z, SPACE") - 1), "Z +1");
-        assert_eq!(
-            fit(&["LeftStickLeft"], 4),
-            "L STICK LEFT",
-            "one always shows"
-        );
-        let names = ["North", "LeftShoulder", "RightShoulder"];
-        let all = "NORTH, L SHOULDER, R SHOULDER";
-        assert_eq!(fit(&names, w(all)), all);
-        assert_eq!(fit(&names, w(all) - 1), "NORTH, L SHOULDER +1");
+        let style = PadStyle::Letters;
+        let w = |names: &[&str]| {
+            let gaps = GAP * (names.len() - 1) as f32;
+            (names.iter().map(|n| prompt_width(n, style)).sum::<f32>() + gaps).ceil() as i32
+        };
+        assert_eq!(fit(&[], style, 10), 0);
+        assert_eq!(fit(&["KeyZ", "Space"], style, w(&["KeyZ", "Space"])), 2);
+        assert_eq!(fit(&["KeyZ", "Space"], style, w(&["KeyZ"]) + 2), 1);
+        assert_eq!(fit(&["LeftStickLeft"], style, 4), 1, "one always shows");
+        let names = ["North", "LeftShoulder", "Select"];
+        assert_eq!(fit(&names, style, w(&names)), 3);
+        let room = w(&names[..2]) + GAP.ceil() as i32 + text_size("+1").0;
+        assert_eq!(fit(&names, style, room), 2);
+        assert_eq!(fit(&names, style, room - 3), 1);
     }
 
     #[test]

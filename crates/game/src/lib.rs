@@ -63,6 +63,7 @@ mod menu;
 mod music;
 mod panel;
 mod prefs;
+mod prompts;
 pub mod report;
 mod session;
 mod sound;

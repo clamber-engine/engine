@@ -1,14 +1,14 @@
 //! Gamepads through gilrs, including hot-plugging.
 
-use gilrs::{EventType, Gilrs};
+use gilrs::{EventType, GamepadId, Gilrs};
 
-use crate::{Axis, Event, PadId, PadInput};
+use crate::{Axis, Event, PadId, PadInput, PadStyle};
 
 /// The system's gamepads, reported as [`Event`]s.
 pub struct Gamepads {
     gilrs: Gilrs,
     /// Pads already connected at startup, reported by the first poll.
-    initial: Vec<PadId>,
+    initial: Vec<GamepadId>,
 }
 
 impl Gamepads {
@@ -20,18 +20,26 @@ impl Gamepads {
             Err(gilrs::Error::NotImplemented(dummy)) => dummy,
             Err(e) => return Err(Box::new(e)),
         };
-        let initial = gilrs.gamepads().map(|(id, _)| PadId(id.into())).collect();
+        let initial = gilrs.gamepads().map(|(id, _)| id).collect();
         Ok(Gamepads { gilrs, initial })
     }
 
     /// Events since the last poll. Call before each logic frame and pass
     /// every event to [`Input::handle`](crate::Input::handle).
     pub fn poll(&mut self) -> Vec<Event> {
-        let mut events: Vec<Event> = self.initial.drain(..).map(Event::PadConnected).collect();
+        let mut events = Vec::new();
+        for id in std::mem::take(&mut self.initial) {
+            events.push(Event::PadConnected(PadId(id.into())));
+            events.push(self.style(id));
+        }
         while let Some(gilrs::Event { id, event, .. }) = self.gilrs.next_event() {
             let pad = PadId(id.into());
+            if matches!(event, EventType::Connected) {
+                events.push(Event::PadConnected(pad));
+                events.push(self.style(id));
+                continue;
+            }
             events.extend(match event {
-                EventType::Connected => Some(Event::PadConnected(pad)),
                 EventType::Disconnected => Some(Event::PadDisconnected(pad)),
                 EventType::ButtonPressed(b, _) => button(b).map(|input| Event::PadButton {
                     pad,
@@ -50,6 +58,19 @@ impl Gamepads {
             });
         }
         events
+    }
+
+    /// How the pad `id` marks its face buttons, judged by its maker and
+    /// name.
+    fn style(&self, id: GamepadId) -> Event {
+        let style = self
+            .gilrs
+            .connected_gamepad(id)
+            .map_or(PadStyle::Letters, |g| PadStyle::of(g.vendor_id(), g.name()));
+        Event::PadStyle {
+            pad: PadId(id.into()),
+            style,
+        }
     }
 }
 

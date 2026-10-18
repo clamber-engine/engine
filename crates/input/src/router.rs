@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::settings::{MAX_PLAYERS, PlayerBindings};
-use crate::{Action, Actions, Device, Event, Frame, Key, PadId, PadInput, Settings};
+use crate::{Action, Actions, Device, Event, Frame, Key, PadId, PadInput, PadStyle, Settings};
 
 /// Collects device events between logic frames and turns them into each
 /// player's [`Frame`].
@@ -23,6 +23,9 @@ pub struct Input {
     owners: [Option<PadId>; MAX_PLAYERS],
     previous: [Actions; MAX_PLAYERS],
     remap: Option<Remap>,
+    styles: BTreeMap<PadId, PadStyle>,
+    /// The pad pressed last.
+    last_pad: Option<PadId>,
 }
 
 /// A remap waiting for the player to press the new input.
@@ -108,6 +111,8 @@ impl Input {
             owners: [None; MAX_PLAYERS],
             previous: [Actions::NONE; MAX_PLAYERS],
             remap: None,
+            styles: BTreeMap::new(),
+            last_pad: None,
         }
     }
 
@@ -136,6 +141,21 @@ impl Input {
         self.owners[player]
     }
 
+    /// How the pad `player` uses marks its face buttons: the pad that
+    /// drives them, or with one player, the pad used last, or any
+    /// connected pad.
+    pub fn pad_style(&self, player: usize) -> PadStyle {
+        let pad = if self.active_players == 1 {
+            self.last_pad
+                .filter(|p| self.pads.contains_key(p))
+                .or_else(|| self.pads.keys().next().copied())
+        } else {
+            self.owners[player]
+        };
+        pad.and_then(|p| self.styles.get(&p).copied())
+            .unwrap_or_default()
+    }
+
     /// Records a device event. Returns the finished remap if this event
     /// completed one; that press is then not seen as game input.
     pub fn handle(&mut self, event: Event) -> Option<Remapped> {
@@ -149,8 +169,12 @@ impl Input {
                 self.pads.entry(pad).or_default();
                 self.claim_slot(pad);
             }
+            Event::PadStyle { pad, style } => {
+                self.styles.insert(pad, style);
+            }
             Event::PadDisconnected(pad) => {
                 self.pads.remove(&pad);
+                self.styles.remove(&pad);
                 for owner in &mut self.owners {
                     if *owner == Some(pad) {
                         *owner = None;
@@ -174,6 +198,7 @@ impl Input {
         if !pressed {
             return None;
         }
+        self.last_pad = Some(pad);
         // A pad that connected while every slot was taken claims the first
         // slot that frees up when it's used.
         if !self.owners.contains(&Some(pad)) {

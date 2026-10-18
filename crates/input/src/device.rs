@@ -83,6 +83,30 @@ impl Axis {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PadId(pub usize);
 
+/// How a gamepad marks its face buttons, for showing them: with letters,
+/// as on Xbox-style pads, or with shapes, as on PlayStation-style ones.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum PadStyle {
+    #[default]
+    Letters,
+    Shapes,
+}
+
+impl PadStyle {
+    /// The style of a pad from its USB vendor id, if known, and its name.
+    pub fn of(vendor: Option<u16>, name: &str) -> PadStyle {
+        /// Sony's USB vendor id.
+        const SONY: u16 = 0x054c;
+        let name = name.to_ascii_lowercase();
+        let shapes = ["playstation", "dualshock", "dualsense", "ps3", "ps4", "ps5"];
+        if vendor == Some(SONY) || shapes.iter().any(|s| name.contains(s)) {
+            PadStyle::Shapes
+        } else {
+            PadStyle::Letters
+        }
+    }
+}
+
 /// Which kind of device a binding or a remap is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Device {
@@ -98,6 +122,12 @@ pub enum Event {
         down: bool,
     },
     PadConnected(PadId),
+    /// How a connected pad marks its face buttons, when the backend can
+    /// tell.
+    PadStyle {
+        pad: PadId,
+        style: PadStyle,
+    },
     PadDisconnected(PadId),
     /// A digital control. Stick directions come from [`Event::PadAxis`].
     PadButton {
@@ -111,4 +141,24 @@ pub enum Event {
         /// From -1.0 to 1.0.
         value: f32,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pad_styles_by_vendor_and_name() {
+        assert_eq!(
+            PadStyle::of(Some(0x054c), "Wireless Controller"),
+            PadStyle::Shapes
+        );
+        assert_eq!(PadStyle::of(None, "Sony DualSense"), PadStyle::Shapes);
+        assert_eq!(PadStyle::of(None, "PS4 Controller"), PadStyle::Shapes);
+        assert_eq!(
+            PadStyle::of(Some(0x045e), "Xbox Wireless Controller"),
+            PadStyle::Letters
+        );
+        assert_eq!(PadStyle::of(None, ""), PadStyle::Letters);
+    }
 }

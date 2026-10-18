@@ -354,8 +354,30 @@ pub fn draw_text(canvas: &mut dyn Surface, x: i32, y: i32, text: &str, color: Co
         text,
         SHADOW,
         true,
+        1.0,
     );
-    draw_layer(canvas, (x, y), text, color, false);
+    draw_layer(canvas, (x, y), text, color, false, 1.0);
+}
+
+/// How wide `text` is on one line drawn `scale` times its usual size,
+/// in view units.
+pub fn label_width(text: &str, scale: f32) -> f32 {
+    measure(text) * scale
+}
+
+/// Draws one line of `text` `scale` times its usual size, without an
+/// outline, centred on `(x, y)`: for labels on buttons, where the
+/// button behind it is the backing.
+pub fn draw_label(
+    canvas: &mut dyn Surface,
+    (x, y): (f32, f32),
+    text: &str,
+    color: Color,
+    scale: f32,
+) {
+    let left = x - label_width(text, scale) / 2.0;
+    let top = y - GLYPH.1 as f32 * scale / 2.0;
+    draw_layer(canvas, (left, top), text, color, false, scale);
 }
 
 /// Draws `text` centred on `centre_x`, its top at `y`.
@@ -376,20 +398,21 @@ fn draw_layer(
     text: &str,
     color: Color,
     outline: bool,
+    scale: f32,
 ) {
     let font = font();
     let flash = [(color >> 16) as u8, (color >> 8) as u8, color as u8, 255];
     for (row, line) in text.lines().enumerate() {
-        let top = y + (row as i32 * LINE) as f32;
+        let top = y + (row as i32 * LINE) as f32 * scale;
         let mut pen = x;
         for c in line.chars() {
             let glyph = font.glyph(c);
             if let Some(cell) = &glyph.cell {
-                let (l, t) = (pen + cell.left, top + cell.top);
+                let (l, t) = (pen + cell.left * scale, top + cell.top * scale);
                 canvas.quad(&Quad {
                     texture: font.atlas.clone(),
                     src: if outline { cell.outline } else { cell.fill },
-                    dst: [l, t, l + cell.size.0, t + cell.size.1],
+                    dst: [l, t, l + cell.size.0 * scale, t + cell.size.1 * scale],
                     flip: Flip::default(),
                     flash: Some(flash),
                     opacity: 255,
@@ -397,7 +420,7 @@ fn draw_layer(
                     normals: None,
                 });
             }
-            pen += glyph.advance;
+            pen += glyph.advance * scale;
         }
     }
 }
