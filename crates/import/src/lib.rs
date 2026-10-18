@@ -56,7 +56,9 @@ pub use graphics::{
     rgb, unpack,
 };
 pub use ground::{Below, COLUMN_BANDS, Ground, Half, Layout, Surface, TITLE_2_ORIGIN};
-pub use image::{COPIER_HEADER, Catalog, Image, Known, MAX_IMAGE_SIZE, Outcome, Sha256Hash};
+pub use image::{
+    COPIER_HEADER, Catalog, IMAGE_EXTENSIONS, Image, Known, MAX_IMAGE_SIZE, Outcome, Sha256Hash,
+};
 pub use installed::{Installed, check_shareable, installed};
 pub use kinds::{
     CRITTER, DEFAULT_THROWS, END, EXIT, FINGERPRINT_SIZE, Heading, KEG, Kind, KindRow,

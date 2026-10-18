@@ -14,6 +14,12 @@ pub const MAX_IMAGE_SIZE: u64 = 64 * 1024 * 1024;
 /// image (`spec/formats/rom-image.md`, "Files and images").
 pub const COPIER_HEADER: usize = 512;
 
+/// The file name extensions players' images usually have, in lower case
+/// (`spec/formats/rom-image.md`, "Usual file name extensions"). Only for
+/// a file dialog's filter, matched in any letter case: identifying an
+/// image never looks at its name.
+pub const IMAGE_EXTENSIONS: [&str; 4] = ["sfc", "smc", "swc", "fig"];
+
 /// The bytes of a player's game image.
 ///
 /// They stay in memory: nothing here prints, logs or reports them, and

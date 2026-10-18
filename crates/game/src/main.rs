@@ -400,6 +400,36 @@ fn title(level: &Level, path: &Path) -> String {
 /// nobody chooses that fast.
 const DIALOG_FAILED: Duration = Duration::from_millis(300);
 
+/// The "Game images" filter's extensions, matching in any letter case.
+/// Windows ignores case already; the Linux dialogs match exactly, so there
+/// each letter is spelled both ways (`[sS][fF][cC]`).
+fn image_patterns() -> Vec<String> {
+    clamber_import::IMAGE_EXTENSIONS
+        .iter()
+        .map(|ext| {
+            if cfg!(windows) {
+                ext.to_string()
+            } else {
+                any_case(ext)
+            }
+        })
+        .collect()
+}
+
+/// A glob matching `ext` in any letter case.
+fn any_case(ext: &str) -> String {
+    ext.chars()
+        .map(|c| {
+            let (lower, upper) = (c.to_ascii_lowercase(), c.to_ascii_uppercase());
+            if lower == upper {
+                c.to_string()
+            } else {
+                format!("[{lower}{upper}]")
+            }
+        })
+        .collect()
+}
+
 /// A file dialog that's open: when it opened, and where what's chosen in
 /// it arrives.
 struct Dialog {
@@ -416,6 +446,13 @@ impl Dialog {
             let mut dialog = rfd::FileDialog::new()
                 .set_title("Import a game")
                 .set_directory(dir);
+            // macOS merges every filter into one list of allowed types,
+            // which would leave no way to choose a file with another name.
+            if !cfg!(target_os = "macos") {
+                dialog = dialog
+                    .add_filter("Game images", &image_patterns())
+                    .add_filter("All files", &["*"]);
+            }
             if let Some(window) = &window {
                 dialog = dialog.set_parent(&**window);
             }
@@ -908,6 +945,17 @@ mod tests {
 
     fn args(s: &str) -> Vec<String> {
         s.split_whitespace().map(String::from).collect()
+    }
+
+    #[test]
+    fn image_filter_matches_any_case() {
+        assert_eq!(any_case("sfc"), "[sS][fF][cC]");
+        assert_eq!(any_case("Ab1"), "[aA][bB]1");
+        let patterns = image_patterns();
+        assert_eq!(patterns.len(), clamber_import::IMAGE_EXTENSIONS.len());
+        if !cfg!(windows) {
+            assert!(patterns.contains(&"[sS][mM][cC]".to_string()));
+        }
     }
 
     #[test]
