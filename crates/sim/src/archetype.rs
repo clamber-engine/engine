@@ -32,7 +32,9 @@ pub enum Behavior {
     /// on its own and added up; 0 changes speed at once. With
     /// `move_first`, it moves by the speed it had before each frame's
     /// change, walking and falling. With `columns`, it stands on the floor
-    /// of the 1-px column holding its `x`. Its facing follows a turn
+    /// of the 1-px column holding its `x`. With `stops_at_x`, it's its
+    /// `x` rather than the front of its box that meets walls and ledges.
+    /// Its facing follows a turn
     /// `turn_delay` frames later. Bounced on, its speed becomes
     /// `bounced_speed` away from the way the player faces, if it has one.
     /// Defeated, it falls as `defeat` says. When it appears with the view
@@ -49,6 +51,7 @@ pub enum Behavior {
         response: Response,
         move_first: bool,
         columns: bool,
+        stops_at_x: bool,
         bounced_speed: Option<Fixed>,
         contact: Option<WalkerContact>,
         hurt_jump_lift: Option<Fixed>,
@@ -1432,6 +1435,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "defeat_knock_glide",
             "move_first",
             "columns",
+            "stops_at_x",
             "bounced_speed",
             "contact",
             "hurt_jump_lift",
@@ -1713,6 +1717,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 response,
                 move_first,
                 columns: flag("columns")?,
+                stops_at_x: flag("stops_at_x")?,
                 bounced_speed,
                 contact: match table.get("contact") {
                     None => None,

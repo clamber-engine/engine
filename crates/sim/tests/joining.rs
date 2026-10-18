@@ -229,6 +229,30 @@ fn breaks_against_a_wall_after_falling_in_place() {
     walks_on(&mut play);
 }
 
+/// holder-breaking.md, "At a barrier": at a 64 px vertical step up, here
+/// at x = 240 rising to the right, it breaks without moving across when
+/// it's more than 8 px below the upper floor, and the character joins.
+#[test]
+fn breaks_at_a_vertical_step() {
+    let step = "[[collision]]\nshape = \"polygon\"\n\
+        points = [[0, 600], [0, 400], [240, 400], [240, 336], [3000, 336], [3000, 600]]";
+    let mut play = Play::new(&level(step));
+    play.throw_to(0);
+    let mut x = play.world.things[0].pos.x;
+    for n in 1..60 {
+        play.step(&[]);
+        let thing = &play.world.things[0];
+        if !thing.active {
+            assert_eq!(thing.pos.x, x, "Q + {n}");
+            assert!(thing.pos.y > f(344.0), "Q + {n}");
+            assert!(play.world.join.is_some(), "Q + {n}");
+            return;
+        }
+        x = thing.pos.x;
+    }
+    panic!("never broke");
+}
+
 /// holder-breaking.md, "Examples", "A walker": hit on Q + 32, S, the
 /// walker holds still until S + 33 and is knocked on from S + 34.
 #[test]

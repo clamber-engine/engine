@@ -24,6 +24,9 @@
 #   1-px column holding its x, as a player does with `face_slope`. A walker that would walk into a wall is put against
 #   it with no speed, and one that would walk off a ledge stops where it
 #   is; either way it heads back from the next frame. With
+#   `stops_at_x = true` (left out: false), it's its x rather than the
+#   front of its box that meets walls and ledges: a wall stops it with
+#   its x at the wall, and it walks on until its x would leave the floor. With
 #   `range = [left, right]`, offsets from where it's placed, it also
 #   turns once its x rounded down is past an end, the way it's heading,
 #   without stopping (`range = []`: no range). Its facing, which it's

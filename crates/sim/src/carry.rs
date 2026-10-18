@@ -57,7 +57,10 @@
 //! Against a wall it still falls on that frame. Breaking, it frees the
 //! character ([`join`](crate::join)). The spec doesn't cover how it
 //! moves when a bounce on a walker makes the player let go of it; here
-//! the player keeps it. Barriers that stop walkers aren't in the engine.
+//! the player keeps it. The vertical step walkers turn at
+//! (`spec/behavior/walker.md`, "Turning at a barrier") breaks either kind
+//! as ground more than a step above it does (thrown-objects.md,
+//! "Breaking at a vertical step"); one in the hands it doesn't.
 
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame};

@@ -841,3 +841,87 @@ fn breaks_on_a_ball_while_carried() {
     }
     assert!(play.world.player.hands.is_none());
 }
+
+/// A 64 px vertical step up to the left at x = 100: floor at y = 336
+/// left of it, the upper side, and at y = 400 from it on, the lower side.
+const STEP_UP: &str = "[[collision]]\nshape = \"polygon\"\n\
+    points = [[0, 600], [0, 336], [100, 336], [100, 400], [3000, 400], [3000, 600]]";
+
+/// Puts the thrown object at `(x, y)` moving across at `vx` and down at
+/// `vy` (before this step's gravity), and steps once. Returns whether
+/// it's still there, and its `x`.
+fn toward(play: &mut Play, x: f64, y: f64, vx: f64, vy: f64) -> (bool, Fixed) {
+    let mut flight = play.object();
+    (flight.vx, flight.target, flight.vy, flight.rolling) = (f(vx), f(vx), f(vy), false);
+    play.world.things[0].pos = Vec2::new(f(x), f(y));
+    play.world.things[0].phase = Phase::Thrown(flight);
+    play.step(&[]);
+    let thing = &play.world.things[0];
+    (thing.active, thing.pos.x)
+}
+
+/// thrown-objects.md, "Breaking at a vertical step": moving into the
+/// upper side, it breaks without moving if its `y` before the frame is
+/// more than 8 px below the upper floor, whatever its `vy`; otherwise it
+/// goes on into the column.
+#[test]
+fn breaks_at_a_vertical_step_more_than_8_px_below_its_top() {
+    for vy in [-4.0, -1.0, 0.0, 1.0, 4.0] {
+        for (y, breaks) in [
+            (344.0625, true),
+            (360.0, true),
+            (399.0, true),
+            (344.0, false),
+        ] {
+            let mut play = Play::new(&level(STEP_UP));
+            play.throw_to(21);
+            let (active, x) = toward(&mut play, 100.5, y, -1.0, vy);
+            assert_eq!(active, !breaks, "y {y}, vy {vy}");
+            if !breaks {
+                assert_eq!(x, f(99.5), "y {y}, vy {vy}");
+            }
+        }
+    }
+    // Well above the upper floor, it flies on over it.
+    let mut play = Play::new(&level(STEP_UP));
+    play.throw_to(21);
+    assert_eq!(toward(&mut play, 100.5, 300.0, -1.0, 0.0), (true, f(99.5)));
+}
+
+/// thrown-objects.md, "Breaking at a vertical step": it breaks on the
+/// frame whose move would take `x` into the upper side's first column,
+/// not on one ending on the left edge of the lower side's last column.
+#[test]
+fn breaks_at_a_vertical_step_only_once_inside_the_upper_side() {
+    let mut play = Play::new(&level(STEP_UP));
+    play.throw_to(21);
+    assert_eq!(toward(&mut play, 100.5, 360.0, -0.5, 0.0), (true, f(100.0)));
+    let mut play = Play::new(&level(STEP_UP));
+    play.throw_to(21);
+    assert!(!toward(&mut play, 100.5, 360.0, -0.5625, 0.0).0);
+}
+
+/// thrown-objects.md, "Breaking at a vertical step": an object in the
+/// hands isn't broken by the step. Walking into it, the player is
+/// stopped there; jumping, it gets onto the upper side.
+#[test]
+fn a_carried_object_isnt_broken_at_a_vertical_step() {
+    const L: Action = Action::Left;
+    const J: Action = Action::Jump;
+    let mut play = Play::new(&level(STEP_UP));
+    play.hold(&[A, L], 180);
+    // Stopped at the left edge of its column (steep-faces.md, "Stopped
+    // by a rise"): moving this fast, the one before the step's.
+    assert_eq!(play.world.player.pos.x, f(101.0));
+    assert_eq!(play.world.player.pos.y, f(400.0));
+    assert!(play.world.player.hands.is_some());
+    assert!(play.world.things[0].active);
+    for _ in 0..4 {
+        play.hold(&[A, L, J], 30);
+        play.hold(&[A, L], 10);
+    }
+    assert!(play.world.player.pos.x < f(100.0));
+    assert_eq!(play.world.player.pos.y, f(336.0));
+    assert!(play.world.player.hands.is_some());
+    assert!(play.world.things[0].active);
+}

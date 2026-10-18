@@ -224,6 +224,9 @@ impl Kind {
                 set("size", Value::Array(size.map(Value::Integer).into()));
                 set("offset", Value::Float(offset));
                 set("turn_delay", Value::Integer(4));
+                // walker.md, "Turning at a barrier": X_b, where its x
+                // stops, is the edge of the vertical step.
+                set("stops_at_x", Value::Boolean(true));
                 set("defeat_jump", Value::Integer(6));
                 set("defeat_gravity", Value::Float(0.4375));
                 set("defeat_max_fall", Value::Integer(8));

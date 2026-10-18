@@ -860,6 +860,53 @@ fn classic_walker_stops_at_a_wall_and_turns_after_five_frames() {
 }
 
 #[test]
+fn classic_walker_stops_with_its_x_at_a_vertical_step() {
+    // walker.md's barrier example as measured: X_b = 200 is the left
+    // edge of the lower side of a 64 px vertical step up to the left.
+    // With `stops_at_x`, its x stops there, not its box. Placed at
+    // 220.5, it's at 200.5 after 20 steps: the example's frame 3.
+    let src = format!(
+        r#"
+        format = 1
+        name = "barrier"
+        size = [1000, 600]
+        start = [300, 400]
+
+        [[collision]]
+        shape = "polygon"
+        points = [[0, 600], [0, 336], [200, 336], [200, 400], [1000, 400], [1000, 600]]
+
+        [[entities]]
+        type = "crawler"
+        at = [220.5, 400]
+        params = {{ speed = 1, facing = "left", size = [20, 12], offset = 0.5, stops_at_x = true, {CLASSIC_WALKER} }}
+        "#
+    );
+    let level = Level::from_toml_str(&src, "test").unwrap();
+    let mut w = World::new(
+        Arc::new(level),
+        Arc::new(generic_feel("classic-1").unwrap()),
+    );
+    let rows = walker_rows(&mut w, 17 + 36);
+    let frame = |f: usize| rows[16 + f];
+    let (l, r) = (Facing::Left, Facing::Right);
+    let want = [
+        (3, 200.5, -1.0, l),
+        (4, 200.0, 0.0, l),
+        (5, 200.125, 0.125, l),
+        (6, 200.359375, 0.234375, l),
+        (7, 200.6875, 0.328125, l),
+        (8, 201.09765625, 0.41015625, l),
+        (9, 201.578125, 0.48046875, r),
+        (36, 224.75390625, 1.0, r),
+    ];
+    for (f, x, vx, facing) in want {
+        assert_eq!(frame(f), (fx(x), fx(vx), facing), "frame {f}");
+    }
+    assert!(rows.iter().all(|row| row.0 >= fx(200.0)));
+}
+
+#[test]
 fn classic_bounced_walker_jumps_holds_still_and_falls_through_the_floor() {
     // A classic-1 player falls onto a walker walking left at full speed.
     // Find a start for the walker that gives a bounce.

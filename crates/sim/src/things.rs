@@ -1162,12 +1162,16 @@ fn in_reach(
 /// way it's heading by its `response`, before or after it moves by its
 /// `move_first`. If a wall is in the way, it's put against it; if a
 /// ledge is, it stays put. Either way it stops and turns around, its
-/// facing following `turn_delay` frames after the next.
+/// facing following `turn_delay` frames after the next. With
+/// `stops_at_x`, the front of its box is at its `x` for both, so a wall
+/// stops it with its `x` at the wall (walker.md, "Turning at a
+/// barrier").
 fn walk(level: &Level, thing: &mut Thing, speed: Fixed, archetype: &Archetype, turn_delay: u8) {
     let Behavior::Walker {
         response,
         move_first,
         columns,
+        stops_at_x,
         ..
     } = archetype.behavior
     else {
@@ -1184,7 +1188,10 @@ fn walk(level: &Level, thing: &mut Thing, speed: Fixed, archetype: &Archetype, t
         thing.vx = eased;
         return;
     }
-    let half_width = Fixed::from_bits(size.x.to_bits() / 2);
+    let front = match stops_at_x {
+        true => Fixed::ZERO,
+        false => Fixed::from_bits(size.x.to_bits() / 2),
+    };
     let (cast_dir, sign) = if vx.is_negative() {
         (Dir::Left, -Fixed::ONE)
     } else {
@@ -1202,8 +1209,8 @@ fn walk(level: &Level, thing: &mut Thing, speed: Fixed, archetype: &Archetype, t
     // A wall stops it only if this move would take it past touching.
     let wall = level
         .collision
-        .sweep(probe, cast_dir, speed + half_width, reach, is_wall)
-        .filter(|hit| hit.distance < speed + half_width);
+        .sweep(probe, cast_dir, speed + front, reach, is_wall)
+        .filter(|hit| hit.distance < speed + front);
     let x = pos.x + vx;
     let ground_at = |x: Fixed| {
         let from = Vec2::new(x, pos.y - STEP);
@@ -1214,7 +1221,7 @@ fn walk(level: &Level, thing: &mut Thing, speed: Fixed, archetype: &Archetype, t
     } else {
         x
     };
-    let ground = ground_at(x + sign * half_width).and_then(|_| ground_at(foot));
+    let ground = ground_at(x + sign * front).and_then(|_| ground_at(foot));
     match (wall, ground) {
         (None, Some(hit)) => {
             thing.pos = Vec2::new(x, hit.point.y);
@@ -1222,7 +1229,7 @@ fn walk(level: &Level, thing: &mut Thing, speed: Fixed, archetype: &Archetype, t
         }
         _ => {
             if let Some(hit) = wall {
-                let gap = (hit.distance - half_width).max(Fixed::ZERO);
+                let gap = (hit.distance - front).max(Fixed::ZERO);
                 thing.pos.x = pos.x + sign * gap;
             }
             thing.vx = Fixed::ZERO;
