@@ -570,6 +570,11 @@ params! {
     /// and every walker holds still on the `bounce_freeze` frames after
     /// it.
     BounceHoldsWalkers => "bounce_holds_walkers",
+    /// Above 0, nothing else moves on the `bounce_freeze` frames after a
+    /// bounce: things, throws, hidden objects' items in the air and the
+    /// pieces of a burst all keep where they are, and nothing is made up
+    /// afterwards.
+    BounceHoldsAll => "bounce_holds_all",
     /// For walkers with a `contact` table: on the ground, a player moving
     /// faster than this is walking or running, and slower, standing.
     StanceStandSpeed => "stance_stand_speed",

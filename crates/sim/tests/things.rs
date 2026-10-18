@@ -346,6 +346,48 @@ fn classic_bounce_sets_vy_then_holds_still_for_two_frames() {
     );
 }
 
+/// bounce.md, "Everything else on the frozen frames": on B + 1 and B + 2
+/// nothing else moves or turns either, and nothing is made up after.
+#[test]
+fn classic_nothing_else_moves_on_the_frozen_frames() {
+    let others = format!(
+        r#"{walker}
+        [[entities]]
+        type = "thrower"
+        at = [180, 400]
+
+        [[entities]]
+        type = "idol"
+        at = [250, 330]
+        params = {{ rise = 0.00390625 }}
+        "#,
+        walker = small_walker("400", "1", "right"),
+    );
+    let entities = format!("{}{others}", small_walker("300", "0", "left"));
+    let (_, b) = classic_bounce();
+    let mut w = world_on("classic-1", [300, 300], &entities);
+    let mut rows = Vec::new();
+    for _ in 0..=b + 3 {
+        step(&mut w, &InputFrame::single(Frame::default()));
+        rows.push(w.things.clone());
+    }
+    // The walker bounced on, the other walker, the thrower and the
+    // rising item.
+    for (i, at_b) in rows[b].iter().enumerate() {
+        assert_eq!(&rows[b + 1][i], at_b, "thing {i} on B + 1");
+        assert_eq!(&rows[b + 2][i], at_b, "thing {i} on B + 2");
+    }
+    // And no ball is thrown.
+    assert_eq!(rows[b + 2].len(), rows[b].len());
+    // The other walker steps on B and again on B + 3, two frames behind.
+    let x = |n: usize| rows[n][1].pos.x;
+    assert_eq!(x(b) - x(b - 1), fx(1.0));
+    assert_eq!(x(b + 3) - x(b + 2), fx(1.0));
+    // The rising item and the walker bounced on go on from B + 3.
+    assert!(rows[b + 3][3].pos.y < rows[b][3].pos.y);
+    assert_ne!(rows[b + 3][0], rows[b][0]);
+}
+
 #[test]
 fn classic_bounce_height_by_how_long_jump_is_held_from_b_plus_3() {
     let (_, b) = classic_bounce();

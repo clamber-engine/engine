@@ -1187,7 +1187,11 @@ pub fn step(world: &mut World, input: &InputFrame) {
     if let Some(placing) = &mut world.placing {
         placing.held_pictures = world.bursts.len() * (KEG_PIECES + 1);
     }
-    keg::bursts(world);
+    // With `bounce_holds_all`, they hold still on a bounce's frozen
+    // frames.
+    if !things::holds_all(world, world.player.frozen > 0) {
+        keg::bursts(world);
+    }
     // The dimming starts by where the view was at the start of the step.
     dimming::start(world);
     if world.join.is_some() {

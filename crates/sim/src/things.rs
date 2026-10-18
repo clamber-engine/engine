@@ -38,6 +38,8 @@
 //!   it holds still after the hit. Throwers, knocked out or not, and
 //!   balls hold still then too, the one that hurt it as well, and no
 //!   ball is thrown, so they go on that many frames late.
+//! - With `bounce_holds_all`, nothing else moves on a bounce's frozen
+//!   frames (see [`holds_all`]), and goes on from where it was after.
 //! - While a character is being lost, things don't act on the player,
 //!   and while the one that took over is protected, nothing hurts it
 //!   (see [`loss`](crate::loss)).
@@ -223,8 +225,11 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     // Walkers and throwers, knocked out or not, hold still on the ground
     // action's pause frames, and so do hidden objects' items.
     let paused = frozen && world.player.ground_action.is_some();
+    // With `bounce_holds_all`, nothing else moves on a bounce's frozen
+    // frames.
+    let held_by_bounce_all = holds_all(world, frozen);
     hidden::note_fall(world);
-    hidden::items(world, paused);
+    hidden::items(world, paused || held_by_bounce_all);
     let (struck, struck_hidden) = if !frozen && !knocked(world) {
         (
             ground_attacks(world, &physics),
@@ -259,7 +264,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     }
     // Throwers and balls stop then too, the one that hurt it as well,
     // and none is thrown.
-    let thrower_held = held.is_some();
+    let thrower_held = held.is_some() || held_by_bounce_all;
     if !thrower_held {
         throwers::throw(world);
     }
@@ -272,13 +277,17 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     // hold still on the frames that hold walkers still.
     let frame = world.frame;
     let view = world.view.map_or((0, 0), |v| (v.x(), v.y()));
-    let critters_held = held.is_some() || waiting || held_by_bounce || held_by_roll;
+    let critters_held =
+        held.is_some() || waiting || held_by_bounce || held_by_roll || held_by_bounce_all;
     let mut freed = Vec::new();
     for thing in world.things.iter_mut().filter(|t| t.active) {
         if let Some(Behavior::Critter(critter)) = thing.archetype.map(|a| a.behavior) {
             if !critters_held && let Some(entity) = world.level.entities.get(thing.index) {
                 critter::step(thing, entity.at, &critter, frame, view);
             }
+            continue;
+        }
+        if held_by_bounce_all {
             continue;
         }
         let enemy = thing.archetype.is_some_and(|a| a.behavior.is_enemy());
@@ -339,8 +348,14 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     spring::update(world, frozen, untouchable);
     rope::update(world);
     sling::update(world);
-    // Enemies bounced on still moved this frame, as they were.
-    let freeze = frames(physics[Param::BounceFreeze]);
+    // Enemies bounced on still moved this frame, as they were. When
+    // everything holds still on the frozen frames, so do they, without
+    // counting them.
+    let freeze = if physics[Param::BounceHoldsAll] > Fixed::ZERO {
+        0
+    } else {
+        frames(physics[Param::BounceFreeze])
+    };
     let facing = world.player.facing;
     for index in bounced {
         bounce_off(&mut world.things[index], facing, freeze);
@@ -398,6 +413,15 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
             .or_else(|| stinger::hurt_ahead(world));
     }
     hurt_by
+}
+
+/// Whether, with `bounce_holds_all`, this step is one of a bounce's
+/// frozen frames, on which nothing but the player's count goes on.
+/// `frozen` says the player was held still at the start of the step.
+pub(crate) fn holds_all(world: &World, frozen: bool) -> bool {
+    frozen
+        && world.player.state == State::Bounce
+        && world.player_physics()[Param::BounceHoldsAll] > Fixed::ZERO
 }
 
 /// Moves a thing one step, `ending` during the walk-out after the end
@@ -1383,7 +1407,8 @@ fn interact(
                 if !rolling {
                     player.bounce(bounce, freeze, &mut world.events);
                 }
-                defeat(thing, if rolling { 0 } else { freeze });
+                let holds_all = physics[Param::BounceHoldsAll] > Fixed::ZERO;
+                defeat(thing, if rolling || holds_all { 0 } else { freeze });
                 world.flow.events.push(FlowEvent::Defeat(thing.index));
             }
         }

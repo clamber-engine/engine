@@ -143,6 +143,7 @@ bounce_offset = 0
 bounce_below = 0
 bounce_max_rise = 0
 bounce_holds_walkers = 0
+bounce_holds_all = 0
 stance_stand_speed = 0
 stance_run_speed = 0
 face_slope = 0
@@ -600,6 +601,9 @@ bounce_width = 36
 bounce_offset = -7
 bounce_below = 13
 bounce_max_rise = 1.25
+# On a bounce's two frozen frames nothing else moves either (bounce.md,
+# "Everything else on the frozen frames").
+bounce_holds_all = 1
 face_slope = 3
 face_speed = 1.5
 face_exit = 2
