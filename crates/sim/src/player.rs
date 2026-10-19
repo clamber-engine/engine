@@ -1913,11 +1913,12 @@ impl Player {
                 None if slope > Fixed::ZERO => steeper(level, start_column, feet, physics),
                 _ => Fixed::ZERO,
             };
+            let leave_hovers = self.roll.is_some_and(|r| r.leave_hovers(r.frame, physics));
             let drop = if let Some(on) = off_spring {
                 on.values.leave_drop
             } else if face_leave {
                 physics[Param::FaceLeaveDrop]
-            } else if self.roll.is_some_and(|r| r.leave_hovers(r.frame, physics)) {
+            } else if leave_hovers {
                 physics[Param::LeaveFallSpeed]
             } else {
                 physics[Param::LeaveDrop] + steeper
@@ -1970,11 +1971,11 @@ impl Player {
             if (left || (over_end && !self.grounded())) && drop > Fixed::ZERO {
                 // There's no ground within a step below, so the drop
                 // can't land. A jump waiting to take off drops under its
-                // own gravity instead of `fall_gravity`.
+                // own gravity instead of `fall_gravity`, unless it hovers.
                 let speed = self.vel.y;
                 self.vel.y = match waiting_gravity.or(jump_gravity) {
-                    Some(gravity) => drop - physics[Param::FallGravity] + gravity,
-                    None => drop,
+                    Some(gravity) if !leave_hovers => drop - physics[Param::FallGravity] + gravity,
+                    _ => drop,
                 };
                 self.move_vertically(level, moved, Reach::NONE, slope > Fixed::ZERO, events);
                 self.vel.y = if left && self.through.is_some() {

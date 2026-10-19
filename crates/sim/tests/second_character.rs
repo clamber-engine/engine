@@ -715,7 +715,25 @@ fn roll_off_faced_ledge(
     n: usize,
     adjust: impl Fn(usize, &mut Play),
 ) -> (Vec<Row>, Fixed) {
-    let held = |f: usize, s: usize| if f == s { vec![A, R] } else { vec![R] };
+    roll_off_faced_ledge_jumping(drop, lead, n, 0..0, adjust)
+}
+
+/// [`roll_off_faced_ledge`], with Jump held too on the frames in `jump`,
+/// counted from S.
+fn roll_off_faced_ledge_jumping(
+    drop: i32,
+    lead: usize,
+    n: usize,
+    jump: std::ops::Range<usize>,
+    adjust: impl Fn(usize, &mut Play),
+) -> (Vec<Row>, Fixed) {
+    let held = |f: usize, s: usize| {
+        let mut keys = if f == s { vec![A, R] } else { vec![R] };
+        if f >= s && jump.contains(&(f - s)) {
+            keys.push(J);
+        }
+        keys
+    };
     // Walking rolls from starts moved in steps of 1/16 px, to find the
     // leave frames on or right after S.
     for nudge in 0..32 {
@@ -801,6 +819,89 @@ fn roll_off_a_ledge_hover_example() {
     let land = frames_with(&rows, Event::Land)[0];
     assert!(rows[..land + 25].iter().all(|r| r.state == State::Roll));
     assert_eq!(frames_with(&rows, Event::RollEnd), [land + 25]);
+}
+
+#[test]
+fn jumping_during_a_roll_hover_example() {
+    // rolling-off-ledges.md, "The second character", jumping during the
+    // fall: the hover example (L = S + 7) with Jump pressed on L + 3. P
+    // stays a hover frame, then this character's jump.
+    let (l, p) = (7, 10);
+    let (rows, _) = roll_off_faced_ledge_jumping(160, l, p + 4, p..p + 12, |_, _| {});
+    for i in l..=p {
+        assert_eq!(
+            (rows[i].y - rows[i - 1].y, rows[i].vy),
+            (f(0.00390625), f(0.00390625)),
+            "L + {}",
+            i - l
+        );
+    }
+    assert_eq!(frames_with(&rows, Event::RollEnd), [p]);
+    assert_eq!(frames_with(&rows, Event::JumpStart), [p + 1]);
+    for (i, moved, vy) in [
+        (p, 0.00390625, 0.00390625),
+        (p + 1, 0.35546875, -8.3515625),
+        (p + 2, -8.0, -8.0),
+        (p + 3, -7.6484375, -7.6484375),
+    ] {
+        let row = &rows[i];
+        assert_eq!(
+            (row.y - rows[i - 1].y, row.vy),
+            (f(moved), f(vy)),
+            "P + {}",
+            i - p
+        );
+    }
+    // From T, `vx` follows the speed rule toward 2.25. (The example's
+    // `vx` itself depends on the speed on L, which isn't covered on
+    // ledges with a face.)
+    for t in p + 1..p + 4 {
+        let before = (rows[t - 1].vx.to_f64() * 256.0) as i64;
+        let expect = before + (576 - before) / 8;
+        assert_eq!(rows[t].vx, f(expect as f64 / 256.0), "step {t}");
+    }
+    // Tapped on P alone.
+    let (rows, _) = roll_off_faced_ledge_jumping(160, l, p + 3, p..p + 1, |_, _| {});
+    assert_eq!(rows[p + 1].y - rows[p].y, f(0.44140625));
+    assert_eq!(rows[p + 2].y - rows[p + 1].y, f(-7.9140625));
+}
+
+#[test]
+fn jumping_on_every_hover_frame() {
+    // rolling-off-ledges.md, "The second character", jumping during the
+    // fall: a press on a hover frame keeps it one, and a press on an L
+    // that isn't one moves down 3.3515625. `vy` is -8.3515625 on T.
+    for lead in 1..=12 {
+        let hovers = |after: usize| match lead {
+            1..=9 => after <= 11,
+            10 => after == 0,
+            _ => false,
+        };
+        for after in 0..=12 {
+            let p = lead + after;
+            let (rows, _) = roll_off_faced_ledge_jumping(160, lead, p + 3, p..p + 12, |_, _| {});
+            let fall_vy = rows[p - 1].vy;
+            let (moved, vy) = if hovers(after) {
+                (f(0.00390625), f(0.00390625))
+            } else if after == 0 {
+                (f(3.3515625), f(0.00390625))
+            } else {
+                let vy = (fall_vy + f(0.3515625)).min(f(8.0));
+                (vy, vy)
+            };
+            let ctx = format!("lead {lead}, P = L + {after}");
+            assert_eq!(
+                (rows[p].y - rows[p - 1].y, rows[p].vy),
+                (moved, vy),
+                "{ctx}"
+            );
+            assert_eq!(
+                (rows[p + 1].y - rows[p].y, rows[p + 1].vy),
+                ((vy + f(0.3515625)).min(f(8.0)), f(-8.3515625)),
+                "{ctx}"
+            );
+        }
+    }
 }
 
 #[test]

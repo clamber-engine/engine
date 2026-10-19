@@ -3242,9 +3242,26 @@ fn classic_raised(x: i32) -> Play {
 /// so that the roll leaves the ground on S + `lead`. The rows from S on,
 /// `n` of them, with `adjust(frame, world)` called before each frame.
 fn classic_roll_off_raised(lead: usize, n: usize, adjust: impl Fn(usize, &mut Play)) -> Vec<Row> {
-    let held = |f: usize, s: usize| match f.cmp(&s) {
-        std::cmp::Ordering::Equal => vec![Action::Action, Action::Right],
-        _ => vec![Action::Right],
+    classic_roll_off_raised_jumping(lead, n, 0..0, adjust)
+}
+
+/// [`classic_roll_off_raised`], with Jump held too on the frames in
+/// `jump`, counted from S.
+fn classic_roll_off_raised_jumping(
+    lead: usize,
+    n: usize,
+    jump: std::ops::Range<usize>,
+    adjust: impl Fn(usize, &mut Play),
+) -> Vec<Row> {
+    let held = |f: usize, s: usize| {
+        let mut keys = match f.cmp(&s) {
+            std::cmp::Ordering::Equal => vec![Action::Action, Action::Right],
+            _ => vec![Action::Right],
+        };
+        if f >= s && jump.contains(&(f - s)) {
+            keys.push(Action::Jump);
+        }
+        keys
     };
     for s in 1..200 {
         let rows = play(&mut classic_raised(1300), s + lead + 1, |f| held(f, s));
@@ -3315,6 +3332,72 @@ fn classic_roll_hover_worked_example() {
         (11, 1.359375, 0.87890625),
     ] {
         assert_eq!((below(7 + after), rows[7 + after].vy), (fallen, vy));
+    }
+}
+
+#[test]
+fn classic_jumping_during_a_roll_hover() {
+    // spec/behavior/rolling-off-ledges.md, "Jumping during the fall", the
+    // example of a press during a hover: L = S + 7, Jump pressed on
+    // L + 3. P stays a hover frame and the jump ends the hover.
+    let (l, p) = (7, 10);
+    for (held, rows_after) in [
+        (12, [(0.28515625, -7.0), (-6.71875, -6.71875)]),
+        (1, [(0.44140625, -7.0), (-6.5625, -6.5625)]),
+    ] {
+        let rows = classic_roll_off_raised_jumping(l, 30, p..p + held, |_, _| {});
+        for f in l..=p {
+            let before = if f == 0 { 400.0 } else { rows[f - 1].y };
+            assert_eq!((rows[f].y - before, rows[f].vy), (0.00390625, 0.00390625));
+        }
+        assert_eq!(frames_with(&rows, Event::RollEnd), [p], "held {held}");
+        assert_eq!(frames_with(&rows, Event::JumpStart), [p + 1], "held {held}");
+        for (k, (moved, vy)) in rows_after.into_iter().enumerate() {
+            let f = p + 1 + k;
+            assert_eq!(
+                (rows[f].y - rows[f - 1].y, rows[f].vy),
+                (moved, vy),
+                "held {held}, T + {k}"
+            );
+        }
+    }
+}
+
+#[test]
+fn classic_jumping_on_every_hover_frame() {
+    // spec/behavior/rolling-off-ledges.md, "Jumping during the fall": a
+    // press on any hover frame keeps it a hover frame and takes off from
+    // there with `vy` -7 on T; a press on an L that isn't a hover frame
+    // moves down 3.28125 instead of 3.4375.
+    for lead in 0..=10 {
+        let hovers = |after: usize| match lead {
+            0 => (1..=8).contains(&after),
+            1..=7 => after <= 9,
+            8 => after == 0,
+            _ => false,
+        };
+        // Jump pressed on S itself isn't covered.
+        for after in usize::from(lead == 0)..=10 {
+            let p = lead + after;
+            let rows = classic_roll_off_raised_jumping(lead, p + 3, p..p + 12, |_, _| {});
+            let before = if p == 0 { 400.0 } else { rows[p - 1].y };
+            let fall_vy = rows[p - 1].vy;
+            let (moved, vy) = if hovers(after) || after == 0 {
+                (if hovers(after) { 0.00390625 } else { 3.28125 }, 0.00390625)
+            } else {
+                let vy = (fall_vy + 0.28125).min(8.0);
+                (vy, vy)
+            };
+            let ctx = format!("lead {lead}, P = L + {after}");
+            assert_eq!((rows[p].y - before, rows[p].vy), (moved, vy), "{ctx}");
+            let t = (vy + 0.28125).min(8.0);
+            assert_eq!(
+                (rows[p + 1].y - rows[p].y, rows[p + 1].vy),
+                (t, -7.0),
+                "{ctx}"
+            );
+            assert_eq!(rows[p + 2].vy, -6.71875, "{ctx}");
+        }
     }
 }
 
