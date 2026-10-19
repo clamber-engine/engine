@@ -1,6 +1,8 @@
 //! Steep faces on the `classic-1` preset, from the examples in
 //! `spec/behavior/steep-faces.md`, `walk-off.md` ("Jumping near the
-//! edge") and `rolling-off-ledges.md` ("Stopping before a ledge"). Heights in the spec are relative to the starting floor; here
+//! edge"), `rolling-off-ledges.md` ("Stopping before a ledge") and
+//! `jump-input.md` ("After a jump over a face's top"). Heights in the spec
+//! are relative to the starting floor; here
 //! that floor is at y = 300. The `classic_2_*` tests are on the `classic-2`
 //! preset, from the same file's "In `title-2`".
 
@@ -1885,4 +1887,221 @@ fn after_a_bounce_the_switch_frame_is_the_landing_frame() {
             (false, (fx(107.9609375), -90, level_y(52.0), true)),
         ]
     );
+}
+
+/// The frame, counted from the landing frame L, on which a jump starts
+/// after `world` (on [`landing_face`], `age` frames into a jump, Right
+/// held until L) lands, with Jump held from L + `from` for `held`
+/// frames; `None` if none does by L + 40. Also A and L, as frames after
+/// the jump's start.
+fn jump_after_landing(
+    world: impl Fn() -> World,
+    age: u8,
+    from: i32,
+    held: i32,
+) -> (Option<i32>, u8, u8) {
+    let mut first = world();
+    let mut n = 0;
+    while !first.events.contains(&Event::Land) {
+        hold(&mut first, &[Action::Right]);
+        n += 1;
+    }
+    let land = age + n as u8;
+    let approach = first.player.approach.unwrap();
+    assert!(first.player.approach_face);
+    let mut w = world();
+    let keys = |rel: i32| {
+        let mut keys = if rel <= 0 {
+            vec![Action::Right]
+        } else {
+            vec![]
+        };
+        if (from..from + held).contains(&rel) {
+            keys.push(Action::Jump);
+        }
+        keys
+    };
+    let mut takeoff = None;
+    for f in 1..=n + 40 {
+        let rel = f - n;
+        press(&mut w, &keys(rel - 1), &keys(rel));
+        if rel >= 0 {
+            assert!(w.player.grounded() || takeoff.is_some(), "L + {rel}");
+        }
+        if takeoff.is_none() && w.events.contains(&Event::JumpStart) {
+            takeoff = Some(rel);
+        }
+    }
+    (takeoff, approach, land)
+}
+
+#[test]
+fn after_a_jump_over_a_face_s_top_the_next_jump_waits_for_max_l_a_3_plus_13() {
+    // jump-input.md, "After a jump over a face's top": A ends over face
+    // column 113 or 115, and the player lands on the floor beyond the
+    // face's top, 3 px above its top column.
+    let a5 = || mid_jump(30, 112.0, -5.0, 256, 512);
+    assert_eq!(jump_after_landing(a5, 30, 1, 40), (Some(13), 31, 36));
+    // L = A + 5, so E = L + 13.
+    for (press, held, takeoff) in [
+        (-3, 40, None),
+        (0, 40, None),
+        (1, 40, Some(13)),
+        (6, 40, Some(13)),
+        (12, 40, Some(13)),
+        (13, 40, Some(14)),
+        (20, 40, Some(21)),
+        // Let go before E − 1.
+        (1, 11, None),
+    ] {
+        assert_eq!(
+            jump_after_landing(a5, 30, press, held).0,
+            takeoff,
+            "L + {press}, held {held}"
+        );
+    }
+    // L = A + 2: E = L + 14.
+    let a2 = || mid_jump(30, 114.0, 5.0, 256, 512);
+    assert_eq!(jump_after_landing(a2, 30, 1, 40), (None, 31, 33));
+    assert_eq!(jump_after_landing(a2, 30, 2, 40).0, Some(14));
+    // L = A + 1: E = L + 15.
+    let a1 = || mid_jump(30, 114.0, 8.0, 256, 512);
+    assert_eq!(jump_after_landing(a1, 30, 1, 40), (None, 31, 32));
+    assert_eq!(jump_after_landing(a1, 30, 2, 40).0, None);
+    assert_eq!(jump_after_landing(a1, 30, 3, 40).0, Some(15));
+}
+
+/// Falling from a bounce onto the fifth column of [`landing_face`]'s face
+/// (`x - c0` = 4) with no speed sideways and nothing held but Action from
+/// L + `from` on. Rows of `x - c0`, the floor's height above the face's
+/// foot and `vx` (1/256) from L to L + 12, and the frames counted from L
+/// that start a roll.
+fn bounce_onto_the_face(from: Option<i32>) -> (Vec<(Fixed, Fixed, i64)>, Vec<i32>) {
+    let start = || {
+        let mut world = mid_jump(0, 104.0, 48.0, 0, 768);
+        world.player.jump_age = None;
+        world.player.state = State::Bounce;
+        world
+    };
+    let mut probe = start();
+    let mut n = 0;
+    while !probe.events.contains(&Event::Land) {
+        hold(&mut probe, &[]);
+        n += 1;
+    }
+    assert!(n > 2);
+    let keys = |rel: i32| {
+        if from.is_some_and(|p| rel >= p) {
+            vec![Action::Action]
+        } else {
+            vec![]
+        }
+    };
+    let mut world = start();
+    let mut rows = Vec::new();
+    let mut rolls = Vec::new();
+    for f in 1..=n + 12 {
+        let rel = f - n;
+        press(&mut world, &keys(rel - 1), &keys(rel));
+        let p = &world.player;
+        if rel >= 0 {
+            rows.push((
+                p.pos.x - fx(100.0),
+                Fixed::from_int(FLOOR) - p.pos.y,
+                grains(p.vel.x),
+            ));
+        }
+        if world.events.contains(&Event::RollStart) {
+            rolls.push(rel);
+        }
+    }
+    (rows, rolls)
+}
+
+/// Coasting down [`short_fall`] from `x` = 299 at 1 px per frame, with
+/// Action pressed on frame `from` and held for `held` frames: the frames
+/// that start a roll, and the rows.
+fn coast_and_roll(from: usize, held: usize) -> (Vec<usize>, Vec<JumpRow>) {
+    let mut world = ground(short_fall, 299.0);
+    world.player.vel.x = Fixed::ONE;
+    let mut previous = vec![];
+    let mut rolls = Vec::new();
+    let mut rows = Vec::new();
+    for frame in 1..=20 {
+        let held = if (from..from + held).contains(&frame) {
+            vec![Action::Action]
+        } else {
+            vec![]
+        };
+        press(&mut world, &previous, &held);
+        previous = held;
+        if world.events.contains(&Event::RollStart) {
+            rolls.push(frame);
+        }
+        let p = &world.player;
+        rows.push((
+            p.pos.x,
+            p.pos.y - Fixed::from_int(FLOOR),
+            grains(p.vel.x),
+            p.vel.y,
+            false,
+        ));
+    }
+    (rolls, rows)
+}
+
+#[test]
+fn a_roll_press_after_a_bounce_onto_a_face_is_carried_to_its_foot() {
+    // steep-faces.md, "When a roll starts on a face": the example.
+    let (rows, rolls) = bounce_onto_the_face(None);
+    let expected = [
+        (4.0, 17, 0),
+        (3.8125, 13, -48),
+        (3.4609375, 13, -90),
+        (2.96875, 9, -126),
+        (2.3515625, 9, -158),
+        (1.625, 5, -186),
+        (0.8046875, 1, -210),
+        (-0.09765625, 0, -231),
+    ];
+    for (k, &(x, floor, vx)) in expected.iter().enumerate() {
+        assert_eq!(rows[k], (fx(x), Fixed::from_int(floor), vx), "L + {k}");
+    }
+    assert_eq!(rolls, Vec::<i32>::new());
+    // Q = L + 8. Pressed on L - 1, Q = P + 9: no roll.
+    assert_eq!(bounce_onto_the_face(Some(-1)), (rows.clone(), vec![]));
+    // Pressed on L + 1, Q = P + 7: the same frames up to L + 7, and the
+    // roll starts on L + 8.
+    let (pressed, rolls) = bounce_onto_the_face(Some(1));
+    assert_eq!(pressed[..8], rows[..8]);
+    assert_eq!(rolls, [8]);
+}
+
+#[test]
+fn a_roll_press_on_a_face_waits_held_for_the_first_frame_off_it() {
+    // Coasting down `short_fall`: frame 2 moves onto the face and 14 is
+    // the first frame that starts off it again (Q).
+    let (_, plain) = coast_and_roll(0, 0);
+    // The press on the frame that moves onto the face isn't carried.
+    assert_eq!(coast_and_roll(2, 1).0, [2]);
+    // From frame 3 a press is carried, held, to Q, if Q <= P + 7.
+    for from in 3..=6 {
+        assert_eq!(
+            coast_and_roll(from, 20).0,
+            Vec::<usize>::new(),
+            "P = {from}"
+        );
+    }
+    for from in 7..=13 {
+        let (rolls, rows) = coast_and_roll(from, 20);
+        assert_eq!(rolls, [14], "P = {from}");
+        // Until Q the press changes nothing.
+        assert_eq!(rows[..13], plain[..13], "P = {from}");
+    }
+    // Let go before Q: no roll.
+    assert_eq!(coast_and_roll(7, 7).0, Vec::<usize>::new());
+    assert_eq!(coast_and_roll(8, 7).0, [14]);
+    // A press on Q or later rolls on its own frame.
+    assert_eq!(coast_and_roll(14, 1).0, [14]);
+    assert_eq!(coast_and_roll(15, 1).0, [15]);
 }

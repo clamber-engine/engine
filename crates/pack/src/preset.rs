@@ -377,6 +377,7 @@ mod tests {
                     | Param::FacePressGravity
                     | Param::FaceJumpWait
                     | Param::FaceRolls
+                    | Param::FaceRollWait
                     | Param::TakeoffOverEnd
                     | Param::RollTime
                     | Param::RollSpeed
@@ -442,6 +443,7 @@ mod tests {
                     | Param::SlopePiece
                     | Param::FaceSpeed
                     | Param::FaceSlideSwitch
+                    | Param::FaceTopLanding
                     | Param::StartRiseAhead
                     | Param::RiseKeepsTarget
                     | Param::AirStep

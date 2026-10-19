@@ -250,6 +250,12 @@ params! {
     /// `face_speed`, and pushes off only from a frame that doesn't start
     /// on a face.
     FaceRolls => "face_rolls",
+    /// Above 0, with `face_slope`, a timed roll doesn't start on a frame
+    /// that starts on a steep face. Its press is remembered while action
+    /// stays held, and starts the roll on the first frame after that
+    /// starts on the floor off the face, if that's at most this many
+    /// frames after the press. Whole frames.
+    FaceRollWait => "face_roll_wait",
     /// Above 0, a jump leaves the ground on the frame after it starts:
     /// on the start frame the body still follows the ground, with its
     /// upward speed already set. 0 leaves on the start frame.
@@ -641,6 +647,13 @@ params! {
     /// face. It comes earlier on a frame that ends on the floor of a face
     /// column with no speed or speed down it. Whole frames.
     FaceSlideSwitch => "face_slide_switch",
+    /// Above 0, with `face_slide_switch`, a landing whose approach frame
+    /// ends in a face column but which itself ends on the floor off a
+    /// face has its switch frame `face_slide_switch` frames after the
+    /// landing frame or after the frame this many frames after the
+    /// approach frame, whichever is later. A jump can start
+    /// `landing_lockout` frames after it. Whole frames.
+    FaceTopLanding => "face_top_landing",
     /// Above 0, a grounded body standing still doesn't start moving toward
     /// ground that, this many columns ahead, is 8 px or more higher than
     /// its own column. Whole columns.

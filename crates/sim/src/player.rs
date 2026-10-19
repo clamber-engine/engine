@@ -1479,7 +1479,7 @@ impl Player {
         };
         let boosted = boost.is_some();
         self.boosted = boosted;
-        let started = can_roll && !boosted && self.start_timed_roll(input, physics);
+        let started = can_roll && !boosted && self.start_timed_roll(input, start_face, physics);
         if started || boost == Some(true) {
             self.state = State::Roll;
             events.push(Event::RollStart);
@@ -2080,9 +2080,9 @@ impl Player {
             && columns::face(level, columns::column(self.pos.x), self.pos.y, slope)
                 .is_some_and(|way| held_dir == -way);
         // A press on a frame that ends on the ground, landing included,
-        // jumps when it can whether or not jump is still held.
+        // also needs jump held up to the frame before its jump.
         if self.jump_buffer.age() == Some(0) {
-            self.jump_needs_hold = physics[Param::JumpBufferHold] > Fixed::ZERO && !self.grounded();
+            self.jump_needs_hold = physics[Param::JumpBufferHold] > Fixed::ZERO;
         }
 
         if timed {
@@ -2165,7 +2165,13 @@ impl Player {
                 }
                 _ => (1, 1 + frames(physics[Param::LandingModeWait])),
             };
-            self.lockout = (lockout + switch).saturating_sub(1);
+            // After a slide landing off the face, the jump waits for its
+            // later switch frame (`face_top_landing`).
+            let jump_switch = jump_age
+                .filter(|_| switch_from > 0 && !self.rolled_jump)
+                .and_then(|land| self.face_top_switch(level, land, physics))
+                .unwrap_or(switch);
+            self.lockout = (lockout + jump_switch).saturating_sub(1);
             if jump_age.is_some()
                 && strides
                 && self.grounded()
@@ -2607,9 +2613,15 @@ impl Player {
             press.filter(|&(age, window, hold)| age <= window && (!hold || held(Action::Action)));
     }
 
-    /// Starts a timed roll from a remembered press if one can start now.
-    /// Returns whether it did.
-    fn start_timed_roll(&mut self, input: &Frame, physics: &Physics) -> bool {
+    /// Starts a timed roll from a remembered press if one can start now,
+    /// with the frame starting on a steep face falling the way given, if
+    /// any. Returns whether it did.
+    fn start_timed_roll(
+        &mut self,
+        input: &Frame,
+        start_face: Option<i32>,
+        physics: &Physics,
+    ) -> bool {
         let Some((age, _, _)) = self.roll_press else {
             return false;
         };
@@ -2627,6 +2639,13 @@ impl Player {
             && !self.air_stopped
             && (self.roll_stop == 0 || (self.roll_stop == stop_time && !after_stop));
         if !can_start {
+            return false;
+        }
+        // With `face_roll_wait`, not on a frame that starts on a face: the
+        // press waits, held, for the first frame off it.
+        let face_wait = frames(physics[Param::FaceRollWait]);
+        if face_wait > 0 && start_face.is_some() {
+            self.roll_press = Some((age, face_wait, true));
             return false;
         }
         let left = input.held.contains(Action::Left);
@@ -3094,6 +3113,24 @@ impl Player {
         (switch, settle)
     }
 
+    /// For a slide landing `land` frames after the jump started that ends
+    /// on the floor off a face, how many frames after the landing frame
+    /// its switch frame is (`face_top_landing`).
+    fn face_top_switch(&self, level: &Level, land: u8, physics: &Physics) -> Option<u8> {
+        let after = frames(physics[Param::FaceTopLanding]);
+        let approach = self.approach.filter(|&a| a <= land)?;
+        let on_face = columns::face(
+            level,
+            columns::column(self.pos.x),
+            self.pos.y,
+            physics[Param::FaceSlope],
+        )
+        .is_some();
+        (after > 0 && self.approach_face && self.grounded() && !on_face).then(|| {
+            (approach + after).saturating_sub(land) + frames(physics[Param::FaceSlideSwitch])
+        })
+    }
+
     /// At the end of a frame, after a landing, says whether the switch
     /// frame steep faces wait for has come, and works out the push down a
     /// face for the next frame (`face_slide_switch`). `jump_age` is the
@@ -3120,6 +3157,9 @@ impl Player {
                             left,
                             plain: switch - left,
                         }
+                    } else if let Some(top) = self.face_top_switch(level, land, physics) {
+                        // Counted down at the end of this frame.
+                        FaceSwitch::Plain(top)
                     } else if self.approach_face {
                         FaceSwitch::Slide(None)
                     } else {

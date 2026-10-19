@@ -72,6 +72,7 @@ no_face_coyote = 0
 face_press_gravity = 0
 face_jump_wait = 0
 face_rolls = 0
+face_roll_wait = 0
 grounded_takeoff = 0
 takeoff_over_end = 0
 jump_delay = 0
@@ -155,6 +156,7 @@ stance_run_speed = 0
 face_slope = 0
 face_speed = 0
 face_slide_switch = 0
+face_top_landing = 0
 start_rise_ahead = 0
 rise_keeps_target = 0
 air_step = 0
@@ -614,6 +616,10 @@ face_jump_wait = 1
 # face"): no steering on a face, 1.5 more going down it, stopped by a rise
 # or by floor more than 8 px up until they push off.
 face_rolls = 1
+# No roll starts on a frame that starts on a steep face: the press is
+# carried, held, to the first frame off the face, within 7 frames of it
+# (steep-faces.md, "When a roll starts on a face").
+face_roll_wait = 7
 jump_speed = 7
 jump_release_speed = 7
 grounded_takeoff = 1
@@ -701,6 +707,10 @@ face_speed = 1.5
 # a switch frame, R + 11 for a slide landing (steep-faces.md, "Landing
 # on or next to a face").
 face_slide_switch = 11
+# A slide landing that ends off the face, as after a jump low over a
+# face's top, has M = max(L, A + 3) + 11 (jump-input.md, "After a jump
+# over a face's top").
+face_top_landing = 3
 start_rise_ahead = 5
 # Held toward such a rise, the target is the last frame's and facing
 # turns at once (steep-faces.md, "Holding toward a rise").

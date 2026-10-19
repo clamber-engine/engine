@@ -735,7 +735,7 @@ fn roll_off_faced_ledge_jumping(
         keys
     };
     // Walking rolls from starts moved in steps of 1/16 px, to find the
-    // leave frames on or right after S.
+    // leave frames on or right after S, with S starting off the face.
     for nudge in 0..32 {
         let start = || {
             let mut w = faced_ledge(drop, 1400.0);
@@ -748,7 +748,11 @@ fn roll_off_faced_ledge_jumping(
                 continue;
             }
             assert_eq!(rows[s - 1].vx, f(2.25), "walking before S");
-            assert_eq!(frames_with(&rows, Event::RollStart), [s]);
+            // No roll starts on a frame that starts on the face
+            // (steep-faces.md, "When a roll starts on a face").
+            if frames_with(&rows, Event::RollStart) != [s] {
+                continue;
+            }
             let mut w = start();
             let before = steps(&mut w, s, |i| held(i, s));
             let rows = (0..n)

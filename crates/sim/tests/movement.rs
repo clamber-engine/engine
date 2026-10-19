@@ -789,11 +789,16 @@ fn classic_presses_before_landing() {
 
 #[test]
 fn classic_presses_on_or_after_landing() {
+    let held_from = |p: usize, last: usize| move |f: usize| (p..=last).contains(&f);
     // spec/behavior/jump-input.md: a press on or after L starts a jump on
-    // max(P + 1, E), even a one-frame tap.
+    // max(P + 1, E) if Jump is held up to the frame before, so a one-frame
+    // tap only from E - 1 on.
     for press in LAND..LAND + 6 {
-        let jump = classic_jump_after_landing(|f| f == press);
+        let jump = classic_jump_after_landing(held_from(press, LAND + 10));
         assert_eq!(jump, Some((press + 1).max(EARLIEST)), "pressed on {press}");
+        let tap = classic_jump_after_landing(|f| f == press);
+        let expected = (press + 1 >= EARLIEST).then_some(press + 1);
+        assert_eq!(tap, expected, "tapped on {press}");
     }
 }
 
