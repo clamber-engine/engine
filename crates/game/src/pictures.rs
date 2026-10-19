@@ -1,7 +1,7 @@
 //! Which of its own pictures the player shows when it's held still: the
 //! stop after a roll, a jump and its landing, a bounce, the first
-//! standing pictures after them, and the first
-//! character's walking, running and turning pictures
+//! standing pictures after them, and the first character's roll,
+//! walking, running and turning pictures
 //! (`spec/behavior/player-frames.md`).
 //!
 //! The pictures come from a character's sheet in a pack
@@ -19,7 +19,8 @@
 //!   bouncing after B + 4) are the engine's own art, as are the second
 //!   character's in the air from T + 16 until it lands.
 //! - Walking or running in the air after walking off a ledge, and
-//!   crouching or getting up, show the engine's own art.
+//!   crouching or getting up, show the engine's own art, as does the
+//!   second character's roll.
 //! - The second character's landing pictures are shown after a jump
 //!   that lands on the floor it took off from, the landings the spec
 //!   says they're for.
@@ -42,6 +43,8 @@ pub enum Set {
     Jump,
     /// A bounce, until the landing.
     Bounce,
+    /// The roll cycle.
+    Roll,
     /// Walking, running and turning on the ground.
     Walking,
 }
@@ -82,6 +85,13 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
                 "bounce-14",
                 "bounce-15",
                 "bounce-16",
+            ],
+        ),
+        (
+            Set::Roll,
+            &[
+                "roll-1", "roll-2", "roll-3", "roll-4", "roll-5", "roll-6", "roll-7", "roll-8",
+                "roll-9", "roll-end", "stop",
             ],
         ),
         (Set::Walking, &WALKING),
@@ -160,6 +170,9 @@ pub struct PictureClock {
     landed: Option<Landed>,
     /// Frames of a carried-on roll from D, 0 on D.
     carried: Option<u8>,
+    /// The first character's roll cycle frame, 1 to 33, and the roll's
+    /// own frame count it was moved on at.
+    cycle: Option<(u8, u8)>,
     /// Frames standing after a stop or a landing, 0 on the first.
     standing: Option<u8>,
     /// What the player shows on this frame.
@@ -226,6 +239,22 @@ impl PictureClock {
             Some(roll) if roll.carry => Some(self.carried.map_or(0, |c| c.saturating_add(1))),
             _ => None,
         };
+        self.cycle = match player.roll {
+            Some(roll) if first && !roll.carry => {
+                let restart = events.contains(&Event::RollStart) || player.boosted;
+                let cycle = match self.cycle {
+                    _ if restart => 2 - u8::from(roll.from_stop),
+                    // The roll's first airborne frame, or its landing.
+                    _ if roll.air == 1 || events.contains(&Event::Land) => 1,
+                    // Held still by a defeat's pause.
+                    Some((c, at)) if at == roll.frame => c,
+                    Some((c, _)) => c % 33 + 1,
+                    None => 2,
+                };
+                Some((cycle, roll.frame))
+            }
+            _ => None,
+        };
 
         let playing = matches!(world.flow.outcome, Outcome::Playing)
             && player.hands.is_none()
@@ -247,6 +276,8 @@ impl PictureClock {
             stop(first, player.roll_stop - 1)
         } else if let Some(c) = self.carried {
             carried(first, c)
+        } else if let Some((c, _)) = self.cycle {
+            Some((Set::Roll, labels(0, Set::Roll)[usize::from((c - 1) / 3)]))
         } else if let Some(age) = jump_age {
             in_air(first, age, player.approach, &physics)
         } else if let Some(landed) = self.landed {
@@ -499,6 +530,8 @@ mod tests {
         shown: Vec<Option<&'static str>>,
         events: Vec<Vec<Event>>,
         roll_stop: Vec<u8>,
+        grounded: Vec<bool>,
+        frozen: Vec<u8>,
     }
 
     fn run(mut world: World, keys: &[Vec<Action>]) -> Run {
@@ -508,6 +541,8 @@ mod tests {
             shown: Vec::new(),
             events: Vec::new(),
             roll_stop: Vec::new(),
+            grounded: Vec::new(),
+            frozen: Vec::new(),
         };
         for frame in keys {
             let now: Actions = frame.iter().copied().collect();
@@ -518,6 +553,8 @@ mod tests {
             out.shown.push(clock.shown().map(|(_, label)| label));
             out.events.push(world.events.clone());
             out.roll_stop.push(world.player.roll_stop);
+            out.grounded.push(world.player.grounded());
+            out.frozen.push(world.player.frozen);
         }
         out
     }
@@ -849,12 +886,141 @@ mod tests {
         run.check(10, &[("turn-a", 2), ("turn-b", 4), ("turn-a", 2), ("", 1)]);
     }
 
+    /// The picture on cycle frame `c` of a roll.
+    fn cycle(c: usize) -> &'static str {
+        labels(0, Set::Roll)[(c - 1) % 33 / 3]
+    }
+
+    /// Checks the roll cycle on frames `from` to `to - 1`, with `from` on
+    /// cycle frame `c`.
+    fn check_cycle(run: &Run, from: usize, to: usize, c: usize) {
+        for f in from..to {
+            assert_eq!(run.shown[f], Some(cycle(c + f - from)), "frame {f}");
+        }
+    }
+
+    #[test]
+    fn a_roll_on_flat_ground_and_its_stop() {
+        let run = run(world(FLAT, 0), &roll(&[], 80));
+        let s = run.frames(Event::RollStart)[0];
+        let d = run.frames(Event::RollEnd)[0];
+        assert_eq!(d, s + 29);
+        let mut want = vec![("roll-1", 2)];
+        for r in 2..=9 {
+            want.push((cycle(3 * r - 2), 3));
+        }
+        want.extend([("roll-end", 3), ("roll-end", 3), ("stop", 6)]);
+        run.check(s, &want);
+    }
+
+    #[test]
+    fn the_next_roll_from_the_stop_s_last_frame_starts_a_frame_later() {
+        for (k, c) in [(17, 1), (18, 2)] {
+            let first = run(world(FLAT, 0), &roll(&[], 120));
+            let d = first.frames(Event::RollEnd)[0];
+            let mut keys = roll(&[], 120);
+            keys[d + k] = vec![Action::Action];
+            let run = run(world(FLAT, 0), &keys);
+            let s = run.frames(Event::RollStart)[1];
+            assert_eq!(s, d + k);
+            let d2 = run.frames(Event::RollEnd)[1];
+            assert_eq!(d2 - s, 29 + 2 - c, "the roll's length");
+            check_cycle(&run, s, d2, c);
+            run.check(d2 - 3, &[("roll-end", 6)]);
+        }
+    }
+
+    #[test]
+    fn a_roll_off_a_ledge_starts_the_cycle_over_in_the_air_and_on_landing() {
+        let level = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../content/test/walk-off-ledge.level"
+        ))
+        .unwrap()
+        // A longer drop, for a fall of more than 30 frames.
+        .replace("[1024, 480]", "[1024, 960]")
+        .replace("[120, 448, 904, 32]", "[120, 928, 904, 32]");
+        let keys: Vec<Vec<Action>> = (0..160)
+            .map(|f| match f {
+                10 => vec![Action::Right, Action::Action],
+                _ => vec![Action::Right],
+            })
+            .collect();
+        let run = run(world(&level, 0), &keys);
+        let s = run.frames(Event::RollStart)[0];
+        let l = (s..).find(|&f| !run.grounded[f]).unwrap();
+        let g = run.frames(Event::Land)[0];
+        let d = run.frames(Event::RollEnd)[0];
+        assert!(l > s && g > l + 33, "a long fall: S {s}, L {l}, G {g}");
+        assert_eq!(d, g + 30);
+        check_cycle(&run, s, l, 2);
+        check_cycle(&run, l, g, 1);
+        check_cycle(&run, g, d, 1);
+        run.check(g + 27, &[("roll-end", 6), ("stop", 6)]);
+    }
+
+    #[test]
+    fn a_roll_defeating_a_walker_holds_its_picture_through_the_pause() {
+        let level = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../content/test/bounce-walker.level"
+        ))
+        .unwrap();
+        // Pressed late enough that the walker is met mid-roll.
+        let keys: Vec<Vec<Action>> = (0..100)
+            .map(|f| {
+                if f == 25 {
+                    vec![Action::Action]
+                } else {
+                    vec![]
+                }
+            })
+            .collect();
+        let run = run(world(&level, 0), &keys);
+        let s = run.frames(Event::RollStart)[0];
+        let k = (s..).find(|&f| run.frozen[f] > 0).unwrap();
+        assert!(k + 3 < s + 26, "mid-roll: S {s}, K {k}");
+        // The roll's own D, with `roll_end` on D + 5 without a boost.
+        let d = run.frames(Event::RollEnd)[0] - 5;
+        assert_eq!(d, s + 29);
+        check_cycle(&run, s, k + 1, 2);
+        assert_eq!(run.shown[k + 1], run.shown[k]);
+        assert_eq!(run.shown[k + 2], run.shown[k]);
+        check_cycle(&run, k + 3, d + 2, k + 3 - s);
+        run.check(d - 1, &[("roll-end", 3), ("stop", 3), ("walk-1", 1)]);
+    }
+
+    #[test]
+    fn a_boost_starts_the_cycle_over() {
+        let level = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../content/test/bounce-walker.level"
+        ))
+        .unwrap();
+        // As above, with Action held again from K + 3, so P = K + 3.
+        let keys: Vec<Vec<Action>> = (0..120)
+            .map(|f| match f {
+                25 | 48.. => vec![Action::Action],
+                _ => vec![],
+            })
+            .collect();
+        let run = run(world(&level, 0), &keys);
+        let s = run.frames(Event::RollStart)[0];
+        let k = (s..).find(|&f| run.frozen[f] > 0).unwrap();
+        let p = k + 3;
+        assert_eq!(p, 48);
+        assert_eq!(run.frames(Event::RollEnd)[0], p + 32);
+        check_cycle(&run, s, k + 1, 2);
+        check_cycle(&run, p, p + 29, 2);
+        run.check(p + 26, &[("roll-end", 3), ("stop", 3), ("walk-1", 1)]);
+    }
+
     #[test]
     fn the_sets_are_the_importer_s() {
         for (slot, sets) in SETS.iter().enumerate() {
             let decoder = clamber_import::CharacterDecoder::of("title-1").unwrap();
             let character = decoder.characters.iter().find(|c| c.slot == slot).unwrap();
-            let names = ["stop", "standing", "jump", "bounce", "walking"];
+            let names = ["stop", "standing", "jump", "bounce", "roll", "walking"];
             for ((set, labels), name) in sets.iter().zip(names) {
                 let theirs = character.sets.iter().find(|s| s.name == name).unwrap();
                 let theirs: Vec<&str> = theirs.pictures.iter().map(|&(l, _)| l).collect();
