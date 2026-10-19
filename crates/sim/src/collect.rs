@@ -948,14 +948,27 @@ pub(crate) fn count(flow: &mut Flow, life: u32) {
 }
 
 /// Keeps count of the steps since the player last landed, while it stays
-/// on the ground.
+/// on the ground, and since its last bounce.
 fn note_landing(player: &mut Player, events: &[Event]) {
+    let was_down = player.since_land.is_some();
     player.since_land = if events.contains(&Event::Land) {
         Some(0)
     } else if player.grounded() {
         player.since_land.map(|n| n.saturating_add(1))
     } else {
         None
+    };
+    player.since_bounce = if events.contains(&Event::Bounce) {
+        Some((0, player.frozen))
+    } else if events.contains(&Event::JumpStart) {
+        None
+    } else {
+        match player.since_bounce {
+            // Into the air again some other way, it's over.
+            Some(_) if !player.grounded() && was_down => None,
+            Some((n, held)) if !player.grounded() => Some((n.saturating_add(1), held)),
+            kept => kept,
+        }
     };
 }
 
@@ -1111,7 +1124,9 @@ fn take(world: &mut World, start: Option<View>) {
 /// The offsets `player` takes a collectible from, by what it's doing at
 /// the end of a step. Down held on the ground for `crouch_start` frames
 /// (above 0) is crouching. The ground action stands, also in the air
-/// after it goes over a ledge.
+/// after it goes over a ledge. With a `bounce` row, a bounce takes it
+/// until landing, except on the frames held still after it, and the
+/// landing goes straight to the ranges on the ground.
 pub(crate) fn span(reach: &Reach, player: &Player, crouch_start: u8) -> Span {
     if let Some(age) = player.jump_age {
         if age < reach.jump_early {
@@ -1122,12 +1137,23 @@ pub(crate) fn span(reach: &Reach, player: &Player, crouch_start: u8) -> Span {
     if player.ground_action.is_some() {
         return reach.stand;
     }
+    let bounced = reach.bounce.zip(player.since_bounce);
+    if let Some((bounce, (n, held))) = bounced
+        && !player.grounded()
+    {
+        return if (1..=held).contains(&n) {
+            Span::NONE
+        } else {
+            bounce
+        };
+    }
     let clock = &player.pose;
     let upright = reach.upright_fall && clock.upright_fall && clock.air == Air::Fall;
     if !upright && !player.grounded() {
         return air(reach, player.vel.y);
     }
     if !upright
+        && bounced.is_none()
         && player
             .since_land
             .is_some_and(|n| n < land_hold(reach, player))

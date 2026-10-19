@@ -1048,6 +1048,10 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
         p.ran.into(),
     ]);
     out.push(p.since_land.map_or(0, |n| n.saturating_add(1)));
+    match p.since_bounce {
+        Some((n, held)) => out.extend([1, n, held]),
+        None => out.push(0),
+    }
     match p.hurt_ahead {
         Some(i) => {
             out.push(1);

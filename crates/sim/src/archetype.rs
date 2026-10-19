@@ -975,6 +975,10 @@ pub struct Reach {
     /// A fall after walking off a ledge without a face, and the frames
     /// after its landing, have the ranges on the ground instead of `air`.
     pub upright_fall: bool,
+    /// From a bounce's frame until it lands, but none on the frames the
+    /// player holds still after it, and the ranges on the ground from
+    /// its landing. `None`: a bounce is in the air as any other time.
+    pub bounce: Option<Span>,
 }
 
 /// The most `air_below` steps a [`Reach`] can have.
@@ -990,6 +994,12 @@ pub struct Span {
 }
 
 impl Span {
+    /// Takes nothing.
+    pub const NONE: Span = Span {
+        past: (1, 0),
+        below: (1, 0),
+    };
+
     pub fn contains(self, past: i32, below: i32) -> bool {
         (self.past.0..=self.past.1).contains(&past)
             && (self.below.0..=self.below.1).contains(&below)
@@ -3365,6 +3375,7 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         "land_drop",
         "roll_after",
         "upright_fall",
+        "bounce",
     ];
     if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
         return Err(format!("{path}.{key}: no such value"));
@@ -3480,6 +3491,10 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         land_drop,
         roll_after,
         upright_fall,
+        bounce: match table.get("bounce") {
+            None => None,
+            Some(_) => Some(span("bounce")?),
+        },
     })
 }
 

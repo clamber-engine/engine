@@ -1,5 +1,5 @@
 //! Bunch and letter pickup ranges during the ground action, turns, the
-//! frames after a roll and falls without a jump in Classic 1
+//! frames after a roll, falls without a jump and bounces in Classic 1
 //! (spec/behavior/bunches.md and spec/behavior/letters.md, "Pickup
 //! ranges").
 
@@ -9,17 +9,25 @@ use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
 use clamber_sim::{Event, Facing, FlowEvent, InputFrame, World, generic_feel, step};
 
-use Action::{Action as Act, Down, Left, Right};
+use Action::{Action as Act, Down, Jump, Left, Right};
 
 const F: i32 = 400;
 
 const STAND: [i32; 4] = [-15, 21, -8, 40];
 const ROLL: [i32; 4] = [-13, 21, -4, 38];
+const AIR: [i32; 4] = [-15, 18, 13, 57];
+const BOUNCE: [i32; 4] = [-17, 27, -7, 39];
+const NONE: [i32; 4] = [1, 0, 1, 0];
 
 /// Classic 1 on flat ground at `F` up to x = 700 and a floor 176 px
 /// lower beyond it, the player at (`start`, `F`), and a `kind` at each
 /// of `at`.
 fn ledge_world(kind: &str, start: i32, at: &[(i32, i32)]) -> World {
+    walker_world(kind, start, "", at)
+}
+
+/// `ledge_world`, with a crawler at each of `walkers`: `(x, facing)`.
+fn walker_world(kind: &str, start: i32, walkers: &str, at: &[(i32, i32)]) -> World {
     let lower = F + 176;
     let mut src = format!(
         r#"
@@ -37,6 +45,7 @@ fn ledge_world(kind: &str, start: i32, at: &[(i32, i32)]) -> World {
         rect = [700, {lower}, 2300, 200]
         "#
     );
+    src += walkers;
     for (x, y) in at {
         src += &format!("\n[[entities]]\ntype = \"{kind}\"\nat = [{x}, {y}]\n");
     }
@@ -105,11 +114,21 @@ fn check(
     anchors: &[usize],
     ranges: impl Fn(&[Row], usize) -> [i32; 4],
 ) {
-    let (rows, _) = play(ledge_world(kind, start, &[]), keys);
+    check_in(|at| ledge_world(kind, start, at), keys, anchors, ranges);
+}
+
+/// `check`, in the worlds `world` makes with the thing at each place.
+fn check_in(
+    world: impl Fn(&[(i32, i32)]) -> World,
+    keys: &[Vec<Action>],
+    anchors: &[usize],
+    ranges: impl Fn(&[Row], usize) -> [i32; 4],
+) {
+    let (rows, _) = play(world(&[]), keys);
     for &a in anchors {
         let (xa, fa) = (rows[a].x, rows[a].feet);
         for past in -30..30 {
-            for below in [-9, -8, -5, -4, 12, 13, 38, 39, 40, 41] {
+            for below in [-9, -8, -7, -6, -5, -4, 12, 13, 38, 39, 40, 41] {
                 let at = (xa - past, fa - below);
                 let want = rows.iter().enumerate().position(|(n, row)| {
                     let [i0, i1, d0, d1] = ranges(&rows, n);
@@ -120,10 +139,10 @@ fn check(
                     let d = row.feet - at.1;
                     (i0..=i1).contains(&i) && (d0..=d1).contains(&d)
                 });
-                let (_, got) = play(ledge_world(kind, start, &[at]), keys);
+                let (_, got) = play(world(&[at]), keys);
                 assert_eq!(
                     got, want,
-                    "{kind}: {past} px left and {below} px above the place on step {a}"
+                    "{past} px left and {below} px above the place on step {a}"
                 );
             }
         }
@@ -290,4 +309,91 @@ fn a_fall_without_a_jump_has_the_standing_ranges() {
             );
         }
     }
+}
+
+/// A crawler at `x` on the floor, facing `facing`.
+fn crawler(x: i32, facing: &str) -> String {
+    format!(
+        "\n[[entities]]\ntype = \"crawler\"\nat = [{x}, {F}]\nparams = {{ facing = \"{facing}\" }}\n"
+    )
+}
+
+/// The first wait before `keys(wait)` that bounces off a walker, and the
+/// rows played.
+fn find_bounce(
+    start: i32,
+    walkers: &str,
+    keys: impl Fn(usize) -> Vec<Vec<Action>>,
+) -> (usize, Vec<Row>) {
+    (0..100)
+        .find_map(|wait| {
+            let (rows, _) = play(walker_world("cluster", start, walkers, &[]), &keys(wait));
+            rows.iter()
+                .any(|r| r.events.contains(&Event::Bounce))
+                .then_some((wait, rows))
+        })
+        .expect("a bounce")
+}
+
+/// Checks a bunch around a bounce off a walker with `keys` (bunches.md,
+/// "Bouncing off a walker"): the jump's ranges up to `B` - 1, the
+/// bounce's on `B` and from `B` + 3 until landing, none on the frozen
+/// `B` + 1 and `B` + 2, and the standing ones from the landing.
+fn check_bounce(start: i32, walkers: &str, keys: &[Vec<Action>]) {
+    let (rows, _) = play(walker_world("cluster", start, walkers, &[]), keys);
+    let t = first(&rows, Event::JumpStart);
+    let b = first(&rows, Event::Bounce);
+    let land = b + rows[b..]
+        .iter()
+        .position(|r| r.events.contains(&Event::Land))
+        .expect("a landing");
+    assert!(b > t + 6 && land > b + 6, "T {t}, B {b}, L {land}");
+    assert!(rows[b + 1].x == rows[b].x && rows[b + 2].feet == rows[b].feet);
+    check_in(
+        |at| walker_world("cluster", start, walkers, at),
+        keys,
+        &[b - 2, b, b + 1, b + 2, b + 3, land - 1, land, land + 3],
+        |_, n| match n {
+            n if n < t + 6 => STAND,
+            n if n < b => AIR,
+            n if n == b + 1 || n == b + 2 => NONE,
+            n if n < land => BOUNCE,
+            _ => STAND,
+        },
+    );
+}
+
+#[test]
+fn a_bounce_off_a_walker_has_its_own_ranges_and_none_while_frozen() {
+    let jump = |held: usize| move |wait: usize| keys(&[(&[], wait), (&[Jump], held), (&[], 120)]);
+    let ahead = crawler(360, "left");
+    // Jump held through it, and a short jump.
+    for held in [120, 3] {
+        let (wait, _) = find_bounce(300, &ahead, jump(held));
+        check_bounce(300, &ahead, &jump(held)(wait));
+    }
+    // Jump let go of on B + 3.
+    let (wait, rows) = find_bounce(300, &ahead, jump(120));
+    let b = first(&rows, Event::Bounce);
+    let k = keys(&[(&[], wait), (&[Jump], b + 3 - wait), (&[], 120)]);
+    check_bounce(300, &ahead, &k);
+    // Moving right through it and landing walking, and slowing with Left
+    // from B + 3 to land in a turn.
+    let right = |wait: usize| keys(&[(&[Right], wait), (&[Right, Jump], 20), (&[Right], 120)]);
+    let (wait, rows) = find_bounce(200, &ahead, right);
+    check_bounce(200, &ahead, &right(wait));
+    let b = first(&rows, Event::Bounce);
+    let k = keys(&[
+        (&[Right], wait),
+        (&[Right, Jump], b + 3 - wait),
+        (&[Left], 120),
+    ]);
+    check_bounce(200, &ahead, &k);
+    // Facing left, onto a walker coming from the left.
+    let behind = crawler(240, "right");
+    let left = |wait: usize| keys(&[(&[Left], 1), (&[], wait), (&[Jump], 20), (&[], 120)]);
+    let (wait, rows) = find_bounce(300, &behind, left);
+    let b = first(&rows, Event::Bounce);
+    assert!(rows[b - 2..].iter().all(|r| r.facing == Facing::Left));
+    check_bounce(300, &behind, &left(wait));
 }

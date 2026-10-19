@@ -263,6 +263,10 @@ pub struct Player {
     pub fall_facing: u8,
     /// Frames since the player last landed, while it stays on the ground.
     pub since_land: Option<u8>,
+    /// Since the last bounce, while it goes on: frames from 0 on the
+    /// bounce's frame, counting on until it lands and staying there
+    /// while on the ground, and how many frames it held still for.
+    pub since_bounce: Option<(u8, u8)>,
     /// The enemy whose touch hurts the player on the next step, found
     /// at the end of this one (`hurt_width` above 0).
     pub hurt_ahead: Option<usize>,
@@ -410,6 +414,7 @@ impl Player {
             fall_step: false,
             fall_facing: 0,
             since_land: None,
+            since_bounce: None,
             hurt_ahead: None,
             pose: PoseClock::default(),
             knockout: None,

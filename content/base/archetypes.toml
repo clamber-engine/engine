@@ -258,7 +258,11 @@
 #   after it, when it ran on into a run or not. With `upright_fall =
 #   true`, a fall after walking off a ledge without a face, and the
 #   frames after its landing, take the ranges on the ground instead of
-#   `air`. The ground action takes `stand`, also in the air. In the
+#   `air`. `bounce = [past from, to, below from, to]` (left out: a
+#   bounce is in the air as any other time) applies from a bounce's
+#   frame until it lands, except on the frames the player holds still
+#   after it, when it isn't taken at all; from the landing frame on,
+#   the ranges on the ground apply. The ground action takes `stand`, also in the air. In the
 #   air after `jump`, `air_below = [[vy, below], ...]` lifts the lowest
 #   `below`: the first pair whose `vy` is at least the player's vertical
 #   speed gives it, past them all it's `air`'s. Only the character under
@@ -1066,6 +1070,9 @@ land_drop = [64, 1]
 roll_after = [0, 9]
 # Falling without a jump stands (bunches.md, "Falling without a jump").
 upright_fall = true
+# Bouncing off a walker (bunches.md, "Bouncing off a walker"); the spec
+# measured walker bounces only, and Clamber takes every bounce so.
+bounce = [-17, 27, -7, 39]
 
 # A letter of the level's word (spec/behavior/letters.md): entities set
 # which with `letter`, from 1 to the preset's `letter_count`. It's
@@ -1073,9 +1080,10 @@ upright_fall = true
 # (the same as a bunch's, the Down + Action ground action standing).
 # It joins the letters taken 30 frames after: the spec measured 30, 31
 # and 33 and leaves the exact frame open. It adds nothing to the count.
-# Landing and the stop after a roll are a bunch's (letters.md takes
-# bunches.md's ranges for the states it covers), and falling without a
-# jump stands, as letters.md measured. The size is
+# Landing and the stop after a roll are a bunch's, as letters.md
+# measured ("Landing", "After a roll"), and falling without a jump
+# stands. Bouncing wasn't measured for letters, so it's in the air as
+# any other time. The size is
 # Clamber's own and only draws it. Taken, it stays gone when play comes
 # back to the level from another area (spec/behavior/exits.md).
 [archetypes.letter]

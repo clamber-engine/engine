@@ -328,8 +328,8 @@ fn a_bunch_is_taken_in_a_jump_from_six_steps_on_with_one_range() {
 
 /// Classic 1 on flat ground at `F` up to x = 700 and, with `drop`, a
 /// floor 176 px lower beyond it (else the same floor on), the player at
-/// (500, `F`), and bunches at `at`.
-fn ledge_world(drop: bool, at: &[(i32, i32)]) -> World {
+/// (500, `F`), and things of `kind` at `at`.
+fn ledge_world(kind: &str, drop: bool, at: &[(i32, i32)]) -> World {
     let lower = if drop { F + 176 } else { F };
     let mut src = format!(
         r#"
@@ -348,18 +348,18 @@ fn ledge_world(drop: bool, at: &[(i32, i32)]) -> World {
         "#
     );
     for (x, y) in at {
-        src += &format!("\n[[entities]]\ntype = \"cluster\"\nat = [{x}, {y}]\n");
+        src += &format!("\n[[entities]]\ntype = \"{kind}\"\nat = [{x}, {y}]\n");
     }
     let level = Arc::new(Level::from_toml_str(&src, "ledge").unwrap());
     World::new(level, Arc::new(generic_feel("classic-1").unwrap()))
 }
 
-/// Checks that a bunch placed anywhere around where a jump facing right
+/// Checks that a `kind` placed anywhere around where a jump facing right
 /// with `keys` lands is taken on the first step whose ranges hold it,
 /// with the jump's ranges up to `hold` steps after the landing step
-/// (bunches.md, "Landing").
-fn check_landing(drop: bool, keys: &[Vec<Action>], hold: usize) {
-    let mut play = Play::new(ledge_world(drop, &[]));
+/// (bunches.md and letters.md, "Landing").
+fn check_landing(kind: &str, drop: bool, keys: &[Vec<Action>], hold: usize) {
+    let mut play = Play::new(ledge_world(kind, drop, &[]));
     let rows: Vec<Row> = keys.iter().map(|k| play.step(k)).collect();
     let start = rows
         .iter()
@@ -388,9 +388,12 @@ fn check_landing(drop: bool, keys: &[Vec<Action>], hold: usize) {
                 let (i, d) = (row.x - at.0, row.feet - at.1);
                 (i0..=i1).contains(&i) && (d0..=d1).contains(&d)
             });
-            let mut play = Play::new(ledge_world(drop, &[at]));
+            let mut play = Play::new(ledge_world(kind, drop, &[at]));
             let got = keys.iter().position(|k| !play.step(k).taken.is_empty());
-            assert_eq!(got, want, "I = {past}, D = {below} from the landing");
+            assert_eq!(
+                got, want,
+                "{kind}: I = {past}, D = {below} from the landing"
+            );
         }
     }
 }
@@ -404,16 +407,29 @@ fn jump_on(moving: &[Action], before: usize) -> Vec<Vec<Action>> {
 }
 
 #[test]
-fn a_bunch_landing_keeps_the_jump_ranges_while_the_airborne_pose_goes_on() {
+fn a_landing_keeps_the_jump_ranges_while_the_airborne_pose_goes_on() {
     use Action::{Action as Act, Right};
-    // Walking right off the ledge onto the floor 176 px lower: L + 4.
-    check_landing(true, &jump_on(&[Right], 60), 5);
-    // Running on with Action and Right held through the landing: up to
-    // L, or L + 1 onto the lower floor.
-    check_landing(false, &jump_on(&[Right, Act], 60), 1);
-    check_landing(true, &jump_on(&[Right, Act], 60), 2);
-    // Walking right onto the same floor: L + 3.
-    check_landing(false, &jump_on(&[Right], 60), 4);
+    for kind in ["cluster", "letter"] {
+        // Walking right off the ledge onto the floor 176 px lower: L + 4.
+        check_landing(kind, true, &jump_on(&[Right], 60), 5);
+        // Running on with Action and Right held through the landing: up
+        // to L, or L + 1 onto the lower floor.
+        check_landing(kind, false, &jump_on(&[Right, Act], 60), 1);
+        check_landing(kind, true, &jump_on(&[Right, Act], 60), 2);
+        // Walking right onto the same floor: L + 3.
+        check_landing(kind, false, &jump_on(&[Right], 60), 4);
+    }
+}
+
+#[test]
+fn a_letter_landing_from_a_jump_in_place_keeps_the_jump_ranges_to_l_plus_3() {
+    // Jump held 3, 10, 14 or 30 steps (letters.md, "Landing").
+    for held in [3, 10, 14, 30] {
+        let mut keys = vec![vec![]; 10];
+        keys.extend(vec![vec![Jump]; held]);
+        keys.extend(vec![vec![]; 100]);
+        check_landing("letter", false, &keys, 4);
+    }
 }
 
 #[test]
