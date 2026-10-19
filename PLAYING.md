@@ -106,34 +106,32 @@ with it. Classic 2 and Classic 3 are listed but can't be picked yet. Your choice
 as `input.toml`, and the game starts with it next time.
 
 **Options** on the title or pause screen turns fullscreen on and off,
-sets how frames are synced to the display, and sets the music and
+sets how frames are synced to the display (VSync and VRR), and sets the music and
 effects volumes. On a volume, Left turns it down and Right or Pick turns
 it up, in steps of 10%; Pick at 100% goes back to silent. All of these,
 and the window's size, are saved to `prefs.toml` too. The game pauses when its
 window loses focus.
 
-**Sync** on the options screen sets how frames wait for the display.
-Left, and Right or Pick, go through the settings. Whichever you pick,
-the game itself always moves in steps of a sixtieth of a second; only when frames are
-shown changes, so it plays the same.
+**VSync** and **VRR** on the options screen set how frames wait for
+the display; Pick turns each on or off. Whichever you pick, the game
+itself always moves in steps of a sixtieth of a second; only when frames
+are shown changes, so it plays the same.
 
-- **Auto**, where the game starts: VRR on a display that supports it,
-  and VSync on others. The game can't yet tell whether a display
-  supports VRR, so for now Auto is always VSync (#307); pick VRR yourself if
-  yours does.
-- **VSync**: each frame waits for the display's next refresh, so the
-  picture never tears. On a 60, 120 or 240 Hz display every step is
-  shown for the same number of refreshes; at other rates, such as
-  144 Hz, frames are drawn between steps.
-- **VRR**, for G-Sync, FreeSync and HDMI VRR displays: frames are shown
-  as soon as they're drawn, without tearing, and the display refreshes
-  as each one arrives. The game draws them just under the display's
-  highest refresh rate (about 140 a second on a 144 Hz display), in
-  between steps. If it can't tell the display's rate, or that's 60 Hz,
-  it draws exactly one frame a step instead, 60 even frames a second.
-  On a display without VRR this setting judders; use VSync there.
-- **Off**: frames don't wait for the display and the picture may tear.
-  The game draws up to 240 frames a second.
+- **VSync**, on unless you turn it off: each frame waits for the
+  display's next refresh, so the picture never tears. On a 60, 120 or
+  240 Hz display every step is shown for the same number of refreshes;
+  at other rates, such as 144 Hz, frames are drawn between steps. With
+  VSync off, frames don't wait for the display and the picture may
+  tear; the game draws up to 240 frames a second.
+- **VRR**, off unless you turn it on, for G-Sync, FreeSync and HDMI VRR
+  displays: frames are shown as soon as they're drawn, without tearing,
+  and the display refreshes as each one arrives. The game draws them
+  just under the display's highest refresh rate (about 140 a second on a
+  144 Hz display), in between steps. If it can't tell the display's
+  rate, or that's 60 Hz, it draws exactly one frame a step instead, 60
+  even frames a second. While VRR is on the VSync setting isn't used.
+  On a display without VRR this setting judders, and the game can't
+  tell which kind of display it's on, so leave it off there.
 
 VRR only takes effect where the system lets it. On Windows, play
 fullscreen (F11 or Alt+Enter), which uses borderless fullscreen with a

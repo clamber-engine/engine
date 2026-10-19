@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::camera::VIEW;
 use crate::canvas::Fit;
-use crate::prefs::FrameSync;
+use crate::prefs::Display;
 
 /// The window's size when nothing else decides it, in physical pixels.
 pub const START_SIZE: (u32, u32) = (1280, 720);
@@ -212,8 +212,7 @@ impl Default for Look {
     }
 }
 
-/// How frames are shown, once [`FrameSync`] is settled for the display
-/// the window is on.
+/// How frames are shown, from the [`Display`] settings ([`Presenting::of`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Presenting {
     /// Each frame waits for the display's next refresh, and the steps
@@ -229,15 +228,15 @@ pub enum Presenting {
 }
 
 impl Presenting {
-    /// How `sync` presents on a display that can vary its refresh
-    /// (`vrr_display`) or not: Auto is VRR on one that can, and vsync
-    /// on others.
-    pub fn of(sync: FrameSync, vrr_display: bool) -> Presenting {
-        match sync {
-            FrameSync::Auto if vrr_display => Presenting::Vrr,
-            FrameSync::Auto | FrameSync::Vsync => Presenting::Vsync,
-            FrameSync::Vrr => Presenting::Vrr,
-            FrameSync::Off => Presenting::Off,
+    /// How frames are shown with `display`'s settings: VRR if it's on,
+    /// whether or not vsync is.
+    pub fn of(display: &Display) -> Presenting {
+        if display.vrr {
+            Presenting::Vrr
+        } else if display.vsync {
+            Presenting::Vsync
+        } else {
+            Presenting::Off
         }
     }
 }
@@ -354,12 +353,18 @@ mod tests {
     }
 
     #[test]
-    fn auto_sync_is_vrr_only_on_a_vrr_display() {
-        assert_eq!(Presenting::of(FrameSync::Auto, true), Presenting::Vrr);
-        assert_eq!(Presenting::of(FrameSync::Auto, false), Presenting::Vsync);
-        assert_eq!(Presenting::of(FrameSync::Vsync, true), Presenting::Vsync);
-        assert_eq!(Presenting::of(FrameSync::Vrr, false), Presenting::Vrr);
-        assert_eq!(Presenting::of(FrameSync::Off, true), Presenting::Off);
+    fn vrr_goes_before_vsync() {
+        let of = |vsync, vrr| {
+            Presenting::of(&Display {
+                vsync,
+                vrr,
+                ..Display::default()
+            })
+        };
+        assert_eq!(of(true, false), Presenting::Vsync);
+        assert_eq!(of(false, false), Presenting::Off);
+        assert_eq!(of(true, true), Presenting::Vrr);
+        assert_eq!(of(false, true), Presenting::Vrr);
     }
 
     #[test]

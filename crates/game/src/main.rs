@@ -483,13 +483,6 @@ impl Dialog {
     }
 }
 
-/// Whether `window`'s display can vary its refresh rate (VRR). Neither
-/// winit nor wgpu can tell, so it's taken that it can't: Auto sync is
-/// vsync, and the VRR setting turns VRR on by hand (#307).
-fn vrr_display(_window: &Window) -> bool {
-    false
-}
-
 struct Shown {
     window: Arc<Window>,
     output: Output,
@@ -573,7 +566,7 @@ impl App {
         let gpu = Gpu::new(
             window.clone(),
             event_loop.owned_display_handle(),
-            Presenting::of(prefs.sync, vrr_display(&window)),
+            Presenting::of(prefs),
         );
         let output = match gpu {
             Ok(gpu) => Output::Gpu(Box::new(gpu)),
@@ -691,7 +684,7 @@ impl App {
                 .set_fullscreen(display.fullscreen.then_some(Fullscreen::Borderless(None)));
         }
         if let Output::Gpu(gpu) = &mut shown.output {
-            gpu.set_presenting(Presenting::of(display.sync, vrr_display(&shown.window)));
+            gpu.set_presenting(Presenting::of(display));
         }
     }
 

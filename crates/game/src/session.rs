@@ -28,7 +28,7 @@ use crate::import::{After, Edit, Games, Importing, PERSONAL, Pick, Picked, Picke
 use crate::map::{MapPlay, MapStep};
 use crate::menu::{Choice, Menu};
 use crate::panel::draw_panel;
-use crate::prefs::{BUNDLED, FrameSync, Prefs, Volume};
+use crate::prefs::{BUNDLED, Display, Prefs, Volume};
 use crate::prompts::{Hint, draw_hints};
 use crate::report;
 use crate::sound::{Cue, cues};
@@ -124,9 +124,8 @@ pub enum Tune {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Setting {
     Fullscreen,
-    /// How frames wait for the display, changed with Left, and Right or
-    /// Jump, which go round the settings.
-    Sync,
+    Vsync,
+    Vrr,
     /// Turned down with Left and up with Right or Jump, which wraps
     /// around to silent.
     MusicVolume,
@@ -417,16 +416,6 @@ impl Session {
                     return;
                 }
             }
-            if menu.current() == Setting::Sync {
-                let back = pressed.contains(Action::Left);
-                if back || pressed.contains(Action::Right) || pressed.contains(Action::Jump) {
-                    let display = &mut self.prefs.display;
-                    display.sync = display.sync.next(back);
-                    menu.items = options_items(&self.prefs, widescreen, rendering);
-                    self.save_prefs("the sync setting");
-                    return;
-                }
-            }
             if menu.current() == Setting::Widescreen {
                 let back = pressed.contains(Action::Left);
                 if back || pressed.contains(Action::Right) || pressed.contains(Action::Jump) {
@@ -473,9 +462,10 @@ impl Session {
             let display = &mut self.prefs.display;
             match setting {
                 Setting::Fullscreen => display.fullscreen = !display.fullscreen,
+                Setting::Vsync => display.vsync = !display.vsync,
+                Setting::Vrr => display.vrr = !display.vrr,
                 // changed above
-                Setting::Sync
-                | Setting::MusicVolume
+                Setting::MusicVolume
                 | Setting::EffectsVolume
                 | Setting::Widescreen
                 | Setting::Rendering => return,
@@ -1219,7 +1209,8 @@ impl Session {
                 menu.draw(canvas, centre, 80);
                 let y = 80 + menu.height() + 2 * LINE;
                 let about = match menu.current() {
-                    Setting::Sync => Some(about_sync(self.prefs.display.sync)),
+                    Setting::Vsync => Some(about_vsync(&self.prefs.display)),
+                    Setting::Vrr => Some(about_vrr(self.prefs.display.vrr)),
                     Setting::Widescreen => Some(about_widescreen(self.widescreen())),
                     Setting::Rendering => self.rendering().map(about_rendering),
                     _ => None,
@@ -1378,7 +1369,8 @@ fn options_items(
             format!("Fullscreen: {}", on(display.fullscreen)),
             Setting::Fullscreen,
         ),
-        (format!("Sync: < {} >", display.sync.label()), Setting::Sync),
+        (format!("VSync: {}", on(display.vsync)), Setting::Vsync),
+        (format!("VRR: {}", on(display.vrr)), Setting::Vrr),
         (
             format!("Music: < {}% >", volume.music),
             Setting::MusicVolume,
@@ -1402,13 +1394,23 @@ fn options_items(
     items
 }
 
-/// What the sync setting `sync` does, in a line.
-fn about_sync(sync: FrameSync) -> &'static str {
-    match sync {
-        FrameSync::Auto => "VRR on a display that supports it, otherwise VSync",
-        FrameSync::Vsync => "Waits for each refresh of the display, without tearing",
-        FrameSync::Vrr => "The display refreshes as each frame is ready, without tearing",
-        FrameSync::Off => "Up to 240 frames a second; the picture may tear",
+/// What the VSync setting in `display` does, in a line.
+fn about_vsync(display: &Display) -> &'static str {
+    if display.vrr {
+        "Not used while VRR is on, which doesn't tear either way"
+    } else if display.vsync {
+        "Waits for each refresh of the display, without tearing"
+    } else {
+        "Up to 240 frames a second; the picture may tear"
+    }
+}
+
+/// What the VRR setting does, in a line, when it's `on` or off.
+fn about_vrr(on: bool) -> &'static str {
+    if on {
+        "The display refreshes as each frame is ready, without tearing"
+    } else {
+        "For G-Sync, FreeSync and HDMI VRR displays; judders on others"
     }
 }
 
@@ -1838,7 +1840,8 @@ mod tests {
             labels(&s),
             [
                 "Fullscreen: Off",
-                "Sync: < Auto >",
+                "VSync: On",
+                "VRR: Off",
                 "Music: < 100% >",
                 "Effects: < 100% >",
                 "Widescreen: < Wide activation >",
@@ -1853,15 +1856,12 @@ mod tests {
         assert!(s.prefs.display.fullscreen);
         s.step(&press(Action::Down));
         s.step(&press(Action::Jump));
-        assert_eq!(s.prefs.display.sync, FrameSync::Vsync);
-        s.step(&press(Action::Right));
-        assert_eq!(s.prefs.display.sync, FrameSync::Vrr);
-        s.step(&press(Action::Left));
-        s.step(&press(Action::Left));
-        s.step(&press(Action::Left));
-        assert_eq!(s.prefs.display.sync, FrameSync::Off);
-        assert_eq!(labels(&s)[..2], ["Fullscreen: On", "Sync: < Off >"]);
-        assert_eq!(options(&s).current(), Setting::Sync, "stays put");
+        assert!(!s.prefs.display.vsync);
+        s.step(&press(Action::Down));
+        s.step(&press(Action::Jump));
+        assert!(s.prefs.display.vrr);
+        assert_eq!(labels(&s)[..3], ["Fullscreen: On", "VSync: Off", "VRR: On"]);
+        assert_eq!(options(&s).current(), Setting::Vrr, "stays put");
         assert_eq!(Prefs::load(&path), s.prefs);
 
         // Left turns a volume down, Right up to full, and Jump up,
@@ -1878,7 +1878,7 @@ mod tests {
         assert_eq!(s.prefs.volume.music, 0);
         s.step(&press(Action::Down));
         s.step(&press(Action::Left));
-        assert_eq!(labels(&s)[2..4], ["Music: < 0% >", "Effects: < 90% >"]);
+        assert_eq!(labels(&s)[3..5], ["Music: < 0% >", "Effects: < 90% >"]);
         assert_eq!(options(&s).current(), Setting::EffectsVolume);
         assert_eq!(Prefs::load(&path), s.prefs);
         std::fs::remove_dir_all(dir).unwrap();
@@ -1937,7 +1937,7 @@ mod tests {
             let Screen::Options(menu, _) = &s.screen else {
                 panic!("not on the options screen")
             };
-            menu.items[4].0.clone()
+            menu.items[5].0.clone()
         };
         assert_eq!(
             s.widescreen(),

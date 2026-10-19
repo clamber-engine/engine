@@ -103,7 +103,7 @@ pub use map::{LEVEL_MAP, MapPhase, MapPlay, MapStep};
 pub use menu::{Choice, Menu};
 pub use music::{DEFAULT_MUSIC, MusicList, MusicTrack};
 pub use pacing::FrameTimes;
-pub use prefs::{Display, FrameSync, Prefs, Volume};
+pub use prefs::{Display, Prefs, Volume};
 pub use session::{Item, Screen, Session, Setting, Tune, clock_time};
 pub use sound::{Audio, Cue, DEFAULT_SOUNDS, SoundList, cues};
 pub use sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
