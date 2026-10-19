@@ -51,9 +51,10 @@
 //! until a jump lands, as `spec/behavior/thrown-objects.md` ("A carried
 //! object") describes. So it does during a pick-up, a throw or a
 //! put-down, which then goes on to its end without it; a pick-up ends
-//! with nothing in the hands. Touching characters and other enemies isn't in
-//! the spec yet; it doesn't. Dropped, it falls straight down and rests
-//! where it lands.
+//! with nothing in the hands. It passes through both characters, from
+//! the frame it leaves the hands on (thrown-objects.md, "Meeting a
+//! character"). Touching other enemies isn't in the spec yet; it
+//! doesn't. Dropped, it falls straight down and rests where it lands.
 //!
 //! An object that holds the missing character ([`Holder`]) moves the
 //! same way, but breaks sooner, as `spec/behavior/holder-breaking.md`

@@ -1,11 +1,13 @@
-//! Thrown objects in Classic 1 bouncing, rolling, breaking and hitting
-//! walkers (spec/behavior/thrown-objects.md).
+//! Thrown objects in Classic 1 bouncing, rolling, breaking, hitting
+//! walkers and passing through the characters
+//! (spec/behavior/thrown-objects.md).
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
-use clamber_pack::Fixed;
+use clamber_pack::{CharacterFeel, Feel, Fixed, Presets};
 use clamber_sim::{Facing, Flight, FlowEvent, InputFrame, Phase, View, World, generic_feel, step};
 
 const A: Action = Action::Action;
@@ -73,8 +75,24 @@ impl Play {
     /// Picks up the crate standing still and carries it, ready to let
     /// go of action on the next step, Q.
     fn new(src: &str) -> Play {
+        Play::with_feel(src, generic_feel("classic-1").unwrap())
+    }
+
+    /// [`Play::new`] with both characters, the other following.
+    fn with_other(src: &str) -> Play {
+        let mut feel = generic_feel("classic-1").unwrap();
+        feel.roster.push(CharacterFeel {
+            physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+            abilities: BTreeMap::new(),
+        });
+        let play = Play::with_feel(src, feel);
+        assert!(play.world.other.is_some());
+        play
+    }
+
+    fn with_feel(src: &str, feel: Feel) -> Play {
         let level = Arc::new(Level::from_toml_str(src, "thrown").unwrap());
-        let world = World::new(level, Arc::new(generic_feel("classic-1").unwrap()));
+        let world = World::new(level, Arc::new(feel));
         let mut play = Play {
             world,
             held: Actions::NONE,
@@ -924,4 +942,150 @@ fn a_carried_object_isnt_broken_at_a_vertical_step() {
     assert_eq!(play.world.player.pos.y, f(336.0));
     assert!(play.world.player.hands.is_some());
     assert!(play.world.things[0].active);
+}
+
+/// What a character's motion and its hurts are made of: the lead, the
+/// other character, and the lives and hit points.
+fn characters(play: &Play) -> String {
+    let w = &play.world;
+    format!("{:?} {:?} {:?} {:?}", w.player, w.other, w.flow, w.loss)
+}
+
+/// Steps 12 frames from `play` three ways: as it is, with the object gone,
+/// and with `moved` (a character moved 200 px away) applied. Each
+/// character moves as without the object, the object as without the
+/// character, and no one is hurt.
+fn passes_through(play: &Play, moved: impl Fn(&mut World), what: &str) {
+    let mut with = Play {
+        world: play.world.clone(),
+        held: play.held,
+    };
+    let mut without = Play {
+        world: play.world.clone(),
+        held: play.held,
+    };
+    without.world.things[0].active = false;
+    let mut away = Play {
+        world: play.world.clone(),
+        held: play.held,
+    };
+    moved(&mut away.world);
+    for n in 1..=12 {
+        with.step(&[]);
+        without.step(&[]);
+        away.step(&[]);
+        assert_eq!(characters(&with), characters(&without), "{what}, frame {n}");
+        let object = &with.world.things[0];
+        assert_eq!(
+            format!("{object:?}"),
+            format!("{:?}", away.world.things[0]),
+            "{what}, frame {n}"
+        );
+        assert!(with.world.hit_by.is_none(), "{what}, frame {n}");
+    }
+}
+
+/// Puts the object `across` px from `at` and `up` px above it, moving
+/// 3.5 px per frame toward `at` or away from it, in the air or rolling.
+fn place(play: &mut Play, at: Vec2, across: i32, up: i32, toward: bool, rolling: bool) {
+    let thing = &mut play.world.things[0];
+    let Phase::Thrown(mut flight) = thing.phase else {
+        panic!("{:?}", thing.phase);
+    };
+    thing.pos = Vec2::new(at.x + Fixed::from_int(across), at.y - Fixed::from_int(up));
+    let right = (across < 0) == toward;
+    flight.vx = if right { speed(896) } else { speed(-896) };
+    flight.target = flight.vx;
+    flight.rolling = rolling;
+    if rolling {
+        flight.vy = Fixed::ZERO;
+    }
+    thing.phase = Phase::Thrown(flight);
+}
+
+/// thrown-objects.md, "Meeting a character": a thrown object passes
+/// through the lead, from t = 1 (Q + 22) while it's still in its throw,
+/// standing facing either way or in a jump.
+#[test]
+fn passes_through_the_lead() {
+    for t in [1, 9, 28, 40, 60] {
+        for jump in [false, true] {
+            for turn in [false, true] {
+                let mut base = Play::new(&level(FLAT));
+                base.throw_to(21 + t);
+                if turn {
+                    base.hold(&[Action::Left], 1);
+                }
+                if jump {
+                    base.hold(&[Action::Jump], 6);
+                }
+                for across in (-24..=24).step_by(8) {
+                    let ups: Vec<i32> = if jump {
+                        (-48..=16).step_by(16).collect()
+                    } else {
+                        (0..=64).step_by(16).collect()
+                    };
+                    for up in ups {
+                        for toward in [false, true] {
+                            for rolling in [false, true] {
+                                if rolling && (jump || up != 0) {
+                                    continue;
+                                }
+                                let mut play = Play {
+                                    world: base.world.clone(),
+                                    held: base.held,
+                                };
+                                let at = play.world.player.pos;
+                                place(&mut play, at, across, up, toward, rolling);
+                                passes_through(
+                                    &play,
+                                    |w| w.player.pos.x += Fixed::from_int(200),
+                                    &format!(
+                                        "t = {t}, jump {jump}, turn {turn}, \
+                                         {across} across, {up} up, toward {toward}, \
+                                         rolling {rolling}"
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// thrown-objects.md, "Meeting a character": it passes through the
+/// other character too, with the lead there, from t = 1 on.
+#[test]
+fn passes_through_the_other_character() {
+    for t in [1, 9, 28, 40, 60] {
+        let mut base = Play::with_other(&level(FLAT));
+        base.throw_to(21 + t);
+        for across in (-24..=24).step_by(8) {
+            for up in (0..=64).step_by(16) {
+                for toward in [false, true] {
+                    for rolling in [false, true] {
+                        if rolling && up != 0 {
+                            continue;
+                        }
+                        let mut play = Play {
+                            world: base.world.clone(),
+                            held: base.held,
+                        };
+                        let at = play.world.other.as_ref().unwrap().pos;
+                        place(&mut play, at, across, up, toward, rolling);
+                        passes_through(
+                            &play,
+                            |w| w.other.as_mut().unwrap().pos.x += Fixed::from_int(200),
+                            &format!(
+                                "t = {t}, {across} across, {up} up, toward {toward}, \
+                                 rolling {rolling}"
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
