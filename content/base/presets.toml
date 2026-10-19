@@ -123,6 +123,7 @@ roll_edge_depth = 0
 roll_edge_push = 0
 roll_jump_held_gravity = 0
 roll_air_stop_wait = 0
+roll_stop_air = 0
 roll_attack_width = 0
 roll_attack_offset = 0
 roll_attack_stop = 0
@@ -645,6 +646,12 @@ roll_carry_time = 3
 roll_stop_time = 17
 roll_stop_slide = 3
 roll_buffer = 19
+# A roll from a new press on D + 17 lasts 30 frames too (roll-input.md),
+# and a stop that carries the player off a ledge goes on in the air,
+# where a remembered press starts the next roll on D + 17
+# (rolling-off-ledges.md, "A roll started in the stop after a roll").
+roll_stop_press_lengthens = 1
+roll_stop_air = 1
 roll_air_buffer = 7
 # A roll off a ledge (rolling-off-ledges.md) drifts down 1/256 per frame
 # for a while if it left within 8 frames of its first; one that lands

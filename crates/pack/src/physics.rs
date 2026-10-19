@@ -479,6 +479,11 @@ params! {
     /// the frame after landing. An action press on it, or one in the
     /// air, starts one on the next frame if action is held until then.
     RollAirStopWait => "roll_air_stop_wait",
+    /// Above 0, without `roll_air_lengthen`, the stop after a timed roll
+    /// goes on in the air with its speeds, and a remembered press starts
+    /// the next roll on its last frame there too. 0: the stop ends in
+    /// the air.
+    RollStopAir => "roll_stop_air",
     /// Above 0, a timed roll defeats an enemy with a box on whole-pixel
     /// positions instead of by touching it, and only on its attack
     /// frames: every frame of the roll before its `roll_end` frame, and

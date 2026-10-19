@@ -409,6 +409,7 @@ mod tests {
                     | Param::RollEdgePush
                     | Param::RollJumpHeldGravity
                     | Param::RollAirStopWait
+                    | Param::RollStopAir
                     | Param::RollAttackWidth
                     | Param::RollAttackOffset
                     | Param::RollAttackStop

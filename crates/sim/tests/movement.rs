@@ -2998,10 +2998,11 @@ fn classic_roll_input_worked_example() {
     let rows = classic_roll_presses(&[10, 36], usize::MAX, 90);
     assert_eq!(frames_with(&rows, Event::RollStart), [10]);
 
-    // A new press on 56 starts a roll there, also standing still on it.
+    // A new press on 56 starts a roll there, also standing still on it
+    // and also lasting 30 frames.
     let rows = classic_roll_presses(&[10, 56], usize::MAX, 90);
     assert_eq!(frames_with(&rows, Event::RollStart), [10, 56]);
-    assert_eq!(frames_with(&rows, Event::RollEnd), [39, 85]);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [39, 86]);
     assert_eq!(rows[56].vx, 0.0);
 }
 
@@ -3586,6 +3587,256 @@ fn classic_slow_roll_stops_within_15_px_of_the_end_of_the_ground() {
         }
     }
     assert!(found);
+}
+
+#[test]
+fn classic_roll_started_in_the_stop_pushes_off_and_hovers() {
+    // spec/behavior/rolling-off-ledges.md, "A roll started in the stop
+    // after a roll", the first example: floor(x) = E - 10, Action alone
+    // on 0, so D = 29. Action again on 34 for one frame (S' = 46) and
+    // Right held from 47.
+    let mut w = classic_raised(1590);
+    let rows = play(&mut w, 75, |f| match f {
+        0 | 34 => vec![Action::Action],
+        f if f >= 47 => vec![Action::Right],
+        _ => vec![],
+    });
+    assert_eq!(frames_with(&rows, Event::RollEnd)[0], 29);
+    assert!(rows[..47].iter().all(|r| r.x == 1590.0));
+    assert_eq!(rows[46].state, State::Roll);
+    assert_ne!(rows[45].state, State::Roll);
+    let vx: Vec<_> = rows[47..51].iter().map(|r| r.vx).collect();
+    assert_eq!(vx, [2.0, 2.125, 2.234375, 2.328125]);
+    assert_eq!(frames_with(&rows, Event::LeaveGround), [51]);
+    assert_eq!(hover_frames(&rows, 51), (51..=60).collect::<Vec<_>>());
+}
+
+#[test]
+fn classic_roll_started_in_the_stop_in_the_air() {
+    // spec/behavior/rolling-off-ledges.md, "When the stop carries the
+    // player off the edge", the example: floor(x) = E - 4, Action alone
+    // on 0, so D = 29; Action again on 28 for one frame, Right held from
+    // 29. The stop carries the player off on 31, and the remembered press
+    // starts the roll on 46 in the air.
+    let mut w = classic_raised(1596);
+    let rows = play(&mut w, 70, |f| match f {
+        0 | 28 => vec![Action::Action],
+        f if f >= 29 => vec![Action::Right],
+        _ => vec![],
+    });
+    assert_eq!(frames_with(&rows, Event::RollEnd)[0], 29);
+    let vx: Vec<_> = rows[29..33].iter().map(|r| r.vx).collect();
+    assert_eq!(vx, [2.0, 1.75, 1.53125, 0.0]);
+    assert_eq!(frames_with(&rows, Event::LeaveGround), [31]);
+    assert_eq!(rows[31].y - rows[30].y, 3.4375);
+    for f in 32..46 {
+        assert_eq!(rows[f].vx, 0.0, "frame {f}");
+        assert_eq!(rows[f].vy, (rows[f - 1].vy + 0.4375).min(8.0), "frame {f}");
+    }
+    assert_ne!(rows[45].state, State::Roll);
+    assert_eq!(rows[46].state, State::Roll);
+    assert_eq!((rows[46].vx, rows[46].vy), (0.0, 6.56640625));
+    assert_eq!(rows[47].vx, 0.375);
+    assert_eq!(hover_frames(&rows, 46), (47..=55).collect::<Vec<_>>());
+    assert_eq!(rows[56].vy, 0.44140625);
+}
+
+/// Classic 1 on `RAISED_176` standing at `x`: Action alone on 0, a slow
+/// roll that stops on the ground (D = 29), then Action again on `press`
+/// for one frame and Right held from `right`.
+fn classic_roll_again(x: i32, press: usize, right: usize, n: usize) -> Vec<Row> {
+    let mut w = classic_raised(x);
+    let rows = play(&mut w, n, |f| {
+        let mut keys = if f == 0 || f == press {
+            vec![Action::Action]
+        } else {
+            vec![]
+        };
+        if f >= right {
+            keys.push(Action::Right);
+        }
+        keys
+    });
+    assert_eq!(frames_with(&rows, Event::RollEnd)[0], 29, "from {x}");
+    assert!(rows[..30].iter().all(|r| r.grounded), "from {x}");
+    rows
+}
+
+/// The frames from `l` to `l` + 12 that move down by 1/256.
+fn hover_frames(rows: &[Row], l: usize) -> Vec<usize> {
+    (l..=l + 12)
+        .filter(|&f| rows[f].y - rows[f - 1].y == 0.00390625)
+        .collect()
+}
+
+#[test]
+fn classic_roll_started_on_d_17_hovers_by_its_own_table() {
+    // spec/behavior/rolling-off-ledges.md, "A roll started in the stop
+    // after a roll": a roll started on D + 17 hovers on L and the 9 frames
+    // after it for n = L - S' from 1 to 8, on L only for 9, and not at all
+    // from 10. Remembered presses (S' = 46) and new ones on 46.
+    for press in [34, 46] {
+        let mut seen = std::collections::BTreeSet::new();
+        for (x, right) in (1450..1598).flat_map(|x| [46, 49, 52, 55].map(|r| (x, r))) {
+            let rows = classic_roll_again(x, press, right, 130);
+            let leaves = frames_with(&rows, Event::LeaveGround);
+            // Off the edge well before the roll ends.
+            let Some(&l) = leaves.iter().find(|&&l| l <= 46 + 20) else {
+                continue;
+            };
+            assert!(rows[45].state != State::Roll && rows[46].state == State::Roll);
+            let n = l - 46;
+            let hovers: Vec<usize> = match n {
+                1..=8 => (l..l + 10).collect(),
+                9 => vec![l],
+                _ => vec![],
+            };
+            let ctx = format!("from {x}, press {press}, Right from {right}, n {n}");
+            assert_eq!(hover_frames(&rows, l), hovers, "{ctx}");
+            seen.insert(n);
+        }
+        assert!(
+            (2..=10).all(|n| seen.contains(&n)),
+            "press {press}: {seen:?}"
+        );
+    }
+}
+
+#[test]
+fn classic_roll_started_on_d_18_hovers_as_usual() {
+    // spec/behavior/rolling-off-ledges.md, "A roll started in the stop
+    // after a roll": one started on D + 18 is an ordinary roll, with
+    // n = L - S' in "The fall" (L and the 9 after it up to 7, L only on 8).
+    let mut seen = std::collections::BTreeSet::new();
+    for (x, right) in (1450..1598).flat_map(|x| [47, 50, 53, 56].map(|r| (x, r))) {
+        let rows = classic_roll_again(x, 47, right, 130);
+        let leaves = frames_with(&rows, Event::LeaveGround);
+        let Some(&l) = leaves.iter().find(|&&l| l <= 47 + 20) else {
+            continue;
+        };
+        let n = l - 47;
+        let hovers: Vec<usize> = match n {
+            0 => (l + 1..=l + 8).collect(),
+            1..=7 => (l..l + 10).collect(),
+            8 => vec![l],
+            _ => vec![],
+        };
+        assert_eq!(
+            hover_frames(&rows, l),
+            hovers,
+            "from {x}, Right from {right}, n {n}"
+        );
+        seen.insert(n);
+    }
+    assert!((2..=9).all(|n| seen.contains(&n)), "{seen:?}");
+}
+
+#[test]
+fn classic_roll_started_on_d_17_lasts_30_frames() {
+    // spec/behavior/roll-input.md, "Starting the next roll": a roll
+    // started on D + 17 lasts 30 frames, from a remembered press or a new
+    // one; on D + 18 it lasts 29.
+    for (press, start, end) in [(34, 46, 76), (46, 46, 76), (47, 47, 76)] {
+        let rows = classic_roll_again(1000, press, usize::MAX, 90);
+        assert_eq!(
+            frames_with(&rows, Event::RollStart),
+            [0, start],
+            "press {press}"
+        );
+        assert_eq!(
+            frames_with(&rows, Event::RollEnd),
+            [29, end],
+            "press {press}"
+        );
+    }
+}
+
+#[test]
+fn classic_new_press_on_d_17_sets_size_and_direction_then() {
+    // spec/behavior/roll-speed.md, "When the roll ends": facing right
+    // with Left held on D + 17 only, a new press then goes left as a
+    // normal roll from D + 18.
+    let mut w = classic_raised(1000);
+    let rows = play(&mut w, 50, |f| match f {
+        0 => vec![Action::Action],
+        46 => vec![Action::Action, Action::Left],
+        _ => vec![],
+    });
+    assert_eq!(rows[45].facing, Facing::Right);
+    assert_eq!(rows[46].vx, 0.0);
+    assert_eq!(w.player.roll.unwrap().size, RollSize::Normal);
+    let vx: Vec<_> = rows[47..49].iter().map(|r| r.vx).collect();
+    assert_eq!(vx, [-0.375, -0.703125]);
+    assert!(rows[47..].iter().all(|r| r.facing == Facing::Left));
+}
+
+#[test]
+fn classic_remembered_press_sets_size_on_d_18() {
+    // spec/behavior/roll-speed.md, "When the roll ends": for a remembered
+    // press the size is set by what is held on D + 18, and the roll goes
+    // the way the player faces then, steered as on any later frame.
+    for (held, size, dir) in [
+        (None, RollSize::Slow, Facing::Right),
+        (Some(Action::Left), RollSize::Normal, Facing::Left),
+    ] {
+        let mut w = classic_raised(1000);
+        play(&mut w, 47, |f| match f {
+            0 | 34 => vec![Action::Action],
+            _ => vec![],
+        });
+        let rows = play(&mut w, 2, |_| held.into_iter().collect());
+        let roll = w.player.roll.unwrap();
+        assert_eq!((roll.size, roll.dir), (size, dir), "{held:?}");
+        let speed = if size == RollSize::Slow { 1.0 } else { 3.0 };
+        assert_eq!(rows[1].target.abs(), speed, "{held:?}");
+    }
+}
+
+#[test]
+fn classic_running_in_the_stop_does_not_make_the_next_roll_fast() {
+    // spec/behavior/roll-speed.md, "Running recently": Action and a
+    // direction held in the stop, up to D + 16, aren't running frames.
+    let mut w = classic_raised(1000);
+    play(&mut w, 47, |f| match f {
+        0 => vec![Action::Action],
+        30..=45 => vec![Action::Action, Action::Right],
+        46 => vec![Action::Action, Action::Right],
+        _ => vec![],
+    });
+    assert_eq!(w.player.roll.unwrap().size, RollSize::Normal);
+}
+
+#[test]
+fn classic_turned_roll_before_the_end_of_the_ground() {
+    // spec/behavior/rolling-off-ledges.md, "Stopping before a ledge":
+    // a roll started on D + 17 within 15 px of the edge, with Left held on
+    // S' + 1, turns and pushes off away from the edge at 2 on S' + 1.
+    let mut w = classic_raised(1590);
+    let rows = play(&mut w, 49, |f| match f {
+        0 | 34 => vec![Action::Action],
+        47.. => vec![Action::Left],
+        _ => vec![],
+    });
+    assert_eq!(rows[46].x, 1590.0);
+    assert_eq!((rows[47].x, rows[47].vx), (1588.0, -2.0));
+
+    // A slow roll steered away from the edge as it reaches it moves on.
+    let mut w = classic_raised(1570);
+    let rows = play(&mut w, 40, |f| match f {
+        0 => vec![Action::Action],
+        _ => vec![],
+    });
+    let stop = (1..29)
+        .find(|&f| rows[f].x == rows[f - 1].x)
+        .expect("a stop");
+    let mut w = classic_raised(1570);
+    let rows = play(&mut w, 29, |f| match f {
+        0 => vec![Action::Action],
+        f if f >= stop => vec![Action::Left],
+        _ => vec![],
+    });
+    assert_ne!(rows[stop].x, rows[stop - 1].x);
+    assert!(rows[stop].target < 0.0);
 }
 
 /// Classic 2 standing at x = 500, playing `held(frame)` for `n` frames.

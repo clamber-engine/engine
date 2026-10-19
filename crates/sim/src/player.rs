@@ -1566,6 +1566,14 @@ impl Player {
             self.turn = None;
             action_turn.unwrap_or(self.facing)
         } else if let Some(mut roll) = self.roll {
+            if roll.size_later && !started {
+                // What is held now sets the size, before steering.
+                let (left, right) = (held(Action::Left), held(Action::Right));
+                let age = roll.since_press;
+                roll.size = self.timed_roll_size(left, right, age, physics);
+                roll.speed = roll.size.speed(physics);
+                roll.size_later = false;
+            }
             // Steering does nothing on a frame that starts on a face.
             if !started && roll_face.is_none() {
                 roll.steer(dir, boosted, physics);
@@ -2074,9 +2082,9 @@ impl Player {
 
         if timed {
             // Running frames before a roll make it fast; the roll's own
-            // frames don't count.
+            // frames and its stop's don't count.
             if self.roll.is_none() && acting.is_none() {
-                if held(Action::Action) && run_dir != 0 {
+                if held(Action::Action) && run_dir != 0 && self.roll_stop == 0 {
                     self.lone_run = self.since_run != Some(1) && start_vx == Fixed::ZERO;
                     self.since_run = Some(0);
                 } else if (held(Action::Left) || held(Action::Right))
@@ -2550,7 +2558,13 @@ impl Player {
         };
         let stop_time = frames(physics[Param::RollStopTime]);
         let after_stop = physics[Param::RollAfterStop] > Fixed::ZERO;
-        let can_start = self.grounded()
+        // With `roll_stop_air`, a remembered press starts a roll on the
+        // last frame of a stop that went on in the air.
+        let in_air_stop = physics[Param::RollStopAir] > Fixed::ZERO
+            && age > 0
+            && self.roll_stop == stop_time
+            && stop_time > 0;
+        let can_start = (self.grounded() || in_air_stop)
             && self.swap == 0
             && self.roll.is_none()
             && !self.air_stopped
@@ -2560,6 +2574,45 @@ impl Player {
         }
         let left = input.held.contains(Action::Left);
         let right = input.held.contains(Action::Right);
+        let size = self.timed_roll_size(left, right, age, physics);
+        // A roll starting on the stop's last frame stands still on it, and
+        // lasts a frame longer if its press was made earlier, or always
+        // with `roll_stop_press_lengthens`. A new press then goes the way
+        // held, as the stop turns the player; a remembered one sets its
+        // size on the next frame.
+        let still = self.roll_stop > 0;
+        let longer = age > 0 || physics[Param::RollStopPressLengthens] > Fixed::ZERO;
+        let length = frames(physics[Param::RollTime]).saturating_add(u8::from(still && longer));
+        let dir = if still && age == 0 && !after_stop {
+            facing_toward(i32::from(right) - i32::from(left), self.facing)
+        } else {
+            self.facing
+        };
+        self.roll = Some(Roll {
+            left: length,
+            dir,
+            size,
+            speed: size.speed(physics),
+            boosts: 0,
+            defeated: false,
+            held: true,
+            carry: false,
+            still,
+            from_stop: still,
+            size_later: still && age > 0,
+            stopped: false,
+            since_press: age,
+            air: 0,
+            frame: 0,
+        });
+        self.roll_press = None;
+        self.roll_stop = 0;
+        true
+    }
+
+    /// The size of a timed roll whose press was `age` frames ago, with
+    /// `left` and `right` held as its size is set.
+    fn timed_roll_size(&self, left: bool, right: bool, age: u8, physics: &Physics) -> RollSize {
         let fast_hold = frames(physics[Param::RollFastHold]);
         let (dir_held, fast) = if fast_hold > 0 {
             // Action's last hold before the press counts, if it was long
@@ -2581,37 +2634,13 @@ impl Player {
             let fast = self.since_run.is_some_and(|n| n <= window) && (dir_held || !self.lone_run);
             (dir_held, fast)
         };
-        let size = if fast {
+        if fast {
             RollSize::Fast
         } else if dir_held {
             RollSize::Normal
         } else {
             RollSize::Slow
-        };
-        // A roll starting on the stop's last frame stands still on it, and
-        // lasts a frame longer if its press was made earlier, or always
-        // with `roll_stop_press_lengthens`.
-        let still = self.roll_stop > 0;
-        let longer = age > 0 || physics[Param::RollStopPressLengthens] > Fixed::ZERO;
-        let length = frames(physics[Param::RollTime]).saturating_add(u8::from(still && longer));
-        self.roll = Some(Roll {
-            left: length,
-            dir: self.facing,
-            size,
-            speed: size.speed(physics),
-            boosts: 0,
-            defeated: false,
-            held: true,
-            carry: false,
-            still,
-            stopped: false,
-            since_press: age,
-            air: 0,
-            frame: 0,
-        });
-        self.roll_press = None;
-        self.roll_stop = 0;
-        true
+        }
     }
 
     /// Uses the boost waiting after a defeat if action is held, starting
@@ -2652,6 +2681,8 @@ impl Player {
             held: true,
             carry: false,
             still: false,
+            from_stop: false,
+            size_later: false,
             stopped: false,
             since_press: 0,
             air: 0,
@@ -2672,8 +2703,10 @@ impl Player {
         // A jump waiting to take off holds the roll or stop where it is.
         let waiting = self.takeoff_wait.is_some();
         if self.roll_stop > 0 && !waiting {
-            // Without `roll_air_lengthen`, the stop ends in the air.
-            let over = self.roll_stop >= stop_time || (airborne && lengthen == 0);
+            // Without `roll_air_lengthen`, the stop ends in the air, unless
+            // `roll_stop_air`.
+            let in_air = airborne && lengthen == 0 && physics[Param::RollStopAir] == Fixed::ZERO;
+            let over = self.roll_stop >= stop_time || in_air;
             self.roll_stop = if over { 0 } else { self.roll_stop + 1 };
             if airborne && lengthen > 0 {
                 if over {
@@ -3660,6 +3693,12 @@ pub struct Roll {
     pub carry: bool,
     /// The roll doesn't move on this frame, its first.
     pub still: bool,
+    /// It started on the last frame of the stop after a roll, standing
+    /// still on it.
+    pub from_stop: bool,
+    /// It started from a remembered press on that frame, so its size is
+    /// set on its next frame, by what is held then.
+    pub size_later: bool,
     /// Stopped before a ledge (`roll_edge_speed`) or by a rise
     /// (`face_rolls`), until it pushes off.
     pub stopped: bool,
@@ -3758,11 +3797,14 @@ impl Roll {
         let last = frames(physics[Param::RollLeaveHover]);
         let time = frames(physics[Param::RollLeaveHoverTime]);
         let after = self.frame.saturating_sub(leave);
+        // A roll from the stop counts from the frame it stood still on,
+        // and hovers a frame longer for each way of leaving.
+        let shift = u8::from(self.from_stop);
         last > 0
             && match leave {
-                0 => after >= 1 && after + 2 <= time,
-                l if l < last => after < time,
-                l if l == last => after == 0,
+                0 => after >= 1 && after + 2 <= time + shift,
+                l if l < last + shift => after < time,
+                l if l == last + shift => after == 0,
                 _ => false,
             }
     }
