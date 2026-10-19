@@ -49,8 +49,8 @@ pub struct CharacterPictures {
     pub following: Location,
 }
 
-/// The first character's sets ("The stop after a roll", the first
-/// standing pictures, "A jump and its landing", "A bounce", "A roll",
+/// The first character's sets ("The stop after a roll", "Standing
+/// still", "A jump and its landing", "A bounce", "A roll",
 /// "Walking, running and turning").
 const FIRST: &[PictureSet] = &[
     PictureSet {
@@ -92,6 +92,166 @@ const FIRST: &[PictureSet] = &[
             (
                 "stand-5",
                 "f84cb3cd83cf8306840277badc6689d7df0f7f19f899406fadc77263067ff1ac",
+            ),
+            (
+                "stand-6",
+                "c5d56630ccac5228f720b5ee2c1e45d189980524ca24189b0bfe251cbb3fcd85",
+            ),
+            (
+                "stand-7",
+                "4462f15a57c31e2699a69d27711752dc610205591e2aba601295cf23c52d9f02",
+            ),
+            (
+                "stand-8",
+                "37b432ca85ca8a36a8d1cbf3874610981be57f5bba5fabbf0d75412d2d8ec4ab",
+            ),
+            (
+                "stand-9",
+                "b24d5ec4033de4bd48f1cf21f22c83d6c83f7d49e4bfc5d8c1cfb657cd779c18",
+            ),
+            (
+                "stand-10",
+                "6db11fb56e4b21ec660bca54140e50038126555b0c4761b2a8e1998bd0154d22",
+            ),
+            (
+                "stand-11",
+                "753d2ddb1a7487755e95562a7fe7551db0be7043e51daa82bee9eb37e7922614",
+            ),
+            (
+                "wait-1",
+                "6a4c936d6f0b2dd8bd7f522f1b4b3d892ebdb2e9d27232c1d2ddabf6152b8bb4",
+            ),
+            (
+                "wait-2",
+                "c96b75957ba44a2bacebc293a8910bf5b91eadac5bf4d599de9f80e04cc1955e",
+            ),
+            (
+                "wait-3",
+                "0fccbe0b757d6f99c7445b227084301d067dae122f652369ef868b8c0df255f5",
+            ),
+            (
+                "wait-4",
+                "26d4c63fef34ebd9ecd5a947b8d1a66ce138236a18c2972631bddc99e3dbfc3c",
+            ),
+            (
+                "wait-5",
+                "b1cf9fd1c9b5624ef0655fa18a3fec9d05579693f7c98d34b03e99575846a522",
+            ),
+            (
+                "wait-6",
+                "0f82a2987d2546d2aeec4395ae16c6f2dfaa75cc0efd396b4e5244dd5e32d17e",
+            ),
+            (
+                "wait-7",
+                "079ec658914c590c58b7d4fd0bcecc3e18f037cfcb23df4daca09bbe151db053",
+            ),
+            (
+                "wait-8",
+                "05a84fce5d78854fd460cb1049cd1b0f761b42f4001c84f80fd0cdba17dcf897",
+            ),
+            (
+                "wait-9",
+                "8997712a38008de9c9dae9fcf12121c116cd77ede7bfa0bbb8068ed6a9a35fb8",
+            ),
+            (
+                "wait-10",
+                "13f1d9d779179d7337d0df0c217a5da63cc80bac66f71602b11924e7d3de11ec",
+            ),
+            (
+                "wait-11",
+                "92591b89d1769e00446b6ab4a507c72d57a41f7f0da984859f3be2f12066f091",
+            ),
+            (
+                "wait-12",
+                "35bfa42e2d7520717c40e65ba62b1991b8942e67427b092933719a89998bf30a",
+            ),
+            (
+                "wait-13",
+                "6fdc3af7ece4a2ccaf831827568f9ffe49f40b4f5fad7034e4acf9efaac1e53d",
+            ),
+            (
+                "wait-14",
+                "c0f4bcd65b6b55ca2bf39043ecdf0daaf4683dd383b6a70ea90dcd182b5f45d5",
+            ),
+            (
+                "wait-15",
+                "950fe6d51e500a6688632c61c3413713645262f1e28bb5ca5af501f05481831e",
+            ),
+            (
+                "wait-16",
+                "1bf3eddf1f37effc2e1eccdd9926b989d8eb31fc91345965cfcea6ff9467b709",
+            ),
+            (
+                "wait-17",
+                "c918abe2a2ca8e70cd88d9bb5ea9338763d9b33e56383fbcb9e8c72d1079806d",
+            ),
+            (
+                "wait-18",
+                "bc6281921a826fc035ae5abe4e9e29c18850c06c7e17b18e98e8d4cb5f2405cf",
+            ),
+            (
+                "wait-19",
+                "723e95a3fe870c41bb0c777b32d85797ffd7e6556f16e6e2bcf63ebdc2fa54c7",
+            ),
+            (
+                "wait-20",
+                "f08612123c94528360253f036c68e9dbaf0a5b995c4f513b8f411de024d3f7f8",
+            ),
+            (
+                "wait-21",
+                "675c9fafafc4b9fa21fcc23b8fe80ba05247c86e46ee4e86f250cf688d10621e",
+            ),
+            (
+                "wait-22",
+                "5c0a21e0c5ac0fb9027bea52ca588f3ccb4fbc32d93a1c863ed17d05caf5376f",
+            ),
+            (
+                "wait-23",
+                "f82346f38857a53e086ae562a4790bf64d11e739ca87383e120f949d09f3c500",
+            ),
+            (
+                "wait-24",
+                "e775bc10f75f931b95cb9795e97b95694edab14d1e5682f4925bf7cfde437ca5",
+            ),
+            (
+                "wait-25",
+                "3d930c272c6f949de5d49f07ff92ebeb5cf8eacb7eda0086b3cf06e3e12132b9",
+            ),
+            (
+                "wait-26",
+                "513f122bdb17242b473512676d8173dbbe938dc2e74483ec2d7cf37c86de29b0",
+            ),
+            (
+                "wait-27",
+                "62e3b8497901dc16150660e926b08961756ac8dcaa55c419d83785a1451c2756",
+            ),
+            (
+                "wait-28",
+                "7e73bc97a9700533ab821a1bebd48498511c09e47a617267e7f7d37a479fbd30",
+            ),
+            (
+                "wait-29",
+                "3b9b519e510df8cd5cf247bb9e1fad058c8204363fa26e5cd211b65299dc2eb9",
+            ),
+            (
+                "wait-30",
+                "acc9897e6cbcc3a7bc2290d4db8e6279972a10d1de9b60fa8d1e4b75a515dcec",
+            ),
+            (
+                "wait-31",
+                "ee01f14de3eb2f010b99a3d805c421aa2519dc532fec06b4c3f69d56319364a1",
+            ),
+            (
+                "wait-32",
+                "6c17407c7dbb62a0a63132e2c15bd1110aba212074245b2f082d5bdf8ed27a47",
+            ),
+            (
+                "wait-33",
+                "dc6e810340ca71af76ef4e3f09b47493cacedab2c22308e1511ec3296ed4fe8f",
+            ),
+            (
+                "wait-34",
+                "1545bc738cca010bd6a140d3ed96eb2e4b9ffd9f22175ee3419d5a2180dbe879",
             ),
         ],
     },

@@ -1,8 +1,8 @@
 //! Which of its own pictures the player shows when it's held still: the
-//! stop after a roll, a jump and its landing, a bounce, the first
-//! standing pictures after them, and the first character's roll,
-//! walking, running and turning pictures, on the ground and in the air
-//! after walking off a ledge without a face
+//! stop after a roll, a jump and its landing, a bounce, the standing
+//! pictures after them, and the first character's roll, walking,
+//! running and turning pictures, on the ground and in the air after
+//! walking off a ledge without a face
 //! (`spec/behavior/player-frames.md`).
 //!
 //! The pictures come from a character's sheet in a pack
@@ -15,8 +15,8 @@
 //!
 //! Engine choices where the spec says nothing:
 //!
-//! - The pictures after the ones given (standing on after the first
-//!   standing pictures, the second character walking or running, or
+//! - The pictures after the ones given (the second character standing
+//!   on after its first standing pictures, walking or running, or
 //!   bouncing after B + 4) are the engine's own art, as are the second
 //!   character's in the air from T + 16 until it lands.
 //! - Walking or running in the air after walking off a ledge with a
@@ -31,6 +31,8 @@
 //! - Jumps that land before their approach frame, landings after falls,
 //!   the second character's landings after bounces, and anything while
 //!   carrying, swapping, hurt or losing a life show the engine's own art.
+//! - The first character's standing list goes on on a slope or at a
+//!   ledge as on flat floor.
 
 use clamber_pack::Param;
 use clamber_sim::{Event, Gait, Outcome, State, World};
@@ -41,7 +43,7 @@ use clamber_sim::{Event, Gait, Outcome, State, World};
 pub enum Set {
     /// The stop after a roll, or carrying on into running.
     Stop,
-    /// The first standing pictures.
+    /// The standing pictures.
     Standing,
     /// A jump and its landing.
     Jump,
@@ -58,10 +60,7 @@ pub enum Set {
 pub const SETS: [&[(Set, &[&str])]; 2] = [
     &[
         (Set::Stop, &["roll-end", "stop", "stand-1"]),
-        (
-            Set::Standing,
-            &["stand-1", "stand-2", "stand-3", "stand-4", "stand-5"],
-        ),
+        (Set::Standing, &STANDING),
         (
             Set::Jump,
             &[
@@ -129,6 +128,31 @@ const WALKING: [&str; 42] = [
     "run-17", "run-18", "run-19", "run-20", "turn-a", "turn-b",
 ];
 
+/// The first character's standing pictures: `stand-1` to `stand-11`,
+/// then `wait-1` to `wait-34`.
+const STANDING: [&str; 45] = [
+    "stand-1", "stand-2", "stand-3", "stand-4", "stand-5", "stand-6", "stand-7", "stand-8",
+    "stand-9", "stand-10", "stand-11", "wait-1", "wait-2", "wait-3", "wait-4", "wait-5", "wait-6",
+    "wait-7", "wait-8", "wait-9", "wait-10", "wait-11", "wait-12", "wait-13", "wait-14", "wait-15",
+    "wait-16", "wait-17", "wait-18", "wait-19", "wait-20", "wait-21", "wait-22", "wait-23",
+    "wait-24", "wait-25", "wait-26", "wait-27", "wait-28", "wait-29", "wait-30", "wait-31",
+    "wait-32", "wait-33", "wait-34",
+];
+
+/// The sway ("Standing still"), 186 frames: which `stand-` picture, for
+/// how many frames.
+#[rustfmt::skip]
+const SWAY: [(u8, u8); 39] = [
+    (2, 3), (3, 3), (4, 3), (5, 3), (6, 10),
+    (7, 3), (8, 3), (9, 3), (10, 3), (11, 15),
+    (10, 3), (9, 3), (8, 3), (7, 3), (6, 5),
+    (7, 3), (8, 3), (9, 3), (10, 3), (11, 10),
+    (10, 3), (9, 3), (8, 3), (7, 3), (6, 15),
+    (5, 3), (4, 3), (3, 3), (2, 3), (1, 25),
+    (2, 3), (3, 3), (4, 3), (5, 3), (6, 10),
+    (5, 3), (4, 3), (3, 3), (2, 3),
+];
+
 /// The labels of `set` for the character in roster slot `slot`.
 pub fn labels(slot: usize, set: Set) -> &'static [&'static str] {
     SETS.get(slot)
@@ -178,7 +202,9 @@ pub struct PictureClock {
     /// own frame count it was moved on at.
     cycle: Option<(u8, u8)>,
     /// Frames standing after a stop or a landing, 0 on the first.
-    standing: Option<u8>,
+    standing: Option<u32>,
+    /// Crouching or getting up on the frame before.
+    crouched: bool,
     /// What the player shows on this frame.
     shown: Option<(Set, &'static str)>,
 }
@@ -210,6 +236,10 @@ impl PictureClock {
             };
         }
         let before = std::mem::take(&mut self.shown);
+        let crouched = std::mem::replace(
+            &mut self.crouched,
+            player.crouch.held > 0 || player.crouch.rising > 0,
+        );
         let events = &world.events;
         let physics = world.player_physics();
         let first = self.slot == 0;
@@ -296,9 +326,10 @@ impl PictureClock {
             None
         };
         // Standing starts from a stop's last picture, a landing's, the
-        // first character's walking, running or turning, or on the
-        // landing frame after the first character's bounce. After a
-        // walk-off without a face it starts, or goes on, in the air.
+        // first character's walking, running or turning, on the
+        // landing frame after the first character's bounce, or once
+        // the first character is up from crouching. After a walk-off
+        // without a face it starts, or goes on, in the air.
         let standing_now = self.shown.is_none()
             && (player.grounded()
                 && matches!(player.state, State::Idle | State::Walk | State::Run)
@@ -315,7 +346,8 @@ impl PictureClock {
                     matches!(set, Set::Stop | Set::Jump)
                         || (first && matches!(set, Set::Bounce | Set::Walking))
                 })
-                .then_some(0),
+                .then_some(0)
+                .or((first && crouched).then_some(0)),
         };
         if let Some(c) = self.standing {
             self.shown = standing(first, c);
@@ -383,15 +415,75 @@ fn carried(first: bool, d: u8) -> Option<(Set, &'static str)> {
     Some((Set::Stop, label))
 }
 
-/// On frame `c` of standing, 0 on its first.
-fn standing(first: bool, c: u8) -> Option<(Set, &'static str)> {
-    const FIRST: [&str; 5] = ["stand-1", "stand-2", "stand-3", "stand-4", "stand-5"];
+/// On frame `c` of standing, 0 on its first (S).
+fn standing(first: bool, c: u32) -> Option<(Set, &'static str)> {
     let label = match first {
-        true => *FIRST.get(usize::from(c / 3))?,
+        true => first_standing(c),
         false if c < 4 => "s-stand-1",
         false => return None,
     };
     Some((Set::Standing, label))
+}
+
+/// The first character on S + `c` ("Standing still"): `stand-1` × 3,
+/// the sway, `stand-1` × 12 and the wait twice, `stand-1` × 3 and the
+/// sway, then `stand-1` × 15 and the sway over and over.
+fn first_standing(c: u32) -> &'static str {
+    let i = match c {
+        0..914 => c % 457,
+        914..1103 => c - 914,
+        _ => match (c - 1103) % 201 {
+            0..15 => return STANDING[0],
+            i => return sway(i - 15),
+        },
+    };
+    match i {
+        0..3 | 189..201 => STANDING[0],
+        3..189 => sway(i - 3),
+        _ => wait(i - 201),
+    }
+}
+
+/// Frame `i` of the sway.
+fn sway(mut i: u32) -> &'static str {
+    for (n, count) in SWAY {
+        if i < u32::from(count) {
+            return STANDING[usize::from(n) - 1];
+        }
+        i -= u32::from(count);
+    }
+    STANDING[0]
+}
+
+/// Frame `i` of the wait, 256 frames.
+fn wait(i: u32) -> &'static str {
+    let n = match i {
+        0..36 => 1 + i / 4,
+        36..38 | 218..220 => 10,
+        38..62 => 11 + (i - 38) / 4,
+        // Back and forth between `wait-17` and `wait-26`, 2 frames each.
+        62..186 => {
+            let legs = [
+                (17, 26),
+                (25, 17),
+                (18, 26),
+                (25, 17),
+                (18, 26),
+                (25, 18),
+                (19, 26),
+            ];
+            legs.into_iter()
+                .flat_map(|(a, b): (u32, u32)| {
+                    let up = a <= b;
+                    (0..=a.abs_diff(b)).map(move |k| if up { a + k } else { a - k })
+                })
+                .nth(((i - 62) / 2) as usize)
+                .unwrap_or(26)
+        }
+        186..218 => 27 + (i - 186) / 4,
+        _ => 9 - (i - 220).min(35) / 4,
+    };
+    STANDING[10 + n as usize]
 }
 
 /// The first character walking, running or turning on the ground or in
@@ -651,7 +743,7 @@ mod tests {
                 ("stand-3", 3),
                 ("stand-4", 3),
                 ("stand-5", 3),
-                ("", 1),
+                ("stand-6", 10),
             ],
         );
     }
@@ -733,7 +825,7 @@ mod tests {
                 ("stand-3", 3),
                 ("stand-4", 3),
                 ("stand-5", 3),
-                ("", 1),
+                ("stand-6", 10),
             ],
         );
     }
@@ -901,10 +993,8 @@ mod tests {
             f += n;
             i += 1;
         }
-        // No landing pictures: standing from G.
-        for s in ["stand-1", "stand-2", "stand-3", "stand-4", "stand-5"] {
-            want.push((s, 3));
-        }
+        // No landing pictures: standing from G, as in "Standing still".
+        want.extend(standing_list(16));
         run.check(b, &want);
     }
 
@@ -1005,7 +1095,7 @@ mod tests {
                 ("stand-3", 3),
                 ("stand-4", 3),
                 ("stand-5", 3),
-                ("", 1),
+                ("stand-6", 10),
             ],
         );
     }
@@ -1101,7 +1191,7 @@ mod tests {
                 ("stand-3", 3),
                 ("stand-4", 3),
                 ("stand-5", 3),
-                ("", 1),
+                ("stand-6", 1),
             ],
         );
     }
@@ -1249,6 +1339,104 @@ mod tests {
         check_cycle(&run, s, k + 1, 2);
         check_cycle(&run, p, p + 29, 2);
         run.check(p + 26, &[("roll-end", 3), ("stop", 3), ("walk-1", 1)]);
+    }
+
+    /// The sway, as in "Standing still".
+    fn sway_list() -> Vec<(&'static str, usize)> {
+        let s = |n: usize| labels(0, Set::Standing)[n - 1];
+        let mut want = Vec::new();
+        let mut run = |from: &[usize], last: usize, count: usize| {
+            want.extend(from.iter().map(|&n| (s(n), 3)));
+            want.push((s(last), count));
+        };
+        run(&[2, 3, 4, 5], 6, 10);
+        run(&[7, 8, 9, 10], 11, 15);
+        run(&[10, 9, 8, 7], 6, 5);
+        run(&[7, 8, 9, 10], 11, 10);
+        run(&[10, 9, 8, 7], 6, 15);
+        run(&[5, 4, 3, 2], 1, 25);
+        run(&[2, 3, 4, 5], 6, 10);
+        want.extend([5, 4, 3, 2].map(|n| (s(n), 3)));
+        assert_eq!(want.iter().map(|w| w.1).sum::<usize>(), 186);
+        want
+    }
+
+    /// The wait, as in "Standing still".
+    fn wait_list() -> Vec<(&'static str, usize)> {
+        let w = |n: usize| labels(0, Set::Standing)[10 + n];
+        let mut want: Vec<_> = (1..=9).map(|n| (w(n), 4)).collect();
+        want.push((w(10), 2));
+        want.extend((11..=16).map(|n| (w(n), 4)));
+        let mut back_and_forth: Vec<usize> = (17..=26).collect();
+        back_and_forth.extend((17..=25).rev());
+        back_and_forth.extend(18..=26);
+        back_and_forth.extend((17..=25).rev());
+        back_and_forth.extend(18..=26);
+        back_and_forth.extend((18..=25).rev());
+        back_and_forth.extend(19..=26);
+        assert_eq!(back_and_forth.len(), 62);
+        want.extend(back_and_forth.into_iter().map(|n| (w(n), 2)));
+        want.extend((27..=34).map(|n| (w(n), 4)));
+        want.push((w(10), 2));
+        want.extend((1..=9).rev().map(|n| (w(n), 4)));
+        assert_eq!(want.iter().map(|w| w.1).sum::<usize>(), 256);
+        want
+    }
+
+    /// The first character's standing pictures from S, `frames` of them.
+    fn standing_list(frames: usize) -> Vec<(&'static str, usize)> {
+        let mut want = Vec::new();
+        for _ in 0..2 {
+            want.push(("stand-1", 3));
+            want.extend(sway_list());
+            want.push(("stand-1", 12));
+            want.extend(wait_list());
+        }
+        want.push(("stand-1", 3));
+        want.extend(sway_list());
+        assert_eq!(want.iter().map(|w| w.1).sum::<usize>(), 1103);
+        while want.iter().map(|w| w.1).sum::<usize>() < frames {
+            want.push(("stand-1", 15));
+            want.extend(sway_list());
+        }
+        let mut left = frames;
+        want.into_iter()
+            .map_while(|(label, count)| {
+                let n = count.min(left);
+                left -= n;
+                (n > 0).then_some((label, n))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn standing_still_after_a_roll_s_stop() {
+        let run = run(world(FLAT, 0), &roll(&[], 2900));
+        let d = run.frames(Event::RollEnd)[0];
+        run.check(d + 17, &standing_list(2900 - d - 17));
+    }
+
+    #[test]
+    fn standing_still_after_a_landing() {
+        let run = run(world(FLAT, 0), &jump(10, 1, 1500));
+        let k = run.frames(Event::JumpStart)[0] + 31 + 7;
+        run.check(k, &standing_list(1500 - k));
+    }
+
+    #[test]
+    fn up_while_standing_changes_nothing_and_a_tap_of_down_starts_over() {
+        let still = run(world(FLAT, 0), &roll(&[], 900));
+        let d = still.frames(Event::RollEnd)[0];
+        let mut keys = roll(&[], 900);
+        for f in [d + 40, d + 300, d + 301, d + 302] {
+            keys[f] = vec![Action::Up];
+        }
+        assert_eq!(run(world(FLAT, 0), &keys).shown, still.shown);
+        keys[d + 400] = vec![Action::Down];
+        let tapped = run(world(FLAT, 0), &keys);
+        let s = (d + 401..).find(|&f| tapped.shown[f].is_some()).unwrap();
+        assert!(s < d + 430, "standing again from {s}");
+        tapped.check(s, &standing_list(900 - s));
     }
 
     #[test]
