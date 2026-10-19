@@ -439,7 +439,6 @@ mod tests {
                     | Param::SlopeLandingReach
                     | Param::SlopePiece
                     | Param::FaceSpeed
-                    | Param::FaceExit
                     | Param::FaceSlideSwitch
                     | Param::StartRiseAhead
                     | Param::RiseKeepsTarget

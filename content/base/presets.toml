@@ -152,7 +152,6 @@ stance_stand_speed = 0
 stance_run_speed = 0
 face_slope = 0
 face_speed = 0
-face_exit = 0
 face_slide_switch = 0
 start_rise_ahead = 0
 rise_keeps_target = 0
@@ -686,7 +685,6 @@ bounce_max_rise = 1.25
 bounce_holds_all = 1
 face_slope = 3
 face_speed = 1.5
-face_exit = 2
 # After a jump's landing the face's push and start_rise_ahead wait for
 # a switch frame, R + 11 for a slide landing (steep-faces.md, "Landing
 # on or next to a face").

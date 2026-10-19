@@ -369,44 +369,69 @@ fn fall_left(c: i32) -> Option<i32> {
 }
 
 #[test]
-fn a_direction_held_up_a_face_is_ignored_then_and_just_after() {
-    let mut world = ground(fall_left, 110.5);
-    world.player.vel.x = -Fixed::ONE;
+fn just_off_a_face_it_is_a_rise_and_its_frame_counts_as_target_0() {
+    // "Leaving a face onto floor", the example: carried down the face
+    // with Right held, the face is a rise behind the player, its frame
+    // counts as target 0, and the target stays 0 until a frame starts 4
+    // columns from it. Facing turns right at once.
+    let mut world = ground(fall_left, 100.0);
+    world.player.pos = Vec2::new(fx(100.76171875), Fixed::from_int(FLOOR + 39));
+    world.player.vel.x = fx(-0.9765625);
     world.player.facing = Facing::Left;
-    let mut off = Vec::new();
-    for _ in 0..30 {
-        let vx = grains(world.player.vel.x);
-        let column = world.player.pos.x.floor();
-        if column >= 110 {
-            // Not on the face yet.
-            hold(&mut world, &[]);
-            continue;
-        }
+    // Carried down the face, its push is under way.
+    world.player.push = fx(-1.5);
+    let expected = [
+        (99.72265625, -1.0390625, Facing::Left),
+        (98.8125, -0.91015625, Facing::Right),
+        (98.015625, -0.796875, Facing::Right),
+        (97.31640625, -0.69921875, Facing::Right),
+        (96.703125, -0.61328125, Facing::Right),
+        (96.4140625, -0.2890625, Facing::Right),
+        (96.41015625, -0.00390625, Facing::Right),
+        (96.65625, 0.24609375, Facing::Right),
+    ];
+    for (frame, &(x, vx, facing)) in expected.iter().enumerate() {
         hold(&mut world, &[Action::Right]);
-        assert!(world.player.grounded());
-        if column < 100 {
-            off.push((vx, grains(world.player.vel.x), world.player.facing));
-        } else {
-            // On the face, right is ignored: the player faces left and
-            // keeps speeding up down it.
-            assert_eq!(world.player.facing, Facing::Left, "column {column}");
-            assert!(grains(world.player.vel.x) < 0);
-        }
+        let p = &world.player;
+        assert!(p.grounded(), "frame {}", frame + 1);
+        assert_eq!(
+            (p.pos.x, p.pos.y, p.vel.x, p.facing),
+            (fx(x), Fixed::from_int(FLOOR + 40), fx(vx), facing),
+            "frame {}",
+            frame + 1
+        );
     }
-    assert!(off.len() > 3);
+}
+
+#[test]
+fn left_held_on_the_last_frame_on_a_face_keeps_its_walking_target() {
+    // With Left held on the last frame on the face, the target stays -2
+    // on the frames next to it with Right held, and is +2 from the first
+    // frame 4 columns away.
+    let mut world = ground(fall_left, 100.0);
+    world.player.pos = Vec2::new(fx(100.76171875), Fixed::from_int(FLOOR + 39));
+    world.player.vel.x = fx(-1.5);
+    world.player.facing = Facing::Left;
+    world.player.push = fx(-1.5);
+    hold(&mut world, &[Action::Left]);
+    assert!(world.player.pos.x < Fixed::from_int(100));
     // The gap to the target, ÷ 8, toward zero.
     let ease = |vx: i64, target: i64| vx + (target - vx) / 8;
-    let (before, after, facing) = off[0];
-    assert_eq!((after, facing), (ease(before, 0), Facing::Left));
-    let (before, after, facing) = off[1];
-    assert_eq!((after, facing), (ease(before, 0), Facing::Left));
-    // Then the face is still the rise 5 columns ahead, and the target is
-    // the last frame's ("Holding toward a rise"), until the player is
-    // far enough from it to start toward it.
-    let (before, after, facing) = off[2];
-    assert_eq!((after, facing), (ease(before, 0), Facing::Right));
-    let (before, after, _) = off[3];
-    assert_eq!(after, ease(before, 512));
+    let mut away = false;
+    for _ in 0..12 {
+        let column = world.player.pos.x.floor();
+        let vx = grains(world.player.vel.x);
+        hold(&mut world, &[Action::Right]);
+        assert!(world.player.grounded());
+        let target = if column >= 97 && !away { -512 } else { 512 };
+        away |= column < 97;
+        assert_eq!(
+            grains(world.player.vel.x),
+            ease(vx, target),
+            "column {column}"
+        );
+    }
+    assert!(away);
 }
 
 /// Flat floor up to a ledge with a short face falling right at its top,

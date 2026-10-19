@@ -1032,8 +1032,11 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
     out.extend([p.lone_run, p.roll_jump].map(u8::from));
     let h = p.holds;
     out.extend([h.held, h.last, h.gap, h.before_press.0, h.before_press.1]);
-    match p.off_face {
-        Some((way, n)) => out.extend([1, way as u8, n]),
+    match p.face_target {
+        Some(v) => {
+            out.push(1);
+            fixed(out, v);
+        }
         None => out.push(0),
     }
     out.push(p.after_face.map_or(0, |way| way as u8 + 1));

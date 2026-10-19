@@ -618,10 +618,6 @@ params! {
     /// much added the way the face falls, and a direction held up the
     /// face counts as none.
     FaceSpeed => "face_speed",
-    /// After coming off the low end of a steep face onto other ground, a
-    /// direction held back up the face counts as none for this many
-    /// frames. Whole frames.
-    FaceExit => "face_exit",
     /// Above 0, with `face_speed` and `switch_from`, `face_speed` is a
     /// push worked out at the end of each frame on a face column, given
     /// once the frame's target and speed both point down the face or are

@@ -218,10 +218,10 @@ pub struct Player {
     /// A jump pressed during a timed roll ended it, and starts on the
     /// next frame, in the air too.
     pub roll_jump: bool,
-    /// Just come off the low end of a steep face: the way it fell, and
-    /// for how many more frames a direction held back up it counts as
-    /// none.
-    pub off_face: Option<(Facing, u8)>,
+    /// The last frame started on a steep face: the target it leaves for
+    /// a frame held toward a rise (`rise_keeps_target`), the held
+    /// direction's without the face's push down it.
+    pub face_target: Option<Fixed>,
     /// The last frame started on a steep face that falls this way
     /// (`face_pull`).
     pub after_face: Option<Facing>,
@@ -397,7 +397,7 @@ impl Player {
             lone_run: false,
             holds: Holds::default(),
             roll_jump: false,
-            off_face: None,
+            face_target: None,
             after_face: None,
             jump_age: None,
             approach: None,
@@ -1158,11 +1158,8 @@ impl Player {
         // A jump that ended the ground action takes off even onto a face.
         let action_jumped = std::mem::take(&mut self.action_jump);
         let jump_face = jump_face && !action_jumped;
-        // With `face_speed`, a direction held up the face, or back up one
-        // just come off, counts as none.
-        let downhill = face
-            .filter(|_| physics[Param::FaceSpeed] > Fixed::ZERO)
-            .or(self.off_face.map(|(way, _)| direction(way)));
+        // With `face_speed`, a direction held up the face counts as none.
+        let downhill = face.filter(|_| physics[Param::FaceSpeed] > Fixed::ZERO);
         // The face the last frame started on pulls the speed down it.
         let pull = std::mem::take(&mut self.after_face);
         let dir = if downhill == Some(-held_dir) {
@@ -1516,10 +1513,13 @@ impl Player {
             && !events.contains(&Event::JumpStart)
             && self.face_switch.is_none()
             && rise_ahead(dir);
+        // Just off a face, the face is the rise, and its frame's target
+        // is the held direction's.
+        let face_target = std::mem::take(&mut self.face_target);
         let kept_target = if self.blocked {
             Fixed::ZERO
         } else {
-            self.target
+            face_target.unwrap_or(self.target)
         };
 
         let turn_time = frames(physics[Param::TurnTime]);
@@ -1672,6 +1672,7 @@ impl Player {
         let response = physics[Param::SpeedResponse];
         let pushed = physics[Param::FaceSlideSwitch] > Fixed::ZERO;
         let mut push = Fixed::ZERO;
+        let mut held_target = None;
         self.target = Fixed::ZERO;
         self.vel.x = if let Some(action) = acting {
             // Down a face, faster; its last frame takes one more step,
@@ -1721,6 +1722,7 @@ impl Player {
                 1 => cap,
                 _ => Fixed::ZERO,
             };
+            held_target = Some(target);
             if face_takeoff {
                 // Nothing down the face on the take-off frame.
             } else if pushed {
@@ -2047,15 +2049,7 @@ impl Player {
         self.after_face = face
             .filter(|_| physics[Param::FacePull] > Fixed::ZERO)
             .map(facing_of);
-        self.off_face = if !self.grounded() {
-            None
-        } else if let Some(way) = face {
-            let exit = frames(physics[Param::FaceExit]);
-            (exit > 0).then_some((facing_of(way), exit))
-        } else {
-            self.off_face
-                .and_then(|(way, n)| (n > 1).then_some((way, n - 1)))
-        };
+        self.face_target = held_target.filter(|_| face.is_some() && self.grounded());
         self.uphill_onto_face = face_wait
             && clear_start
             && self.grounded()
