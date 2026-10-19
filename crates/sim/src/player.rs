@@ -1566,14 +1566,6 @@ impl Player {
             self.turn = None;
             action_turn.unwrap_or(self.facing)
         } else if let Some(mut roll) = self.roll {
-            if roll.size_later && !started {
-                // What is held now sets the size, before steering.
-                let (left, right) = (held(Action::Left), held(Action::Right));
-                let age = roll.since_press;
-                roll.size = self.timed_roll_size(left, right, age, physics);
-                roll.speed = roll.size.speed(physics);
-                roll.size_later = false;
-            }
             // Steering does nothing on a frame that starts on a face.
             if !started && roll_face.is_none() {
                 roll.steer(dir, boosted, physics);
@@ -2577,13 +2569,13 @@ impl Player {
         let size = self.timed_roll_size(left, right, age, physics);
         // A roll starting on the stop's last frame stands still on it, and
         // lasts a frame longer if its press was made earlier, or always
-        // with `roll_stop_press_lengthens`. A new press then goes the way
-        // held, as the stop turns the player; a remembered one sets its
-        // size on the next frame.
+        // with `roll_stop_press_lengthens`. It goes the way held then,
+        // whether its press was remembered or new, as the stop turns the
+        // player.
         let still = self.roll_stop > 0;
         let longer = age > 0 || physics[Param::RollStopPressLengthens] > Fixed::ZERO;
         let length = frames(physics[Param::RollTime]).saturating_add(u8::from(still && longer));
-        let dir = if still && age == 0 && !after_stop {
+        let dir = if still && !after_stop {
             facing_toward(i32::from(right) - i32::from(left), self.facing)
         } else {
             self.facing
@@ -2599,7 +2591,6 @@ impl Player {
             carry: false,
             still,
             from_stop: still,
-            size_later: still && age > 0,
             stopped: false,
             since_press: age,
             air: 0,
@@ -2682,7 +2673,6 @@ impl Player {
             carry: false,
             still: false,
             from_stop: false,
-            size_later: false,
             stopped: false,
             since_press: 0,
             air: 0,
@@ -3696,9 +3686,6 @@ pub struct Roll {
     /// It started on the last frame of the stop after a roll, standing
     /// still on it.
     pub from_stop: bool,
-    /// It started from a remembered press on that frame, so its size is
-    /// set on its next frame, by what is held then.
-    pub size_later: bool,
     /// Stopped before a ledge (`roll_edge_speed`) or by a rise
     /// (`face_rolls`), until it pushes off.
     pub stopped: bool,

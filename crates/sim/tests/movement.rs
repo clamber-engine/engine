@@ -3771,24 +3771,49 @@ fn classic_new_press_on_d_17_sets_size_and_direction_then() {
 }
 
 #[test]
-fn classic_remembered_press_sets_size_on_d_18() {
-    // spec/behavior/roll-speed.md, "When the roll ends": for a remembered
-    // press the size is set by what is held on D + 18, and the roll goes
-    // the way the player faces then, steered as on any later frame.
-    for (held, size, dir) in [
-        (None, RollSize::Slow, Facing::Right),
-        (Some(Action::Left), RollSize::Normal, Facing::Left),
-    ] {
-        let mut w = classic_raised(1000);
-        play(&mut w, 47, |f| match f {
-            0 | 34 => vec![Action::Action],
-            _ => vec![],
-        });
-        let rows = play(&mut w, 2, |_| held.into_iter().collect());
-        let roll = w.player.roll.unwrap();
-        assert_eq!((roll.size, roll.dir), (size, dir), "{held:?}");
-        let speed = if size == RollSize::Slow { 1.0 } else { 3.0 };
-        assert_eq!(rows[1].target.abs(), speed, "{held:?}");
+fn classic_remembered_press_sets_size_and_direction_on_d_17() {
+    // spec/behavior/roll-speed.md, "When the roll ends": a roll started
+    // on D + 17 (46) has it as its press frame, whether the press was
+    // remembered (34) or new (46). Facing right: Left on D + 17 only goes
+    // left as a normal roll; Right on D + 17 and Left from D + 18 is a
+    // normal roll going right that turns left on D + 18; nothing on
+    // D + 17 and Right on D + 18 only is a slow roll made normal then.
+    for press in [34, 46] {
+        let cases = [
+            (Some(Action::Left), None, RollSize::Normal, Facing::Left),
+            (
+                Some(Action::Right),
+                Some(Action::Left),
+                RollSize::Normal,
+                Facing::Left,
+            ),
+            (None, Some(Action::Right), RollSize::Slow, Facing::Right),
+        ];
+        for (on_17, after, size, dir) in cases {
+            let mut w = classic_raised(1000);
+            let rows = play(&mut w, 48, |f| {
+                let mut keys = match f {
+                    0 => vec![Action::Action],
+                    f if f == press => vec![Action::Action],
+                    _ => vec![],
+                };
+                match f {
+                    46 => keys.extend(on_17),
+                    47.. => keys.extend(after),
+                    _ => {}
+                }
+                keys
+            });
+            let ctx = format!("press {press}, {on_17:?} then {after:?}");
+            assert_eq!(rows[45].facing, Facing::Right, "{ctx}");
+            assert_eq!(rows[46].state, State::Roll, "{ctx}");
+            assert_eq!(rows[46].vx, 0.0, "{ctx}");
+            let roll = w.player.roll.unwrap();
+            assert_eq!((roll.size, roll.dir), (size, dir), "{ctx}");
+            let vx = if dir == Facing::Left { -0.375 } else { 0.375 };
+            assert_eq!(rows[47].vx, vx, "{ctx}");
+            assert_eq!(rows[47].target.abs(), 3.0, "{ctx}");
+        }
     }
 }
 
@@ -3837,6 +3862,79 @@ fn classic_turned_roll_before_the_end_of_the_ground() {
     });
     assert_ne!(rows[stop].x, rows[stop - 1].x);
     assert!(rows[stop].target < 0.0);
+}
+
+#[test]
+fn classic_roll_started_on_d_17_takes_its_direction_near_the_edge() {
+    // spec/behavior/rolling-off-ledges.md, "A roll started in the stop
+    // after a roll": facing the edge within 15 px of it (E - 10), with
+    // Left held on S' (46) only, the roll goes away from the edge as a
+    // normal roll. Held away on S' and toward the edge from S' + 1, S'
+    // isn't a stopped frame, S' + 1 is, and the roll pushes off toward the
+    // edge on S' + 2. Remembered presses (34) and new ones on 46.
+    for press in [34, 46] {
+        let mut w = classic_raised(1590);
+        let rows = play(&mut w, 49, |f| match f {
+            0 => vec![Action::Action],
+            46 if press == 46 => vec![Action::Action, Action::Left],
+            46 => vec![Action::Left],
+            f if f == press => vec![Action::Action],
+            _ => vec![],
+        });
+        assert_eq!(rows[46].x, 1590.0, "press {press}");
+        assert_eq!(w.player.roll.unwrap().size, RollSize::Normal);
+        let vx: Vec<_> = rows[47..49].iter().map(|r| r.vx).collect();
+        assert_eq!(vx, [-0.375, -0.703125], "press {press}");
+
+        let mut w = classic_raised(1590);
+        let rows = play(&mut w, 50, |f| match f {
+            0 => vec![Action::Action],
+            46 if press == 46 => vec![Action::Action, Action::Left],
+            46 => vec![Action::Left],
+            f if f == press => vec![Action::Action],
+            47.. => vec![Action::Right],
+            _ => vec![],
+        });
+        assert_eq!((rows[47].x, rows[47].vx), (1590.0, 0.0), "press {press}");
+        assert_eq!((rows[48].x, rows[48].vx), (1592.0, 2.0), "press {press}");
+    }
+}
+
+#[test]
+fn classic_roll_started_in_the_air_ends_on_landing_30_frames_after() {
+    // spec/behavior/rolling-off-ledges.md, "When the stop carries the
+    // player off the edge": the example's roll starts on S' = 46 in the
+    // air. Moved up or down during the stop's fall so that it lands
+    // G = S' + 26
+    // to S' + 35, it ends on G when G = S' + 30 and on G + 30 otherwise.
+    let mut seen = std::collections::BTreeSet::new();
+    for lift in -60..20 {
+        let mut w = classic_raised(1596);
+        let keys = |f: usize| match f {
+            0 | 28 => vec![Action::Action],
+            f if f >= 29 => vec![Action::Right],
+            _ => vec![],
+        };
+        let mut rows = play(&mut w, 40, keys);
+        w.player.pos.y -= Fixed::from_int(lift);
+        rows.extend(play(&mut w, 120, |f| keys(f + 40)));
+        assert_eq!(rows[46].state, State::Roll, "lift {lift}");
+        let Some(g) = (47..rows.len()).find(|&f| rows[f].grounded) else {
+            continue;
+        };
+        let n = g - 46;
+        if !(26..=35).contains(&n) {
+            continue;
+        }
+        let end = if n == 30 { g } else { g + 30 };
+        assert_eq!(
+            frames_with(&rows, Event::RollEnd)[1],
+            end,
+            "lift {lift}, n {n}"
+        );
+        seen.insert(n);
+    }
+    assert!((26..=35).all(|n| seen.contains(&n)), "{seen:?}");
 }
 
 /// Classic 2 standing at x = 500, playing `held(frame)` for `n` frames.

@@ -1422,7 +1422,6 @@ fn rolling_at(
         carry: false,
         still: false,
         from_stop: false,
-        size_later: false,
         stopped,
         since_press: 5,
         air: 0,
