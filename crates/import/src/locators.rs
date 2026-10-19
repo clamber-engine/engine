@@ -21,6 +21,9 @@ pub enum Data {
     PackedTiles,
     PaletteSet,
     PictureTable,
+    BackdropColours,
+    HorizonColours,
+    HorizonBlock,
     FrameTable,
     FirstLeadingPalette,
     FirstFollowingPalette,
@@ -66,7 +69,7 @@ pub enum Data {
 }
 
 impl Data {
-    pub const ALL: [Data; 52] = [
+    pub const ALL: [Data; 55] = [
         Data::SampleTable,
         Data::SharedSampleList,
         Data::SampleSetTable,
@@ -77,6 +80,9 @@ impl Data {
         Data::PackedTiles,
         Data::PaletteSet,
         Data::PictureTable,
+        Data::BackdropColours,
+        Data::HorizonColours,
+        Data::HorizonBlock,
         Data::FrameTable,
         Data::FirstLeadingPalette,
         Data::FirstFollowingPalette,
@@ -134,6 +140,9 @@ impl Data {
             Data::PackedTiles => "Level graphics: the first level's packed tile data",
             Data::PaletteSet => "Level graphics: the first level's palette set",
             Data::PictureTable => "Level graphics: the first level's picture table",
+            Data::BackdropColours => "Level graphics: the first level's backdrop row-colour list",
+            Data::HorizonColours => "Level graphics: the first level's horizon row-colour list",
+            Data::HorizonBlock => "Level graphics: the first level's horizon block",
             Data::FrameTable => "Sprite frames: the frame table",
             Data::FirstLeadingPalette => "Sprite palettes: the first character's leading palette",
             Data::FirstFollowingPalette => {
@@ -213,6 +222,9 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
         ("title-1", Data::PackedTiles) => (0xD5, 0x8FC0),
         ("title-1", Data::PaletteSet) => (0xF9, 0xA1DC),
         ("title-1", Data::PictureTable) => (0xD9, 0xA3C0),
+        ("title-1", Data::BackdropColours) => (0xF9, 0x96E6),
+        ("title-1", Data::HorizonColours) => (0xF9, 0x98EA),
+        ("title-1", Data::HorizonBlock) => (0xCD, 0xF337),
         ("title-1", Data::FrameTable) => (0xFB, 0xCC9C),
         ("title-1", Data::FirstLeadingPalette) => (0xFC, 0x849A),
         ("title-1", Data::FirstFollowingPalette) => (0xFC, 0x84B8),

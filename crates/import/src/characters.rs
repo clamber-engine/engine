@@ -33,7 +33,7 @@ pub const FOLLOWING: &str = "following";
 /// Pictures that are shown together, by label and picture hash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PictureSet {
-    /// The set's name: `stop`, `standing`, `jump` or `bounce`.
+    /// The set's name: `stop`, `standing`, `jump`, `bounce` or `walking`.
     pub name: &'static str,
     pub pictures: &'static [(&'static str, &'static str)],
 }
@@ -50,7 +50,7 @@ pub struct CharacterPictures {
 
 /// The first character's sets ("The stop after a roll", the first
 /// standing pictures, "A jump and its landing", "A bounce's frozen
-/// frames").
+/// frames", "Walking, running and turning").
 const FIRST: &[PictureSet] = &[
     PictureSet {
         name: "stop",
@@ -189,6 +189,179 @@ const FIRST: &[PictureSet] = &[
             (
                 "bounce-2",
                 "d7ab095272be3883968fbd0f50465575c56b5fa07c75cdda6498fc6afb23a819",
+            ),
+        ],
+    },
+    PictureSet {
+        name: "walking",
+        pictures: &[
+            (
+                "walk-1",
+                "f2a4a8ea5c197c39fe642e16da3e12c7dcfa80b953f8deee62050f06b02aeba1",
+            ),
+            (
+                "walk-2",
+                "ead13c4d2f7d70e2ac569b89777ca09fc0d96b86b23e92d69c94658ef6422594",
+            ),
+            (
+                "walk-3",
+                "b779e9d3935e5ba3d7b394119f9f745dcfa7fd02ee1fa3d9b10f13619a5c5144",
+            ),
+            (
+                "walk-4",
+                "b2d756f5f773372931a834bc87ad462de78bfe7c15e7789978faa9e9976b6321",
+            ),
+            (
+                "walk-5",
+                "028edbcc0fbdbfa9c3852bcb514ea55f9c7b19f0bc65de37c01fa29f7fae548f",
+            ),
+            (
+                "walk-6",
+                "d52593a0df652f58feeb50582fdb4d59a79264b1b02c32682a01b2f0129692ee",
+            ),
+            (
+                "walk-7",
+                "18264b178b8cb8fafef9105eab655b6870e1d8bb162d701f4d7082b1558e607b",
+            ),
+            (
+                "walk-8",
+                "d2bdfeebc70818c20983d7c5ce69ad37418ac3811ca09525ca15ba6146954338",
+            ),
+            (
+                "walk-9",
+                "226119ba16a39e678c3e604efc6457e672b2758f9f121fd0efc50f9334096e2d",
+            ),
+            (
+                "walk-10",
+                "7e855c5bc18ce4d143d64f9d2e79a74b6fba09b439cdebfe8fdb6fd94cee89df",
+            ),
+            (
+                "walk-11",
+                "0b5255e8eab4572f97923d3f31a149333dc9090387e099b07fb368a77192cfd4",
+            ),
+            (
+                "walk-12",
+                "c68690b3924217273e47d031decb95b0dce199f1668d70afd4814a1a8326d868",
+            ),
+            (
+                "walk-13",
+                "df323a8b3ac8ad68b84260e7101f8035de61a5946aec230dcb0941ba4a6517ff",
+            ),
+            (
+                "walk-14",
+                "04107531454b0c00fc1b21e5b9ce75530f53f201a1aa8a9c4efa1f75fdfbbf39",
+            ),
+            (
+                "walk-15",
+                "b641cb7b596e5329df8d54db4f9f058b0956502579bdb2610a347b46ea5a9399",
+            ),
+            (
+                "walk-16",
+                "ad7057061f07a2de77269eefbc01fcd1642a65b52373902d510b074392f06837",
+            ),
+            (
+                "walk-17",
+                "5750201a322642bf0325f7c68151971ed2a686e1a4c4ca1cf617b34056535e11",
+            ),
+            (
+                "walk-18",
+                "7a50e074c9589e17dd0ce4c18300b7aa30f5cd07b1aee36adec9a1d2f2c907c3",
+            ),
+            (
+                "walk-19",
+                "f1c4cfcf5e3b292c4269d1a9b543059ddbdeb5cc0c507ff3bb8ae23823938e35",
+            ),
+            (
+                "walk-20",
+                "f9f29b934568b969e6f1cc0a96cac48183701cb32fbb4edb58fc6c84a5032308",
+            ),
+            (
+                "run-1",
+                "b6f865d897d7da52ff20a929b661ba160f1e5f85ce7c9bfc560e53f1d71679ba",
+            ),
+            (
+                "run-2",
+                "77764f275b81969aa03223b84fa5e6f3f51380bee41a4dc52aa761b0407b9951",
+            ),
+            (
+                "run-3",
+                "3033b61264d87a900be073693e5a8b9d29d69b1b46d01b1b699ea1e004ce4105",
+            ),
+            (
+                "run-4",
+                "7e6bc8f655b42d82772e41834b58e54f7215578e4249e9f8b4c4cbc389b918b6",
+            ),
+            (
+                "run-5",
+                "3dbe3765da062ab5a8cc4393799066a189fff9ba9dd82e825c63ee55f662a4f7",
+            ),
+            (
+                "run-6",
+                "33a7cb8129e0abcfcf5e8a27d8f0abe7b58bd6a6e59dd863b8d40c8663861d08",
+            ),
+            (
+                "run-7",
+                "b6fa595089aa760cc0d62cd45316b85ad3c0b7669cc485666fd5363246c51cfb",
+            ),
+            (
+                "run-8",
+                "7b9bb24e9ecad1da5ec38d882bbfcc21fbb205f2bddb8237fc40ab63582980d0",
+            ),
+            (
+                "run-9",
+                "1ad7d04ec267b66d2f0410a66041766cf1258aacdcd858843444d29f8e66b020",
+            ),
+            (
+                "run-10",
+                "7ee72d77abb36e1e7aba2a5fbc334204a3b0fa3dc6d7f9f04befe4116b612e66",
+            ),
+            (
+                "run-11",
+                "7f7526cf1b159a12e4813cbb8e1b73471d20edab8d1f7a0ccf3b34f98ffc7011",
+            ),
+            (
+                "run-12",
+                "98c7c64d18dee901a4f8f7d1520f9d7636a0b644acfbed393f6887c3dbb6e408",
+            ),
+            (
+                "run-13",
+                "785c92acb236559c7775f7ddd6bf23a28fa7b5b5720892980bba117a9c516a32",
+            ),
+            (
+                "run-14",
+                "84887ec3e2c94a8868e1857af4873ef024fd493cc73ac8ee247da3ae2f6d3fbd",
+            ),
+            (
+                "run-15",
+                "a0775ce709377dbd41ce05ceb6d8a953238b07283e0caf475922a7b51b026130",
+            ),
+            (
+                "run-16",
+                "53ebca1e61285c486cae0b697a7b090dc15d7ec707a4d3f651e092384dc553eb",
+            ),
+            (
+                "run-17",
+                "9929100a5c57b8f3199f338b085e75b7113cb99c8a6f8fcb701b57036c1c0865",
+            ),
+            (
+                "run-18",
+                "5a0d9375b560dee536d02908e10a4da1481e75fe7b6bed231312226f5b49931e",
+            ),
+            (
+                "run-19",
+                "02074bd88a36837ea9beefa49e9bafc435ac89e4c80c8ca55e7c58831b377224",
+            ),
+            (
+                "run-20",
+                "3d52847919d709b7e0e53b155f1334f4f9c132278d820671b92ae0fcab0308b7",
+            ),
+            (
+                "turn-a",
+                "2717571d7a62db0b56f4d6b4174d066e8fea0b600304053c62626dbf5df34fcd",
+            ),
+            (
+                "turn-b",
+                "8f355022b2be6e6b2bdf5f652729186f57ef82a24c1f4e711a3b55ddc173a9a1",
             ),
         ],
     },
