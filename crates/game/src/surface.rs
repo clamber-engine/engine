@@ -49,6 +49,11 @@ pub trait Surface {
     /// Lights the quads with normal maps drawn from now on.
     fn light(&mut self, lighting: &Lighting);
 
+    /// Marks the end of the game view: what's drawn from now on (menus
+    /// over it) is drawn at the window's resolution, even when the view
+    /// is drawn as pixel art.
+    fn over_view(&mut self) {}
+
     /// The outline of a rectangle, one unit thick, inside its bounds.
     fn stroke_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
         if w <= 0 || h <= 0 {
@@ -324,6 +329,9 @@ pub struct DrawList {
     pub items: Vec<Drawn>,
     /// The lighting the frame's lit quads are drawn in.
     pub lighting: Lighting,
+    /// Where the items over the game view start ([`Surface::over_view`]),
+    /// if they do.
+    pub over: Option<usize>,
 }
 
 impl DrawList {
@@ -334,6 +342,7 @@ impl DrawList {
             background: 0,
             items: Vec::new(),
             lighting: Lighting::default(),
+            over: None,
         }
     }
 }
@@ -346,6 +355,7 @@ impl Surface for DrawList {
     fn clear(&mut self, color: Color) {
         self.background = color;
         self.items.clear();
+        self.over = None;
     }
 
     fn fill_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
@@ -395,6 +405,10 @@ impl Surface for DrawList {
     /// One lighting for the whole frame: the last given.
     fn light(&mut self, lighting: &Lighting) {
         self.lighting = lighting.clone();
+    }
+
+    fn over_view(&mut self) {
+        self.over.get_or_insert(self.items.len());
     }
 }
 

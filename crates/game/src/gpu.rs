@@ -7,6 +7,7 @@
 //! vsync or VRR.
 
 use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::Arc;
 
 use winit::event_loop::OwnedDisplayHandle;
@@ -638,28 +639,19 @@ impl Painter {
             ..Mesh::default()
         };
         mesh.rect([0.0, 0.0, view.0, view.1], list.background, 255);
-        for item in &list.items {
-            match item {
-                Drawn::Rect {
-                    edges,
-                    color,
-                    alpha,
-                } => mesh.rect(*edges, *color, *alpha),
-                Drawn::Line { a, b, color } => mesh.line(*a, *b, *color),
-                Drawn::Polygon {
-                    points,
-                    color,
-                    alpha,
-                } => mesh.polygon(points, *color, *alpha),
-                Drawn::Quad(quad) => {
-                    if self.load(&quad.texture) {
-                        let normals = quad.normals.as_ref().filter(|n| self.load(n));
-                        let normals = normals.map(|n| n.id());
-                        self.group((quad.texture.id(), normals));
-                        mesh.quad(quad, normals);
-                    }
-                }
-            }
+        // Over a pixel-art view, menus are drawn at the window's
+        // resolution, after it's scaled up, on whole window pixels.
+        let over = list.over.filter(|_| list.pixel_art);
+        let (game_view, menus) = list.items.split_at(over.unwrap_or(list.items.len()));
+        for item in game_view {
+            self.add(&mut mesh, item);
+        }
+        let under = mesh.cut();
+        if over.is_some() {
+            mesh.pixels = pixel_fit(list.view, size).2 / view.0;
+        }
+        for item in menus {
+            self.add(&mut mesh, item);
         }
         let frame = self.frame;
         self.textures.retain(|_, t| t.used + UNUSED_FRAMES >= frame);
@@ -738,7 +730,7 @@ impl Painter {
             });
             pass.set_pipeline(&self.low_pipeline);
             pass.set_bind_group(0, &self.low_view_group, &[]);
-            self.draw_batches(&mut pass, &mesh);
+            self.draw_batches(&mut pass, &mesh.batches[..under]);
         }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -763,22 +755,48 @@ impl Painter {
                     pass.set_vertex_buffer(0, self.vertices.slice(..));
                     pass.set_bind_group(1, low, &[]);
                     pass.draw(scaled_up..scaled_up + 6, 0..1);
+                    self.draw_batches(&mut pass, &mesh.batches[under..]);
                 }
                 _ => {
                     // On whole pixels, as the quads' edges are.
                     let (x, y, w, h) = letterbox(list.view, size);
                     pass.set_viewport(x.floor(), y.floor(), w, h, 0.0, 1.0);
-                    self.draw_batches(&mut pass, &mesh);
+                    self.draw_batches(&mut pass, &mesh.batches);
                 }
             }
         }
         self.queue.submit([encoder.finish()]);
     }
 
-    /// Draws `mesh`'s batches, whose vertices are in [`Painter::vertices`].
-    fn draw_batches(&self, pass: &mut wgpu::RenderPass, mesh: &Mesh) {
+    /// Adds `item` to `mesh`, loading what it draws with.
+    fn add(&mut self, mesh: &mut Mesh, item: &Drawn) {
+        match item {
+            Drawn::Rect {
+                edges,
+                color,
+                alpha,
+            } => mesh.rect(*edges, *color, *alpha),
+            Drawn::Line { a, b, color } => mesh.line(*a, *b, *color),
+            Drawn::Polygon {
+                points,
+                color,
+                alpha,
+            } => mesh.polygon(points, *color, *alpha),
+            Drawn::Quad(quad) => {
+                if self.load(&quad.texture) {
+                    let normals = quad.normals.as_ref().filter(|n| self.load(n));
+                    let normals = normals.map(|n| n.id());
+                    self.group((quad.texture.id(), normals));
+                    mesh.quad(quad, normals);
+                }
+            }
+        }
+    }
+
+    /// Draws `batches`, whose vertices are in [`Painter::vertices`].
+    fn draw_batches(&self, pass: &mut wgpu::RenderPass, batches: &[(Batch, Range<u32>)]) {
         pass.set_vertex_buffer(0, self.vertices.slice(..));
-        for (batch, range) in &mesh.batches {
+        for (batch, range) in batches {
             let group = match batch {
                 Some(key) => &self.groups[key],
                 None => &self.white,
@@ -911,7 +929,9 @@ fn vertex_buffer(device: &wgpu::Device, size: u64) -> wgpu::Buffer {
 struct Mesh {
     floats: Vec<f32>,
     /// Vertex ranges by what they draw with.
-    batches: Vec<(Batch, std::ops::Range<u32>)>,
+    batches: Vec<(Batch, Range<u32>)>,
+    /// The next vertex starts a batch of its own ([`Mesh::cut`]).
+    cut: bool,
     /// Pixels drawn into per view unit, to put quads' edges on whole
     /// pixels, or 0 to leave them where they are.
     pixels: f32,
@@ -944,15 +964,23 @@ impl Mesh {
     ) {
         let n = (self.floats.len() / FLOATS) as u32;
         match self.batches.last_mut() {
-            Some((b, range)) if *b == batch => range.end = n + 1,
+            Some((b, range)) if *b == batch && !self.cut => range.end = n + 1,
             _ => self.batches.push((batch, n..n + 1)),
         }
+        self.cut = false;
         let (uv, bounds) = sample;
         self.floats.extend([at.0, at.1, uv.0, uv.1]);
         self.floats.extend(color);
         self.floats.extend(bounds);
         self.floats.push(flash);
         self.floats.extend(lit);
+    }
+
+    /// Ends the batches so far, so they can be drawn apart from the
+    /// next: returns how many there are.
+    fn cut(&mut self) -> usize {
+        self.cut = true;
+        self.batches.len()
     }
 
     fn solid(&mut self, points: [(f32, f32); 3], color: Color, alpha: u8) {
@@ -1327,6 +1355,16 @@ mod tests {
             BLUE, BLUE, BLUE, RED, RED, RED, 0,
             0, 0, 0, 0, 0, 0, 0,
         ]);
+
+        // What's over the view is drawn at the window's resolution, on
+        // the scaled up view, so the smooth texture blends again.
+        list.over_view();
+        list.quad(&quad(false));
+        let out = paint(&list, 7, 5).unwrap();
+        let row = &out[7..14];
+        assert_eq!(row[..2], [BLUE, BLUE]);
+        assert_eq!(row[4..], [RED, RED, 0]);
+        assert!(row[2..4].iter().all(|&c| c >> 16 > 0x20 && c & 0xff > 0x20));
     }
 
     #[test]

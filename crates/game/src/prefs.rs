@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use clamber_import::Widescreen;
 use serde::{Deserialize, Serialize};
 
+use crate::display::Rendering;
 use crate::report;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,6 +32,11 @@ pub struct Prefs {
     /// without one play in their own default.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub widescreen: BTreeMap<String, Widescreen>,
+    /// The rendering mode picked on the options screen for each imported
+    /// pixel-art game, by its pack's id. Games without one are drawn in
+    /// [`Rendering::Original`].
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub rendering: BTreeMap<String, Rendering>,
 }
 
 /// What [`Prefs::widescreen`] calls the bundled game.
@@ -223,6 +229,7 @@ mod tests {
                     (BUNDLED.to_string(), Widescreen::OriginalFraming),
                     ("title-1".to_string(), Widescreen::WideActivation),
                 ]),
+                rendering: BTreeMap::from([("title-1".to_string(), Rendering::Enhanced)]),
             },
         ] {
             assert_eq!(Prefs::from_toml_str(&prefs.to_toml_string()), Ok(prefs));

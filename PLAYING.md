@@ -182,6 +182,25 @@ nothing in play. Changing the mode mid-level takes effect from the next
 frame. Movement without a view of its own
 (Default, Snappy, Floaty) fills the window in every mode.
 
+**Rendering** on the options screen, shown while playing an imported
+game, sets how its levels are drawn. Each imported game has its own
+setting; Left, Right or Pick switch between the two modes:
+
+- **Original**, where imported games start: the game view is drawn at
+  the original game's resolution (or as wide as the widescreen mode
+  makes it), then scaled up as one picture by the largest whole number
+  that fits the window, with sharp pixels. Everything in the game view,
+  including any of Clamber's own art standing in for the original's, is
+  on that pixel grid, so it looks like the original.
+- **Enhanced**: the game view is drawn at the window's full resolution
+  and fills as much of it as it can. The original's art is scaled up
+  with sharp pixels, while Clamber's own art is drawn in full detail.
+
+Only drawing differs: the game plays exactly the same in both. Menus
+are always drawn at the window's full resolution, including those over
+the game view, and Clamber's own game is always drawn at full
+resolution, so the setting isn't shown for it.
+
 **Import a game…** on the title screen turns your own copy of a
 supported game into a personal pack for Clamber to play. Choose the file
 in the window that opens; it starts in the folder you imported from last

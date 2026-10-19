@@ -186,6 +186,7 @@ fn play(options: Options) -> Result<(), String> {
     session.prefs_path = prefs_path;
     session.file_dialog = true;
     session.apply_widescreen();
+    session.apply_rendering();
     #[cfg(feature = "audio")]
     let audio = open_audio(
         &session.game.world.level,

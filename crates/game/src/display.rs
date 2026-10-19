@@ -7,6 +7,7 @@ use std::time::Duration;
 use clamber_import::{Manifest, Widescreen};
 use clamber_pack::{Feel, Param};
 use clamber_sim::World;
+use serde::{Deserialize, Serialize};
 
 use crate::camera::VIEW;
 use crate::canvas::Fit;
@@ -89,6 +90,41 @@ pub fn pixel_fit(canvas: (u32, u32), window: (u32, u32)) -> (f32, f32, f32, f32)
     let fit = Fit::new(canvas, window);
     let size = |n: u32| (n * fit.scale) as f32;
     (fit.x as f32, fit.y as f32, size(canvas.0), size(canvas.1))
+}
+
+/// How an imported pixel-art game's view is drawn, picked on the options
+/// screen. Neither changes how it plays: only what's drawn.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Rendering {
+    /// At the original's resolution, a pixel to a unit, then scaled up
+    /// as one picture by a whole number ([`Look::pixel_art`]), so all of
+    /// it, Clamber's own art too, is on the original's pixel grid.
+    #[default]
+    Original,
+    /// At the window's resolution: the original's art scaled up sharp,
+    /// and Clamber's own art at full detail.
+    Enhanced,
+}
+
+impl Rendering {
+    pub const ALL: [Rendering; 2] = [Rendering::Original, Rendering::Enhanced];
+
+    /// Its name, as the options screen shows it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Rendering::Original => "Original",
+            Rendering::Enhanced => "Enhanced",
+        }
+    }
+
+    /// The other mode.
+    pub fn next(self) -> Rendering {
+        match self {
+            Rendering::Original => Rendering::Enhanced,
+            Rendering::Enhanced => Rendering::Original,
+        }
+    }
 }
 
 /// How a game is drawn: how much of the world the view shows, and how

@@ -19,7 +19,7 @@ use clamber_sim::{InputFrame, Outcome, World};
 use crate::canvas::{Color, rgb};
 use crate::controls::{Controls, Request};
 use crate::credits::Credits;
-use crate::display::Look;
+use crate::display::{Look, Rendering};
 use crate::feels::Feels;
 use crate::game::Game;
 use crate::hud::{counter_width, draw_counter, relic_total};
@@ -134,6 +134,9 @@ pub enum Setting {
     /// The widescreen mode of the game being played, changed with Left,
     /// and Right or Jump, which go round the modes.
     Widescreen,
+    /// The rendering mode of the imported pixel-art game being played,
+    /// changed with Left, Right or Jump. Not shown for other games.
+    Rendering,
     Back,
 }
 
@@ -381,7 +384,7 @@ impl Session {
             }
             return;
         }
-        let widescreen = self.widescreen();
+        let (widescreen, rendering) = (self.widescreen(), self.rendering());
         if let Screen::Options(menu, _) = &mut self.screen {
             let pressed = frame.pressed;
             let volume = &mut self.prefs.volume;
@@ -405,7 +408,7 @@ impl Session {
                     false
                 };
                 if changed {
-                    menu.items = options_items(&self.prefs, widescreen);
+                    menu.items = options_items(&self.prefs, widescreen, rendering);
                     self.save_prefs("the volume");
                     return;
                 }
@@ -415,7 +418,7 @@ impl Session {
                 if back || pressed.contains(Action::Right) || pressed.contains(Action::Jump) {
                     let display = &mut self.prefs.display;
                     display.sync = display.sync.next(back);
-                    menu.items = options_items(&self.prefs, widescreen);
+                    menu.items = options_items(&self.prefs, widescreen, rendering);
                     self.save_prefs("the sync setting");
                     return;
                 }
@@ -430,8 +433,23 @@ impl Session {
                     let Screen::Options(menu, _) = &mut self.screen else {
                         unreachable!()
                     };
-                    menu.items = options_items(&self.prefs, mode);
+                    menu.items = options_items(&self.prefs, mode, rendering);
                     self.save_prefs("the widescreen mode");
+                    return;
+                }
+            }
+            if let (Setting::Rendering, Some(mode)) = (menu.current(), rendering) {
+                let change = [Action::Left, Action::Right, Action::Jump];
+                if change.iter().any(|&a| pressed.contains(a)) {
+                    let mode = mode.next();
+                    let key = self.game_key().to_string();
+                    self.prefs.rendering.insert(key, mode);
+                    self.apply_rendering();
+                    let Screen::Options(menu, _) = &mut self.screen else {
+                        unreachable!()
+                    };
+                    menu.items = options_items(&self.prefs, widescreen, Some(mode));
+                    self.save_prefs("the rendering mode");
                     return;
                 }
             }
@@ -455,10 +473,11 @@ impl Session {
                 Setting::Sync
                 | Setting::MusicVolume
                 | Setting::EffectsVolume
-                | Setting::Widescreen => return,
+                | Setting::Widescreen
+                | Setting::Rendering => return,
                 Setting::Back => unreachable!(),
             }
-            menu.items = options_items(&self.prefs, widescreen);
+            menu.items = options_items(&self.prefs, widescreen, rendering);
             self.save_prefs("the display options");
             return;
         }
@@ -498,7 +517,11 @@ impl Session {
             }
             Item::Options => {
                 let from = std::mem::replace(&mut self.screen, Screen::Playing);
-                let menu = Menu::new(options_items(&self.prefs, self.widescreen()));
+                let menu = Menu::new(options_items(
+                    &self.prefs,
+                    self.widescreen(),
+                    self.rendering(),
+                ));
                 self.screen = Screen::Options(menu, Box::new(from));
             }
             Item::Credits => {
@@ -807,10 +830,11 @@ impl Session {
         let packed = pack.and_then(Installed::sprites);
         let mut sprites = vec![own.as_path()];
         sprites.extend(packed.as_deref());
-        let look = Look {
+        let mut look = Look {
             widescreen: self.widescreen_for(pack),
             ..pack.map_or(Look::RENDERED, |p| Look::of(&p.manifest))
         };
+        look.pixel_art &= self.rendering_for(pack) != Some(Rendering::Enhanced);
         let feel = look.feel(&self.game.world.feel);
         let mut game = load_game(path, &sprites, feel)?.with_look(look);
         game.debug |= self.game.debug;
@@ -990,6 +1014,33 @@ impl Session {
         }
     }
 
+    /// The rendering mode `pack` is drawn in, if it's pixel art: the one
+    /// picked for it, or else [`Rendering::Original`]. Other games, and
+    /// the bundled one, are always drawn at the window's resolution.
+    fn rendering_for(&self, pack: Option<&Installed>) -> Option<Rendering> {
+        let pack = pack.filter(|p| p.manifest.pixel_art)?;
+        let picked = self.prefs.rendering.get(&pack.manifest.id).copied();
+        Some(picked.unwrap_or_default())
+    }
+
+    /// The rendering mode of the game being played, if it has a choice.
+    pub fn rendering(&self) -> Option<Rendering> {
+        self.rendering_for(self.pack.as_ref())
+    }
+
+    /// Draws the game being played, and the areas play went on from, in
+    /// the rendering mode the prefs give it.
+    pub fn apply_rendering(&mut self) {
+        let Some(mode) = self.rendering() else {
+            return;
+        };
+        let pixel_art = mode == Rendering::Original;
+        self.game.look.pixel_art = pixel_art;
+        for (_, game) in &mut self.left {
+            game.look.pixel_art = pixel_art;
+        }
+    }
+
     /// Saves the prefs, if there's somewhere to. On failure, warns that
     /// `what` won't be remembered.
     pub fn save_prefs(&self, what: &str) {
@@ -1066,6 +1117,7 @@ impl Session {
         if playing {
             return;
         }
+        canvas.over_view();
         canvas.shade(DIM, 160);
 
         let centre = canvas.view().0 as i32 / 2;
@@ -1126,6 +1178,7 @@ impl Session {
                 let about = match menu.current() {
                     Setting::Sync => Some(about_sync(self.prefs.display.sync)),
                     Setting::Widescreen => Some(about_widescreen(self.widescreen())),
+                    Setting::Rendering => self.rendering().map(about_rendering),
                     _ => None,
                 };
                 if let Some(about) = about {
@@ -1255,8 +1308,6 @@ impl Session {
     }
 }
 
-/// The options screen's items, showing the settings in `prefs` and the
-/// game's widescreen mode, `widescreen`.
 /// While the player chooses a file in the system's file dialog.
 fn draw_choosing(canvas: &mut dyn Surface, centre: i32) {
     draw_text_centred(canvas, centre, 40, "IMPORT A GAME", HEADING);
@@ -1269,10 +1320,17 @@ fn draw_choosing(canvas: &mut dyn Surface, centre: i32) {
     }
 }
 
-fn options_items(prefs: &Prefs, widescreen: Widescreen) -> Vec<(String, Setting)> {
+/// The options screen's items, showing the settings in `prefs`, the
+/// game's widescreen mode, `widescreen`, and its rendering mode,
+/// `rendering`, if it has one.
+fn options_items(
+    prefs: &Prefs,
+    widescreen: Widescreen,
+    rendering: Option<Rendering>,
+) -> Vec<(String, Setting)> {
     let on = |on| if on { "On" } else { "Off" };
     let (display, volume) = (&prefs.display, &prefs.volume);
-    vec![
+    let mut items = vec![
         (
             format!("Fullscreen: {}", on(display.fullscreen)),
             Setting::Fullscreen,
@@ -1290,8 +1348,15 @@ fn options_items(prefs: &Prefs, widescreen: Widescreen) -> Vec<(String, Setting)
             format!("Widescreen: < {} >", widescreen.label()),
             Setting::Widescreen,
         ),
-        ("Back".into(), Setting::Back),
-    ]
+    ];
+    if let Some(rendering) = rendering {
+        items.push((
+            format!("Rendering: < {} >", rendering.label()),
+            Setting::Rendering,
+        ));
+    }
+    items.push(("Back".into(), Setting::Back));
+    items
 }
 
 /// What the sync setting `sync` does, in a line.
@@ -1310,6 +1375,14 @@ fn about_widescreen(mode: Widescreen) -> &'static str {
         Widescreen::OriginalActivation => "Shows more; things act as in the original view",
         Widescreen::WideActivation => "Things appear and act across the whole window",
         Widescreen::OriginalFraming => "The original view, with borders at the sides",
+    }
+}
+
+/// What rendering mode `mode` does, in a line.
+fn about_rendering(mode: Rendering) -> &'static str {
+    match mode {
+        Rendering::Original => "On the original's pixel grid, scaled up",
+        Rendering::Enhanced => "At the window's full resolution",
     }
 }
 
@@ -2223,6 +2296,60 @@ mod tests {
         let bundled = s.bundled.clone().unwrap();
         s.play_level(&bundled, None).unwrap();
         assert_eq!(s.game.look, Look::RENDERED);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn options_pick_a_pixel_art_packs_rendering_mode() {
+        let (mut s, dir) = importing_session("rendering");
+        import_the_game(&mut s);
+        finish_import(&mut s);
+        let pack = Installed::load(&dir.join("packs/title-9")).unwrap();
+        s.play_pack(pack.clone()).unwrap();
+        assert_eq!(s.rendering(), Some(Rendering::Original), "the default");
+        assert!(s.game.look.pixel_art);
+        s.screen = Screen::Playing;
+        s.step(&press(Action::Pause));
+        while !matches!(&s.screen, Screen::Paused(m) if m.current() == Item::Options) {
+            s.step(&press(Action::Down));
+        }
+        s.step(&press(Action::Jump));
+        while !matches!(&s.screen, Screen::Options(m, _) if m.current() == Setting::Rendering) {
+            s.step(&press(Action::Down));
+        }
+        let label = |s: &Session| {
+            let Screen::Options(menu, _) = &s.screen else {
+                panic!("not on the options screen")
+            };
+            menu.items[menu.selected].0.clone()
+        };
+        assert_eq!(label(&s), "Rendering: < Original >");
+        s.step(&press(Action::Right));
+        assert_eq!(label(&s), "Rendering: < Enhanced >");
+        assert_eq!(s.prefs.rendering.get("title-9"), Some(&Rendering::Enhanced));
+        assert!(!s.game.look.pixel_art, "drawn at the window's resolution");
+        s.play_pack(pack).unwrap();
+        assert!(!s.game.look.pixel_art, "remembered for the game");
+        s.prefs.rendering.clear();
+        s.apply_rendering();
+        assert!(s.game.look.pixel_art);
+
+        // Menus over the game view are marked to be drawn apart from it.
+        s.screen = Screen::paused();
+        let mut list = crate::DrawList::new(s.look().view);
+        s.draw(&mut list, 1.0);
+        let over = list.over.expect("menus over the view");
+        assert!(over > 0 && over < list.items.len());
+        s.screen = Screen::Playing;
+        s.draw(&mut list, 1.0);
+        assert_eq!(list.over, None, "nothing over the view in play");
+
+        // Other games have no choice.
+        let bundled = s.bundled.clone().unwrap();
+        s.play_level(&bundled, None).unwrap();
+        assert_eq!(s.rendering(), None);
+        let items = options_items(&s.prefs, s.widescreen(), s.rendering());
+        assert!(items.iter().all(|(_, s)| *s != Setting::Rendering));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
