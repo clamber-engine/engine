@@ -12,7 +12,11 @@
 //!
 //! Until it stands there, the rest of the world waits: the player,
 //! walkers and throwers hold still, as the spec says, and so does
-//! everything else here, which it doesn't cover. Input is ignored.
+//! everything else here, which it doesn't cover. Input is ignored, and
+//! once the character stands there the player forgets any press it was
+//! still waiting to use. A button pressed during the wait and still held
+//! isn't a press afterwards either, as presses come from what was held
+//! on the step before.
 
 use clamber_fixed::{FRAC_BITS, Fixed};
 use clamber_level::Vec2;
@@ -104,6 +108,7 @@ pub(crate) fn step(world: &mut World) {
         follow.trail.pop_back();
         other.follow = follow;
         world.join = None;
+        world.player.forget_presses();
         return;
     }
     let (from, to) = (join.from, join.to);

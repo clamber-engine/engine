@@ -506,3 +506,128 @@ fn a_small_walker_never_meets_it_carried() {
     assert!(play.world.join.is_none());
     assert!(play.world.player.knockout.is_some());
 }
+
+const J: Action = Action::Jump;
+
+impl Play {
+    /// Holds the thrown object still in the air ahead of the lead for
+    /// `frames` steps, with `keys` held, as following.md's measurements
+    /// did by setting its position.
+    fn hold_object(&mut self, keys: &[Action], frames: usize) {
+        for _ in 0..frames {
+            self.world.things[0].pos = Vec2::new(f(300.0), f(300.0));
+            self.step(keys);
+        }
+    }
+
+    /// Puts the object just above the floor, so that it breaks on the
+    /// next step, S, taken with `keys` held.
+    fn break_object(&mut self, keys: &[Action]) {
+        self.world.things[0].pos = Vec2::new(f(300.0), f(399.5));
+        self.step(keys);
+        assert!(self.world.join.is_some(), "S");
+    }
+
+    fn on_floor(&self) -> bool {
+        self.world.player.pos.y == f(400.0)
+    }
+
+    /// Steps `frames` times with `keys` held: whether the lead ever left
+    /// the floor after being on it.
+    fn jumps_within(&mut self, keys: &[Action], frames: usize) -> bool {
+        let mut landed = false;
+        for _ in 0..frames {
+            self.step(keys);
+            landed |= self.on_floor();
+            if landed && !self.on_floor() {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// following.md, "The lead during the wait": Jump pressed during the
+/// wait, even on S + 33, and still held on S + 34 isn't a press then or
+/// later; a new press is needed.
+#[test]
+fn a_press_held_from_the_wait_does_not_jump() {
+    for on in [1, 10, 32, 33] {
+        let mut play = Play::new(&level(FLAT));
+        play.hold_object(&[], 30);
+        play.break_object(&[]);
+        play.hold(&[], on - 1);
+        play.hold(&[J], 34 - on);
+        assert!(play.world.join.is_none(), "S + 33");
+        assert!(!play.jumps_within(&[J], 30), "pressed on S + {on}");
+        play.step(&[]);
+        assert!(play.jumps_within(&[J], 5), "pressed again, from S + {on}");
+    }
+}
+
+/// following.md, "The lead during the wait": a press made and let go
+/// during the wait does nothing, and a button not held on S + 33 and
+/// held on S + 34 is a press, whatever was held on S.
+#[test]
+fn a_press_let_go_in_the_wait_does_nothing_and_s_34_presses() {
+    let mut play = Play::new(&level(FLAT));
+    play.hold_object(&[], 30);
+    play.break_object(&[]);
+    play.hold(&[], 9);
+    play.hold(&[J], 10);
+    play.hold(&[], 14);
+    assert!(play.world.join.is_none(), "S + 33");
+    assert!(!play.jumps_within(&[], 30));
+    for held_on_s in [false, true] {
+        let mut play = Play::new(&level(FLAT));
+        play.hold_object(&[], 30);
+        play.break_object(if held_on_s { &[J] } else { &[] });
+        play.hold(&[], 33);
+        assert!(play.jumps_within(&[J], 5), "Jump held on S: {held_on_s}");
+    }
+}
+
+/// Jump pressed on frame 30 of holding the object, falling on frame 60,
+/// where `key` is pressed and held: on S, if the object breaks then.
+fn falling_press(key: Action, breaks: bool) -> Play {
+    let mut play = Play::new(&level(FLAT));
+    play.hold_object(&[], 30);
+    play.hold_object(&[J], 1);
+    play.hold_object(&[], 29);
+    assert!(!play.on_floor());
+    assert!(play.world.player.vel.y > Fixed::ZERO, "falling");
+    if breaks {
+        play.break_object(&[key]);
+        play.hold(&[key], 33);
+        assert!(play.world.join.is_none(), "S + 33");
+    } else {
+        play.hold_object(&[key], 1);
+    }
+    play
+}
+
+/// following.md, "The lead during the wait": a Jump press in the air on
+/// S, waiting for the landing, is forgotten, though without the break it
+/// would have jumped on landing.
+#[test]
+fn a_jump_press_waiting_for_the_landing_is_forgotten() {
+    let mut play = falling_press(J, false);
+    assert!(play.jumps_within(&[J], 30), "no break");
+    let mut play = falling_press(J, true);
+    assert!(!play.jumps_within(&[J], 30), "with the join");
+}
+
+/// following.md, "The lead during the wait": an Action press in the air
+/// on S, which roll-input.md remembers for a roll on landing, is
+/// forgotten.
+#[test]
+fn an_action_press_waiting_for_a_roll_is_forgotten() {
+    let rolls = |play: &mut Play| {
+        (0..30).any(|_| {
+            play.step(&[A]);
+            play.world.player.roll.is_some()
+        })
+    };
+    assert!(rolls(&mut falling_press(A, false)), "no break");
+    assert!(!rolls(&mut falling_press(A, true)), "with the join");
+}

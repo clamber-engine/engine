@@ -704,6 +704,19 @@ impl Player {
         self.state = State::Fall;
     }
 
+    /// Forgets the presses still waiting to be used, after a character
+    /// joined (`following.md`, "The lead during the wait"): a Jump press
+    /// waiting for a landing or a jump, and an Action press waiting for
+    /// a roll.
+    pub(crate) fn forget_presses(&mut self) {
+        self.jump_buffer.take();
+        self.jump_needs_hold = false;
+        self.carried_press = false;
+        self.jump_again = false;
+        self.action_with_jump = false;
+        self.roll_press = None;
+    }
+
     /// Ends whatever the player was doing in the air or on the ground,
     /// for holding a rope.
     fn clear_movement(&mut self) {
