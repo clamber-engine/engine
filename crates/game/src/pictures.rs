@@ -15,10 +15,10 @@
 //!
 //! Engine choices where the spec says nothing:
 //!
-//! - The pictures after the ones given (the second character standing
-//!   on after its first standing pictures, walking or running, or
-//!   bouncing after B + 4) are the engine's own art, as are the second
-//!   character's in the air from T + 16 until it lands.
+//! - The pictures after the ones given (the second character walking or
+//!   running, or bouncing after B + 4) are the engine's own art, as are
+//!   the second character's in the air from T + 16 until it lands, and
+//!   standing after its bounces.
 //! - Walking or running in the air after walking off a ledge with a
 //!   face, and crouching or getting up, show the engine's own art, as
 //!   does the second character's roll.
@@ -31,8 +31,8 @@
 //! - Jumps that land before their approach frame, landings after falls,
 //!   the second character's landings after bounces, and anything while
 //!   carrying, swapping, hurt or losing a life show the engine's own art.
-//! - The first character's standing list goes on on a slope or at a
-//!   ledge as on flat floor.
+//! - The standing list goes on on a slope or at a ledge as on flat
+//!   floor, for either character.
 
 use clamber_pack::Param;
 use clamber_sim::{Event, Gait, Outcome, State, World};
@@ -104,7 +104,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
             Set::Stop,
             &["s-stop-1", "s-stop-2", "s-stop-3", "s-stop-4", "s-stop-5"],
         ),
-        (Set::Standing, &["s-stand-1"]),
+        (Set::Standing, &SECOND_STANDING),
         (
             Set::Jump,
             &[
@@ -137,6 +137,28 @@ const STANDING: [&str; 45] = [
     "wait-16", "wait-17", "wait-18", "wait-19", "wait-20", "wait-21", "wait-22", "wait-23",
     "wait-24", "wait-25", "wait-26", "wait-27", "wait-28", "wait-29", "wait-30", "wait-31",
     "wait-32", "wait-33", "wait-34",
+];
+
+/// The second character's standing pictures: `s-stand-1` to
+/// `s-stand-22`, then `s-wait-1` to `s-wait-17`.
+#[rustfmt::skip]
+const SECOND_STANDING: [&str; 39] = [
+    "s-stand-1", "s-stand-2", "s-stand-3", "s-stand-4", "s-stand-5", "s-stand-6", "s-stand-7",
+    "s-stand-8", "s-stand-9", "s-stand-10", "s-stand-11", "s-stand-12", "s-stand-13", "s-stand-14",
+    "s-stand-15", "s-stand-16", "s-stand-17", "s-stand-18", "s-stand-19", "s-stand-20",
+    "s-stand-21", "s-stand-22", "s-wait-1", "s-wait-2", "s-wait-3", "s-wait-4", "s-wait-5",
+    "s-wait-6", "s-wait-7", "s-wait-8", "s-wait-9", "s-wait-10", "s-wait-11", "s-wait-12",
+    "s-wait-13", "s-wait-14", "s-wait-15", "s-wait-16", "s-wait-17",
+];
+
+/// The second character's back and forth between `s-wait-14` and
+/// `s-wait-17` ("Standing still"), 70 frames: which `s-wait-` picture,
+/// for how many frames.
+#[rustfmt::skip]
+const SECOND_SWING: [(u8, u8); 18] = [
+    (14, 2), (15, 2), (16, 2), (17, 2), (16, 2), (15, 2), (14, 2), (15, 2), (16, 2),
+    (17, 3), (16, 3), (15, 3), (14, 3), (15, 3),
+    (16, 4), (17, 5), (16, 6), (15, 22),
 ];
 
 /// The sway ("Standing still"), 186 frames: which `stand-` picture, for
@@ -205,6 +227,8 @@ pub struct PictureClock {
     standing: Option<u32>,
     /// Crouching or getting up on the frame before.
     crouched: bool,
+    /// Walking, running or turning on the ground on the frame before.
+    moved: bool,
     /// What the player shows on this frame.
     shown: Option<(Set, &'static str)>,
 }
@@ -239,6 +263,10 @@ impl PictureClock {
         let crouched = std::mem::replace(
             &mut self.crouched,
             player.crouch.held > 0 || player.crouch.rising > 0,
+        );
+        let moved = std::mem::replace(
+            &mut self.moved,
+            player.grounded() && (player.turn.is_some() || !matches!(player.gait, Gait::Standing)),
         );
         let events = &world.events;
         let physics = world.player_physics();
@@ -325,11 +353,11 @@ impl PictureClock {
         } else {
             None
         };
-        // Standing starts from a stop's last picture, a landing's, the
-        // first character's walking, running or turning, on the
-        // landing frame after the first character's bounce, or once
-        // the first character is up from crouching. After a walk-off
-        // without a face it starts, or goes on, in the air.
+        // Standing starts from a stop's last picture, a landing's,
+        // walking, running or turning, on the landing frame after the
+        // first character's bounce, or once up from crouching. After
+        // the first character's walk-off without a face it starts, or
+        // goes on, in the air.
         let standing_now = self.shown.is_none()
             && (player.grounded()
                 && matches!(player.state, State::Idle | State::Walk | State::Run)
@@ -337,6 +365,7 @@ impl PictureClock {
             && player.roll_stop == 0
             && player.crouch.held == 0
             && player.crouch.rising == 0
+            && player.turn.is_none()
             && matches!(player.gait, Gait::Standing);
         self.standing = match self.standing {
             _ if !standing_now => None,
@@ -347,7 +376,7 @@ impl PictureClock {
                         || (first && matches!(set, Set::Bounce | Set::Walking))
                 })
                 .then_some(0)
-                .or((first && crouched).then_some(0)),
+                .or((crouched || !first && moved).then_some(0)),
         };
         if let Some(c) = self.standing {
             self.shown = standing(first, c);
@@ -419,8 +448,7 @@ fn carried(first: bool, d: u8) -> Option<(Set, &'static str)> {
 fn standing(first: bool, c: u32) -> Option<(Set, &'static str)> {
     let label = match first {
         true => first_standing(c),
-        false if c < 4 => "s-stand-1",
-        false => return None,
+        false => second_standing(c),
     };
     Some((Set::Standing, label))
 }
@@ -441,6 +469,27 @@ fn first_standing(c: u32) -> &'static str {
         0..3 | 189..201 => STANDING[0],
         3..189 => sway(i - 3),
         _ => wait(i - 201),
+    }
+}
+
+/// The second character on S + `c` ("Standing still"): one 275-frame
+/// loop over and over.
+fn second_standing(c: u32) -> &'static str {
+    let wait = |n: u32| SECOND_STANDING[21 + n as usize];
+    match c % 275 {
+        i @ 0..88 => SECOND_STANDING[(i / 4) as usize],
+        i @ 88..153 => wait(1 + (i - 88) / 5),
+        i @ 153..223 => {
+            let mut i = i - 153;
+            for (n, count) in SECOND_SWING {
+                if i < u32::from(count) {
+                    return wait(n.into());
+                }
+                i -= u32::from(count);
+            }
+            wait(15)
+        }
+        i => wait(13 - (i - 223) / 4),
     }
 }
 
@@ -844,7 +893,7 @@ mod tests {
                 ("s-stop-4", 2),
                 ("s-stop-5", 2),
                 ("s-stand-1", 4),
-                ("", 1),
+                ("s-stand-2", 4),
             ],
         );
     }
@@ -936,7 +985,7 @@ mod tests {
             ("s-land-4", 8),
             ("s-land-3", 3),
             ("s-stand-1", 4),
-            ("", 1),
+            ("s-stand-2", 4),
         ]);
         run.check(t - 1, &want);
     }
@@ -1437,6 +1486,70 @@ mod tests {
         let s = (d + 401..).find(|&f| tapped.shown[f].is_some()).unwrap();
         assert!(s < d + 430, "standing again from {s}");
         tapped.check(s, &standing_list(900 - s));
+    }
+
+    /// The second character's standing pictures from S, `frames` of
+    /// them: the 275-frame loop over and over.
+    fn second_standing_list(frames: usize) -> Vec<(&'static str, usize)> {
+        let s = |n: usize| labels(1, Set::Standing)[n - 1];
+        let w = |n: usize| labels(1, Set::Standing)[21 + n];
+        let mut tour: Vec<_> = (1..=22).map(|n| (s(n), 4)).collect();
+        tour.extend((1..=13).map(|n| (w(n), 5)));
+        tour.extend([14, 15, 16, 17, 16, 15, 14, 15, 16].map(|n| (w(n), 2)));
+        tour.extend([17, 16, 15, 14, 15].map(|n| (w(n), 3)));
+        tour.extend([(16, 4), (17, 5), (16, 6), (15, 22)].map(|(n, c)| (w(n), c)));
+        tour.extend((1..=13).rev().map(|n| (w(n), 4)));
+        assert_eq!(tour.iter().map(|w| w.1).sum::<usize>(), 275);
+        let mut left = frames;
+        tour.into_iter()
+            .cycle()
+            .map_while(|(label, count)| {
+                let n = count.min(left);
+                left -= n;
+                (n > 0).then_some((label, n))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_second_character_standing_still_after_a_roll_s_stop() {
+        let run = run(world(FLAT, 1), &roll(&[], 1000));
+        let d = run.frames(Event::RollEnd)[0];
+        run.check(d + 17, &second_standing_list(1000 - d - 17));
+    }
+
+    #[test]
+    fn the_second_character_standing_still_after_a_landing() {
+        let run = run(world(FLAT, 1), &jump(10, 1, 700));
+        let l = run.frames(Event::Land)[0];
+        run.check(l + 17, &second_standing_list(700 - l - 17));
+    }
+
+    #[test]
+    fn the_second_character_standing_after_walking_or_a_turn() {
+        for key in [Action::Right, Action::Left] {
+            let run = run(world(FLAT, 1), &hold(&[key], 6, 400));
+            let s = run.shown.iter().position(Option::is_some).unwrap();
+            assert!(s > 16, "{key:?}: standing from {s}");
+            assert!(run.shown[..s].iter().all(Option::is_none));
+            run.check(s, &second_standing_list(400 - s));
+        }
+    }
+
+    #[test]
+    fn the_second_character_up_while_standing_changes_nothing_and_a_tap_of_down_starts_over() {
+        let still = run(world(FLAT, 1), &roll(&[], 700));
+        let d = still.frames(Event::RollEnd)[0];
+        let mut keys = roll(&[], 700);
+        for f in [d + 40, d + 300, d + 301, d + 302] {
+            keys[f] = vec![Action::Up];
+        }
+        assert_eq!(run(world(FLAT, 1), &keys).shown, still.shown);
+        keys[d + 400] = vec![Action::Down];
+        let tapped = run(world(FLAT, 1), &keys);
+        let s = (d + 401..).find(|&f| tapped.shown[f].is_some()).unwrap();
+        assert!(s < d + 430, "standing again from {s}");
+        tapped.check(s, &second_standing_list(700 - s));
     }
 
     #[test]
