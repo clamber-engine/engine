@@ -1,0 +1,29 @@
+# clamber level v1
+#
+# For scenario exit-walk-out: "the first level begun from the level map,
+# with its entrance at the start point (behavior/level-start.md); flat
+# floor 185 px below the start point, from 90 px to 360 px right of it,
+# with nothing above it in that span up to the start point's height; an
+# exit (behavior/exits.md) leading left at 60 px right of the start point
+# and 185 px below it, on that floor; no walls or other ground along the
+# throw's path; no entities other than the entrance and the exit within
+# 120 px of the player at any time". The entrance and the exit are the
+# only entities. The floor starts at 30 px rather than 90 px right of the
+# start point, so that the exit is on it; that part is far below the
+# throw's path.
+format = 1
+name = "Test: the walk-out through an exit"
+size = [1024, 480]
+start = [300, 200]
+
+[[collision]]
+shape = "rect"
+rect = [330, 385, 330, 80]
+
+[[entities]]
+type = "entrance"
+at = [300, 200]
+
+[[entities]]
+type = "exit"
+at = [360, 385]
