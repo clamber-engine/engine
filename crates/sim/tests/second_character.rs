@@ -8,7 +8,9 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
 use clamber_pack::{CharacterFeel, Fixed, Presets};
-use clamber_sim::{Event, Facing, InputFrame, ROLL, RollSize, State, World, generic_feel, step};
+use clamber_sim::{
+    Event, Facing, Gait, InputFrame, ROLL, RollSize, State, World, generic_feel, step,
+};
 
 /// Flat ground at y = 400 from x = 0 to 4096.
 const FLAT: &str = r#"
@@ -727,9 +729,21 @@ fn roll_off_faced_ledge_jumping(
     jump: std::ops::Range<usize>,
     adjust: impl Fn(usize, &mut Play),
 ) -> (Vec<Row>, Fixed) {
+    roll_off_faced_ledge_pressing(drop, lead, n, |f| jump.contains(&f), adjust)
+}
+
+/// [`roll_off_faced_ledge`], with Jump held too on the frames, counted
+/// from S, for which `jump` is true.
+fn roll_off_faced_ledge_pressing(
+    drop: i32,
+    lead: usize,
+    n: usize,
+    jump: impl Fn(usize) -> bool,
+    adjust: impl Fn(usize, &mut Play),
+) -> (Vec<Row>, Fixed) {
     let held = |f: usize, s: usize| {
         let mut keys = if f == s { vec![A, R] } else { vec![R] };
-        if f >= s && jump.contains(&(f - s)) {
+        if f >= s && jump(f - s) {
             keys.push(J);
         }
         keys
@@ -905,6 +919,48 @@ fn jumping_on_every_hover_frame() {
                 "{ctx}"
             );
         }
+    }
+}
+
+#[test]
+fn landing_after_a_roll_jump_in_the_air() {
+    // jump-input.md and ground-speed.md, "The second character": a jump
+    // out of a roll pressed in the air, on a hover frame or not, lands
+    // with M = L, so E = L + 2, and with Right held alone the player
+    // walks from L + 17.
+    for (lead, after) in [(7, 3), (7, 12), (0, 4), (10, 2)] {
+        let p = lead + after;
+        let ctx = format!("lead {lead}, P = L + {after}");
+        let (rows, _) = roll_off_faced_ledge_jumping(160, lead, 150, p..p + 12, |_, _| {});
+        assert_eq!(frames_with(&rows, Event::JumpStart), [p + 1], "{ctx}");
+        let l = frames_with(&rows, Event::Land)[0];
+        let gaits = std::cell::RefCell::new(Vec::new());
+        let (rows, _) = roll_off_faced_ledge_jumping(160, lead, l + 19, p..p + 12, |_, w| {
+            gaits.borrow_mut().push(w.world.player.gait)
+        });
+        assert_eq!(frames_with(&rows, Event::Land), [l], "{ctx}");
+        // The gait after each frame from L on.
+        let gaits = &gaits.borrow()[l + 1..];
+        assert!(
+            gaits[..17].iter().all(|g| matches!(g, Gait::Landing(_))),
+            "{ctx}: {gaits:?}"
+        );
+        assert!(matches!(gaits[17], Gait::Walking(_)), "{ctx}: {gaits:?}");
+
+        // Jump pressed again on L - 1 and held.
+        let (rows, _) = roll_off_faced_ledge_pressing(
+            160,
+            lead,
+            l + 6,
+            |f| (p..p + 12).contains(&f) || f + 1 >= l,
+            |_, _| {},
+        );
+        assert_eq!(frames_with(&rows, Event::Land), [l], "{ctx}");
+        assert_eq!(
+            frames_with(&rows, Event::JumpStart),
+            [p + 1, l + 2],
+            "{ctx}"
+        );
     }
 }
 

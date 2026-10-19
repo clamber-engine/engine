@@ -86,6 +86,7 @@ roll_jump_switch = 0
 landing_mode_wait = 0
 landing_mode_on_last = 0
 landing_mode_after_last = 0
+jump_landing_mode = 0
 face_fall_landing = 0
 jump_buffer_hold = 0
 jump_start_hold = 0
@@ -601,8 +602,7 @@ switch_reach = 71
 switch_steps = [3, 7, 12, 16]
 switch_late_steps = [2, 6, 11, 15]
 # So does a jump out of a roll, pressed on the ground or in the air
-# (jump-input.md, "The switch frame M"); the second character's don't
-# ("Landings this doesn't cover").
+# (jump-input.md, "The switch frame M").
 roll_jump_switch = 1
 # After a jump's landing, walking, running or standing starts 6 frames
 # after a later switch frame, or 10 or 9 after a landing that is itself
@@ -1150,7 +1150,13 @@ roll_fall_end = 25
 # all three walkers (rolling-into-walkers.md, "The second character").
 roll_attack_width = 18
 roll_attack_offset = 3
-roll_jump_switch = 0
+# Its landings after jumps, from the floor or out of a roll pressed on
+# the ground or in the air, have no stage frames: M = L, so E = L + 2,
+# and with Action and one direction held on L it runs from L, otherwise
+# the mode starts on L + 17 (jump-input.md and ground-speed.md, "The
+# second character"). The spec covers landings on the third or a later
+# `s-air-6` frame; the engine lands earlier ones the same way.
+jump_landing_mode = 17
 # The second character follows by where the first is now.
 follow_lag = 0
 # The second character being hit isn't specified yet, so it's a hit with

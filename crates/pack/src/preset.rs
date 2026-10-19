@@ -360,6 +360,7 @@ mod tests {
                     | Param::LandingModeWait
                     | Param::LandingModeOnLast
                     | Param::LandingModeAfterLast
+                    | Param::JumpLandingMode
                     | Param::FaceFallLanding
                     | Param::JumpStartHold
                     | Param::TakeoffWait

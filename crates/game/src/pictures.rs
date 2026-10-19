@@ -23,8 +23,11 @@
 //!   face, and crouching or getting up, show the engine's own art, as
 //!   does the second character's roll.
 //! - The second character's landing pictures are shown after a jump
-//!   that lands on the floor it took off from, the landings the spec
-//!   says they're for.
+//!   that lands on the floor it took off from or lower: the spec gives
+//!   them for landings on the fourth or a later `s-air-6` frame, which
+//!   every jump measured onto the floor it took off from is, but not
+//!   when `s-air-1` ends. A jump out of a roll pressed in the air takes
+//!   off from where it was in the fall.
 //! - Jumps that land before their approach frame, landings after falls,
 //!   the second character's landings after bounces, and anything while
 //!   carrying, swapping, hurt or losing a life show the engine's own art.
@@ -154,8 +157,8 @@ fn landing_counts(k_minus_m: u8) -> Option<[u8; 3]> {
 struct Landed {
     /// The stage frames that are L or earlier.
     n: u8,
-    /// On the floor it took off from.
-    same_floor: bool,
+    /// On the floor it took off from, or lower.
+    not_above: bool,
 }
 
 /// Follows the player to say which of its pictures it shows.
@@ -230,7 +233,7 @@ impl PictureClock {
                 let y = feet(player.pos.y);
                 Some(Landed {
                     n,
-                    same_floor: self.takeoff_y == Some(y),
+                    not_above: self.takeoff_y.is_some_and(|t| y >= t),
                 })
             });
         } else if !player.grounded() || events.contains(&Event::JumpStart) {
@@ -479,14 +482,14 @@ fn first_landing(landed: Landed, gait: Gait) -> Option<(Set, &'static str)> {
 }
 
 /// The second character on L + `since_land` up to L + 16, after a jump
-/// that lands on the floor it took off from and doesn't run from L.
+/// that lands on the floor it took off from or lower and doesn't run from L.
 fn second_landing(
     landed: Landed,
     since_land: Option<u8>,
     gait: Gait,
     state: State,
 ) -> Option<(Set, &'static str)> {
-    if !landed.same_floor || matches!(gait, Gait::Running(_)) || state == State::Run {
+    if !landed.not_above || matches!(gait, Gait::Running(_)) || state == State::Run {
         return None;
     }
     let label = match since_land? {
@@ -770,7 +773,61 @@ mod tests {
 
     #[test]
     fn the_second_character_s_jump_and_landing() {
-        let run = run(world(FLAT, 1), &jump(10, 1, 120));
+        second_jump_and_landing(&run(world(FLAT, 1), &jump(10, 1, 120)));
+    }
+
+    #[test]
+    fn the_second_character_s_jump_out_of_a_roll_and_landing() {
+        // The same pictures as a plain jump, from the press frame T − 1.
+        for p in [11, 20, 33] {
+            let mut keys = roll(&[], 120);
+            keys[p..p + 10]
+                .iter_mut()
+                .for_each(|k| k.push(Action::Jump));
+            let run = run(world(FLAT, 1), &keys);
+            assert_eq!(run.frames(Event::RollStart), [10], "press {p}");
+            assert_eq!(run.frames(Event::JumpStart)[0], p + 1, "press {p}");
+            second_jump_and_landing(&run);
+        }
+    }
+
+    #[test]
+    fn the_second_character_s_jump_out_of_a_roll_in_the_air_and_landing() {
+        // Walking off the ledge in a roll pressed on frame 30, then Jump
+        // pressed `after` frames after it leaves the ground and held,
+        // with Right, 10 frames: the same pictures from the press frame
+        // P = T − 1, landing below.
+        let keys = |jump: Option<usize>| -> Vec<Vec<Action>> {
+            (0..160)
+                .map(|f| {
+                    let mut k = vec![];
+                    if jump.is_none_or(|p| f < p + 10) {
+                        k.push(Action::Right);
+                    }
+                    if f == 30 {
+                        k.push(Action::Action);
+                    }
+                    if jump.is_some_and(|p| (p..p + 10).contains(&f)) {
+                        k.push(Action::Jump);
+                    }
+                    k
+                })
+                .collect()
+        };
+        let roll = run(world(&walk_off_ledge(), 1), &keys(None));
+        assert_eq!(roll.frames(Event::RollStart), [30]);
+        let leave = roll.grounded.iter().skip(30).position(|g| !g).unwrap() + 30;
+        for after in [0, 3, 8] {
+            let p = leave + after;
+            let run = run(world(&walk_off_ledge(), 1), &keys(Some(p)));
+            assert_eq!(run.frames(Event::JumpStart), [p + 1], "P = L + {after}");
+            second_jump_and_landing(&run);
+        }
+    }
+
+    /// Checks the second character's pictures from T − 1 of `run`'s
+    /// first jump to the first standing pictures after its landing.
+    fn second_jump_and_landing(run: &Run) {
         let t = run.frames(Event::JumpStart)[0];
         let l = run.frames(Event::Land)[0];
         let mut want = vec![("s-jump-1", 1), ("s-jump-2", 2)];

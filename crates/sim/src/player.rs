@@ -3119,6 +3119,10 @@ impl Player {
     /// doesn't start on the switch frame, for a landing `land` frames
     /// after the jump started.
     fn switch_wait(&self, land: u8, physics: &Physics) -> (u8, u8) {
+        let mode = frames(physics[Param::JumpLandingMode]);
+        if mode > 0 {
+            return (0, mode);
+        }
         let from = frames(physics[Param::SwitchFrom]);
         // Landing before the approach frame, the player is on the floor
         // when the approach frame comes.
@@ -3151,6 +3155,9 @@ impl Player {
     /// its switch frame is (`face_top_landing`).
     fn face_top_switch(&self, level: &Level, land: u8, physics: &Physics) -> Option<u8> {
         let after = frames(physics[Param::FaceTopLanding]);
+        if physics[Param::JumpLandingMode] > Fixed::ZERO {
+            return None;
+        }
         let approach = self.approach.filter(|&a| a <= land)?;
         let on_face = columns::face(
             level,
@@ -3180,8 +3187,9 @@ impl Player {
         let from = frames(physics[Param::SwitchFrom]);
         if events.contains(&Event::Land) {
             // Other landings have their switch frame on the landing frame.
+            let staged = physics[Param::JumpLandingMode] == Fixed::ZERO;
             self.face_switch = match jump_age {
-                Some(land) if from > 0 && !self.rolled_jump => {
+                Some(land) if from > 0 && !self.rolled_jump && staged => {
                     let (switch, _) = self.switch_wait(land, physics);
                     let approach = self.approach.unwrap_or(from).max(from);
                     Some(if approach > land {

@@ -913,27 +913,85 @@ fn classic_landing_after_a_roll_jump_waits_for_the_switch_frame() {
     assert_eq!(e, Some(l + 2));
 }
 
-#[test]
-fn classic_second_character_landing_after_a_roll_jump_has_no_switch_frame() {
-    // spec/behavior/jump-input.md, "Landings this doesn't cover": the
-    // second character's jump out of a roll lands with E = L + 3.
-    let rolling = || {
-        let mut feel = generic_feel("classic-1").unwrap();
-        feel.roster.push(CharacterFeel {
-            physics: clamber_pack::Presets::builtin()
-                .slot("classic-1", 1)
-                .unwrap(),
-            abilities: feel.roster[0].abilities.clone(),
-        });
-        let mut w = Play::new(feel);
-        w.player.character = 1;
+/// Classic 1 with the second character as the player, rolling at 3 px a
+/// frame if `rolling`.
+fn classic_second(rolling: bool) -> Play {
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: clamber_pack::Presets::builtin()
+            .slot("classic-1", 1)
+            .unwrap(),
+        abilities: feel.roster[0].abilities.clone(),
+    });
+    let mut w = Play::new(feel);
+    w.player.character = 1;
+    if rolling {
         w.player.vel.x = Fixed::from_int(3);
         w.player.state = State::Roll;
-        w
-    };
-    let (t, _, l, e) = classic_standing_jump(rolling, 10);
-    assert_eq!(t, 1);
-    assert_eq!(e, Some(l + 3));
+    }
+    w
+}
+
+#[test]
+fn classic_second_character_landing_has_its_switch_frame_on_landing() {
+    // spec/behavior/jump-input.md, "The second character": its landings
+    // after jumps from the floor or out of a roll pressed on the ground
+    // have no stage frames, M = L, so E = L + 2 (the first character's
+    // rule would give L + 3 for most of these).
+    for rolling in [false, true] {
+        for held in [1, 10, 14, 20, 40] {
+            let (t, _, l, e) = classic_standing_jump(|| classic_second(rolling), held);
+            assert_eq!(t, 1, "rolling {rolling}, held {held}");
+            assert_eq!(e, Some(l + 2), "rolling {rolling}, held {held}");
+        }
+    }
+}
+
+#[test]
+fn classic_second_character_mode_after_a_landing() {
+    use Action::{Action as A, Right as R};
+    // spec/behavior/ground-speed.md, "After a landing", "The second
+    // character": running on L with Action and one direction held on
+    // L, otherwise the mode on L + 17 by the input then.
+    for rolling in [false, true] {
+        for jump in [1, 10, 20] {
+            let new = || classic_second(rolling);
+            let case = format!("rolling {rolling}, jump {jump}");
+            let (_, _, gaits) = classic_after_landing(new, jump, &[A, R], |_| vec![A, R]);
+            assert_eq!(mode(gaits[0]), ("running", 256), "{case}");
+
+            // Action held from take-off and Right added on L + 1: no run
+            // before L + 17.
+            let (_, _, gaits) =
+                classic_after_landing(
+                    new,
+                    jump,
+                    &[A],
+                    |n| {
+                        if n >= 1 { vec![A, R] } else { vec![A] }
+                    },
+                );
+            assert!(
+                gaits[..17].iter().all(|&g| mode(g) == ("landing", 0)),
+                "{case}"
+            );
+            assert_eq!(mode(gaits[17]), ("running", 256), "{case}");
+
+            let (_, _, gaits) = classic_after_landing(new, jump, &[], |_| vec![R]);
+            assert!(
+                gaits[..17].iter().all(|&g| mode(g) == ("landing", 0)),
+                "{case}"
+            );
+            assert_eq!(mode(gaits[17]), ("walking", 256), "{case}");
+
+            let (_, _, gaits) = classic_after_landing(new, jump, &[], |_| vec![]);
+            assert!(
+                gaits[..17].iter().all(|&g| mode(g) == ("landing", 0)),
+                "{case}"
+            );
+            assert_eq!(mode(gaits[17]), ("standing", 0), "{case}");
+        }
+    }
 }
 
 /// A Classic 1 standing jump from `new`, pressed on frame 0 and held for

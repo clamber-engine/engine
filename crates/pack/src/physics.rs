@@ -316,6 +316,13 @@ params! {
     /// As `landing_mode_on_last`, when the landing frame comes after that
     /// last frame. Whole frames.
     LandingModeAfterLast => "landing_mode_after_last",
+    /// Above 0, a jump's landing has no stage frames: with `switch_from`,
+    /// its switch frame is the landing frame, so a jump can start
+    /// `landing_lockout` frames after it, and with a stride cycle walking,
+    /// running or standing starts this many frames after the landing
+    /// frame, unless running starts on it. 0: the switch frame comes from
+    /// the approach frame. Whole frames.
+    JumpLandingMode => "jump_landing_mode",
     /// With a stride cycle (`stride_steps`), after a fall off a steep
     /// face (`walk_off_keeps_facing`) the landing frame and this many
     /// frames less one after it are in no gait: no turn starts and facing
