@@ -1,6 +1,6 @@
 //! Which of its own pictures the player shows when it's held still: the
-//! stop after a roll, a jump and its landing, a bounce's frozen frames
-//! and the first standing pictures after them, and the first
+//! stop after a roll, a jump and its landing, a bounce, the first
+//! standing pictures after them, and the first
 //! character's walking, running and turning pictures
 //! (`spec/behavior/player-frames.md`).
 //!
@@ -15,17 +15,17 @@
 //! Engine choices where the spec says nothing:
 //!
 //! - The pictures after the ones given (standing on after the first
-//!   standing pictures, the second character walking or running, a
-//!   bounce after B + 4) are the engine's own art, as are the second
+//!   standing pictures, the second character walking or running, or
+//!   bouncing after B + 4) are the engine's own art, as are the second
 //!   character's in the air from T + 16 until it lands.
 //! - Walking or running in the air after walking off a ledge, and
 //!   crouching or getting up, show the engine's own art.
 //! - The second character's landing pictures are shown after a jump
 //!   that lands on the floor it took off from, the landings the spec
 //!   says they're for.
-//! - Jumps that land before their approach frame, landings after falls
-//!   and bounces, and anything while carrying, swapping, hurt or losing
-//!   a life show the engine's own art.
+//! - Jumps that land before their approach frame, landings after falls,
+//!   the second character's landings after bounces, and anything while
+//!   carrying, swapping, hurt or losing a life show the engine's own art.
 
 use clamber_pack::Param;
 use clamber_sim::{Event, Gait, Outcome, State, World};
@@ -40,7 +40,7 @@ pub enum Set {
     Standing,
     /// A jump and its landing.
     Jump,
-    /// A bounce's frozen frames.
+    /// A bounce, until the landing.
     Bounce,
     /// Walking, running and turning on the ground.
     Walking,
@@ -260,7 +260,8 @@ impl PictureClock {
         } else {
             None
         };
-        // Standing starts from a stop's last picture, or a landing's.
+        // Standing starts from a stop's last picture, a landing's, or
+        // on the landing frame after the first character's bounce.
         let standing_now = self.shown.is_none()
             && player.state == State::Idle
             && player.grounded()
@@ -270,7 +271,9 @@ impl PictureClock {
             _ if !standing_now => None,
             Some(c) => Some(c.saturating_add(1)),
             None => before
-                .is_some_and(|(set, _)| matches!(set, Set::Stop | Set::Jump))
+                .is_some_and(|(set, _)| {
+                    matches!(set, Set::Stop | Set::Jump) || (first && set == Set::Bounce)
+                })
                 .then_some(0),
         };
         if let Some(c) = self.standing {
@@ -292,11 +295,12 @@ fn stages(approach: u8, physics: &clamber_pack::Physics) -> [u8; 7] {
     }
 }
 
-/// On B + `n`.
+/// On B + `n`: the first character's 16 pictures 2 frames each from
+/// `bounce-2` on B + 4, round and round until the landing.
 fn bounce(first: bool, n: u8) -> Option<(Set, &'static str)> {
     let label = match (first, n) {
         (true, 0..=3) => "bounce-1",
-        (true, 4) => "bounce-2",
+        (true, _) => labels(0, Set::Bounce)[usize::from((n - 2) / 2) % 16],
         (false, 0..=3) => "s-bounce-1",
         (false, 4) => "s-bounce-2",
         _ => return None,
@@ -713,20 +717,71 @@ mod tests {
         run.check(t - 1, &want);
     }
 
-    #[test]
-    fn a_bounce_s_frozen_frames() {
+    /// Standing still on the bounce-walker level, a hop held `hold`
+    /// frames that comes down on the walker coming, with `then` held
+    /// from the frame after its bounce frame B. B and the landing frame G.
+    fn bounce_run(slot: usize, hold: usize, then: &[Action]) -> (Run, usize, usize) {
         let level = std::fs::read_to_string(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../content/test/bounce-walker.level"
         ))
         .unwrap();
-        // Standing still, a hop that comes down on the walker coming.
-        let run = (20..80)
-            .map(|wait| run(world(&level, 0), &jump(wait, 1, 160)))
-            .find(|run| !run.frames(Event::Bounce).is_empty())
-            .expect("a hop bounces");
-        let b = run.frames(Event::Bounce)[0];
-        run.check(b, &[("bounce-1", 4), ("bounce-2", 1), ("", 1)]);
+        (20..80)
+            .find_map(|wait| {
+                let keys = jump(wait, hold, 200);
+                let b = run(world(&level, slot), &keys)
+                    .frames(Event::Bounce)
+                    .first()
+                    .copied()?;
+                let keys: Vec<Vec<Action>> = keys
+                    .into_iter()
+                    .enumerate()
+                    .map(|(f, k)| if f > b { then.to_vec() } else { k })
+                    .collect();
+                let run = run(world(&level, slot), &keys);
+                let g = *run.frames(Event::Land).iter().find(|&&g| g > b)?;
+                Some((run, b, g))
+            })
+            .expect("a hop bounces")
+    }
+
+    #[test]
+    fn a_bounce_s_frozen_frames() {
+        let (run, b, _) = bounce_run(1, 1, &[]);
+        run.check(b, &[("s-bounce-1", 4), ("s-bounce-2", 1), ("", 1)]);
+    }
+
+    #[test]
+    fn the_first_character_s_bounce_pictures_until_the_landing() {
+        let (run, b, g) = bounce_run(0, 20, &[Action::Jump]);
+        let air = g - b;
+        assert!(air > 34, "round again from B + 34: {air}");
+        let mut want = vec![("bounce-1", 4)];
+        for i in 2..=16 {
+            want.push((labels(0, Set::Bounce)[i - 1], 2));
+        }
+        // Then round again from bounce-1, 2 frames each, up to G − 1.
+        let mut f = b + 34;
+        let mut i = 0;
+        while f < g {
+            let n = (g - f).min(2);
+            want.push((labels(0, Set::Bounce)[i % 16], n));
+            f += n;
+            i += 1;
+        }
+        // No landing pictures: standing from G.
+        for s in ["stand-1", "stand-2", "stand-3", "stand-4", "stand-5"] {
+            want.push((s, 3));
+        }
+        run.check(b, &want);
+    }
+
+    #[test]
+    fn walking_or_a_turn_from_a_bounce_s_landing_frame() {
+        let (run, _, g) = bounce_run(0, 1, &[Action::Right]);
+        run.check(g, &[("walk-1", 1)]);
+        let (run, _, g) = bounce_run(0, 1, &[Action::Left]);
+        run.check(g, &[("turn-a", 2)]);
     }
 
     /// Nothing held for 10 frames, then `then` held for `hold` frames,
