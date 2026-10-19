@@ -7,15 +7,17 @@ use std::process::Command;
 
 use clamber_game::replay::{INPUTS_HEADER, Replay, load_inputs, parse_inputs, preset_for};
 use clamber_import::{FORMAT, Installed, MANIFEST};
+use clamber_sim::Phase;
 use clamber_sprite::{RgbaImage, decode_png, encode_png};
-use clamber_trace::{Buttons, Trace};
+use clamber_trace::{Buttons, Decimal, Trace};
 
 const GROUND: [u8; 4] = [40, 120, 60, 255];
 const HAZE: [u8; 4] = [250, 250, 250, 255];
 
 /// A pack of `title-1` in a folder of its own, with a 256x224 view, as the title's own and one
-/// level: flat ground, an opaque layer that moves with the world and a
-/// half see-through one fixed to the view.
+/// level: flat ground, an opaque layer that moves with the world, a
+/// half see-through one fixed to the view, and two restart points out of
+/// view, a checkpoint and then a keg.
 fn made_up_pack(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("clamber-replay-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -69,6 +71,15 @@ opacity = 0.5
 [[collision]]
 shape = "rect"
 rect = [0, 200, 512, 56]
+
+[[entities]]
+type = "checkpoint"
+at = [300, 200]
+
+[[entities]]
+type = "keg"
+id = "barrel"
+at = [400, 191]
 "#,
     )
     .unwrap();
@@ -180,6 +191,36 @@ fn a_level_or_arrival_that_isn_t_there_is_an_error() {
     assert!(err(Replay::begin(installed(), Some("second"), None, None)).contains("no level"));
     assert!(err(Replay::begin(installed(), None, None, Some("back"))).contains("no arrival"));
     assert!(err(Replay::begin(installed(), None, Some("bogus"), None)).contains("no preset"));
+    std::fs::remove_dir_all(pack.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn a_replay_can_come_back_at_a_restart_point() {
+    let pack = made_up_pack("restart");
+    let begin = || Replay::begin(Installed::load(&pack).unwrap(), None, None, None).unwrap();
+    let mut replay = begin();
+    replay.come_back_at("barrel").unwrap();
+    let row = replay.step(Buttons::NONE);
+    let world = &replay.session.game.world;
+    let at = world.restart_point(1);
+    assert_eq!(world.player.pos, at, "back at the keg's restart point");
+    assert!(world.resume.is_some(), "inside the keg");
+    assert_eq!(world.things[1].phase, Phase::Broken);
+    assert_eq!((row.frame, row.x, row.y), (0, Decimal::ZERO, Decimal::ZERO));
+
+    let mut by_number = begin();
+    by_number.come_back_at("1").unwrap();
+    assert_eq!(by_number.step(Buttons::NONE), row);
+    let mut checkpoint = begin();
+    checkpoint.come_back_at("0").unwrap();
+    checkpoint.step(Buttons::NONE);
+    let world = &checkpoint.session.game.world;
+    assert_eq!(world.player.pos, world.level.entities[0].at);
+    assert!(world.resume.is_none());
+
+    assert!(begin().come_back_at("2").unwrap_err().contains("has 2"));
+    assert!(begin().come_back_at("nowhere").is_err());
+    assert!(replay.come_back_at("barrel").is_err(), "play has begun");
     std::fs::remove_dir_all(pack.parent().unwrap()).unwrap();
 }
 

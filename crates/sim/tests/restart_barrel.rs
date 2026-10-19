@@ -693,3 +693,33 @@ fn up_or_jump_on_frame_1_keep_it_from_starting() {
         assert!(frames.iter().all(|s| !s.3), "{keys:?}");
     }
 }
+
+/// Coming back at the keg without having been there resumes as after
+/// a lost life with it reached: the same player, view and resume on
+/// every frame from the one it comes back on.
+#[test]
+fn coming_back_at_it_directly_resumes_as_after_a_lost_life() {
+    let mut lost = Play::new(900);
+    lost.touch_and_fall_out();
+    let mut direct = Play {
+        world: world(900),
+        held: Actions::NONE,
+    };
+    assert_eq!(direct.world.restart_points(), [0]);
+    assert!(!direct.world.come_back_at(1), "not a restart point");
+    assert!(direct.world.come_back_at(0));
+    assert!(direct.step(&[]).contains(&FlowEvent::Respawn));
+    assert_eq!(direct.world.things[0].phase, Phase::Broken);
+    assert_eq!(direct.world.flow.checkpoints, [0]);
+    for frame in 0..90 {
+        let w = (&lost.world, &direct.world);
+        assert_eq!(w.0.player.pos, w.1.player.pos, "frame {frame}");
+        assert_eq!(w.0.player.state, w.1.player.state, "frame {frame}");
+        assert_eq!(w.0.resume, w.1.resume, "frame {frame}");
+        assert_eq!(w.0.view.map(|v| v.x()), w.1.view.map(|v| v.x()));
+        let keys: &[Action] = if frame > 40 { &[R] } else { &[] };
+        lost.step(keys);
+        direct.step(keys);
+    }
+    assert!(direct.world.resume.is_none(), "the resume is over");
+}

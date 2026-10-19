@@ -15,11 +15,12 @@ use clamber_trace::trace::Source;
 const USAGE: &str = "\
 usage:
   clamber-replay --pack <dir> --inputs <file> --out <dir> [--level <id>]
-                 [--preset <id>] [--arrival <name>] [--frames <from>..<to>]
-                 [--every <n>] [--layers]
+                 [--preset <id>] [--arrival <name>] [--restart <n>]
+                 [--frames <from>..<to>] [--every <n>] [--layers]
 
 Plays the inputs on a level of the imported pack in <dir> from its start
-(or from its arrival <name>), with no window, and writes into --out:
+(or from its arrival <name>, or coming back at its restart point <n> as
+after a lost life), with no window, and writes into --out:
 
   replay.trace          the trace of every frame played, from frame 0
   <frame>.png           the picture of each frame in --frames (default:
@@ -33,7 +34,10 @@ the frame's step. Inputs are a scenario (.scn), the input column of a
 trace (.trace), or a `# clamber-inputs v1` file with the actions held on
 each frame, one line per frame (`.` for none). The level is a file name
 in the pack's levels folder without `.level` (default: the first), and
-the preset defaults to the one holding the pack's title's values.
+the preset defaults to the one holding the pack's title's values. A
+restart point is a checkpoint or keg: its entity id, or its number among
+the level's, in its order from 0; frame 0 is the step the player comes
+back on there.
 ";
 
 struct Options {
@@ -43,6 +47,7 @@ struct Options {
     level: Option<String>,
     preset: Option<String>,
     arrival: Option<String>,
+    restart: Option<String>,
     frames: Option<Range<u32>>,
     every: u32,
     layers: bool,
@@ -72,7 +77,7 @@ fn main() -> ExitCode {
 
 fn parse(args: &[String]) -> Result<Options, String> {
     let (mut pack, mut inputs, mut out) = (None, None, None);
-    let (mut level, mut preset, mut arrival) = (None, None, None);
+    let (mut level, mut preset, mut arrival, mut restart) = (None, None, None, None);
     let (mut frames, mut every, mut layers) = (None, None, false);
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
@@ -87,6 +92,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--level" => &mut level,
             "--preset" => &mut preset,
             "--arrival" => &mut arrival,
+            "--restart" => &mut restart,
             "--frames" => &mut frames,
             "--every" => &mut every,
             other => return Err(format!("unknown argument `{other}`")),
@@ -115,6 +121,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         level,
         preset,
         arrival,
+        restart,
         frames: frames.as_deref().map(range).transpose()?,
         every,
         layers,
@@ -143,6 +150,9 @@ fn run(options: &Options) -> Result<(), String> {
         options.preset.as_deref(),
         options.arrival.as_deref(),
     )?;
+    if let Some(name) = &options.restart {
+        replay.come_back_at(name)?;
+    }
     let out = &options.out;
     std::fs::create_dir_all(out).map_err(|e| format!("can't make {}: {e}", out.display()))?;
     let frames = options.frames.clone().unwrap_or(0..u32::MAX);
@@ -221,12 +231,13 @@ mod tests {
         assert_eq!((o.frames, o.every, o.layers), (None, 1, false));
         let o = parse(&args(
             "--pack p --inputs i --out o --level room --preset classic-1 --arrival back \
-             --frames 60..120 --every 4 --layers",
+             --restart 2 --frames 60..120 --every 4 --layers",
         ))
         .unwrap();
         assert_eq!(o.level.as_deref(), Some("room"));
         assert_eq!(o.preset.as_deref(), Some("classic-1"));
         assert_eq!(o.arrival.as_deref(), Some("back"));
+        assert_eq!(o.restart.as_deref(), Some("2"));
         assert_eq!((o.frames, o.every, o.layers), (Some(60..120), 4, true));
         assert_eq!(range("..10").unwrap(), 0..10);
         assert_eq!(range("5..").unwrap(), 5..u32::MAX);

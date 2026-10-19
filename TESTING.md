@@ -114,14 +114,20 @@ window, deterministically:
 
 ```
 clamber-replay --pack <dir> --inputs <file> --out <dir> [--level <id>]
-               [--preset <id>] [--arrival <name>] [--frames 0..3600]
-               [--every 1] [--layers]
+               [--preset <id>] [--arrival <name>] [--restart <n>]
+               [--frames 0..3600] [--every 1] [--layers]
 ```
 
 - `--pack` is an imported pack's folder (the one holding
   `manifest.toml`); `--level` is a file name in its `levels/` folder
   without `.level`, the first one by default. `--arrival` starts at one
-  of the level's arrivals instead of its start. The preset defaults to
+  of the level's arrivals instead of its start. `--restart` comes back at
+  one of its restart points (checkpoints and kegs) instead, as after a
+  lost life with it reached: frame 0 is the step the player comes back
+  on, inside the keg for a keg, and the trace's positions are from the
+  restart point. It's the restart point's entity id, or its number among
+  the level's, in their order from 0. The rest of the level is as at its
+  start. The preset defaults to
   the one holding the pack's title's values (`classic-1` for `title-1`).
 - `--inputs` is a scenario (`.scn`), a trace (`.trace`, its `input`
   column), or a file of held actions, one line per frame from frame 0:

@@ -122,6 +122,34 @@ impl Replay {
         })
     }
 
+    /// Begins at restart point `name` instead, before any frame is
+    /// played: the step of the first frame is the one the player comes
+    /// back on, as after a lost life with it reached
+    /// ([`World::come_back_at`]), and the trace's positions are from
+    /// there. `name` is a restart point's entity id, or its number among
+    /// the level's restart points, its checkpoints and kegs in its
+    /// order, from 0.
+    pub fn come_back_at(&mut self, name: &str) -> Result<(), String> {
+        if self.frame > 0 {
+            return Err("play has already begun".to_string());
+        }
+        let world = &mut self.session.game.world;
+        let points = world.restart_points();
+        let by_id = points
+            .iter()
+            .find(|&&i| world.level.entities[i].id.as_deref() == Some(name));
+        let by_number = name.parse::<usize>().ok().and_then(|n| points.get(n));
+        let Some(&index) = by_id.or(by_number) else {
+            let count = points.len();
+            return Err(format!(
+                "the level has no restart point `{name}` (it has {count}, from 0)"
+            ));
+        };
+        world.come_back_at(index);
+        self.start = world.restart_point(index);
+        Ok(())
+    }
+
     /// Frames played so far.
     pub fn frame(&self) -> u32 {
         self.frame

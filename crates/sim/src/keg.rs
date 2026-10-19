@@ -47,7 +47,7 @@ use clamber_level::Vec2;
 use clamber_pack::Param;
 
 use crate::archetype::{Behavior, KEG_PIECES, Keg};
-use crate::flow::{FlowEvent, Outcome};
+use crate::flow::{CHECKPOINT, FlowEvent, Outcome};
 use crate::player::{GroundAction, State, ceil};
 use crate::pose;
 use crate::view;
@@ -138,6 +138,53 @@ impl World {
             Some(k) => Vec2::new(at.x + k.restart.x, at.y + k.restart.y),
             None => at,
         }
+    }
+
+    /// The level's restart points, in its order: the things that are
+    /// checkpoints or kegs.
+    pub fn restart_points(&self) -> Vec<usize> {
+        let placed = &self.things[..self.level.entities.len().min(self.things.len())];
+        placed
+            .iter()
+            .filter(|t| t.kind == CHECKPOINT || keg(self, t.index).is_some())
+            .map(|t| t.index)
+            .collect()
+    }
+
+    /// Makes the next step the one the player comes back on after a lost
+    /// life with the restart point of thing `index` reached
+    /// ([`restart_points`](World::restart_points)): it's the last one
+    /// reached, a keg is broken, and play comes back there as it does
+    /// after any lost life, inside the keg for a keg. Whatever was under
+    /// way at the level's start, such as an entrance, is over, and the
+    /// rest of the level is as it was. A world with no lives left gets
+    /// one, so play doesn't end. Returns false, changing nothing, if the
+    /// thing isn't a restart point.
+    pub fn come_back_at(&mut self, index: usize) -> bool {
+        if !self.restart_points().contains(&index) {
+            return false;
+        }
+        if keg(self, index).is_some() {
+            let thing = &mut self.things[index];
+            thing.active = false;
+            thing.phase = Phase::Broken;
+        }
+        let flow = &mut self.flow;
+        flow.checkpoints.retain(|&i| i != index);
+        flow.checkpoints.push(index);
+        flow.lives = flow.lives.max(1);
+        flow.lost = None;
+        flow.outcome = Outcome::Dying(1);
+        self.player.knockout = None;
+        self.join = None;
+        self.ending = None;
+        self.leaving = None;
+        self.resume = None;
+        self.entering = None;
+        self.walking_in = None;
+        self.dropping_in = false;
+        self.waiting.clear();
+        true
     }
 
     /// Whether the player is inside a keg, waiting for it to burst.
