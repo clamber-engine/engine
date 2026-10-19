@@ -28,7 +28,7 @@ use crate::import::{After, Edit, Games, Importing, PERSONAL, Pick, Picked, Picke
 use crate::map::{MapPlay, MapStep};
 use crate::menu::{Choice, Menu};
 use crate::panel::draw_panel;
-use crate::prefs::{BUNDLED, Prefs, Volume};
+use crate::prefs::{BUNDLED, FrameSync, Prefs, Volume};
 use crate::prompts::{Hint, draw_hints};
 use crate::report;
 use crate::sound::{Cue, cues};
@@ -124,7 +124,9 @@ pub enum Tune {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Setting {
     Fullscreen,
-    Vsync,
+    /// How frames wait for the display, changed with Left, and Right or
+    /// Jump, which go round the settings.
+    Sync,
     /// Turned down with Left and up with Right or Jump, which wraps
     /// around to silent.
     MusicVolume,
@@ -408,6 +410,16 @@ impl Session {
                     return;
                 }
             }
+            if menu.current() == Setting::Sync {
+                let back = pressed.contains(Action::Left);
+                if back || pressed.contains(Action::Right) || pressed.contains(Action::Jump) {
+                    let display = &mut self.prefs.display;
+                    display.sync = display.sync.next(back);
+                    menu.items = options_items(&self.prefs, widescreen);
+                    self.save_prefs("the sync setting");
+                    return;
+                }
+            }
             if menu.current() == Setting::Widescreen {
                 let back = pressed.contains(Action::Left);
                 if back || pressed.contains(Action::Right) || pressed.contains(Action::Jump) {
@@ -439,9 +451,11 @@ impl Session {
             let display = &mut self.prefs.display;
             match setting {
                 Setting::Fullscreen => display.fullscreen = !display.fullscreen,
-                Setting::Vsync => display.vsync = !display.vsync,
                 // changed above
-                Setting::MusicVolume | Setting::EffectsVolume | Setting::Widescreen => return,
+                Setting::Sync
+                | Setting::MusicVolume
+                | Setting::EffectsVolume
+                | Setting::Widescreen => return,
                 Setting::Back => unreachable!(),
             }
             menu.items = options_items(&self.prefs, widescreen);
@@ -1108,10 +1122,14 @@ impl Session {
             Screen::Options(menu, _) => {
                 draw_text_centred(canvas, centre, 50, "OPTIONS", HEADING);
                 menu.draw(canvas, centre, 80);
-                if menu.current() == Setting::Widescreen {
-                    let mode = self.widescreen();
-                    let y = 80 + menu.height() + 2 * LINE;
-                    draw_text_centred(canvas, centre, y, about_widescreen(mode), SUBTITLE);
+                let y = 80 + menu.height() + 2 * LINE;
+                let about = match menu.current() {
+                    Setting::Sync => Some(about_sync(self.prefs.display.sync)),
+                    Setting::Widescreen => Some(about_widescreen(self.widescreen())),
+                    _ => None,
+                };
+                if let Some(about) = about {
+                    draw_text_centred(canvas, centre, y, about, SUBTITLE);
                 }
                 return;
             }
@@ -1259,7 +1277,7 @@ fn options_items(prefs: &Prefs, widescreen: Widescreen) -> Vec<(String, Setting)
             format!("Fullscreen: {}", on(display.fullscreen)),
             Setting::Fullscreen,
         ),
-        (format!("Vsync: {}", on(display.vsync)), Setting::Vsync),
+        (format!("Sync: < {} >", display.sync.label()), Setting::Sync),
         (
             format!("Music: < {}% >", volume.music),
             Setting::MusicVolume,
@@ -1274,6 +1292,16 @@ fn options_items(prefs: &Prefs, widescreen: Widescreen) -> Vec<(String, Setting)
         ),
         ("Back".into(), Setting::Back),
     ]
+}
+
+/// What the sync setting `sync` does, in a line.
+fn about_sync(sync: FrameSync) -> &'static str {
+    match sync {
+        FrameSync::Auto => "VRR on a display that supports it, otherwise VSync",
+        FrameSync::Vsync => "Waits for each refresh of the display, without tearing",
+        FrameSync::Vrr => "The display refreshes as each frame is ready, without tearing",
+        FrameSync::Off => "Up to 240 frames a second; the picture may tear",
+    }
 }
 
 /// What widescreen mode `mode` does, in a line.
@@ -1694,7 +1722,7 @@ mod tests {
             labels(&s),
             [
                 "Fullscreen: Off",
-                "Vsync: On",
+                "Sync: < Auto >",
                 "Music: < 100% >",
                 "Effects: < 100% >",
                 "Widescreen: < Wide activation >",
@@ -1709,9 +1737,15 @@ mod tests {
         assert!(s.prefs.display.fullscreen);
         s.step(&press(Action::Down));
         s.step(&press(Action::Jump));
-        assert!(!s.prefs.display.vsync);
-        assert_eq!(labels(&s)[..2], ["Fullscreen: On", "Vsync: Off"]);
-        assert_eq!(options(&s).current(), Setting::Vsync, "stays put");
+        assert_eq!(s.prefs.display.sync, FrameSync::Vsync);
+        s.step(&press(Action::Right));
+        assert_eq!(s.prefs.display.sync, FrameSync::Vrr);
+        s.step(&press(Action::Left));
+        s.step(&press(Action::Left));
+        s.step(&press(Action::Left));
+        assert_eq!(s.prefs.display.sync, FrameSync::Off);
+        assert_eq!(labels(&s)[..2], ["Fullscreen: On", "Sync: < Off >"]);
+        assert_eq!(options(&s).current(), Setting::Sync, "stays put");
         assert_eq!(Prefs::load(&path), s.prefs);
 
         // Left turns a volume down, Right up to full, and Jump up,

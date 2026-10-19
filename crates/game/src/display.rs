@@ -10,12 +10,18 @@ use clamber_sim::World;
 
 use crate::camera::VIEW;
 use crate::canvas::Fit;
+use crate::prefs::FrameSync;
 
 /// The window's size when nothing else decides it, in physical pixels.
 pub const START_SIZE: (u32, u32) = (1280, 720);
 
 /// Frames drawn a second, at most, without vsync.
 pub const FRAME_CAP: u32 = 240;
+
+/// The share of a VRR display's highest refresh rate that frames are
+/// drawn at, so they never have to wait for a refresh and the display
+/// keeps varying its own to match them.
+const VRR_HEADROOM: f64 = 0.97;
 
 /// Frames drawn a second behind a menu or while the window isn't
 /// focused, when nothing moves quickly.
@@ -170,16 +176,75 @@ impl Default for Look {
     }
 }
 
+/// How frames are shown, once [`FrameSync`] is settled for the display
+/// the window is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Presenting {
+    /// Each frame waits for the display's next refresh, and the steps
+    /// follow the refreshes ([`Pace`](crate::Pace)).
+    Vsync,
+    /// Frames are timed by the game, just under the display's highest
+    /// refresh rate ([`vrr_interval`]) or once a step, and presented
+    /// without tearing; the display refreshes as each one arrives.
+    Vrr,
+    /// Frames don't wait for the display, and are capped at
+    /// [`FRAME_CAP`] a second.
+    Off,
+}
+
+impl Presenting {
+    /// How `sync` presents on a display that can vary its refresh
+    /// (`vrr_display`) or not: Auto is VRR on one that can, and vsync
+    /// on others.
+    pub fn of(sync: FrameSync, vrr_display: bool) -> Presenting {
+        match sync {
+            FrameSync::Auto if vrr_display => Presenting::Vrr,
+            FrameSync::Auto | FrameSync::Vsync => Presenting::Vsync,
+            FrameSync::Vrr => Presenting::Vrr,
+            FrameSync::Off => Presenting::Off,
+        }
+    }
+}
+
+/// The time between frames with VRR on a display whose highest refresh
+/// rate is `millihertz` / 1000 Hz: a little longer than a refresh
+/// ([`VRR_HEADROOM`]), and no shorter than [`FRAME_CAP`]'s. Frames are
+/// drawn between steps. `None` if the rate isn't known, or that would
+/// be no faster than the steps, when instead a frame is drawn as each
+/// step is due, showing that step.
+pub fn vrr_interval(millihertz: Option<u32>) -> Option<Duration> {
+    let rate = (millihertz? as f64 / 1000.0 * VRR_HEADROOM).min(FRAME_CAP as f64);
+    (rate > clamber_sim::STEPS_PER_SECOND as f64).then(|| Duration::from_secs_f64(1.0 / rate))
+}
+
+/// The time frames are meant to be apart while playing, presented as
+/// `presenting` says on a display that refreshes `millihertz` / 1000
+/// times a second, if that's known.
+pub fn expected_interval(presenting: Presenting, millihertz: Option<u32>) -> Option<Duration> {
+    let step = Duration::from_secs(1) / clamber_sim::STEPS_PER_SECOND;
+    match presenting {
+        Presenting::Vsync => millihertz
+            .filter(|&m| m > 0)
+            .map(|m| Duration::from_secs_f64(1000.0 / m as f64)),
+        Presenting::Vrr => Some(vrr_interval(millihertz).unwrap_or(step)),
+        Presenting::Off => Some(Duration::from_secs(1) / FRAME_CAP),
+    }
+}
+
 /// The least time between drawing frames. With vsync during play it's
-/// none, as presenting waits for the display; without, it's
+/// none, as presenting waits for the display; with VRR, it's
+/// [`vrr_interval`]'s, or a step's; without either, it's
 /// [`FRAME_CAP`]'s. Behind a menu or out of focus (not `active`), it's
 /// [`IDLE_RATE`]'s.
-pub fn frame_interval(vsync: bool, active: bool) -> Duration {
+pub fn frame_interval(presenting: Presenting, active: bool, millihertz: Option<u32>) -> Duration {
     let per_second = |n: u32| Duration::from_secs(1) / n;
-    match (active, vsync) {
+    match (active, presenting) {
         (false, _) => per_second(IDLE_RATE),
-        (true, true) => Duration::ZERO,
-        (true, false) => per_second(FRAME_CAP),
+        (true, Presenting::Vsync) => Duration::ZERO,
+        (true, Presenting::Vrr) => {
+            vrr_interval(millihertz).unwrap_or_else(|| per_second(clamber_sim::STEPS_PER_SECOND))
+        }
+        (true, Presenting::Off) => per_second(FRAME_CAP),
     }
 }
 
@@ -240,12 +305,57 @@ mod tests {
 
     #[test]
     fn draws_slowly_unless_playing() {
-        assert_eq!(frame_interval(true, true), Duration::ZERO);
+        let hz = Some(60_000);
+        assert_eq!(frame_interval(Presenting::Vsync, true, hz), Duration::ZERO);
         assert_eq!(
-            frame_interval(false, true),
+            frame_interval(Presenting::Off, true, hz),
             Duration::from_secs(1) / FRAME_CAP
         );
-        assert_eq!(frame_interval(true, false), Duration::from_secs(1) / 30);
-        assert_eq!(frame_interval(false, false), Duration::from_secs(1) / 30);
+        for presenting in [Presenting::Vsync, Presenting::Vrr, Presenting::Off] {
+            let idle = Duration::from_secs(1) / 30;
+            assert_eq!(frame_interval(presenting, false, hz), idle);
+        }
+    }
+
+    #[test]
+    fn auto_sync_is_vrr_only_on_a_vrr_display() {
+        assert_eq!(Presenting::of(FrameSync::Auto, true), Presenting::Vrr);
+        assert_eq!(Presenting::of(FrameSync::Auto, false), Presenting::Vsync);
+        assert_eq!(Presenting::of(FrameSync::Vsync, true), Presenting::Vsync);
+        assert_eq!(Presenting::of(FrameSync::Vrr, false), Presenting::Vrr);
+        assert_eq!(Presenting::of(FrameSync::Off, true), Presenting::Off);
+    }
+
+    #[test]
+    fn vrr_draws_just_under_the_highest_refresh() {
+        let fps = |m| 1.0 / vrr_interval(Some(m)).unwrap().as_secs_f64();
+        assert!((fps(144_000) - 139.68).abs() < 0.01);
+        assert!((fps(75_000) - 72.75).abs() < 0.01);
+        assert_eq!(fps(360_000).round(), FRAME_CAP as f64);
+        let vrr = |m| frame_interval(Presenting::Vrr, true, m);
+        assert_eq!(vrr(Some(144_000)), vrr_interval(Some(144_000)).unwrap());
+    }
+
+    #[test]
+    fn vrr_draws_once_a_step_unless_it_can_go_faster() {
+        assert_eq!(vrr_interval(None), None);
+        assert_eq!(vrr_interval(Some(60_000)), None);
+        let step = Duration::from_secs(1) / 60;
+        assert_eq!(frame_interval(Presenting::Vrr, true, None), step);
+        assert_eq!(expected_interval(Presenting::Vrr, Some(60_000)), Some(step));
+    }
+
+    #[test]
+    fn expects_frames_a_refresh_apart_with_vsync() {
+        let at = |m| expected_interval(Presenting::Vsync, m);
+        assert_eq!(
+            at(Some(120_000)),
+            Some(Duration::from_secs_f64(1.0 / 120.0))
+        );
+        assert_eq!(at(None), None);
+        assert_eq!(
+            expected_interval(Presenting::Off, None),
+            Some(Duration::from_secs(1) / FRAME_CAP)
+        );
     }
 }

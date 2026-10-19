@@ -3,8 +3,8 @@
 //! black, with smoothly filtered textures drawn from their mipmaps and
 //! pixel art kept sharp, quads on whole pixels, and edges smoothed by multisampling. Quads with
 //! normal maps are lit in the shader just as the software canvas lights
-//! them. Frames are presented in step with the display's refresh when
-//! vsync is on.
+//! them. Frames are presented in step with the display's refresh with
+//! vsync or VRR.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,7 +13,7 @@ use winit::event_loop::OwnedDisplayHandle;
 use winit::window::Window;
 
 use crate::canvas::Color;
-use crate::display::{letterbox, pixel_fit};
+use crate::display::{Presenting, letterbox, pixel_fit};
 use crate::report;
 use crate::surface::{
     DrawList, Drawn, LIGHT_HEIGHT, Lighting, MAX_LIGHTS, Quad, Texture, triangulate,
@@ -151,17 +151,18 @@ pub struct Gpu {
     instance: wgpu::Instance,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
+    presenting: Presenting,
     /// The surface is to be set up again before the next frame.
     stale: bool,
     painter: Painter,
 }
 
 impl Gpu {
-    /// Sets up drawing into `window`, with vsync or without.
+    /// Sets up drawing into `window`, presented as `presenting` says.
     pub fn new(
         window: Arc<Window>,
         display: OwnedDisplayHandle,
-        vsync: bool,
+        presenting: Presenting,
     ) -> Result<Gpu, String> {
         let instance = wgpu::Instance::new(
             wgpu::InstanceDescriptor::new_with_display_handle_from_env(Box::new(display)),
@@ -180,7 +181,7 @@ impl Gpu {
         if surface.get_capabilities(&adapter).formats.contains(&plain) {
             config.format = plain;
         }
-        config.present_mode = present_mode(vsync);
+        config.present_mode = present_mode(presenting);
         config.desired_maximum_frame_latency = FRAME_LATENCY;
         surface.configure(&device, &config);
         let painter = Painter::new(&adapter, device, queue, config.format);
@@ -189,19 +190,22 @@ impl Gpu {
             instance,
             surface,
             config,
+            presenting,
             stale: false,
             painter,
         })
     }
 
-    pub fn vsync(&self) -> bool {
-        self.config.present_mode == present_mode(true)
+    pub fn presenting(&self) -> Presenting {
+        self.presenting
     }
 
     /// Takes effect from the next frame, as a frame may be being drawn.
-    pub fn set_vsync(&mut self, vsync: bool) {
-        if vsync != self.vsync() {
-            self.config.present_mode = present_mode(vsync);
+    pub fn set_presenting(&mut self, presenting: Presenting) {
+        self.presenting = presenting;
+        let mode = present_mode(presenting);
+        if mode != self.config.present_mode {
+            self.config.present_mode = mode;
             self.stale = true;
         }
     }
@@ -1076,11 +1080,13 @@ fn premultiplied(color: Color, alpha: u8) -> [f32; 4] {
     [c(16), c(8), c(0), a]
 }
 
-fn present_mode(vsync: bool) -> wgpu::PresentMode {
-    if vsync {
-        wgpu::PresentMode::AutoVsync
-    } else {
-        wgpu::PresentMode::AutoNoVsync
+/// VRR presents in order as with vsync (a flip-model swap chain on
+/// Windows), which never tears; frames come just under the display's
+/// highest rate, so it refreshes as each one arrives instead of waiting.
+fn present_mode(presenting: Presenting) -> wgpu::PresentMode {
+    match presenting {
+        Presenting::Vsync | Presenting::Vrr => wgpu::PresentMode::AutoVsync,
+        Presenting::Off => wgpu::PresentMode::AutoNoVsync,
     }
 }
 

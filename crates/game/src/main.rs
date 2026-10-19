@@ -13,9 +13,9 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use clamber_game::{
-    Canvas, Clock, Credits, DEFAULT_CREDITS, DrawList, Edit, Feels, Fit, GIF_DELAY, Game, Gpu,
-    Pace, Prefs, SPRITES, Screen, Session, Surface, VIEW, content_dir, display, encode_gif,
-    encode_png, keys, load_game, present, report, rgb,
+    Canvas, Clock, Credits, DEFAULT_CREDITS, DrawList, Edit, Feels, Fit, FrameTimes, GIF_DELAY,
+    Game, Gpu, Pace, Prefs, Presenting, SPRITES, Screen, Session, Surface, VIEW, content_dir,
+    display, encode_gif, encode_png, keys, load_game, present, report, rgb,
 };
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
@@ -219,6 +219,9 @@ fn play(options: Options) -> Result<(), String> {
         occluded: false,
         clock: Clock::new(),
         pace: None,
+        millihertz: None,
+        undrawn: 0,
+        frames: FrameTimes::new(),
         last: Instant::now(),
         drawn: Instant::now(),
         window: None,
@@ -478,6 +481,13 @@ impl Dialog {
     }
 }
 
+/// Whether `window`'s display can vary its refresh rate (VRR). Neither
+/// winit nor wgpu can tell, so it's taken that it can't: Auto sync is
+/// vsync, and the VRR setting turns VRR on by hand (#307).
+fn vrr_display(_window: &Window) -> bool {
+    false
+}
+
 struct Shown {
     window: Arc<Window>,
     output: Output,
@@ -486,7 +496,7 @@ struct Shown {
 /// How frames get to the window.
 enum Output {
     Gpu(Box<Gpu>),
-    /// Without a GPU that can draw to the window: no vsync, and only
+    /// Without a GPU that can draw to the window: no vsync or VRR, and only
     /// whole-number scales, drawn at that scale.
     Software(softbuffer::Surface<Arc<Window>, Arc<Window>>),
 }
@@ -518,6 +528,13 @@ struct App {
     /// How frames drawn with vsync pace the clock, on the display the
     /// window is on, if its refresh rate is known.
     pace: Option<Pace>,
+    /// That display's refresh rate in millihertz, or its highest with
+    /// VRR, if known.
+    millihertz: Option<u32>,
+    /// Steps run since the last frame was drawn.
+    undrawn: u32,
+    /// The time between the last frames, for the debug view's graph.
+    frames: FrameTimes,
     /// When the clock was last advanced.
     last: Instant,
     /// When the last frame was drawn.
@@ -554,7 +571,7 @@ impl App {
         let gpu = Gpu::new(
             window.clone(),
             event_loop.owned_display_handle(),
-            prefs.vsync,
+            Presenting::of(prefs.sync, vrr_display(&window)),
         );
         let output = match gpu {
             Ok(gpu) => Output::Gpu(Box::new(gpu)),
@@ -672,7 +689,7 @@ impl App {
                 .set_fullscreen(display.fullscreen.then_some(Fullscreen::Borderless(None)));
         }
         if let Output::Gpu(gpu) = &mut shown.output {
-            gpu.set_vsync(display.vsync);
+            gpu.set_presenting(Presenting::of(display.sync, vrr_display(&shown.window)));
         }
     }
 
@@ -717,16 +734,34 @@ impl App {
         })
     }
 
+    /// How frames are presented now.
+    fn presenting(&self) -> Presenting {
+        match self.window.as_ref().map(|s| &s.output) {
+            Some(Output::Gpu(gpu)) => gpu.presenting(),
+            _ => Presenting::Off,
+        }
+    }
+
+    /// Whether the game is being played, on a level or the level map,
+    /// rather than behind a menu or out of focus.
+    fn active(&self) -> bool {
+        self.focused && matches!(self.session.screen, Screen::Playing | Screen::Map)
+    }
+
     /// The least time between frames now: none during play or on the
     /// level map with vsync, as presenting waits for the display, and
     /// less often behind menus and out of focus.
     fn frame_interval(&self) -> std::time::Duration {
-        let vsync = matches!(
-            self.window.as_ref().map(|s| &s.output),
-            Some(Output::Gpu(gpu)) if gpu.vsync()
-        );
-        let active = self.focused && matches!(self.session.screen, Screen::Playing | Screen::Map);
-        display::frame_interval(vsync, active)
+        display::frame_interval(self.presenting(), self.active(), self.millihertz)
+    }
+
+    /// Whether a frame is drawn as each step is due, showing that step:
+    /// with VRR during play, when frames can't come faster than the
+    /// steps ([`display::vrr_interval`]).
+    fn on_steps(&self) -> bool {
+        self.presenting() == Presenting::Vrr
+            && self.active()
+            && display::vrr_interval(self.millihertz).is_none()
     }
 
     /// Whether the steps follow the frames: drawn with vsync during
@@ -745,6 +780,7 @@ impl App {
             .window
             .current_monitor()
             .and_then(|m| m.refresh_rate_millihertz());
+        self.millihertz = millihertz;
         self.pace = millihertz.and_then(Pace::new);
     }
 
@@ -758,6 +794,7 @@ impl App {
             _ => self.clock.advance(elapsed),
         };
         self.last = now;
+        self.undrawn += steps;
         for _ in 0..steps {
             #[cfg(feature = "gamepad")]
             if let Some(pads) = &mut self.gamepads {
@@ -811,8 +848,16 @@ impl App {
         if self.session.quit {
             return Ok(());
         }
-        self.drawn = Instant::now();
-        let alpha = self.clock.alpha();
+        let now = Instant::now();
+        self.frames.record(now - self.drawn);
+        self.drawn = now;
+        self.undrawn = 0;
+        let alpha = match self.on_steps() {
+            true => 1.0,
+            false => self.clock.alpha(),
+        };
+        let graph = self.session.game.debug && self.active();
+        let expected = display::expected_interval(self.presenting(), self.millihertz);
 
         let Some(shown) = &mut self.window else {
             return Ok(());
@@ -826,6 +871,9 @@ impl App {
                 self.list.view = look.view;
                 self.list.pixel_art = look.pixel_art;
                 self.session.draw(&mut self.list, alpha);
+                if graph {
+                    self.frames.draw(&mut self.list, expected);
+                }
                 gpu.present(&self.list, next);
                 Ok(())
             }
@@ -847,6 +895,9 @@ impl App {
                     self.canvas = Canvas::scaled(look.view, scale);
                 }
                 self.session.draw(&mut self.canvas, alpha);
+                if graph {
+                    self.frames.draw(&mut self.canvas, expected);
+                }
                 surface.resize(w, h).map_err(|e| e.to_string())?;
                 let mut buffer = surface.buffer_mut().map_err(|e| e.to_string())?;
                 present(&self.canvas, &mut buffer, size.width, size.height, BORDER);
@@ -916,7 +967,12 @@ impl ApplicationHandler for App {
         }
         let mut wake = self.last + self.clock.until_next();
         if self.visible() {
-            let next_frame = self.drawn + self.frame_interval();
+            // With frames on steps, one is drawn once a step has run.
+            let next_frame = match self.on_steps() {
+                true if self.undrawn > 0 => Instant::now(),
+                true => wake,
+                false => self.drawn + self.frame_interval(),
+            };
             if Instant::now() >= next_frame {
                 if let Some(shown) = &self.window {
                     shown.window.request_redraw();

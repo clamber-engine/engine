@@ -105,13 +105,51 @@ Snappy (quicker and heavier), Floaty (light, long jumps) or Classic 1
 with it. Classic 2 and Classic 3 are listed but can't be picked yet. Your choice is saved to `prefs.toml` in the same folder
 as `input.toml`, and the game starts with it next time.
 
-**Options** on the title or pause screen turns fullscreen and vsync on
-and off, and sets the music and effects volumes. Vsync is on to start
-with, so the picture doesn't tear; with it off, the game draws up to 240
-frames a second. On a volume, Left turns it down and Right or Pick turns
+**Options** on the title or pause screen turns fullscreen on and off,
+sets how frames are synced to the display, and sets the music and
+effects volumes. On a volume, Left turns it down and Right or Pick turns
 it up, in steps of 10%; Pick at 100% goes back to silent. All of these,
 and the window's size, are saved to `prefs.toml` too. The game pauses when its
 window loses focus.
+
+**Sync** on the options screen sets how frames wait for the display.
+Left, and Right or Pick, go through the settings. Whichever you pick,
+the game itself always moves in steps of a sixtieth of a second; only when frames are
+shown changes, so it plays the same.
+
+- **Auto**, where the game starts: VRR on a display that supports it,
+  and VSync on others. The game can't yet tell whether a display
+  supports VRR, so for now Auto is always VSync (#307); pick VRR yourself if
+  yours does.
+- **VSync**: each frame waits for the display's next refresh, so the
+  picture never tears. On a 60, 120 or 240 Hz display every step is
+  shown for the same number of refreshes; at other rates, such as
+  144 Hz, frames are drawn between steps.
+- **VRR**, for G-Sync, FreeSync and HDMI VRR displays: frames are shown
+  as soon as they're drawn, without tearing, and the display refreshes
+  as each one arrives. The game draws them just under the display's
+  highest refresh rate (about 140 a second on a 144 Hz display), in
+  between steps. If it can't tell the display's rate, or that's 60 Hz,
+  it draws exactly one frame a step instead, 60 even frames a second.
+  On a display without VRR this setting judders; use VSync there.
+- **Off**: frames don't wait for the display and the picture may tear.
+  The game draws up to 240 frames a second.
+
+VRR only takes effect where the system lets it. On Windows, play
+fullscreen (F11 or Alt+Enter), which uses borderless fullscreen with a
+flip-model swap chain, and turn on G-Sync or FreeSync in the graphics
+driver's settings (for G-Sync, also for windowed and borderless games
+if you play in a window). On Linux, VRR needs a compositor that
+supports it, with it turned on (for example KDE Plasma on Wayland, or
+GNOME's variable refresh rate setting), and usually needs the game
+fullscreen.
+
+To check the pacing by eye, press F1 during play: under the collision
+view, the bottom-left corner shows a graph of the time between the last
+120 frames, a unit high for each millisecond, with a line at the time
+they're meant to take. Green bars are on time, orange ones are off by
+more than a tenth, and red ones are half as long again or more. Above
+it are the frame rate and how far frame times spread from their mean.
 
 **Widescreen** on the options screen sets how the game being played
 shows a classic movement's view, which is narrower than a wide window.

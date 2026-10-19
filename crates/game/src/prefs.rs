@@ -38,14 +38,11 @@ pub const BUNDLED: &str = "clamber";
 
 /// The window's settings.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, from = "DisplayFile")]
 pub struct Display {
     pub fullscreen: bool,
-    /// Wait for the display's refresh to show each frame, so it doesn't
-    /// tear. Without it, frames are capped at [`FRAME_CAP`] a second.
-    ///
-    /// [`FRAME_CAP`]: crate::FRAME_CAP
-    pub vsync: bool,
+    /// How frames wait for the display.
+    pub sync: FrameSync,
     /// The window's size when it isn't fullscreen, in physical pixels,
     /// as the player last left it.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -56,9 +53,80 @@ impl Default for Display {
     fn default() -> Display {
         Display {
             fullscreen: false,
-            vsync: true,
+            sync: FrameSync::Auto,
             window: None,
         }
+    }
+}
+
+/// [`Display`] as read from a file, which may be from before there was
+/// a [`FrameSync`] setting, when there was only vsync on or off.
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct DisplayFile {
+    fullscreen: bool,
+    sync: Option<FrameSync>,
+    vsync: Option<bool>,
+    window: Option<[u32; 2]>,
+}
+
+impl From<DisplayFile> for Display {
+    fn from(file: DisplayFile) -> Display {
+        let sync = match (file.sync, file.vsync) {
+            (Some(sync), _) => sync,
+            (None, Some(false)) => FrameSync::Off,
+            (None, _) => FrameSync::Auto,
+        };
+        Display {
+            fullscreen: file.fullscreen,
+            sync,
+            window: file.window,
+        }
+    }
+}
+
+/// How frames wait for the display, from the options screen.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FrameSync {
+    /// VRR on a display that can vary its refresh, and vsync on others.
+    #[default]
+    Auto,
+    /// Each frame waits for the display's next refresh, so it doesn't
+    /// tear.
+    Vsync,
+    /// Frames are shown as soon as they're drawn, without tearing, on a
+    /// display that varies its refresh to match.
+    Vrr,
+    /// Frames don't wait for the display, and may tear. They're capped
+    /// at [`FRAME_CAP`] a second.
+    ///
+    /// [`FRAME_CAP`]: crate::display::FRAME_CAP
+    Off,
+}
+
+impl FrameSync {
+    pub const ALL: [FrameSync; 4] = [
+        FrameSync::Auto,
+        FrameSync::Vsync,
+        FrameSync::Vrr,
+        FrameSync::Off,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            FrameSync::Auto => "Auto",
+            FrameSync::Vsync => "VSync",
+            FrameSync::Vrr => "VRR",
+            FrameSync::Off => "Off",
+        }
+    }
+
+    /// The setting after this one, or before it if `back`, going round.
+    pub fn next(self, back: bool) -> FrameSync {
+        let i = FrameSync::ALL.iter().position(|&s| s == self).unwrap_or(0);
+        let n = FrameSync::ALL.len();
+        FrameSync::ALL[if back { (i + n - 1) % n } else { (i + 1) % n }]
     }
 }
 
@@ -143,7 +211,7 @@ mod tests {
                 preset: None,
                 display: Display {
                     fullscreen: true,
-                    vsync: false,
+                    sync: FrameSync::Vrr,
                     window: Some([1600, 900]),
                 },
                 volume: Volume {
@@ -163,12 +231,39 @@ mod tests {
     }
 
     #[test]
-    fn vsync_is_on_unless_turned_off() {
-        assert!(Prefs::default().display.vsync);
+    fn sync_is_auto_unless_changed() {
+        assert_eq!(Prefs::default().display.sync, FrameSync::Auto);
         let prefs = Prefs::from_toml_str("preset = \"snappy\"").unwrap();
-        assert!(prefs.display.vsync, "prefs from before there were options");
+        assert_eq!(
+            prefs.display.sync,
+            FrameSync::Auto,
+            "prefs from before options"
+        );
         let prefs = Prefs::from_toml_str("[display]\nfullscreen = true").unwrap();
-        assert!(prefs.display.fullscreen && prefs.display.vsync);
+        assert!(prefs.display.fullscreen);
+        assert_eq!(prefs.display.sync, FrameSync::Auto);
+        let prefs = Prefs::from_toml_str("[display]\nsync = \"vrr\"").unwrap();
+        assert_eq!(prefs.display.sync, FrameSync::Vrr);
+    }
+
+    #[test]
+    fn vsync_turned_off_before_there_was_sync_is_off() {
+        let prefs = Prefs::from_toml_str("[display]\nvsync = false").unwrap();
+        assert_eq!(prefs.display.sync, FrameSync::Off);
+        let prefs = Prefs::from_toml_str("[display]\nvsync = true").unwrap();
+        assert_eq!(prefs.display.sync, FrameSync::Auto);
+        let toml = Prefs::default().to_toml_string();
+        assert!(
+            toml.contains("sync = \"auto\"") && !toml.contains("vsync"),
+            "{toml}"
+        );
+    }
+
+    #[test]
+    fn sync_goes_round() {
+        assert_eq!(FrameSync::Auto.next(false), FrameSync::Vsync);
+        assert_eq!(FrameSync::Off.next(false), FrameSync::Auto);
+        assert_eq!(FrameSync::Auto.next(true), FrameSync::Off);
     }
 
     #[test]
