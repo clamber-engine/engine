@@ -245,6 +245,10 @@ fn walk(player: &mut Player, ending: &Ending, physics: &Physics, events: &mut Ve
         return;
     }
     player.pos.x += speed;
+    // T + 1 rises off the ground (`level-end.md`, "In a trace").
+    if player.ground.is_some() {
+        events.push(Event::LeaveGround);
+    }
     player.ground = None;
     player.spring = None;
     player.spring_arc = None;

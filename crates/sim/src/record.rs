@@ -10,12 +10,14 @@ use clamber_trace::trace::{self, Source};
 use clamber_trace::{Buttons, Decimal, Row, Scenario, Trace};
 
 use crate::archetype::ArchetypeError;
+use crate::flow::Outcome;
 use crate::player::{Facing, State};
 use crate::script::{InputFrame, Script};
-use crate::world::{Event, World, run, step};
+use crate::world::{Event, World, step};
 
 /// Runs the scenario's inputs from the level's start and records a trace
-/// of the player, one row per step. The player starts as a new world puts
+/// of the player, one row per step, up to the level's or the area's last
+/// frame if play reaches it. The player starts as a new world puts
 /// it: standing still, facing right, the lead character. That is the same
 /// state as having stood idle for any number of frames, so the usual
 /// scenario `start:` needs no settling time. A player that starts in
@@ -39,10 +41,14 @@ pub fn record(
     settle(&mut world);
     let start = world.player.pos;
     let mut rows = Vec::with_capacity(scenario.frames as usize);
-    run(&mut world, &Script::from_scenario(scenario), |w| {
+    for input in Script::from_scenario(scenario).frames() {
+        step(&mut world, &input);
         let frame = rows.len() as u32;
-        rows.push(row(w, frame, scenario.held(frame), start, true));
-    });
+        rows.push(row(&world, frame, scenario.held(frame), start, true));
+        if area_over(world.flow.outcome) {
+            break;
+        }
+    }
     Ok(Trace {
         scenario: scenario.id.clone(),
         source: Source::Engine,
@@ -64,7 +70,13 @@ pub fn row(world: &World, frame: u32, input: Buttons, start: Vec2, stepped: bool
         y: decimal(p.pos.y - start.y),
         vx: decimal(p.vel.x),
         vy: decimal(p.vel.y),
-        state: state(p.state),
+        // Rising off the ground in the walk-out after an end marker, the
+        // lead is off the ground without having jumped (`level-end.md`,
+        // "In a trace").
+        state: match world.ending.is_some() && !p.grounded() {
+            true => clamber_trace::State::Fall,
+            false => state(p.state),
+        },
         // A swimmer on the floor is on the ground (`swimming.md`).
         ground: p.grounded() || p.swim_floor,
         facing: match p.facing {
@@ -76,6 +88,16 @@ pub fn row(world: &World, frame: u32, input: Buttons, start: Vec2, stepped: bool
             false => Vec::new(),
         },
     }
+}
+
+/// Whether the level or the area ended with the last step: a trace ends
+/// with the level's or the area's last frame (`level-end.md` and
+/// `exits.md`, "In a trace").
+fn area_over(outcome: Outcome) -> bool {
+    matches!(
+        outcome,
+        Outcome::Complete | Outcome::Exited(_) | Outcome::Ended
+    )
 }
 
 fn decimal(v: Fixed) -> Decimal {
