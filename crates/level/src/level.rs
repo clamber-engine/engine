@@ -182,9 +182,9 @@ pub struct Scene {
     pub arrival: Option<String>,
 }
 
-/// A music track. Loop points are for formats without loop tags; without
-/// them the file's `LOOPSTART`/`LOOPLENGTH` tags apply, or the whole track
-/// loops.
+/// A music track: an Ogg Vorbis, MP3, FLAC or WAV file. Loop points are
+/// for formats without loop tags; without them the file's
+/// `LOOPSTART`/`LOOPLENGTH` tags apply, or the whole track loops.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Track {
     /// Relative to the level file.

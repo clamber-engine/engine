@@ -11,6 +11,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use clamber_audio::encode::DEFAULT_QUALITY;
 use clamber_import::{
     BANK_SIZE, Below, Catalog, CollectibleParts, END, Ground, Image, ImportError, Importer, Kind,
     KindRow, Known, Layout, LevelDecoder, LevelParts, LevelSong, Location, NIBBLE_HEADER, Optional,
@@ -315,6 +316,7 @@ fn importer_for(image: &Image, kinds: Vec<KindRow>) -> Importer {
             parts: parts(),
             kinds,
             settings: vec![],
+            audio_quality: DEFAULT_QUALITY,
         })],
     }
 }
@@ -351,7 +353,7 @@ fn imported_level_by(name: &str, importer: Importer) -> (Level, PathBuf) {
 #[test]
 fn writes_the_level_and_its_images() {
     let (level, dir) = imported_level("writes");
-    for file in ["first-far.png", "first-tiles.png", "first-music.wav"] {
+    for file in ["first-far.png", "first-tiles.png", "first-music.ogg"] {
         assert!(dir.join(file).is_file(), "no {file}");
     }
     assert_eq!(level.name, "made-up level");
@@ -370,17 +372,17 @@ fn writes_the_level_and_its_images() {
 fn writes_the_level_s_music_with_its_loop() {
     let (level, dir) = imported_level("music");
     let music = level.music.unwrap();
-    assert_eq!(music.file, "first-music.wav");
+    assert_eq!(music.file, "first-music.ogg");
     assert_eq!(music.loop_length, Some(3200));
-    let wav = fs::read(dir.join(&music.file)).unwrap();
-    let frames = (wav.len() as u64 - 44) / 4;
+    let ogg = fs::read(dir.join(&music.file)).unwrap();
+    let input = clamber_audio::Input::bytes(ogg, Some("ogg"));
+    let (decoded, _) = clamber_audio::Sound::decode(&input).unwrap();
     let start = music.loop_start.unwrap();
-    assert_eq!(start + 3200, frames);
+    assert_eq!(start + 3200, decoded.frames() as u64);
     // The game plays it, and what leads into the loop's start is what
-    // its end leaves sounding.
-    let input = clamber_audio::Input::bytes(wav, Some("wav"));
+    // its end leaves sounding, as closely as the encoding keeps it.
     let seam = clamber_audio::seam::check(&input, start, start + 3200).unwrap();
-    assert!(seam.mismatch < -60.0, "{seam:?}");
+    assert!(seam.mismatch < -25.0, "{seam:?}");
     assert!(seam.after < -60.0, "{seam:?}");
 }
 
@@ -429,7 +431,7 @@ fn a_song_that_cant_be_converted_is_skipped() {
 
     let level = Level::load(&imported.dir.join("levels/first.level")).unwrap();
     assert_eq!(level.music, None);
-    assert!(!imported.dir.join("levels/first-music.wav").exists());
+    assert!(!imported.dir.join("levels/first-music.ogg").exists());
 }
 
 /// Objects without a kind fingerprint row are named by their reference;
@@ -494,6 +496,7 @@ fn refuses_parts_past_the_end_of_the_image() {
         parts: parts(),
         kinds: vec![],
         settings: vec![],
+        audio_quality: DEFAULT_QUALITY,
     };
     decoder.parts.grid = Location::new(BANK, 0xFF00);
     let err = decoder.level(&image()).unwrap_err();
@@ -511,6 +514,7 @@ fn without_a_start_record_the_start_is_on_the_ground_at_the_left() {
         parts: parts(),
         kinds: vec![],
         settings: vec![],
+        audio_quality: DEFAULT_QUALITY,
     };
     decoder.parts.start = None;
     let (level, ..) = decoder.level(&image()).unwrap();
@@ -532,6 +536,7 @@ fn the_second_wall_return_record_is_an_arrival_dropping_in() {
         parts: parts(),
         kinds: vec![],
         settings: vec![],
+        audio_quality: DEFAULT_QUALITY,
     };
     let (level, ..) = decoder.level(&image()).unwrap();
     assert!(level.arrivals.iter().all(|a| !a.drop));

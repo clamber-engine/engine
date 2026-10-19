@@ -110,7 +110,8 @@ pub fn cues(world: &World) -> impl Iterator<Item = Cue> + '_ {
 /// jump = "sounds/jump.ogg"
 /// ```
 ///
-/// Paths are relative to the list. Cues without a file are silent.
+/// Paths are relative to the list. Files can be Ogg Vorbis, MP3, FLAC or
+/// WAV. Cues without a file are silent.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SoundList {
     pub effects: BTreeMap<Cue, PathBuf>,

@@ -7,6 +7,9 @@ The music is the *Platformer Game Music Pack* by CodeManu (CC-BY 3.0);
 **Credits** on the title screen has the details, and they're also in
 `content/base/CREDITS.md`. The sound effects are placeholders.
 
+Sound files can be Ogg Vorbis (`.ogg`), MP3, FLAC or WAV. Clamber's own
+sound effects and the music of imported games are Ogg Vorbis.
+
 ## On Windows
 
 CI builds the game for Windows from every push to `main`.
@@ -159,7 +162,9 @@ writes a report on it to `import-report.txt` in that folder (the screen
 shows where) and replaces the one from the import before. It has only
 counts, steps and states, nothing from the game itself, so it's safe to
 share. `clamber-import <file>` does the same from a command line, and
-writes the report only if asked to, with `--import-report <file>`. A personal import is yours alone: it's
+writes the report only if asked to, with `--import-report <file>`.
+It writes the music as Ogg Vorbis at quality 6, which
+`--audio-quality <q>` changes (from -1, smallest, to 10, best). A personal import is yours alone: it's
 marked as one wherever it's shown, and Clamber won't export it or
 capture it for sharing. This version recognizes the one game image
 it supports (with or without a copier header) and converts its first

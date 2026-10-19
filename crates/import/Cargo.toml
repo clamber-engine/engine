@@ -7,6 +7,7 @@ publish = false
 description = "The importer: turns a player's own game image into a personal content pack"
 
 [dependencies]
+clamber-audio = { path = "../audio", features = ["encode"] }
 clamber-fixed = { path = "../fixed" }
 clamber-level = { path = "../level" }
 clamber-sprite = { path = "../sprite" }
@@ -17,7 +18,6 @@ toml = "1.1.8"
 
 
 [dev-dependencies]
-clamber-audio = { path = "../audio" }
 clamber-input = { path = "../input" }
 clamber-pack = { path = "../pack" }
 clamber-sim = { path = "../sim" }

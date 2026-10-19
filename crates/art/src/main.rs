@@ -35,7 +35,7 @@ fn main() -> ExitCode {
     let mut stale = 0;
     for out in &outputs {
         let path = content.join(&out.path);
-        if std::fs::read(&path).is_ok_and(|b| b == out.bytes) {
+        if std::fs::read(&path).is_ok_and(|b| out.is_current(&b)) {
             continue;
         }
         if check {

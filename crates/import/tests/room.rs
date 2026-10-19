@@ -9,6 +9,7 @@
 use std::fs;
 use std::sync::Arc;
 
+use clamber_audio::encode::DEFAULT_QUALITY;
 use clamber_import::{
     BANK_SIZE, Catalog, FROM_LEVEL, Image, Importer, Known, LevelDecoder, LevelParts, Location,
     Scenery, installed, rgb,
@@ -155,6 +156,7 @@ fn imported_room(name: &str) -> (Level, std::path::PathBuf) {
             parts: parts(),
             kinds: vec![],
             settings: vec![],
+            audio_quality: DEFAULT_QUALITY,
         })],
     };
     let dir = std::env::temp_dir().join(format!("clamber-room-{name}-{}", std::process::id()));

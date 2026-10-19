@@ -4,7 +4,9 @@
 //!
 //! A song's data is played by [`crate::Player`] (`songs.md`); the rate a
 //! sample plays at is the pitch a note hands its voice, so
-//! [`SampleAudio::wav`] takes the rate from its caller.
+//! [`SampleAudio::ogg`] takes the rate from its caller.
+
+use clamber_audio::encode::Vorbis;
 
 use crate::Location;
 
@@ -246,27 +248,18 @@ pub struct SampleAudio {
 }
 
 impl SampleAudio {
-    /// A mono 16-bit WAV file of the points at `rate` points a second.
-    /// Loop points aren't stored in it; they go in content metadata.
-    pub fn wav(&self, rate: u32) -> Vec<u8> {
-        let data_len = 2 * self.points.len() as u32;
-        let mut out = Vec::with_capacity(44 + data_len as usize);
-        out.extend_from_slice(b"RIFF");
-        out.extend_from_slice(&(36 + data_len).to_le_bytes());
-        out.extend_from_slice(b"WAVEfmt ");
-        out.extend_from_slice(&16u32.to_le_bytes());
-        out.extend_from_slice(&1u16.to_le_bytes()); // PCM
-        out.extend_from_slice(&1u16.to_le_bytes()); // one channel
-        out.extend_from_slice(&rate.to_le_bytes());
-        out.extend_from_slice(&(2 * rate).to_le_bytes());
-        out.extend_from_slice(&2u16.to_le_bytes());
-        out.extend_from_slice(&16u16.to_le_bytes());
-        out.extend_from_slice(b"data");
-        out.extend_from_slice(&data_len.to_le_bytes());
-        for point in &self.points {
-            out.extend_from_slice(&point.to_le_bytes());
-        }
-        out
+    /// A mono Ogg Vorbis file of the points at `rate` points a second,
+    /// at Vorbis quality `quality` (-1 to 10). Loop points aren't stored
+    /// in it; they go in content metadata, and are points of the file as
+    /// they are of [`points`](SampleAudio::points).
+    pub fn ogg(&self, rate: u32, quality: f32) -> Result<Vec<u8>, String> {
+        let vorbis = Vorbis {
+            quality,
+            ..Vorbis::default()
+        };
+        vorbis
+            .encode(&self.points, 1, rate)
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -619,15 +612,16 @@ mod tests {
     }
 
     #[test]
-    fn wav_files_hold_the_points() {
+    fn ogg_files_hold_every_point_at_the_rate() {
         let audio = SampleAudio {
-            points: vec![1, -2, 32767],
+            points: (0..500).map(|i| (i * 40) as i16).collect(),
             looping: None,
         };
-        let wav = audio.wav(32000);
-        assert_eq!(wav.len(), 44 + 6);
-        assert_eq!(&wav[..4], b"RIFF");
-        assert_eq!(&wav[24..28], &32000u32.to_le_bytes());
-        assert_eq!(&wav[44..], &[1, 0, 0xFE, 0xFF, 0xFF, 0x7F]);
+        let ogg = audio
+            .ogg(32000, clamber_audio::encode::DEFAULT_QUALITY)
+            .unwrap();
+        let input = clamber_audio::Input::bytes(ogg, Some("ogg"));
+        let (sound, rate) = clamber_audio::Sound::decode(&input).unwrap();
+        assert_eq!((sound.channels, rate, sound.frames()), (1, 32000, 500));
     }
 }

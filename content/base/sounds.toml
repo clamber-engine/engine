@@ -1,19 +1,20 @@
 # The sound effect for each cue in play. Paths are relative to this file;
-# a cue without a file is silent.
+# a cue without a file is silent. Files can be Ogg Vorbis, MP3, FLAC or
+# WAV.
 #
 # Cues: jump, land, roll, collect, checkpoint, hurt, complete, game_over,
 # pause, defeat, launch. These are the placeholders generated from
 # art/art.toml.
 
 [effects]
-jump = "sounds/jump.wav"
-land = "sounds/land.wav"
-roll = "sounds/roll.wav"
-collect = "sounds/collect.wav"
-checkpoint = "sounds/checkpoint.wav"
-hurt = "sounds/hurt.wav"
-complete = "sounds/complete.wav"
-game_over = "sounds/game_over.wav"
-pause = "sounds/pause.wav"
-defeat = "sounds/defeat.wav"
-launch = "sounds/launch.wav"
+jump = "sounds/jump.ogg"
+land = "sounds/land.ogg"
+roll = "sounds/roll.ogg"
+collect = "sounds/collect.ogg"
+checkpoint = "sounds/checkpoint.ogg"
+hurt = "sounds/hurt.ogg"
+complete = "sounds/complete.ogg"
+game_over = "sounds/game_over.ogg"
+pause = "sounds/pause.ogg"
+defeat = "sounds/defeat.ogg"
+launch = "sounds/launch.ogg"

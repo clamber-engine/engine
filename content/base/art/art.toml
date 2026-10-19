@@ -12,28 +12,29 @@
 # `wave` (square, triangle, saw or noise), a frequency in Hz sweeping
 # `from` one value `to` another, `length` in seconds, `volume` (0 to 1),
 # `duty` for square waves, and `fade`, the fraction of the tone at its end
-# over which it fades out.
+# over which it fades out. An `out` ending in .ogg is written as Ogg
+# Vorbis, one ending in .wav as WAV.
 [[sounds]]
-out = "sounds/jump.wav"
+out = "sounds/jump.ogg"
 tones = [{ from = 260, to = 620, length = 0.12, volume = 0.3, fade = 0.6 }]
 
 [[sounds]]
-out = "sounds/land.wav"
+out = "sounds/land.ogg"
 tones = [{ wave = "noise", from = 1800, to = 400, length = 0.06, volume = 0.3 }]
 
 [[sounds]]
-out = "sounds/roll.wav"
+out = "sounds/roll.ogg"
 tones = [{ wave = "noise", from = 5000, to = 900, length = 0.2, volume = 0.25 }]
 
 [[sounds]]
-out = "sounds/collect.wav"
+out = "sounds/collect.ogg"
 tones = [
     { from = 988, length = 0.05, volume = 0.25, duty = 0.25, fade = 0.2 },
     { from = 1319, length = 0.14, volume = 0.25, duty = 0.25 },
 ]
 
 [[sounds]]
-out = "sounds/checkpoint.wav"
+out = "sounds/checkpoint.ogg"
 tones = [
     { wave = "triangle", from = 523, length = 0.07, volume = 0.5, fade = 0.2 },
     { wave = "triangle", from = 659, length = 0.07, volume = 0.5, fade = 0.2 },
@@ -42,11 +43,11 @@ tones = [
 ]
 
 [[sounds]]
-out = "sounds/hurt.wav"
+out = "sounds/hurt.ogg"
 tones = [{ from = 440, to = 110, length = 0.35, volume = 0.3, duty = 0.25 }]
 
 [[sounds]]
-out = "sounds/complete.wav"
+out = "sounds/complete.ogg"
 tones = [
     { from = 523, length = 0.1, volume = 0.25, fade = 0.2 },
     { from = 659, length = 0.1, volume = 0.25, fade = 0.2 },
@@ -55,7 +56,7 @@ tones = [
 ]
 
 [[sounds]]
-out = "sounds/game_over.wav"
+out = "sounds/game_over.ogg"
 tones = [
     { wave = "triangle", from = 392, length = 0.22, volume = 0.5, fade = 0.2 },
     { wave = "triangle", from = 330, length = 0.22, volume = 0.5, fade = 0.2 },
@@ -64,19 +65,19 @@ tones = [
 ]
 
 [[sounds]]
-out = "sounds/pause.wav"
+out = "sounds/pause.ogg"
 tones = [
     { from = 880, length = 0.04, volume = 0.2, duty = 0.25, fade = 0.2 },
     { from = 660, length = 0.07, volume = 0.2, duty = 0.25 },
 ]
 
 [[sounds]]
-out = "sounds/defeat.wav"
+out = "sounds/defeat.ogg"
 tones = [
     { wave = "noise", from = 3000, to = 600, length = 0.05, volume = 0.3 },
     { from = 330, to = 880, length = 0.1, volume = 0.25, duty = 0.25, fade = 0.5 },
 ]
 
 [[sounds]]
-out = "sounds/launch.wav"
+out = "sounds/launch.ogg"
 tones = [{ wave = "triangle", from = 180, to = 900, length = 0.25, volume = 0.5, fade = 0.4 }]

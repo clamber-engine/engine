@@ -1,4 +1,5 @@
-//! Placeholder sound: simple waveforms written as 16-bit mono WAV.
+//! Placeholder sound: simple waveforms as 16-bit mono samples at
+//! [`RATE`], which [`crate::generate`] writes as WAV or Ogg Vorbis.
 //!
 //! A **sound** is a sequence of tones, each a waveform sweeping from one
 //! frequency to another. **Music** is a set of voices playing note
@@ -28,7 +29,7 @@ pub enum Wave {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SoundSpec {
-    /// The WAV, relative to the content folder.
+    /// The file, relative to the content folder: `.ogg` or `.wav`.
     pub out: String,
     pub tones: Vec<Tone>,
 }
@@ -94,8 +95,8 @@ fn quarter() -> f64 {
     0.25
 }
 
-/// A sound effect as WAV.
-pub fn sound(spec: &SoundSpec) -> Result<Vec<u8>, String> {
+/// A sound effect's samples.
+pub fn sound(spec: &SoundSpec) -> Result<Vec<i16>, String> {
     let mut out = Vec::new();
     let mut noise = Noise::default();
     for (i, t) in spec.tones.iter().enumerate() {
@@ -112,11 +113,11 @@ pub fn sound(spec: &SoundSpec) -> Result<Vec<u8>, String> {
             out.push(level * t.volume * envelope(s, n, t.fade));
         }
     }
-    Ok(wav(&out))
+    Ok(samples(&out))
 }
 
-/// A music track as WAV.
-pub fn music(spec: &MusicSpec) -> Result<Vec<u8>, String> {
+/// A music track's samples.
+pub fn music(spec: &MusicSpec) -> Result<Vec<i16>, String> {
     if spec.tempo.is_nan() || spec.tempo <= 0.0 || spec.steps_per_beat == 0 {
         return Err("tempo and steps_per_beat must be positive".into());
     }
@@ -162,7 +163,7 @@ pub fn music(spec: &MusicSpec) -> Result<Vec<u8>, String> {
             step = end;
         }
     }
-    Ok(wav(&mix))
+    Ok(samples(&mix))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -286,8 +287,16 @@ impl Noise {
     }
 }
 
-/// Samples, -1 to 1, as a 16-bit mono WAV file.
-fn wav(samples: &[f64]) -> Vec<u8> {
+/// Levels, -1 to 1, as 16-bit samples.
+fn samples(levels: &[f64]) -> Vec<i16> {
+    levels
+        .iter()
+        .map(|s| (s.clamp(-1.0, 1.0) * 32767.0).round() as i16)
+        .collect()
+}
+
+/// 16-bit mono samples at [`RATE`] as a WAV file.
+pub fn wav(samples: &[i16]) -> Vec<u8> {
     let data_len = samples.len() as u32 * 2;
     let mut out = Vec::with_capacity(44 + data_len as usize);
     out.extend(b"RIFF");
@@ -303,7 +312,7 @@ fn wav(samples: &[f64]) -> Vec<u8> {
     out.extend(b"data");
     out.extend(data_len.to_le_bytes());
     for s in samples {
-        out.extend(((s.clamp(-1.0, 1.0) * 32767.0).round() as i16).to_le_bytes());
+        out.extend(s.to_le_bytes());
     }
     out
 }
@@ -329,9 +338,8 @@ mod tests {
              [[voices]]\nnotes = \"C4 . E4 -\"\n[[voices]]\nnotes = \"C3 G3\"\n",
         )
         .unwrap();
-        let bytes = music(&spec).unwrap();
         // 4 steps of a quarter second
-        assert_eq!(bytes.len(), 44 + RATE as usize * 2);
+        assert_eq!(music(&spec).unwrap().len(), RATE as usize);
     }
 
     #[test]
@@ -349,11 +357,17 @@ mod tests {
         let spec: SoundSpec =
             toml::from_str("out = \"s.wav\"\n[[tones]]\nfrom = 440\nto = 880\nlength = 0.1\n")
                 .unwrap();
-        let bytes = sound(&spec).unwrap();
-        let sample = |i: usize| i16::from_le_bytes([bytes[44 + 2 * i], bytes[45 + 2 * i]]);
-        let n = (bytes.len() - 44) / 2;
-        assert_eq!(n, 2205);
-        assert_eq!(sample(0), 0);
-        assert!(sample(n - 1).abs() < 100);
+        let samples = sound(&spec).unwrap();
+        assert_eq!(samples.len(), 2205);
+        assert_eq!(samples[0], 0);
+        assert!(samples[2204].abs() < 100);
+    }
+
+    #[test]
+    fn wav_files_hold_the_samples() {
+        let wav = wav(&[1, -2]);
+        assert_eq!(wav.len(), 44 + 4);
+        assert_eq!(&wav[24..28], &RATE.to_le_bytes());
+        assert_eq!(&wav[44..], &[1, 0, 0xFE, 0xFF]);
     }
 }

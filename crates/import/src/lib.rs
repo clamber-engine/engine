@@ -51,6 +51,8 @@ use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+use clamber_audio::encode::DEFAULT_QUALITY;
+
 pub use characters::{CHARACTER_SHEET, CharacterDecoder, CharacterPictures, FOLLOWING, PictureSet};
 pub use collectibles::{Collectibles, GROUP_SIZE, Group, Item, SPARK, Shape};
 pub use graphics::{
@@ -369,6 +371,12 @@ impl Importer {
     /// title's first level, the room its upper exit leads to, the scene
     /// its floor exit leads to, and its level map, where the spec says where their parts are.
     pub fn builtin() -> Importer {
+        Importer::with_audio_quality(DEFAULT_QUALITY)
+    }
+
+    /// [`builtin`](Importer::builtin), encoding music at Vorbis quality
+    /// `audio_quality` (-1 to 10) rather than [`DEFAULT_QUALITY`].
+    pub fn with_audio_quality(audio_quality: f32) -> Importer {
         let catalog = Catalog::builtin();
         let mut decoders: Vec<Box<dyn Decoder>> = Vec::new();
         for known in &catalog.known {
@@ -390,6 +398,7 @@ impl Importer {
                         parts,
                         kinds: kind_rows(&known.title),
                         settings: settings_rows(&known.title),
+                        audio_quality,
                     }));
                 }
             }

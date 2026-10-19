@@ -14,10 +14,14 @@
 //!   for again, so music continues across level sections.
 //! - [`seam::check`] measures a loop's seam for clicks and gaps, by
 //!   playing it.
+//! - With the `encode` feature, [`encode::Vorbis`] writes Ogg Vorbis
+//!   files.
 //! - With the `output` feature, [`Output`] plays the mixer on the default
 //!   sound device and reopens it when the device goes away.
 
 mod decode;
+#[cfg(feature = "encode")]
+pub mod encode;
 mod mixer;
 mod music;
 #[cfg(feature = "output")]

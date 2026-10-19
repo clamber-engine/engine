@@ -395,6 +395,8 @@ pub struct LevelDecoder {
     /// in, and the settings rows for their objects.
     pub kinds: Vec<KindRow>,
     pub settings: Vec<SettingsRow>,
+    /// The Vorbis quality its music is encoded at, -1 to 10.
+    pub audio_quality: f32,
 }
 
 impl LevelDecoder {
@@ -653,8 +655,13 @@ impl LevelDecoder {
         let (mut skipped, mut notes) = (Vec::new(), Vec::new());
         if let Some(song) = p.song {
             let read = |at| image.at(at);
-            match crate::optional(|| song.music(read)) {
-                Ok(music) => {
+            let converted = crate::optional(|| {
+                let music = song.music(read)?;
+                let ogg = music.ogg(self.audio_quality)?;
+                Ok((music, ogg))
+            });
+            match converted {
+                Ok((music, ogg)) => {
                     notes.push(format!(
                         "song {}: {}",
                         song.song,
@@ -663,13 +670,13 @@ impl LevelDecoder {
                             None => "ends",
                         }
                     ));
-                    let file = format!("{}-music.wav", self.file);
+                    let file = format!("{}-music.ogg", self.file);
                     level.music = Some(Track {
                         file: file.clone(),
                         loop_start: music.looping.map(|l| l.start as u64),
                         loop_length: music.looping.map(|l| l.length as u64),
                     });
-                    files.insert(file, music.wav());
+                    files.insert(file, ogg);
                 }
                 Err(reason) => skipped.push(Skipped {
                     part: Optional::Song,

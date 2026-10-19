@@ -8,6 +8,7 @@ use clamber_import::{Image, Imported, Importer, import_report, packs_dir, skippe
 
 const USAGE: &str = "\
 usage: clamber-import <image> [--into <dir>] [--replace] [--import-report <file>]
+                      [--audio-quality <q>]
 
 Reads your own copy of a supported game and writes a personal content
 pack for Clamber to play. The pack is yours alone: it can't be exported
@@ -18,6 +19,8 @@ or shared.
 --import-report <file>  write a report on the import to <file>, to share
                         when something went wrong; it has nothing from
                         the game in it
+--audio-quality <q>     encode music at Ogg Vorbis quality <q>, from -1
+                        (smallest) to 10 (best); 6 by default
 ";
 
 fn main() -> ExitCode {
@@ -25,6 +28,7 @@ fn main() -> ExitCode {
     let mut into = None;
     let mut replace = false;
     let mut report = None;
+    let mut quality = clamber_audio::encode::DEFAULT_QUALITY;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -36,6 +40,10 @@ fn main() -> ExitCode {
             "--import-report" => match args.next() {
                 Some(file) => report = Some(PathBuf::from(file)),
                 None => return usage("`--import-report` needs a file"),
+            },
+            "--audio-quality" => match args.next().map(|q| q.parse::<f32>()) {
+                Some(Ok(q)) if (-1.0..=10.0).contains(&q) => quality = q,
+                _ => return usage("`--audio-quality` needs a number from -1 to 10"),
             },
             "--into" => match args.next() {
                 Some(dir) => into = Some(PathBuf::from(dir)),
@@ -60,7 +68,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let result = Importer::builtin().import(&image, &packs, replace);
+    let result = Importer::with_audio_quality(quality).import(&image, &packs, replace);
     if let Some(file) = report {
         match std::fs::write(&file, import_report(&result)) {
             Ok(()) => eprintln!("clamber-import: wrote the report to {}", file.display()),

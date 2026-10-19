@@ -9,6 +9,8 @@
 //! Nor does it cover the noise register's value when a song starts; here
 //! each song starts it as the emulation measured did.
 
+use clamber_audio::encode::Vorbis;
+
 use crate::songs::{CHANNELS, GAIN, Player, Step};
 use crate::sound::{Loop, Read, Sample, read_samples, read_song, song_samples};
 use crate::voice_output::Mixer;
@@ -80,29 +82,16 @@ pub struct Music {
 }
 
 impl Music {
-    /// A stereo 16-bit WAV file. Loop points aren't stored in it; they go
-    /// in content metadata.
-    pub fn wav(&self) -> Vec<u8> {
-        let data_len = 4 * self.frames.len() as u32;
-        let mut out = Vec::with_capacity(44 + data_len as usize);
-        out.extend_from_slice(b"RIFF");
-        out.extend_from_slice(&(36 + data_len).to_le_bytes());
-        out.extend_from_slice(b"WAVEfmt ");
-        out.extend_from_slice(&16u32.to_le_bytes());
-        out.extend_from_slice(&1u16.to_le_bytes()); // PCM
-        out.extend_from_slice(&2u16.to_le_bytes()); // two channels
-        out.extend_from_slice(&RATE.to_le_bytes());
-        out.extend_from_slice(&(4 * RATE).to_le_bytes());
-        out.extend_from_slice(&4u16.to_le_bytes());
-        out.extend_from_slice(&16u16.to_le_bytes());
-        out.extend_from_slice(b"data");
-        out.extend_from_slice(&data_len.to_le_bytes());
-        for frame in &self.frames {
-            for value in frame {
-                out.extend_from_slice(&value.to_le_bytes());
-            }
-        }
-        out
+    /// A stereo Ogg Vorbis file at `quality` (-1 to 10). Loop points
+    /// aren't stored in it; they go in content metadata, and are frames
+    /// of the file as they are of [`frames`](Music::frames).
+    pub fn ogg(&self, quality: f32) -> Result<Vec<u8>, String> {
+        let samples: Vec<i16> = self.frames.iter().flatten().copied().collect();
+        let vorbis = Vorbis {
+            quality,
+            ..Vorbis::default()
+        };
+        vorbis.encode(&samples, 2, RATE).map_err(|e| e.to_string())
     }
 }
 
@@ -513,6 +502,7 @@ pub fn render(song: &Song, samples: &[Sample]) -> Result<Music, String> {
 mod tests {
     use super::*;
     use crate::HEADER_SIZE;
+    use clamber_audio::encode::DEFAULT_QUALITY;
 
     /// A looping sample whose points are all 4 096 (as in
     /// `voice_output.rs`'s worked example).
@@ -737,16 +727,25 @@ mod tests {
     }
 
     #[test]
-    fn the_wav_is_stereo_at_the_output_rate() {
+    fn the_ogg_is_stereo_at_the_output_rate_with_every_frame() {
         let music = Music {
-            frames: vec![[1, -1], [2, -2]],
+            frames: (0..1000).map(|i| [i, -i]).collect(),
             looping: None,
             fit: Fit::Exact,
         };
-        let wav = music.wav();
-        assert_eq!(&wav[22..24], &2u16.to_le_bytes());
-        assert_eq!(&wav[24..28], &RATE.to_le_bytes());
-        assert_eq!(&wav[40..44], &8u32.to_le_bytes());
-        assert_eq!(&wav[44..], &[1, 0, 255, 255, 2, 0, 254, 255]);
+        let ogg = music.ogg(DEFAULT_QUALITY).unwrap();
+        let input = clamber_audio::Input::bytes(ogg, Some("ogg"));
+        let (sound, rate) = clamber_audio::Sound::decode(&input).unwrap();
+        assert_eq!((sound.channels, rate, sound.frames()), (2, RATE, 1000));
+    }
+
+    #[test]
+    fn a_quality_out_of_range_is_an_error() {
+        let music = Music {
+            frames: vec![[0, 0]; 10],
+            looping: None,
+            fit: Fit::Exact,
+        };
+        assert!(music.ogg(12.0).unwrap_err().contains("quality"));
     }
 }
