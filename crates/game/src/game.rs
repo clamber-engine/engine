@@ -16,7 +16,7 @@ use crate::canvas::{Canvas, Color, rgb};
 use crate::cast::{Cast, Poses};
 use crate::display::Look;
 use crate::hud::{draw_hud, picture_left};
-use crate::layers::LayerArt;
+use crate::layers::{LayerArt, Viewing, nudge};
 use crate::surface::{Lighting, PointLight, Surface};
 
 const SKY: Color = rgb(0x2a, 0x34, 0x4a);
@@ -356,10 +356,16 @@ impl Game {
         let behind = self.world.behind_scenery();
         let dim = self.world.dim_step();
         let time = (self.world.frame as f64 + alpha) / clamber_sim::STEPS_PER_SECOND as f64;
+        let viewing = Viewing {
+            origin,
+            grid: (self.look.pixel_art).then(|| self.world.view.map_or(0.0, |v| nudge(v.left))),
+            dim,
+            time,
+            steps: self.world.frame,
+        };
         let layers = |canvas: &mut dyn Surface, keep: &dyn Fn(&Layer) -> bool| {
             let keep = |i: usize, l: &Layer| shows(Part::Layer(i)) && keep(l);
-            self.drawn_art()
-                .draw_some(canvas, level, origin, dim, time, keep);
+            self.drawn_art().draw_some(canvas, level, &viewing, keep);
         };
         let back = |l: &Layer| l.depth == Depth::Back;
         let sprites = shows(Part::Sprites);

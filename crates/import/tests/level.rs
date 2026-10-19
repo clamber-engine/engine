@@ -15,12 +15,13 @@ use clamber_audio::encode::DEFAULT_QUALITY;
 use clamber_import::{
     BANK_SIZE, Below, Catalog, CollectibleParts, END, Ground, Image, ImportError, Importer, Kind,
     KindRow, Known, Layout, LevelDecoder, LevelParts, LevelSong, Location, NIBBLE_HEADER, Optional,
-    PackedGround, SECOND_WALL_RETURN_ARRIVAL, Scenery, WALKER, candidate, import_report, installed,
-    skipped_summary,
+    PackedGround, SECOND_WALL_RETURN_ARRIVAL, Scenery, SkyParts, WALKER, candidate, import_report,
+    installed, skipped_summary,
 };
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Fixed, Level, Vec2};
 use clamber_sim::{Event, InputFrame, Outcome, World, generic_feel, step};
+use clamber_sprite::decode_png;
 
 const COLUMNS: usize = 20;
 const BANK: u8 = 0xC1;
@@ -161,6 +162,16 @@ fn view_limits() -> Vec<u8> {
         .collect()
 }
 
+/// A horizon map of tile 0 but for square (1, 0), tile 1, then the two
+/// two-plane tiles: all colour 0, and all colour 1.
+fn horizon_block() -> Vec<u8> {
+    let mut block = vec![0; 384];
+    block[2] = 1;
+    block.extend([0; 16]);
+    block.extend([0xFF, 0].repeat(8));
+    block
+}
+
 /// Where each part goes in the made-up image.
 fn parts() -> LevelParts {
     LevelParts {
@@ -173,6 +184,11 @@ fn parts() -> LevelParts {
             palettes: Location::new(BANK, 0x5000),
             picture_table: Location::new(BANK, 0x6000),
             pictures: 5,
+            sky: Some(SkyParts {
+                backdrop: Location::new(BANK, 0x7800),
+                horizon: Location::new(BANK, 0x7840),
+                block: Location::new(BANK, 0x7900),
+            }),
         },
         placements: Some(Location::new(BANK, 0x7000)),
         collectibles: Some(CollectibleParts {
@@ -261,6 +277,7 @@ fn image_with_song(song: Vec<u8>) -> Image {
         tiles,
         palettes: palette_set,
         picture_table,
+        sky: Some(sky),
         ..
     } = p.scenery
     else {
@@ -278,6 +295,10 @@ fn image_with_song(song: Vec<u8>) -> Image {
         (p.collectibles.unwrap().shapes, shape_table()),
         (p.start.unwrap(), start_record()),
         (p.view_limits.unwrap(), view_limits()),
+        // Two rows of red, then blue; colour 1 of the horizon green.
+        (sky.backdrop, vec![2, 0, 0, 0x1F, 0, 1, 0, 0, 0, 0x7C, 0]),
+        (sky.horizon, vec![100, 1, 1, 0xE0, 0x03, 0]),
+        (sky.block, horizon_block()),
         (Location::new(BANK, SAMPLE), sample_record()),
         (Location::new(BANK, SONG), song),
     ]
@@ -353,14 +374,32 @@ fn imported_level_by(name: &str, importer: Importer) -> (Level, PathBuf) {
 #[test]
 fn writes_the_level_and_its_images() {
     let (level, dir) = imported_level("writes");
-    for file in ["first-far.png", "first-tiles.png", "first-music.ogg"] {
+    for file in [
+        "first-far.png",
+        "first-tiles.png",
+        "first-backdrop.png",
+        "first-horizon.png",
+        "first-music.ogg",
+    ] {
         assert!(dir.join(file).is_file(), "no {file}");
     }
     assert_eq!(level.name, "made-up level");
     assert_eq!(level.size, Vec2::ints(32 * COLUMNS as i32, 512));
     assert_eq!(level.start, Vec2::ints(24, 481));
     let names: Vec<&str> = level.layers.iter().map(|l| l.name.as_str()).collect();
-    assert_eq!(names, ["far", "ground"]);
+    assert_eq!(names, ["backdrop", "horizon", "far", "ground"]);
+    let image = |name: &str| {
+        let image = decode_png(&std::fs::read(dir.join(name)).unwrap()).unwrap();
+        image.to_rgba()
+    };
+    let backdrop = image("first-backdrop.png");
+    let column: Vec<_> = (0..4).map(|y| backdrop.get(0, y)).collect();
+    let (red, blue) = ([255, 0, 0, 255], [0, 0, 255, 255]);
+    assert_eq!(column, [red, red, red, blue]);
+    let horizon = image("first-horizon.png");
+    assert_eq!((horizon.width, horizon.height), (256, 48));
+    assert_eq!(horizon.get(7, 0), [0; 4]);
+    assert_eq!(horizon.get(8, 7), [0, 255, 0, 255]);
     assert!(level.surfaces.contains_key("normal"));
     assert!(!level.collision.colliders.is_empty());
 }

@@ -222,6 +222,22 @@ pub struct Layer {
     pub opacity: f64,
     /// Each of the layer's images leaning from side to side, if it sways.
     pub sway: Option<Sway>,
+    /// Bands of an image layer's rows, from its top, that each scroll
+    /// across at their own parallax instead of the layer's. Rows below
+    /// the last band aren't drawn. Empty for a layer drawn whole.
+    pub bands: Vec<Band>,
+    /// How much further the layer is drawn on every other step: on the
+    /// pictures after the level's odd steps, counting its first as 0.
+    pub alternate: Vec2,
+}
+
+/// Rows of an image layer that scroll across together.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Band {
+    /// How many of the image's rows, after the bands above.
+    pub rows: u32,
+    /// How far it scrolls across per pixel of camera movement.
+    pub parallax: Fixed,
 }
 
 /// Images leaning from side to side about their bottom edge, as plants
@@ -625,6 +641,16 @@ struct LayerFile {
     dim: bool,
     opacity: Option<N>,
     sway: Option<SwayFile>,
+    #[serde(default)]
+    bands: Vec<BandFile>,
+    alternate: Option<[N; 2]>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BandFile {
+    rows: u32,
+    parallax: N,
 }
 
 #[derive(Deserialize)]
@@ -1212,6 +1238,20 @@ impl Reader<'_> {
             }),
             None => None,
         };
+        if !l.bands.is_empty() && !matches!(content, LayerContent::Image { .. }) {
+            return Err(self.err(&format!("{at}.bands"), "are for image layers"));
+        }
+        if l.bands.iter().any(|b| b.rows == 0) {
+            return Err(self.err(&format!("{at}.bands"), "each needs at least one row"));
+        }
+        let bands = l
+            .bands
+            .into_iter()
+            .map(|b| Band {
+                rows: b.rows,
+                parallax: b.parallax.0,
+            })
+            .collect();
         Ok(Layer {
             name: l.name,
             depth: l.depth,
@@ -1223,6 +1263,8 @@ impl Reader<'_> {
             dim: l.dim,
             opacity,
             sway,
+            bands,
+            alternate: l.alternate.map_or(Vec2::default(), v2),
         })
     }
 
@@ -1635,6 +1677,18 @@ impl Level {
                 st.insert("amount".into(), float(sway.amount));
                 st.insert("period".into(), float(sway.period));
                 lt.insert("sway".into(), Value::Table(st));
+            }
+            if !l.bands.is_empty() {
+                let bands = l.bands.iter().map(|b| {
+                    let mut bt = Table::new();
+                    bt.insert("rows".into(), b.rows.into());
+                    bt.insert("parallax".into(), num(b.parallax));
+                    Value::Table(bt)
+                });
+                lt.insert("bands".into(), Value::Array(bands.collect()));
+            }
+            if l.alternate != Vec2::default() {
+                lt.insert("alternate".into(), pair(l.alternate));
             }
             match &l.content {
                 LayerContent::Image {

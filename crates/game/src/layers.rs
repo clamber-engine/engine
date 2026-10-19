@@ -19,7 +19,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use clamber_import::{Replacements, replace_image, replace_tileset};
-use clamber_level::{Depth, Layer, LayerContent, Level, Prop, Sway, Tile, TileLayer, Tileset};
+use clamber_level::{
+    Depth, Fixed, Layer, LayerContent, Level, Prop, Sway, Tile, TileLayer, Tileset,
+};
 use clamber_sprite::{Rect, RgbaImage, decode_png};
 
 use crate::camera::point;
@@ -189,46 +191,39 @@ impl LayerArt {
         Some(made.clone())
     }
 
-    /// Draws `level`'s layers at `depth` in order, for a view whose top
-    /// left is at `origin` in world units, with the dimming at step
-    /// `dim.0` of `dim.1`, `time` seconds into the level. Images that
-    /// aren't here are skipped.
-    pub fn draw(
-        &self,
-        surface: &mut dyn Surface,
-        level: &Level,
-        depth: Depth,
-        origin: (f64, f64),
-        dim: (u32, u32),
-        time: f64,
-    ) {
-        self.draw_some(surface, level, origin, dim, time, |_, l| l.depth == depth);
+    /// Draws `level`'s layers at `depth` in order, as `viewing` says.
+    /// Images that aren't here are skipped.
+    pub fn draw(&self, surface: &mut dyn Surface, level: &Level, depth: Depth, viewing: &Viewing) {
+        self.draw_some(surface, level, viewing, |_, l| l.depth == depth);
     }
 
-    /// Draws the layers `keep` says to, by index and layer, in order, for a view whose top
-    /// left is at `origin`, with the dimming at step `dim.0` of `dim.1`,
-    /// `time` seconds into the level.
+    /// Draws the layers `keep` says to, by index and layer, in order, as
+    /// `viewing` says.
     pub fn draw_some(
         &self,
         surface: &mut dyn Surface,
         level: &Level,
-        origin: (f64, f64),
-        dim: (u32, u32),
-        time: f64,
+        viewing: &Viewing,
         keep: impl Fn(usize, &Layer) -> bool,
     ) {
+        let time = viewing.time;
         let kept = level.layers.iter().enumerate().filter(|(i, l)| keep(*i, l));
         for (_, layer) in kept {
-            let dim = if layer.dim { dim } else { (0, 0) };
+            let dim = if layer.dim { viewing.dim } else { (0, 0) };
             let art = |(image, normals): (&str, Option<&str>)| {
                 let texture = self.dimmed(image, layer.pixel_art, dim)?;
                 let normals = normals.and_then(|p| self.get(p, layer.pixel_art)).cloned();
                 Some((texture, normals))
             };
-            let (offset, parallax) = (point(layer.offset), point(layer.parallax));
+            let mut offset = point(layer.offset);
+            if viewing.odd() {
+                let alternate = point(layer.alternate);
+                offset = (offset.0 + alternate.0, offset.1 + alternate.1);
+            }
+            let parallax = point(layer.parallax);
             let at = (
-                (offset.0 - origin.0 * parallax.0) as f32,
-                (offset.1 - origin.1 * parallax.1) as f32,
+                (offset.0 - viewing.scroll_x(parallax.0)) as f32,
+                (offset.1 - viewing.scroll_y(parallax.1)) as f32,
             );
             let look = |path: &str| Look {
                 scale: (layer.scale * self.factor(path, layer.pixel_art)) as f32,
@@ -252,7 +247,29 @@ impl LayerArt {
                     };
                     let look = look(path);
                     let lean = look.lean(offset.0, texture.height() as f32 / look.scale);
-                    draw_image(surface, art, look, lean, at, (*repeat_x, *repeat_y));
+                    let repeat = (*repeat_x, *repeat_y);
+                    let (w, h) = (texture.width(), texture.height());
+                    if layer.bands.is_empty() {
+                        let whole = Rect { x: 0, y: 0, w, h };
+                        draw_image(surface, art, look, lean, at, whole, repeat);
+                        continue;
+                    }
+                    // Each band's rows, in texels, scrolled at its own rate.
+                    let texels = look.scale as u32;
+                    let mut top = 0;
+                    for band in &layer.bands {
+                        let rows = (band.rows * texels).min(h.saturating_sub(top));
+                        let src = Rect {
+                            x: 0,
+                            y: top,
+                            w,
+                            h: rows,
+                        };
+                        let x = offset.0 - viewing.scroll_x(band.parallax.to_f64());
+                        let y = at.1 + (top / texels) as f32;
+                        draw_image(surface, art, look, lean, (x as f32, y), src, repeat);
+                        top += rows;
+                    }
                 }
                 LayerContent::Tiles(tiles) => {
                     let set = &tiles.tileset;
@@ -329,6 +346,70 @@ impl Look {
     }
 }
 
+/// Where, when and how a level's layers are drawn.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Viewing {
+    /// The view's top left, in world units.
+    pub origin: (f64, f64),
+    /// When it's drawn on the original's pixel grid, how much further
+    /// across layers are scrolled before they're kept to whole pixels:
+    /// an eighth of the view's position past its left edge, in
+    /// 1/256 px (`spec/formats/graphics.md`, "The horizon layer").
+    pub grid: Option<f64>,
+    /// The dimming's step, of how many.
+    pub dim: (u32, u32),
+    /// Seconds into the level.
+    pub time: f64,
+    /// Steps of the level played.
+    pub steps: u32,
+}
+
+impl Viewing {
+    /// Viewing from `origin` at the level's start, between pixels.
+    pub fn at(origin: (f64, f64)) -> Viewing {
+        Viewing {
+            origin,
+            ..Viewing::default()
+        }
+    }
+
+    /// Whether the step just played is an odd one, counting the level's
+    /// first as 0, so layers that alternate are drawn further.
+    fn odd(&self) -> bool {
+        self.steps > 0 && self.steps.is_multiple_of(2)
+    }
+
+    /// How far a layer with `parallax` across is scrolled. On the pixel
+    /// grid that's whole pixels, rounded down, from the view's whole
+    /// pixel: a layer at half speed moves a pixel for every two of the
+    /// view's.
+    fn scroll_x(&self, parallax: f64) -> f64 {
+        match self.grid {
+            Some(nudge) => (self.origin.0.round() * parallax + nudge).floor(),
+            None => self.origin.0 * parallax,
+        }
+    }
+
+    /// How far a layer with `parallax` up and down is scrolled.
+    fn scroll_y(&self, parallax: f64) -> f64 {
+        match self.grid {
+            Some(_) => (self.origin.1.round() * parallax).floor(),
+            None => self.origin.1 * parallax,
+        }
+    }
+}
+
+/// How much further than the view's whole pixel layers scroll across on
+/// the pixel grid, for a view whose position across is `left`: an eighth
+/// of its position past its pixel, kept to 1/256 px, as the first
+/// level's horizon layer has it (`spec/formats/graphics.md`, "The
+/// horizon layer"). Too little to move a layer that keeps to the view or
+/// to half its speed.
+pub fn nudge(left: Fixed) -> f64 {
+    let f = (left.to_bits() >> (clamber_fixed::FRAC_BITS - 8)) & 0xFF;
+    (f >> 3) as f64 / 256.0
+}
+
 /// A layer's image, and its normal map if it has one.
 #[derive(Clone, Copy)]
 struct Art<'a> {
@@ -336,16 +417,18 @@ struct Art<'a> {
     normals: Option<&'a Arc<Texture>>,
 }
 
+/// Draws the part `src` of a layer's image with its top left at `at`.
 fn draw_image(
     surface: &mut dyn Surface,
     Art { texture, normals }: Art,
     look: Look,
     lean: f32,
     at: (f32, f32),
+    src: Rect,
     repeat: (bool, bool),
 ) {
     let scale = look.scale;
-    let (w, h) = (texture.width(), texture.height());
+    let (w, h) = (src.w, src.h);
     if w == 0 || h == 0 {
         return;
     }
@@ -360,7 +443,6 @@ fn draw_image(
         false => 0..1,
     };
     let size = (w as f32 / scale, h as f32 / scale);
-    let src = Rect { x: 0, y: 0, w, h };
     let edge = |at: f32, size: f32, n: i32| at + n as f32 * size;
     for row in copies(at.1, size.1, view.1, repeat.1) {
         for column in copies(at.0, size.0, view.0, repeat.0) {
@@ -548,7 +630,7 @@ mod tests {
     fn draw(art: &LayerArt, level: &Level, depth: Depth, origin: (f64, f64)) -> Canvas {
         let mut canvas = Canvas::new(8, 6);
         canvas.clear(BG);
-        art.draw(&mut canvas, level, depth, origin, (0, 0), 0.0);
+        art.draw(&mut canvas, level, depth, &Viewing::at(origin));
         canvas
     }
 
@@ -587,6 +669,147 @@ mod tests {
                 .iter()
                 .all(|&c| c == BG)
         );
+    }
+
+    #[test]
+    fn on_the_pixel_grid_layers_scroll_whole_pixels_rounded_down() {
+        let level = level(
+            "[[layers]]\nname = \"far\"\nimage = \"far.png\"\npixel_art = true\n\
+             parallax = [0.5, 0.25]\noffset = [0, -1]\nrepeat = [true, true]\n",
+        );
+        let mut art = LayerArt::default();
+        art.insert("far.png", coords(64, 64), true);
+        let shown = |origin, nudge| {
+            let viewing = Viewing {
+                grid: Some(nudge),
+                ..Viewing::at(origin)
+            };
+            let mut canvas = Canvas::new(8, 6);
+            art.draw(&mut canvas, &level, Depth::Back, &viewing);
+            canvas.get(0, 0).unwrap()
+        };
+        // Pixel (0, 0) shows (⌊x / 2⌋, ⌊y / 4⌋ + 1), whatever the
+        // fraction, and a nudge too small to carry changes nothing.
+        for (x, y) in [(0, 0), (1, 1), (2, 3), (3, 4), (5, 7), (9, 11)] {
+            let want = at(x / 2, y / 4 + 1);
+            assert_eq!(shown((x as f64, y as f64), 0.0), want, "{x}, {y}");
+            assert_eq!(shown((x as f64, y as f64), 31.0 / 256.0), want);
+        }
+    }
+
+    fn vector(name: &str) -> Vec<Vec<i64>> {
+        let path = format!(
+            "{}/../../spec/vectors/graphics/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let text = std::fs::read_to_string(&path).unwrap();
+        let rows: Vec<Vec<i64>> = text
+            .lines()
+            .skip(1)
+            .map(|l| l.split('\t').map(|n| n.parse().unwrap()).collect())
+            .collect();
+        assert!(!rows.is_empty(), "{name}");
+        rows
+    }
+
+    /// The first level's far layer as the importer places it: parallax
+    /// (1/2, 1/4), offset (0, -1), repeating 512 by 256.
+    #[test]
+    fn the_far_layer_s_place_matches_the_spec_vectors() {
+        for row in vector("far-place.tsv") {
+            let [e, t, i, j, x, y] = row[..] else {
+                panic!("{row:?}");
+            };
+            let viewing = Viewing {
+                grid: Some(0.0),
+                ..Viewing::at((e as f64, t as f64))
+            };
+            let left = -viewing.scroll_x(0.5) as i64;
+            let top = -1 - viewing.scroll_y(0.25) as i64;
+            let shown = ((i - left).rem_euclid(512), (j - top).rem_euclid(256));
+            assert_eq!(shown, (x, y), "{row:?}");
+        }
+    }
+
+    /// Band `k` of the first level's horizon layer, at (`k` + 2)/16 of
+    /// the view's speed, shifted by the nudge; its picture repeats every
+    /// 32 px.
+    #[test]
+    fn the_horizon_shifts_match_the_spec_vectors() {
+        for row in vector("horizon-shifts.tsv") {
+            let (e, f) = (row[0], row[1]);
+            let left = Fixed::from_bits((e << 32) + (f << 24));
+            let viewing = Viewing {
+                grid: Some(nudge(left)),
+                ..Viewing::at((e as f64, 0.0))
+            };
+            let shifts: Vec<i64> = (0..4)
+                .map(|k| (viewing.scroll_x((k + 2) as f64 / 16.0) as i64).rem_euclid(32))
+                .collect();
+            assert_eq!(shifts, row[2..], "{row:?}");
+        }
+    }
+
+    #[test]
+    fn bands_scroll_across_at_their_own_rates() {
+        let level = level(
+            "[[layers]]\nname = \"strip\"\nimage = \"strip.png\"\npixel_art = true\n\
+             parallax = [0, 0]\noffset = [0, 1]\nrepeat = [true, false]\n\
+             bands = [{ rows = 1, parallax = 0.125 }, { rows = 2, parallax = 0.1875 }]\n",
+        );
+        let mut art = LayerArt::default();
+        art.insert("strip.png", coords(32, 4), true);
+        let rows = |x: f64, nudge| {
+            let viewing = Viewing {
+                grid: Some(nudge),
+                ..Viewing::at((x, 50.0))
+            };
+            let mut canvas = Canvas::new(8, 6);
+            canvas.clear(BG);
+            art.draw(&mut canvas, &level, Depth::Back, &viewing);
+            (0..6)
+                .map(|y| canvas.get(0, y).unwrap())
+                .collect::<Vec<_>>()
+        };
+        // Row 0 is above the strip, and its last row isn't in a band.
+        assert_eq!(rows(0.0, 0.0), [BG, at(0, 0), at(0, 1), at(0, 2), BG, BG]);
+        // At x = 15, ⌊15 / 8⌋ = 1 and ⌊45 / 16⌋ = 2. At x = 5 the nudge
+        // carries the second band's 15/16 on to 1.
+        assert_eq!(rows(15.0, 0.0)[1..4], [at(1, 0), at(2, 1), at(2, 2)]);
+        assert_eq!(rows(5.0, 0.0)[1..4], [at(0, 0), at(0, 1), at(0, 2)]);
+        assert_eq!(
+            rows(5.0, 16.0 / 256.0)[1..4],
+            [at(0, 0), at(1, 1), at(1, 2)]
+        );
+        // The image repeats across.
+        assert_eq!(rows(272.0, 0.0)[1..4], [at(2, 0), at(19, 1), at(19, 2)]);
+    }
+
+    #[test]
+    fn alternating_layers_move_after_odd_steps() {
+        let level = level(
+            "[[layers]]\nname = \"rows\"\nimage = \"rows.png\"\npixel_art = true\n\
+             parallax = [0, 0]\noffset = [0, -1]\nalternate = [0, 1]\n",
+        );
+        assert_eq!(level.layers[0].alternate, clamber_level::Vec2::ints(0, 1));
+        let mut art = LayerArt::default();
+        art.insert("rows.png", coords(8, 8), true);
+        let top = |steps| {
+            let viewing = Viewing {
+                steps,
+                ..Viewing::default()
+            };
+            let mut canvas = Canvas::new(8, 6);
+            art.draw(&mut canvas, &level, Depth::Back, &viewing);
+            canvas.get(0, 0).unwrap()
+        };
+        // After step 0 (one played), 2, 4, … as given; after 1, 3, …
+        // one row lower.
+        assert_eq!(
+            [top(0), top(1), top(2), top(3), top(4)].map(|c| c == at(0, 1)),
+            [true, true, false, true, false]
+        );
+        assert_eq!(top(2), at(0, 0));
     }
 
     #[test]
@@ -718,7 +941,11 @@ mod tests {
         let rows = |time: f64| {
             let mut canvas = Canvas::new(8, 6);
             canvas.clear(BG);
-            art.draw(&mut canvas, &level, Depth::Back, (0.0, 0.0), (0, 0), time);
+            let viewing = Viewing {
+                time,
+                ..Viewing::default()
+            };
+            art.draw(&mut canvas, &level, Depth::Back, &viewing);
             let first = |y: i32| (0..8).find(|&x| canvas.get(x, y) != Some(BG));
             [first(1), first(4)]
         };
@@ -794,7 +1021,11 @@ mod tests {
         art.insert("b.png", solid, true);
         let shown = |dim| {
             let mut canvas = Canvas::new(8, 6);
-            art.draw(&mut canvas, &level, Depth::Back, (0.0, 0.0), dim, 0.0);
+            let viewing = Viewing {
+                dim,
+                ..Viewing::default()
+            };
+            art.draw(&mut canvas, &level, Depth::Back, &viewing);
             (canvas.get(0, 0).unwrap(), canvas.get(7, 5).unwrap())
         };
         let colour_of = |[r, g, b, _]: Rgba| rgb(r, g, b);

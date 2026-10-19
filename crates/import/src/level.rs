@@ -21,10 +21,10 @@ use clamber_level::{
 
 use crate::{
     BANK_SIZE, Background, COLUMN_BANDS, Collectibles, Decoder, END, EXIT, GridPicture, Ground,
-    Image, KEG, KindRow, Known, LEVELS, Layout, LevelSong, Location, Optional, PackWriter,
-    PaletteSet, Pictures, Placements, ROOM_ENTRANCE, ScreenMap, SettingsRow, Skipped, StartRecord,
-    TileSet, VIEW_HEIGHT, VIEW_WIDTH, ViewLimits, WALL_EXIT, WALL_RETURN, object_of, unpack,
-    unpack_nibbles,
+    HorizonBlock, Image, KEG, KindRow, Known, LEVELS, Layout, LevelSong, Location, Optional,
+    PackWriter, PaletteSet, Pictures, Placements, ROOM_ENTRANCE, RowColours, ScreenMap,
+    SettingsRow, Skipped, Sky, StartRecord, TileSet, VIEW_HEIGHT, VIEW_WIDTH, ViewLimits,
+    WALL_EXIT, WALL_RETURN, object_of, unpack, unpack_nibbles,
 };
 
 /// Lines in a band.
@@ -122,6 +122,16 @@ pub struct CollectibleParts {
     pub shapes: Location,
 }
 
+/// Where the first level's backdrop and horizon layer are in an image
+/// (`spec/formats/graphics.md`, "The layers"): the backdrop's and the
+/// horizon layer's row-colour lists, and the horizon block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SkyParts {
+    pub backdrop: Location,
+    pub horizon: Location,
+    pub block: Location,
+}
+
 /// Where a level's background pictures are in an image
 /// (`spec/formats/graphics.md`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,6 +144,8 @@ pub enum Scenery {
         palettes: Location,
         picture_table: Location,
         pictures: usize,
+        /// The backdrop and the horizon layer, if it has them.
+        sky: Option<SkyParts>,
     },
     /// One screen picture ("Screen pictures"): its 1 024 tiles, stored
     /// as they are, the first `split` at `tiles` and the others at
@@ -453,10 +465,30 @@ impl LevelDecoder {
                 palettes,
                 picture_table,
                 pictures,
+                sky,
             } => {
                 let (picture, tiles, palettes) =
                     grid_layers(tiles, palettes, picture_table, pictures)?;
-                Background::new(&picture, &tiles, &palettes, &prefix)?
+                let sky = match sky {
+                    Some(parts) => {
+                        let at = |what: &str, at: Location| {
+                            image
+                                .at(at)
+                                .ok_or_else(|| format!("the level's {what} isn't in the image"))
+                        };
+                        let list = |what: &str, location, number| {
+                            RowColours::read(at(what, location)?, number)
+                                .map_err(|e| format!("the level's {what}: {e}"))
+                        };
+                        Some(Sky {
+                            backdrop: list("backdrop row-colour list", parts.backdrop, 0)?,
+                            horizon: list("horizon row-colour list", parts.horizon, 1)?,
+                            block: HorizonBlock::read(at("horizon block", parts.block)?)?,
+                        })
+                    }
+                    None => None,
+                };
+                Background::new(&picture, &tiles, &palettes, sky.as_ref(), &prefix)?
             }
             Scenery::Scene {
                 tiles,

@@ -38,7 +38,7 @@ pub use clamber_fixed::Fixed;
 pub use collision::{Collider, Collision, Dir, Hit, Shape, Span};
 pub use geom::{Area, Rect, Vec2};
 pub use level::{
-    Arrival, Camera, CameraRule, Depth, Entity, FORMAT, KeyLight, Layer, LayerContent, Level,
+    Arrival, Band, Camera, CameraRule, Depth, Entity, FORMAT, KeyLight, Layer, LayerContent, Level,
     LevelError, Light, Lighting, Prop, Region, Rgb, Scene, Section, Spot, Surface, Sway, Tile,
     TileLayer, Tileset, Track, builtin_surfaces,
 };

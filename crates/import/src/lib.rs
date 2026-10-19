@@ -57,8 +57,8 @@ use clamber_audio::encode::DEFAULT_QUALITY;
 pub use characters::{CHARACTER_SHEET, CharacterDecoder, CharacterPictures, FOLLOWING, PictureSet};
 pub use collectibles::{Collectibles, GROUP_SIZE, Group, Item, SPARK, Shape};
 pub use graphics::{
-    Background, GridPicture, PaletteSet, Pictures, ScreenMap, TILE, TileEntry, TileSet, channels,
-    rgb, unpack,
+    Background, GridPicture, HorizonBlock, PaletteSet, Pictures, RowColours, ScreenMap, Sky, TILE,
+    TileEntry, TileSet, channels, far_colour, rgb, unpack,
 };
 pub use ground::{Below, COLUMN_BANDS, Ground, Half, Layout, Surface, TITLE_2_ORIGIN};
 pub use image::{
@@ -72,7 +72,7 @@ pub use kinds::{
 };
 pub use level::{
     CollectibleParts, FROM_LEVEL, LevelDecoder, LevelParts, PackedGround, ROOM_RETURN,
-    SCENE_RETURN, SECOND_WALL_RETURN_ARRIVAL, Scenery, WALL_RETURN_ARRIVAL, water,
+    SCENE_RETURN, SECOND_WALL_RETURN_ARRIVAL, Scenery, SkyParts, WALL_RETURN_ARRIVAL, water,
 };
 pub use level_map::{
     APPEARANCE_OFFSET, CORNER_SIZE, Direction, FIRST_CORNER, LAST_CORNER, LEVEL_MAP, LevelMap,

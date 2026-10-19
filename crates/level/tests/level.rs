@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use clamber_level::{
-    Area, Depth, Dir, Fixed, LayerContent, Level, Lighting, Prop, Rect, Shape, Sway, Tile, Vec2,
-    tiled,
+    Area, Band, Depth, Dir, Fixed, LayerContent, Level, Lighting, Prop, Rect, Shape, Sway, Tile,
+    Vec2, tiled,
 };
 use clamber_pack::{Adjust, Param};
 
@@ -81,6 +81,16 @@ fn reads_every_part() {
     assert_eq!(*normals, None);
     assert_eq!((l.layers[0].opacity, l.layers[2].opacity), (1.0, 0.5));
     assert_eq!(l.layers[0].sway, None);
+    assert_eq!(l.layers[0].bands, []);
+    let band = |rows, parallax| Band { rows, parallax };
+    assert_eq!(
+        l.layers[2].bands,
+        [
+            band(8, Fixed::from_ratio_pow2(1, 3)),
+            band(24, Fixed::from_ratio_pow2(5, 4))
+        ]
+    );
+    assert_eq!(l.layers[2].alternate, Vec2::ints(0, 1));
     assert_eq!(
         l.layers[3].sway,
         Some(Sway {
@@ -336,6 +346,16 @@ fn format_errors() {
     assert!(
         level_err("[[layers]]\nname = \"t\"\nsway = { amount = 1, period = 2 }\ntiles = { tileset = \"t.png\", tile_size = [8, 8], columns = 1, data = [0] }\n")
             .contains("layers[0].sway: is for image and props layers")
+    );
+    assert!(
+        level_err("[[layers]]\nname = \"a\"\nprops = []\nbands = [{ rows = 1, parallax = 1 }]\n")
+            .contains("layers[0].bands: are for image layers")
+    );
+    assert!(
+        level_err(
+            "[[layers]]\nname = \"a\"\nimage = \"a.png\"\nbands = [{ rows = 0, parallax = 1 }]\n"
+        )
+        .contains("layers[0].bands: each needs at least one row")
     );
     assert!(
         level_err("[[layers]]\nname = \"p\"\nprops = [{ image = \"p.png\" }]\n").contains("at")

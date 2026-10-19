@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 
 use clamber_fixed::Fixed;
-use clamber_level::{Depth, Layer, LayerContent, Rgb, Tile, TileLayer, Tileset, Vec2};
+use clamber_level::{Band, Depth, Layer, LayerContent, Rgb, Tile, TileLayer, Tileset, Vec2};
 use clamber_sprite::{Rgba, RgbaImage, encode_png};
 
 use crate::COLUMN_BANDS;
@@ -39,6 +39,21 @@ const SCENE_FRONT_ROW: i32 = 1;
 /// Tile entries in a screen map, either way.
 const SCREEN_SQUARES: usize = 32;
 
+/// Tile entries in the horizon map, across and down ("The horizon
+/// layer").
+const HORIZON_COLUMNS: usize = 32;
+const HORIZON_ROWS: usize = 6;
+
+/// The picture row the horizon picture's top row is at, and its bands'
+/// rows from the top: each band `k` moves at (`k` + 2)/16 of the view's
+/// speed.
+const HORIZON_TOP: i32 = 64;
+const HORIZON_BANDS: [u32; 4] = [8, 8, 8, 24];
+
+/// Picture rows the backdrop's image covers, which is more than a
+/// picture has.
+const BACKDROP_ROWS: usize = 256;
+
 /// Tiles across a tileset image that [`Background::new`] writes.
 const TILESET_COLUMNS: u32 = 32;
 
@@ -51,6 +66,14 @@ pub fn channels(colour: u16) -> [u8; 3] {
 /// rounded to the nearest of 256 steps.
 pub fn rgb(colour: u16) -> Rgb {
     channels(colour).map(|c| ((u32::from(c) * 255 + 15) / 31) as u8)
+}
+
+/// The colour the first level's far layer shows for a pixel of
+/// `colour` ("The far layer's colours"): each channel 4 less, at least
+/// 0, then halved.
+pub fn far_colour(colour: u16) -> u16 {
+    let [r, g, b] = channels(colour).map(|c| u16::from(c.saturating_sub(4) / 2));
+    r | g << 5 | b << 10
 }
 
 /// 8 palette rows of 16 colours. Colour 0 of a row is never drawn.
@@ -70,6 +93,14 @@ impl PaletteSet {
             row.copy_from_slice(colours);
         }
         Ok(PaletteSet { rows })
+    }
+
+    /// The set with every colour as the far layer shows it
+    /// ([`far_colour`]).
+    pub fn far(&self) -> PaletteSet {
+        PaletteSet {
+            rows: self.rows.map(|row| row.map(far_colour)),
+        }
     }
 
     /// Colour `number` of palette row `row`, as stored.
@@ -364,6 +395,135 @@ impl ScreenMap {
     }
 }
 
+/// A row-colour list ("Row-colour lists"): a colour for each row of
+/// the picture from row 0 down, the last one's for every row below.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RowColours {
+    /// Each entry's row count and colour.
+    entries: Vec<(u8, u16)>,
+}
+
+impl RowColours {
+    /// Reads a list from the start of `bytes` up to its end byte, the
+    /// colour numbers of whose entries must be `number`.
+    pub fn read(bytes: &[u8], number: u8) -> Result<RowColours, String> {
+        let mut entries = Vec::new();
+        let mut rest = bytes;
+        loop {
+            match *rest {
+                [0, ..] if entries.is_empty() => {
+                    return Err("a row-colour list has no entries".to_string());
+                }
+                [0, ..] => return Ok(RowColours { entries }),
+                [n, ..] if n & 0x80 != 0 => {
+                    return Err(format!(
+                        "a row-colour list's row count {n:#04x} has bit 7 set"
+                    ));
+                }
+                [n, a, b, lo, hi, ..] => {
+                    if (a, b) != (number, number) {
+                        return Err(format!(
+                            "a row-colour list for colour {number} gives colour {a}, {b}"
+                        ));
+                    }
+                    entries.push((n, u16::from_le_bytes([lo, hi])));
+                    rest = &rest[5..];
+                }
+                _ => return Err("a row-colour list runs past its data".to_string()),
+            }
+        }
+    }
+
+    /// Rows the entries cover.
+    pub fn rows(&self) -> usize {
+        self.entries.iter().map(|&(n, _)| usize::from(n)).sum()
+    }
+
+    /// The colour of picture row `row`.
+    pub fn colour(&self, row: usize) -> u16 {
+        let mut top = 0;
+        for &(n, colour) in &self.entries {
+            top += usize::from(n);
+            if row < top {
+                return colour;
+            }
+        }
+        self.entries.last().map_or(0, |&(_, colour)| colour)
+    }
+}
+
+/// The first level's horizon block ("The horizon layer"): its map of 6
+/// rows of 32 tile entries, then two-plane tiles up to the last one the
+/// map shows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HorizonBlock {
+    /// Row of squares by row of squares.
+    map: Vec<TileEntry>,
+    tiles: TileSet,
+}
+
+impl HorizonBlock {
+    /// Bytes in the horizon map.
+    pub const MAP_BYTES: usize = 2 * HORIZON_COLUMNS * HORIZON_ROWS;
+
+    /// Reads the block from the start of `bytes`.
+    pub fn read(bytes: &[u8]) -> Result<HorizonBlock, String> {
+        let short = || "the horizon block runs past its data".to_string();
+        let map: Vec<TileEntry> = words(bytes.get(..HorizonBlock::MAP_BYTES).ok_or_else(short)?)
+            .into_iter()
+            .map(TileEntry)
+            .collect();
+        let count = map
+            .iter()
+            .map(|e| usize::from(e.tile()) + 1)
+            .max()
+            .unwrap_or(0);
+        let tiles = &bytes[HorizonBlock::MAP_BYTES..];
+        let tiles = tiles.get(..count * 16).ok_or_else(short)?;
+        Ok(HorizonBlock {
+            map,
+            tiles: TileSet::two_plane(tiles)?,
+        })
+    }
+
+    /// The horizon picture, 256 by 48 px: two-plane colours, but colour
+    /// number 1 of palette row 0 from `colour_1` by the picture row the
+    /// pixel is shown on.
+    fn picture(&self, palettes: &PaletteSet, colour_1: &RowColours) -> RgbaImage {
+        let side = TILE * HORIZON_COLUMNS as u32;
+        let mut image = RgbaImage::new(side, TILE * HORIZON_ROWS as u32);
+        for (i, &entry) in self.map.iter().enumerate() {
+            let (sx, sy) = ((i % HORIZON_COLUMNS) as u32, (i / HORIZON_COLUMNS) as u32);
+            for y in 0..TILE {
+                for x in 0..TILE {
+                    let (tx, ty) = flipped(entry, x, y);
+                    let number = self.tiles.pixel(entry.tile(), tx, ty).unwrap_or(0);
+                    let row = sy * TILE + y;
+                    let p = match (entry.palette_row(), number) {
+                        (0, 1) => {
+                            let picture_row = (HORIZON_TOP as u32 + row) as usize;
+                            let [r, g, b] = rgb(colour_1.colour(picture_row));
+                            [r, g, b, 255]
+                        }
+                        (row, number) => palettes.two_plane_rgba(row, number),
+                    };
+                    image.set(sx * TILE + x, row, p);
+                }
+            }
+        }
+        image
+    }
+}
+
+/// What's behind the first level's far layer: the backdrop's row-colour
+/// list, and the horizon layer's list and block ("The layers").
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Sky {
+    pub backdrop: RowColours,
+    pub horizon: RowColours,
+    pub block: HorizonBlock,
+}
+
 /// The pixel that `entry` shows at column `x`, row `y` of its square.
 fn shown(tiles: &TileSet, palettes: &PaletteSet, entry: TileEntry, x: u32, y: u32) -> Rgba {
     let (x, y) = flipped(entry, x, y);
@@ -424,19 +584,26 @@ pub struct Background {
 }
 
 impl Background {
-    /// The far and ground layers, their images named starting `prefix`.
+    /// The first level's layers ("The layers"), their images named
+    /// starting `prefix`: the backdrop and the horizon layer, if `sky`
+    /// is given, then the far and ground layers.
     ///
     /// The ground layer is a tile layer that moves with the view, its
     /// tileset holding each tile in each palette row it's drawn with. The
-    /// far layer is a picture repeating both ways.
+    /// far layer is a picture repeating both ways, at half the view's
+    /// speed across and a quarter up and down ("Where the far layer is"),
+    /// in its darker colours. The backdrop and the horizon layer stay at
+    /// the same rows of the picture; the backdrop's rows are a row lower
+    /// after odd frames ("The backdrop"), and the horizon layer's bands
+    /// move across at their own speeds.
     ///
-    /// The spec doesn't yet say how the far layer moves with the view, so
-    /// it scrolls at half the view's speed for now; nor where characters
-    /// are drawn against the layers, so all of them are behind entities.
+    /// The spec doesn't say where characters are drawn against the
+    /// layers, so all of them are behind entities.
     pub fn new(
         grid: &GridPicture,
         tiles: &TileSet,
         palettes: &PaletteSet,
+        sky: Option<&Sky>,
         prefix: &str,
     ) -> Result<Background, String> {
         if grid.columns < FAR_COLUMNS {
@@ -446,7 +613,76 @@ impl Background {
             ));
         }
         let far = (grid.columns - FAR_COLUMNS) * CELL_SQUARES..grid.width();
-        Background::grid(grid, tiles, palettes, far, Vec2::default(), prefix)
+        let place = (
+            Vec2::new(Fixed::from_ratio_pow2(1, 1), Fixed::from_ratio_pow2(1, 2)),
+            // Picture row j shows far picture row ⌊T / 4⌋ + 1 + j.
+            Vec2::ints(0, -1),
+        );
+        let mut background =
+            Background::grid(grid, tiles, palettes, &palettes.far(), far, place, prefix)?;
+        if let Some(sky) = sky {
+            let mut layers = Background::sky(sky, palettes, prefix, &mut background.images);
+            layers.append(&mut background.layers);
+            background.layers = layers;
+        }
+        Ok(background)
+    }
+
+    /// The backdrop and the horizon layer, adding their images to
+    /// `images`.
+    fn sky(
+        sky: &Sky,
+        palettes: &PaletteSet,
+        prefix: &str,
+        images: &mut BTreeMap<String, Vec<u8>>,
+    ) -> Vec<Layer> {
+        // Image row 0 is the first entry's colour again, for the row the
+        // list covers more after odd frames.
+        let width = TILE;
+        let mut image = RgbaImage::new(width, BACKDROP_ROWS as u32 + 1);
+        for row in 0..=BACKDROP_ROWS {
+            let [r, g, b] = rgb(sky.backdrop.colour(row.saturating_sub(1)));
+            for x in 0..width {
+                image.set(x, row as u32, [r, g, b, 255]);
+            }
+        }
+        let backdrop = format!("{prefix}backdrop.png");
+        images.insert(backdrop.clone(), encode_png(&image));
+        let mut backdrop = layer(
+            "backdrop",
+            Vec2::default(),
+            Vec2::ints(0, -1),
+            LayerContent::Image {
+                path: backdrop,
+                normals: None,
+                repeat_x: true,
+                repeat_y: false,
+            },
+        );
+        backdrop.alternate = Vec2::ints(0, 1);
+
+        let horizon = format!("{prefix}horizon.png");
+        let image = sky.block.picture(palettes, &sky.horizon);
+        images.insert(horizon.clone(), encode_png(&image));
+        let mut horizon = layer(
+            "horizon",
+            Vec2::default(),
+            Vec2::ints(0, HORIZON_TOP),
+            LayerContent::Image {
+                path: horizon,
+                normals: None,
+                repeat_x: true,
+                repeat_y: false,
+            },
+        );
+        horizon.bands = (0..)
+            .zip(HORIZON_BANDS)
+            .map(|(k, rows)| Band {
+                rows,
+                parallax: Fixed::from_ratio_pow2(k + 2, 4),
+            })
+            .collect();
+        vec![backdrop, horizon]
     }
 
     /// The first level's scene's layers ("The first level's scene"): the
@@ -483,14 +719,17 @@ impl Background {
                 front_tiles.len()
             ));
         }
-        // The far layer scrolls at half speed, as in the first level.
+        // The far layer scrolls at half speed both ways, in its palette
+        // colours.
         let half = Fixed::from_ratio_pow2(1, 1);
         let far = Vec2::new(
             view.x * half,
             view.y * half - Fixed::from_int(SCENE_FAR_ROW),
         );
         let squares = 0..SCENE_FAR_COLUMNS * CELL_SQUARES;
-        let mut background = Background::grid(grid, tiles, palettes, squares, far, prefix)?;
+        let place = (Vec2::new(half, half), far);
+        let mut background =
+            Background::grid(grid, tiles, palettes, palettes, squares, place, prefix)?;
 
         let side = SCREEN_SQUARES as u32 * TILE;
         let mut image = RgbaImage::new(side, side);
@@ -525,14 +764,15 @@ impl Background {
     }
 
     /// The far layer, repeating the grid picture's square columns
-    /// `far` from its top, with its top left at `far_offset` when the
-    /// view's is at the level's origin; then the ground layer.
+    /// `far` from its top in `far_palettes`, with the parallax and the
+    /// offset `place`; then the ground layer.
     fn grid(
         grid: &GridPicture,
         tiles: &TileSet,
         palettes: &PaletteSet,
+        far_palettes: &PaletteSet,
         far: std::ops::Range<usize>,
-        far_offset: Vec2,
+        place: (Vec2, Vec2),
         prefix: &str,
     ) -> Result<Background, String> {
         let mut images = BTreeMap::new();
@@ -548,13 +788,12 @@ impl Background {
             }
             let name = if raised { "far-raised" } else { "far" };
             let path = format!("{prefix}{name}.png");
-            let image = draw(grid, tiles, palettes, far.clone(), FAR_BANDS, raised);
+            let image = draw(grid, tiles, far_palettes, far.clone(), FAR_BANDS, raised);
             images.insert(path.clone(), encode_png(&image));
-            let half = Fixed::from_ratio_pow2(1, 1);
             (if raised { &mut front } else { &mut back }).push(layer(
                 name,
-                Vec2::new(half, half),
-                far_offset,
+                place.0,
+                place.1,
                 LayerContent::Image {
                     path,
                     normals: None,
@@ -733,6 +972,8 @@ fn layer(name: &str, parallax: Vec2, offset: Vec2, content: LayerContent) -> Lay
         dim: true,
         opacity: 1.0,
         sway: None,
+        bands: Vec::new(),
+        alternate: Vec2::default(),
     }
 }
 
@@ -964,7 +1205,7 @@ mod tests {
     #[test]
     fn the_ground_layers_draw_the_grid_picture() {
         let (grid, tiles, palettes) = sample(17);
-        let background = Background::new(&grid, &tiles, &palettes, "bg/").unwrap();
+        let background = Background::new(&grid, &tiles, &palettes, None, "bg/").unwrap();
         let names: Vec<&str> = background.layers.iter().map(|l| l.name.as_str()).collect();
         assert_eq!(names, ["far", "ground", "far-raised", "ground-raised"]);
         let tileset = rgba(&background.images["bg/tiles.png"]);
@@ -1017,7 +1258,7 @@ mod tests {
     #[test]
     fn the_far_layer_is_the_last_columns_top_bands() {
         let (grid, tiles, palettes) = sample(17);
-        let background = Background::new(&grid, &tiles, &palettes, "").unwrap();
+        let background = Background::new(&grid, &tiles, &palettes, None, "").unwrap();
         for (name, raised) in [("far", false), ("far-raised", true)] {
             let l = background.layers.iter().find(|l| l.name == name).unwrap();
             let LayerContent::Image {
@@ -1029,13 +1270,22 @@ mod tests {
             else {
                 panic!("{name} isn't a repeating image");
             };
+            // Half the view's speed across and a quarter up and down,
+            // row ⌊T / 4⌋ + 1 at the top ("Where the far layer is").
+            let (half, quarter) = (Fixed::from_ratio_pow2(1, 1), Fixed::from_ratio_pow2(1, 2));
+            assert_eq!(
+                (l.parallax, l.offset),
+                (Vec2::new(half, quarter), Vec2::ints(0, -1))
+            );
             let image = rgba(&background.images[path]);
             assert_eq!((image.width, image.height), (512, 256));
+            // In the darker colours ("The far layer's colours").
+            let darker = palettes.far();
             for y in 0..256 {
                 for x in 0..512 {
                     let entry = grid.entry(4 + x as usize / 8, y as usize / 8);
                     let want = if entry.raised() == raised {
-                        shown(&tiles, &palettes, entry, x % 8, y % 8)
+                        shown(&tiles, &darker, entry, x % 8, y % 8)
                     } else {
                         [0; 4]
                     };
@@ -1043,7 +1293,138 @@ mod tests {
                 }
             }
         }
-        assert!(Background::new(&sample(15).0, &tiles, &palettes, "").is_err());
+        assert!(Background::new(&sample(15).0, &tiles, &palettes, None, "").is_err());
+    }
+
+    fn colour(hex: &str) -> u16 {
+        u16::from_str_radix(hex, 16).unwrap()
+    }
+
+    fn opaque(colour: u16) -> Rgba {
+        let [r, g, b] = rgb(colour);
+        [r, g, b, 255]
+    }
+
+    #[test]
+    fn far_colours_match_the_spec_vectors() {
+        for row in rows("far-colours.tsv") {
+            let (from, shown) = (colour(&row[0]), colour(&row[4]));
+            assert_eq!(far_colour(from), shown, "{}", row[0]);
+            assert_eq!(
+                channels(shown).map(u32::from),
+                [5, 6, 7].map(|i| num::<u32>(&row[i]))
+            );
+        }
+        assert_eq!(channels(far_colour(31 | 10 << 5 | 3 << 10)), [13, 3, 0]);
+    }
+
+    /// The vectors' backdrop list, then their horizon list.
+    fn row_lists() -> (RowColours, RowColours) {
+        let bytes = hex("rows.hex");
+        let backdrop = RowColours::read(&bytes, 0).unwrap();
+        // Each list is followed by two bytes that aren't part of it.
+        let next = 5 * backdrop.entries.len() + 1 + 2;
+        let horizon = RowColours::read(&bytes[next..], 1).unwrap();
+        (backdrop, horizon)
+    }
+
+    #[test]
+    fn row_colour_lists_match_the_spec_vectors() {
+        let (backdrop, horizon) = row_lists();
+        assert_eq!((backdrop.rows(), horizon.rows()), (134, 98));
+        let sky = Sky {
+            backdrop,
+            horizon,
+            block: HorizonBlock::read(&hex("horizon.hex")).unwrap(),
+        };
+        let mut images = BTreeMap::new();
+        let palettes = PaletteSet::new(&hex("palette.hex")).unwrap();
+        let layers = Background::sky(&sky, &palettes, "", &mut images);
+        let image = rgba(&images["backdrop.png"]);
+        let rows = rows("rows.tsv");
+        assert_eq!(rows.len(), 224);
+        for row in rows {
+            let j: u32 = num(&row[0]);
+            let (even, odd) = (colour(&row[1]), colour(&row[2]));
+            // After even frames the image is drawn a row higher.
+            assert_eq!(image.get(3, j + 1), opaque(even), "row {j}");
+            assert_eq!(image.get(3, j), opaque(odd), "row {j}");
+            assert_eq!(sky.horizon.colour(j as usize), colour(&row[3]), "row {j}");
+        }
+        let backdrop = &layers[0];
+        assert_eq!(backdrop.name, "backdrop");
+        assert_eq!(
+            (backdrop.parallax, backdrop.offset, backdrop.alternate),
+            (Vec2::default(), Vec2::ints(0, -1), Vec2::ints(0, 1))
+        );
+
+        let list = |bytes: &[u8]| RowColours::read(bytes, 0);
+        assert!(list(&[0]).is_err());
+        assert!(list(&[2, 0, 0, 0x1F]).is_err());
+        assert!(list(&[0x82, 0, 0, 0x1F, 0, 0]).is_err());
+        assert!(list(&[2, 1, 1, 0x1F, 0, 0]).is_err());
+        let example = [2, 0, 0, 0x1F, 0, 1, 0, 0, 0xE0, 3, 3, 0, 0, 0, 0x7C, 0, 9];
+        let example = list(&example).unwrap();
+        let colours: Vec<u16> = (0..8).map(|row| example.colour(row)).collect();
+        assert_eq!(
+            colours,
+            [0x1F, 0x1F, 0x3E0, 0x7C00, 0x7C00, 0x7C00, 0x7C00, 0x7C00]
+        );
+    }
+
+    #[test]
+    fn the_horizon_layer_matches_the_spec_vectors() {
+        let (backdrop, horizon) = row_lists();
+        let palettes = PaletteSet::new(&hex("palette.hex")).unwrap();
+        let block = HorizonBlock::read(&hex("horizon.hex")).unwrap();
+        assert_eq!(block.tiles.len(), 6);
+        let picture = block.picture(&palettes, &horizon);
+        assert_eq!((picture.width, picture.height), (256, 48));
+        for row in rows("horizon-pixels.tsv") {
+            let j: usize = num(&row[4]);
+            let want = colour(&row[8]);
+            if row[5] == "-" || row[7] == "0" {
+                let backdrop = match row[2].as_str() {
+                    "even" => backdrop.colour(j),
+                    _ => backdrop.colour(j.saturating_sub(1)),
+                };
+                assert_eq!(backdrop, want, "{row:?}");
+            }
+            if row[5] == "-" {
+                continue;
+            }
+            let (x, y): (u32, u32) = (num(&row[5]), num(&row[6]));
+            let got = picture.get(x, y);
+            match row[7].as_str() {
+                "0" => assert_eq!(got, [0; 4], "{row:?}"),
+                _ => assert_eq!(got, opaque(want), "{row:?}"),
+            }
+        }
+
+        let sky = Sky {
+            backdrop,
+            horizon,
+            block,
+        };
+        let mut images = BTreeMap::new();
+        let layers = Background::sky(&sky, &palettes, "", &mut images);
+        let horizon = &layers[1];
+        assert_eq!(
+            (horizon.name.as_str(), horizon.parallax, horizon.offset),
+            ("horizon", Vec2::default(), Vec2::ints(0, 64))
+        );
+        let bands: Vec<_> = horizon.bands.iter().map(|b| (b.rows, b.parallax)).collect();
+        let sixteenths = |n| Fixed::from_ratio_pow2(n, 4);
+        assert_eq!(
+            bands,
+            [
+                (8, sixteenths(2)),
+                (8, sixteenths(3)),
+                (8, sixteenths(4)),
+                (24, sixteenths(5))
+            ]
+        );
+        assert!(HorizonBlock::read(&hex("horizon.hex")[..400]).is_err());
     }
 
     #[test]
@@ -1264,7 +1645,7 @@ mod tests {
         let grid = GridPicture::new(&grid, &pictures).unwrap();
         let tiles = TileSet::new(&hex("tiles.hex")[..4 * 32]).unwrap();
         let palettes = PaletteSet::new(&hex("palette.hex")).unwrap();
-        let background = Background::new(&grid, &tiles, &palettes, "").unwrap();
+        let background = Background::new(&grid, &tiles, &palettes, None, "").unwrap();
         let names: Vec<&str> = background.layers.iter().map(|l| l.name.as_str()).collect();
         assert_eq!(names, ["far", "ground"]);
         let LayerContent::Tiles(tl) = &background.layers[1].content else {

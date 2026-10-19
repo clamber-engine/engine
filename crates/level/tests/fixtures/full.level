@@ -56,6 +56,8 @@ image = "fg/fog.png"
 parallax = [1.5, 1]
 offset = [0, -32]
 opacity = 0.5
+bands = [{ rows = 8, parallax = 0.125 }, { rows = 24, parallax = 0.3125 }]
+alternate = [0, 1]
 
 [[layers]]
 name = "ferns"

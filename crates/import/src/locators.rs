@@ -5,7 +5,7 @@ use clamber_level::Dir;
 
 use crate::{
     CollectibleParts, FIRST_LEVEL, FIRST_ROOM, FIRST_SCENE, LevelParts, LevelSong, Location,
-    PackedGround, Scenery,
+    PackedGround, Scenery, SkyParts,
 };
 
 /// The data a locator row finds. The level parts are the first level's.
@@ -294,6 +294,11 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
             palettes: at(Data::PaletteSet)?,
             picture_table: at(Data::PictureTable)?,
             pictures,
+            sky: Some(SkyParts {
+                backdrop: at(Data::BackdropColours)?,
+                horizon: at(Data::HorizonColours)?,
+                block: at(Data::HorizonBlock)?,
+            }),
         },
         placements: Some(at(Data::PlacementList)?),
         collectibles: Some(CollectibleParts {
