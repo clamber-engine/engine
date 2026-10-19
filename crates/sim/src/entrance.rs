@@ -7,8 +7,11 @@
 //! entrance bursts on frame `burst`, leaving a [`Burst`] as a keg does,
 //! and on frame `throw` it's gone and the lead is drawn and given its
 //! throw speed, without moving yet. From the frame after, it's thrown out
-//! until it lands, and from the frame after the
-//! landing it plays as usual. The other character waits at the start
+//! until it lands. With `bounce_landing_switch`, the landing is a
+//! bounce's ("The landing"): a gait starts on the landing frame, by what
+//! is held on it, and Jump presses from the throw count as presses in
+//! the air; an Action press in the air isn't remembered. From the frame
+//! after the landing it plays as usual. The other character waits at the start
 //! point up to and including the throw's frame; from the frame after
 //! until the lead lands, it's where the lead was on the frame before,
 //! rounded down to whole px, and from then it follows the lead. The
@@ -38,8 +41,9 @@
 //! - The other character is drawn from the frame after the throw's.
 //! - The burst's pieces and flash move as a keg's do, by the entrance's
 //!   own values.
-//! - A Jump press during the throw before the landing frame is
-//!   forgotten. One on the landing frame is noted as usual.
+//! - Without `bounce_landing_switch`, a Jump press during the throw
+//!   before the landing frame is forgotten, one on the landing frame is
+//!   noted as usual, and there's no landing lockout.
 //! - A hit during the throw ends it: the player is hurt as usual.
 //!
 //! [`World::brightness`]: crate::World::brightness

@@ -2221,17 +2221,7 @@ impl Player {
                 && physics[Param::BounceKeepsFacing] > Fixed::ZERO
             {
                 // After a bounce a gait starts on the landing frame.
-                let forward = direction(self.facing);
-                self.gait = if held(Action::Action) && held_dir != 0 {
-                    Gait::Running(Stride::START)
-                } else if held_dir == -forward {
-                    self.turn = Some(0);
-                    Gait::Standing
-                } else if held_dir == forward {
-                    Gait::Walking(Stride::START)
-                } else {
-                    Gait::Standing
-                };
+                self.start_bounce_gait(held(Action::Action), held_dir);
             }
             self.hopped_off = None;
         }
@@ -2321,8 +2311,8 @@ impl Player {
     /// [`entrance`](crate::entrance)). Nothing held changes the motion
     /// until `steer_from` frames after the throw; from then the speed
     /// across eases toward the air's target speed. The player faces right
-    /// throughout. From the frame after the landing, the usual rules
-    /// apply, with no landing lockout.
+    /// throughout. The landing is as [`Player::land_from_entrance`] says,
+    /// and from the frame after it the usual rules apply.
     pub(crate) fn thrown_out(
         &mut self,
         level: &Level,
@@ -2334,6 +2324,9 @@ impl Player {
     ) {
         self.touched.clear();
         self.update_jump_held(input);
+        if physics[Param::BounceLandingSwitch] > Fixed::ZERO {
+            self.note_jump_in_throw(input, physics);
+        }
         let held = |a| input.held.contains(a);
         let dir = match (held(Action::Left), held(Action::Right)) {
             (true, false) => -1,
@@ -2355,7 +2348,7 @@ impl Player {
         self.move_through_air(level, physics, true, events);
         self.facing = Facing::Right;
         if self.grounded() {
-            self.land_from_throw(input, physics);
+            self.land_from_entrance(input, physics);
         }
         self.state = self.next_state(held(Action::Action), events);
     }
@@ -2386,6 +2379,38 @@ impl Player {
         }
     }
 
+    /// Starts the gait a bounce's landing frame starts, by what is held
+    /// on it: running with Action and a direction, otherwise a turn with
+    /// the way behind held, walking with the way ahead, or standing.
+    fn start_bounce_gait(&mut self, action: bool, held_dir: i32) {
+        let forward = direction(self.facing);
+        self.gait = if action && held_dir != 0 {
+            Gait::Running(Stride::START)
+        } else if held_dir == -forward {
+            self.turn = Some(0);
+            Gait::Standing
+        } else if held_dir == forward {
+            Gait::Walking(Stride::START)
+        } else {
+            Gait::Standing
+        };
+    }
+
+    /// On each frame of being thrown out of an entrance whose landing is a
+    /// bounce's, a Jump press is noted as one in the air: it counts only if
+    /// Jump is still held on the frames up to the one it's used on.
+    fn note_jump_in_throw(&mut self, input: &Frame, physics: &Physics) {
+        let press = input.pressed.contains(Action::Jump);
+        let window = frames(physics[Param::JumpBuffer]).max(frames(physics[Param::JumpDelay]));
+        self.jump_buffer.set_window(window);
+        self.jump_buffer.update(press);
+        self.jump_held_since_press =
+            press || (self.jump_held_since_press && input.held.contains(Action::Jump));
+        if press {
+            self.jump_needs_hold = physics[Param::JumpBufferHold] > Fixed::ZERO;
+        }
+    }
+
     /// On the frame a thrown or shot player lands: a Jump press counts as
     /// on any other landing frame, and there's no landing lockout.
     pub(crate) fn land_from_throw(&mut self, input: &Frame, physics: &Physics) {
@@ -2397,6 +2422,33 @@ impl Player {
         self.jump_held_since_press = input.pressed.contains(Action::Jump);
         self.ran = held(Action::Action) && (held(Action::Left) != held(Action::Right));
         self.lockout = 0;
+    }
+
+    /// On the frame the lead lands from the entrance's throw. With
+    /// `bounce_landing_switch` the landing is a bounce's
+    /// (level-start.md, "The landing"): the landing lockout counts from
+    /// the landing frame, with `bounce_keeps_facing` a gait starts on it,
+    /// and an Action press on it waits a frame for a roll. Without, it's
+    /// a thrown player's landing ([`Player::land_from_throw`]).
+    fn land_from_entrance(&mut self, input: &Frame, physics: &Physics) {
+        if physics[Param::BounceLandingSwitch] == Fixed::ZERO {
+            self.land_from_throw(input, physics);
+            return;
+        }
+        let held = |a| input.held.contains(a);
+        let held_dir = match (held(Action::Left), held(Action::Right)) {
+            (true, false) => -1,
+            (false, true) => 1,
+            _ => 0,
+        };
+        self.ran = held(Action::Action) && held_dir != 0;
+        self.lockout = frames(physics[Param::LandingLockout]).saturating_sub(1);
+        if physics[Param::BounceKeepsFacing] > Fixed::ZERO {
+            self.start_bounce_gait(held(Action::Action), held_dir);
+        }
+        if input.pressed.contains(Action::Action) {
+            self.roll_press = Some((0, 1, true));
+        }
     }
 
     /// Goes on with what the hands are doing at the start of a step, and

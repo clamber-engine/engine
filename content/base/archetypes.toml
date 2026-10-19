@@ -418,8 +418,13 @@
 #   taking no input. From `steer_from` frames after the throw up to and
 #   including the landing, its speed across eases toward the air's
 #   target speed (`walk_speed`, or `top_speed` with Action) by
-#   `steer_response` of the gap, rounded as `speed_response` is. From the
-#   frame after the landing it plays as usual, with no landing lockout.
+#   `steer_response` of the gap, rounded as `speed_response` is. With the
+#   preset's `bounce_landing_switch` the landing is a bounce's: a gait
+#   starts on it (with `bounce_keeps_facing`), the landing lockout counts
+#   from it, Jump presses in the throw count as presses in the air, and
+#   an Action press on it waits a frame for a roll. Without, there's no
+#   landing lockout and only a Jump press on the landing frame counts.
+#   From the frame after the landing it plays as usual.
 #   The other character waits there until the frame after the throw;
 #   until the lead lands, it's then where the lead was on the frame
 #   before, rounded down to whole px, and follows it after that. The

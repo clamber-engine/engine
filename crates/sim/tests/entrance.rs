@@ -168,16 +168,130 @@ fn steering_closes_a_32nd_of_the_gap() {
     assert_eq!(play.world.player.facing, Facing::Right);
 }
 
-/// From the frame after the landing the usual rules apply: Jump pressed
-/// on the landing frame starts a jump on the frame after it.
-#[test]
-fn a_jump_pressed_on_the_landing_frame_starts_on_the_next() {
+/// The example's landing frame, L.
+const LANDING: u32 = 94;
+
+/// What a run with `keys(frame)` held on each frame did from the
+/// landing on: the first frame facing left, and the frames a jump and a
+/// roll started on, if any, up to L + 18.
+#[derive(Debug, PartialEq, Eq)]
+struct Landing {
+    left_from: Option<u32>,
+    jump: Option<u32>,
+    roll: Option<u32>,
+}
+
+fn landing(keys: impl Fn(u32) -> Vec<Action>) -> (Landing, Play) {
     let mut play = Play::new(1);
-    play.until(93, &[]);
-    play.step(&[J]);
-    assert!(play.world.events.contains(&Event::Land));
-    play.step(&[J]);
-    assert!(play.world.events.contains(&Event::JumpStart));
+    let mut seen = Landing {
+        left_from: None,
+        jump: None,
+        roll: None,
+    };
+    let mut after_landing = None;
+    while play.world.frame <= LANDING + 18 {
+        let frame = play.world.frame;
+        play.step(&keys(frame));
+        if frame == LANDING {
+            assert!(play.world.events.contains(&Event::Land), "frame {frame}");
+            after_landing = Some(Play {
+                world: play.world.clone(),
+                held: play.held,
+            });
+        }
+        if play.world.player.facing == Facing::Left {
+            seen.left_from.get_or_insert(frame);
+        }
+        if play.world.events.contains(&Event::JumpStart) {
+            seen.jump.get_or_insert(frame);
+        }
+        if play.world.events.contains(&Event::RollStart) {
+            seen.roll.get_or_insert(frame);
+        }
+    }
+    (seen, after_landing.unwrap())
+}
+
+fn held(keys: &[Action], from: u32, to: u32) -> impl Fn(u32) -> Vec<Action> {
+    let keys = keys.to_vec();
+    move |f| match (from..=to).contains(&f) {
+        true => keys.clone(),
+        false => Vec::new(),
+    }
+}
+
+/// "The landing": a mode starts on L itself, set by what is held on L.
+/// The examples' turns.
+#[test]
+fn a_turn_starts_on_the_landing_frame() {
+    let l = LANDING;
+    for (keys, left_from) in [
+        (held(&[L], 30, l + 2), Some(l + 4)),
+        (held(&[L], l, l), Some(l + 4)),
+        (held(&[L], l + 1, l + 1), Some(l + 5)),
+        (held(&[], 0, 0), None),
+    ] {
+        assert_eq!(landing(keys).0.left_from, left_from);
+    }
+}
+
+/// With Action and a direction held on L, running starts on L, facing
+/// still right even with Left held; with Right alone, walking. From
+/// L + 1 the usual rules apply.
+#[test]
+fn running_or_walking_starts_on_the_landing_frame() {
+    use clamber_sim::Gait;
+    for (keys, running) in [(&[R, A][..], true), (&[L, A], true), (&[R], false)] {
+        let (seen, play) = landing(held(keys, 30, LANDING + 18));
+        let gait = play.world.player.gait;
+        assert_eq!(play.world.player.facing, Facing::Right, "{keys:?}");
+        assert_eq!(play.world.player.turn, None, "{keys:?}");
+        match running {
+            true => assert!(matches!(gait, Gait::Running(_)), "{keys:?}: {gait:?}"),
+            false => assert!(matches!(gait, Gait::Walking(_)), "{keys:?}: {gait:?}"),
+        }
+        assert_ne!(seen.left_from, Some(LANDING), "{keys:?}");
+    }
+}
+
+/// Jumps use the bounce press window, E = L + 2.
+#[test]
+fn jumps_use_the_bounce_window() {
+    let l = LANDING;
+    for (from, to, jump) in [
+        (l - 10, l + 1, Some(l + 2)),
+        (l - 11, l + 8, None),
+        (30, l + 8, None),
+        (l, l, None),
+        (l + 1, l + 1, Some(l + 2)),
+        (l + 2, l + 2, Some(l + 3)),
+        (l - 4, l, None),
+    ] {
+        let (seen, _) = landing(held(&[J], from, to));
+        assert_eq!(seen.jump, jump, "Jump held {from} to {to}");
+    }
+}
+
+/// An Action press on L still held on L + 1 starts a roll on L + 1; one
+/// in the air isn't remembered, even held through L.
+#[test]
+fn rolls_start_from_presses_on_the_ground() {
+    let l = LANDING;
+    for (from, to, roll) in [
+        (l, l, None),
+        (l, l + 1, Some(l + 1)),
+        (l - 3, l + 3, None),
+        (l + 1, l + 1, Some(l + 1)),
+    ] {
+        let (seen, play) = landing(held(&[A], from, to));
+        assert_eq!(seen.roll, roll, "Action held {from} to {to}");
+        if from == l && to == l {
+            assert!(matches!(
+                play.world.player.gait,
+                clamber_sim::Gait::Standing
+            ));
+        }
+    }
 }
 
 /// "The second character": at the start point up to and including T,
