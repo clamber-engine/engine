@@ -1777,6 +1777,7 @@ mod tests {
         };
         assert_eq!(hit_early_time, 16);
         let small = resolve("crawler", "size = [20, 12]\noffset = 0.5");
+        let medium = resolve("crawler", "size = [25, 25]\noffset = 5.0");
         let large = resolve("crawler", "size = [26, 38]\noffset = 0.5");
         use Facing::{Left, Right};
         // Walker, its facing, the object moving right, then I's range and
@@ -1785,7 +1786,14 @@ mod tests {
             (small, Left, true, (-48, 28), (-23, 27), 63, 30),
             (small, Left, false, (-29, 47), (-28, 22), 63, 30),
             (small, Right, false, (-28, 48), (-27, 23), 63, 30),
+            (small, Right, true, (-47, 29), (-22, 28), 63, 30),
+            (medium, Left, true, (-55, 26), (-30, 25), 76, 43),
+            (medium, Left, false, (-36, 45), (-35, 20), 76, 43),
+            (medium, Right, false, (-26, 55), (-25, 30), 76, 43),
+            (medium, Right, true, (-45, 36), (-20, 35), 76, 43),
             (large, Left, true, (-51, 31), (-26, 30), 89, 56),
+            (large, Left, false, (-32, 50), (-31, 25), 89, 56),
+            (large, Right, false, (-31, 51), (-30, 26), 89, 56),
             (large, Right, true, (-50, 32), (-25, 31), 89, 56),
         ];
         let walker = Vec2::new(Fixed::from_ratio_pow2(1281, 2), Fixed::from_int(400));

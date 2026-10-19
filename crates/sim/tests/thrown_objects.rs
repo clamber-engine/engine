@@ -346,6 +346,45 @@ fn hits_a_walker_later_by_the_smaller_area() {
     }
 }
 
+/// thrown-objects.md, "When a walker is hit" and "The walker": a medium
+/// walker facing left is hit by the object moving right on Q + 37 (t =
+/// 16) with I = −51, by the larger area (−55 to 26), out of it on the
+/// frame before. On flat floor it's there for the last time on K + 40,
+/// 95 px below its floor.
+#[test]
+fn hits_a_medium_walker_which_falls_out_like_a_small_one() {
+    let medium = SMALL_WALKER.replace(
+        "size = [20, 12], offset = 0.5",
+        "size = [25, 25], offset = 5.0",
+    );
+    let entity =
+        format!("[[entities]]\ntype = \"crawler\"\nat = [300, 400]\nparams = {{ {medium} }}");
+    let mut play = Play::new(&level(&format!("{FLAT}\n{entity}")));
+    play.throw_to(21);
+    let start = play.world.things[0].pos;
+    play.world.things[1].pos.x = start.x + f(200.25);
+    let mut k = None;
+    let mut i = 0;
+    for n in 22..=100 {
+        play.step(&[]);
+        let w = &play.world.things[1];
+        let before = i;
+        i = play.world.things[0].pos.x.floor() - w.pos.x.floor();
+        if k.is_none() && w.phase != Phase::Ready {
+            assert_eq!((n, i), (37, -51));
+            assert!(before < -55, "{before}");
+            k = Some(n);
+        }
+        let Some(k) = k else { continue };
+        let there = play.world.things[1].active;
+        assert_eq!(there, n <= k + 40, "K + {}", n - k);
+        if n == k + 40 {
+            assert_eq!(play.world.things[1].pos.y.floor(), 495);
+        }
+    }
+    assert!(k.is_some());
+}
+
 /// A thrower at `(x, y)` that throws nothing for a long while.
 fn thrower(x: i32, y: i32) -> String {
     format!(
