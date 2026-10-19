@@ -111,7 +111,18 @@
 #   carrying starts) it also breaks on a walker its `hit` box touches as
 #   if moving right, the box moved `hit_carried_turn` px right with the
 #   player facing left, and knocks the walker back as a thrown one
-#   moving right does; not on a frame the player bounces. With `meets_ball` and `meets_ball_early`, `[behind, ahead,
+#   moving right does; not on a frame the player bounces. So it does on
+#   a pick-up's frames after its first and a put-down's before it's set
+#   down, and during a throw, after its first frame and before it leaves
+#   the hands, on walkers its `hit_early` box touches the way the player
+#   faces, knocking them back the same way; the action goes on to its
+#   end without it. Where it is in the hands: `in_hands_pick_up` from a
+#   pick-up's second frame (on its first it's where it lies), and
+#   `in_hands_throw` and `in_hands_put_down` from their first, each
+#   `[[ahead, up], ...]`, one a frame, up to 24: its x rounded down that
+#   many px in front of the player's the way it faces, and its y rounded
+#   up that many above the player's. Past their end, or without them,
+#   it's on the player's head. With `meets_ball` and `meets_ball_early`, `[behind, ahead,
 #   above, below]` as for the thrower, chosen the same way, it meets a
 #   ball whose position at the end of the frame before, both rounded down
 #   across and up down, is inside: thrown, it removes the ball and goes
@@ -137,8 +148,9 @@
 #   frames of a throw before it leaves the hands, but not the first, it
 #   breaks on walkers its `hit_early` box touches in the hands, and
 #   carried, with a `hit_carried_turn`, on walkers as one holding nothing
-#   does; the walker then doesn't hurt the player. Put down, lying or
-#   dropped, it doesn't break.
+#   does, on a pick-up's and a put-down's frames too; the walker then
+#   doesn't hurt the player until the character has joined. Put down,
+#   lying or dropped, it doesn't break.
 #   With `hit_wall_exit` and `hit_wall_exit_early`, thrown and moving
 #   right, it opens wall exits those boxes hold, as `hit_thrower` does
 #   throwers.
@@ -584,6 +596,22 @@ hit_thrower_turn = 1
 # ranges for a player facing right are those of `hit` moving right, and
 # facing left they're moved 5 px left.
 hit_carried_turn = 5
+# title-1's (spec/behavior/carrying.md, "The object in the hands"),
+# measured on flat floor; the engine uses them everywhere.
+in_hands_pick_up = [
+    [20, 3], [20, 3], [20, 15], [20, 15], [20, 27], [20, 27], [20, 33],
+    [20, 33], [4, 38], [4, 38], [-2, 39], [-2, 39], [-2, 39], [-2, 39],
+]
+in_hands_throw = [
+    [2, 46], [-6, 47], [-6, 47], [-18, 48], [-18, 48], [-30, 44], [-30, 44],
+    [-40, 39], [-40, 39], [-38, 39], [-38, 39], [-36, 38], [-36, 38],
+    [-32, 39], [-32, 39], [-28, 41], [-28, 41], [-24, 45], [-24, 45],
+    [-7, 54], [-7, 54], [0, 54],
+]
+in_hands_put_down = [
+    [-2, 39], [4, 38], [4, 38], [20, 33], [20, 33], [20, 27], [20, 27],
+    [20, 15], [20, 15], [20, 3], [20, 3], [16, 3], [16, 3], [16, 3],
+]
 # title-1's (spec/behavior/thrown-objects.md, "Hitting a ball"), the
 # ranges of I and H turned around, early and late as for the thrower.
 # Moving left I is 1 less (the box moved 1 px right); upside down (the second and third
@@ -892,6 +920,20 @@ hit_thrower = [36, 30, 23, 32]
 hit_thrower_early = [37, 55, 47, 65]
 hit_thrower_turn = 1
 hit_carried_turn = 5
+in_hands_pick_up = [
+    [20, 3], [20, 3], [20, 15], [20, 15], [20, 27], [20, 27], [20, 33],
+    [20, 33], [4, 38], [4, 38], [-2, 39], [-2, 39], [-2, 39], [-2, 39],
+]
+in_hands_throw = [
+    [2, 46], [-6, 47], [-6, 47], [-18, 48], [-18, 48], [-30, 44], [-30, 44],
+    [-40, 39], [-40, 39], [-38, 39], [-38, 39], [-36, 38], [-36, 38],
+    [-32, 39], [-32, 39], [-28, 41], [-28, 41], [-24, 45], [-24, 45],
+    [-7, 54], [-7, 54], [0, 54],
+]
+in_hands_put_down = [
+    [-2, 39], [4, 38], [4, 38], [20, 33], [20, 33], [20, 27], [20, 27],
+    [20, 15], [20, 15], [20, 3], [20, 3], [16, 3], [16, 3], [16, 3],
+]
 meets_ball = [26, 22, 30, 15]
 meets_ball_early = [27, 47, 54, 48]
 meets_ball_turn = -1

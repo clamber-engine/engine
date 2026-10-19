@@ -77,8 +77,9 @@ pub enum Behavior {
     /// ([`Hit::holds`]); moving left, both are turned around and then
     /// moved `thrower_turn` px left. With a `carried_turn`, carried, it
     /// breaks on walkers its `hit` box touches as if thrown right, moved
-    /// that many px right with the player facing left. With `balls`, it
-    /// meets balls. With a
+    /// that many px right with the player facing left. Its place in the
+    /// hands during a pick-up, a throw and a put-down is `in_hands`'s.
+    /// With `balls`, it meets balls. With a
     /// `holder`, it holds the missing character. With `opens`, it opens
     /// wall exits.
     Carry {
@@ -90,6 +91,7 @@ pub enum Behavior {
         thrower_early: Hit,
         thrower_turn: Fixed,
         carried_turn: Option<Fixed>,
+        in_hands: InHands,
         balls: Option<Meets>,
         holder: Option<Holder>,
         opens: Option<Opens>,
@@ -1143,6 +1145,37 @@ impl Hit {
     }
 }
 
+/// The most frames of an [`InHands`] path.
+pub const MAX_IN_HANDS: usize = 24;
+
+/// Where an object is in the player's hands on each frame of a pick-up
+/// from its second frame, and of a throw and a put-down from their first:
+/// `(ahead, up)`, its `x` rounded down that many px in front of the
+/// player's (the way the player faces) and its `y` rounded up that many
+/// above the player's. On the first frame of a pick-up it's where it
+/// lies, and past the end of a path, or with none, it's on the player's
+/// head.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct InHands {
+    pub pick_up: HandsPath,
+    pub throw: HandsPath,
+    pub put_down: HandsPath,
+}
+
+/// One action's path in [`InHands`]: its first `len` places.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct HandsPath {
+    pub places: [(i16, i16); MAX_IN_HANDS],
+    pub len: u8,
+}
+
+impl HandsPath {
+    /// The place on frame `n` of the path, if it reaches that far.
+    pub fn at(&self, n: usize) -> Option<(i16, i16)> {
+        self.places[..usize::from(self.len)].get(n).copied()
+    }
+}
+
 /// When an object holding nothing meets a ball (thrown-objects.md,
 /// "Hitting a ball"): thrown, or in the hands during a throw, its `early`
 /// box holds where the ball was at the end of the step before, for its
@@ -1481,6 +1514,9 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "hit_thrower_early",
             "hit_thrower_turn",
             "hit_carried_turn",
+            "in_hands_pick_up",
+            "in_hands_throw",
+            "in_hands_put_down",
             "hit_ball",
             "hit_ball_early",
             "meets_ball",
@@ -1803,6 +1839,15 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 true => Some(number("hit_carried_turn")?),
                 false => None,
             };
+            let hands_path = |key: &str| match table.get(key) {
+                None => Ok(HandsPath::default()),
+                Some(value) => parse_path(value, &format!("{path}.{key}")),
+            };
+            let in_hands = InHands {
+                pick_up: hands_path("in_hands_pick_up")?,
+                throw: hands_path("in_hands_throw")?,
+                put_down: hands_path("in_hands_put_down")?,
+            };
             let hit_early_time = match get("hit_early_time")? {
                 Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => *n as u8,
                 _ => {
@@ -1868,6 +1913,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 thrower_early: hit("hit_thrower_early")?,
                 thrower_turn,
                 carried_turn,
+                in_hands,
                 balls,
                 holder,
                 opens,
@@ -3244,6 +3290,40 @@ fn parse_shifts(value: &Value, path: &str) -> Result<[(i32, i32); MAX_TURN_PARTS
     Ok(shifts)
 }
 
+/// Reads an [`InHands`] path: a list of up to [`MAX_IN_HANDS`] `[ahead,
+/// up]`. Errors start with `path`.
+fn parse_path(value: &Value, path: &str) -> Result<HandsPath, String> {
+    let expected = || format!("{path}: expected a list of up to {MAX_IN_HANDS} [ahead, up]");
+    let Value::Array(items) = value else {
+        return Err(expected());
+    };
+    if items.len() > MAX_IN_HANDS {
+        return Err(expected());
+    }
+    let whole = |v: &Value, at: &str| match v {
+        Value::Integer(n) if i16::try_from(*n).is_ok() => Ok(*n as i16),
+        _ => Err(format!("{at}: expected a whole number of px")),
+    };
+    let mut out = HandsPath {
+        len: items.len() as u8,
+        ..HandsPath::default()
+    };
+    for (i, item) in items.iter().enumerate() {
+        let at = format!("{path}[{i}]");
+        let Value::Array(pair) = item else {
+            return Err(format!("{at}: expected [ahead, up]"));
+        };
+        let [x, y] = pair.as_slice() else {
+            return Err(format!("{at}: expected [ahead, up]"));
+        };
+        out.places[i] = (
+            whole(x, &format!("{at}[0]"))?,
+            whole(y, &format!("{at}[1]"))?,
+        );
+    }
+    Ok(out)
+}
+
 /// Reads a thrower's [`ThrowerContact`] table. Errors start with `path`.
 fn parse_thrower_contact(value: &Value, path: &str) -> Result<ThrowerContact, String> {
     let Value::Table(table) = value else {
@@ -3778,6 +3858,27 @@ mod tests {
     /// holder-breaking.md, "The thrower and its balls": the ranges of I
     /// and H, ends included, early and late, with the object moving
     /// right.
+    #[test]
+    fn carried_objects_have_paths_in_the_hands() {
+        let a = Archetypes::builtin();
+        let resolve = |params| a.resolve(&entity("crate", params), "test", "e");
+        let Behavior::Carry { in_hands, .. } = resolve("").unwrap().unwrap().behavior else {
+            panic!("not carried");
+        };
+        let lens = (
+            in_hands.pick_up.len,
+            in_hands.throw.len,
+            in_hands.put_down.len,
+        );
+        assert_eq!(lens, (14, 22, 14));
+        assert_eq!(in_hands.pick_up.at(0), Some((20, 3)));
+        assert_eq!(in_hands.throw.at(21), Some((0, 54)));
+        assert_eq!(in_hands.throw.at(22), None);
+        assert_eq!(in_hands.put_down.at(13), Some((16, 3)));
+        assert!(resolve("in_hands_throw = [[1]]").is_err());
+        assert!(resolve("in_hands_put_down = [[1, 40000]]").is_err());
+    }
+
     #[test]
     fn holders_break_on_throwers_and_balls_in_the_measured_ranges() {
         let a = Archetypes::builtin();

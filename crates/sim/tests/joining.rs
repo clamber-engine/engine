@@ -9,7 +9,7 @@ use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Fixed, Presets};
 use clamber_sim::{
-    FlowEvent, InputFrame, Other, Phase, Point, World, follow_point, generic_feel, step,
+    Event, FlowEvent, InputFrame, Other, Phase, Point, World, follow_point, generic_feel, step,
 };
 
 const A: Action = Action::Action;
@@ -428,9 +428,10 @@ fn breaks_in_the_hands_during_a_throw() {
     play.step(&[]);
     assert!(!play.world.things[0].active, "Q + 1");
     assert!(matches!(play.world.things[1].phase, Phase::Knocked { .. }));
-    let head = (200, 368);
+    // carrying.md, "The object in the hands": on Q + 1 it's 6 px behind
+    // the player and 47 above.
     assert_eq!(follow_point(play.world.player.pos), (200, 400));
-    joins(&mut play, head);
+    joins(&mut play, (194, 353));
     // The throw goes on from where it was, but the object is never
     // thrown.
     play.hold(&[], 60);
@@ -450,33 +451,45 @@ const STILL_MEDIUM_WALKER: &str = "speed = 0, facing = \"left\", size = [25, 25]
 /// holder-breaking.md, "Carried into a walker": a medium or large walker
 /// that meets the carried object breaks it on S. The character appears
 /// where it's carried, the player and the walker wait to S + 33, the
-/// walker (`vx` −4) steps on from S + 34, and the player isn't hurt, even
-/// with the walker in its hurt range.
+/// walker (`vx` −4) steps on from S + 34, and the player isn't hurt on
+/// S + 1. With the walker in its hurt range, the player is hurt on S + 34
+/// instead; outside it, not at all.
 #[test]
 fn breaks_carried_into_a_walker() {
-    for walker in [STILL_LARGE_WALKER, STILL_MEDIUM_WALKER] {
-        let entity =
-            format!("[[entities]]\ntype = \"crawler\"\nat = [330, 400]\nparams = {{ {walker} }}");
-        let mut play = Play::new(&level(&format!("{FLAT}\n{entity}")));
-        play.world.things[1].pos.x = f(210.0);
-        play.step(&[A]);
-        assert!(!play.world.things[0].active, "S");
-        assert!(play.world.player.hands.is_none());
-        assert!(matches!(play.world.things[1].phase, Phase::Knocked { .. }));
-        assert_eq!(play.world.things[1].vx, f(-4.0));
-        let at = play.world.things[1].pos;
-        let mut stand = play.clone_world();
-        for n in 1..=33 {
+    // The object less the walker is −10, in both hurt ranges, or −25 or
+    // −28, in the hit range and outside the hurt range (walker-contact.md,
+    // "Carrying").
+    for (walker, far) in [(STILL_LARGE_WALKER, 225), (STILL_MEDIUM_WALKER, 228)] {
+        for x in [210, far] {
+            let entity = format!(
+                "[[entities]]\ntype = \"crawler\"\nat = [330, 400]\nparams = {{ {walker} }}"
+            );
+            let mut play = Play::new(&level(&format!("{FLAT}\n{entity}")));
+            play.world.things[1].pos.x = f(f64::from(x));
+            play.step(&[A]);
+            assert!(!play.world.things[0].active, "S");
+            assert!(play.world.player.hands.is_none());
+            assert!(matches!(play.world.things[1].phase, Phase::Knocked { .. }));
+            assert_eq!(play.world.things[1].vx, f(-4.0));
+            let at = play.world.things[1].pos;
+            let mut stand = play.clone_world();
+            for n in 1..=33 {
+                stand.step(&[]);
+                assert_eq!(stand.world.things[1].pos, at, "S + {n}");
+            }
             stand.step(&[]);
-            assert_eq!(stand.world.things[1].pos, at, "S + {n}");
-        }
-        stand.step(&[]);
-        assert!(stand.world.things[1].pos.x < at.x, "S + 34");
-        joins(&mut play, (200, 368));
-        walks_on(&mut play);
-        for _ in 0..46 {
-            play.step(&[]);
-            assert!(play.world.player.knockout.is_none());
+            assert!(stand.world.things[1].pos.x < at.x, "S + 34");
+            joins(&mut play, (200, 368));
+            if x != far {
+                play.step(&[R]);
+                assert!(play.world.events.contains(&Event::Hurt), "S + 34");
+                continue;
+            }
+            walks_on(&mut play);
+            for _ in 0..46 {
+                play.step(&[]);
+                assert!(!play.world.events.contains(&Event::Hurt));
+            }
         }
     }
 }

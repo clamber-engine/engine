@@ -11,8 +11,11 @@
 //! it's placed is within reach by its look. The player does the rest
 //! ([`Hands`]); this module moves the object to match:
 //!
-//! - While held, it sits on the player's head. Where it's drawn isn't in
-//!   the spec.
+//! - While held, it sits on the player's head, except on the frames of a
+//!   pick-up, a throw and a put-down its archetype's path in the hands
+//!   covers ([`in_hands`]), as `spec/behavior/carrying.md` ("The object
+//!   in the hands") describes; there it follows the path. Where it's
+//!   drawn isn't in the spec.
 //! - Thrown, it leaves the hands on frame `throw_release` of the throw,
 //!   `throw_lift` above the player's feet, and flies ([`Flight`]).
 //! - Put down, it's set `put_down_ahead` in front of the player and
@@ -46,7 +49,9 @@
 //! carrying pose isn't kept until a jump lands. Carried, it also breaks
 //! on walkers, which it knocks back, and then the carrying pose is kept
 //! until a jump lands, as `spec/behavior/thrown-objects.md` ("A carried
-//! object") describes. Touching characters and other enemies isn't in
+//! object") describes. So it does during a pick-up, a throw or a
+//! put-down, which then goes on to its end without it; a pick-up ends
+//! with nothing in the hands. Touching characters and other enemies isn't in
 //! the spec yet; it doesn't. Dropped, it falls straight down and rests
 //! where it lands.
 //!
@@ -182,6 +187,16 @@ pub(crate) fn after(world: &mut World) {
         }
         return;
     }
+    // A pick-up whose object broke in the hands ends with nothing in
+    // them.
+    let picked = frames(physics[Param::PickUpTime]);
+    if !world.things[hands.thing].active
+        && hands.act == Act::PickUp
+        && hands.frame.saturating_add(1) >= picked
+    {
+        world.player.hands = None;
+        return;
+    }
     let p = &world.player;
     let at = |lift: Fixed| Fixed::from_int(ceil(p.pos.y - lift) as i32);
     let x = Fixed::from_int(p.pos.x.floor() as i32);
@@ -195,7 +210,7 @@ pub(crate) fn after(world: &mut World) {
         return;
     }
     thing.phase = Phase::Held;
-    thing.pos = in_hands(p);
+    thing.pos = in_hands(p, thing);
     let release = frames(physics[Param::ThrowRelease]);
     let set_down = frames(physics[Param::PutDownTime]).saturating_sub(1);
     match hands.act {
@@ -227,12 +242,37 @@ pub(crate) fn after(world: &mut World) {
     }
 }
 
-/// Where an object in `player`'s hands is: on its head, with `x` and `y`
-/// whole px.
-pub(crate) fn in_hands(player: &Player) -> Vec2 {
+/// Where `thing` is in `player`'s hands, with `x` and `y` whole px: on
+/// the frames of a pick-up, a throw or a put-down its path in the hands
+/// covers ([`InHands`](crate::InHands)), there; on a pick-up's first frame, where it
+/// lies; otherwise on the player's head.
+pub(crate) fn in_hands(player: &Player, thing: &Thing) -> Vec2 {
+    let (x, y) = (player.pos.x.floor(), ceil(player.pos.y));
+    let head = (0, ceil(player.pos.y - HEIGHT));
+    let place = match (player.hands, thing.archetype.map(|a| a.behavior)) {
+        (Some(hands), Some(Behavior::Carry { in_hands, .. })) => {
+            let n = usize::from(hands.frame);
+            match hands.act {
+                Act::PickUp if n == 0 => return thing.pos,
+                Act::PickUp => in_hands.pick_up.at(n - 1),
+                Act::Throw => in_hands.throw.at(n),
+                Act::PutDown => in_hands.put_down.at(n),
+                Act::Carry => None,
+            }
+        }
+        _ => None,
+    };
+    let (ahead, above) = match place {
+        Some((ahead, up)) => (i64::from(ahead), y - i64::from(up)),
+        None => head,
+    };
+    let ahead = match player.facing {
+        Facing::Left => -ahead,
+        Facing::Right => ahead,
+    };
     Vec2::new(
-        Fixed::from_int(player.pos.x.floor() as i32),
-        Fixed::from_int(ceil(player.pos.y - HEIGHT) as i32),
+        Fixed::from_int((x + ahead) as i32),
+        Fixed::from_int(above as i32),
     )
 }
 

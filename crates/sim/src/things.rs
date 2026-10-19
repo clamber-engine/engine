@@ -977,37 +977,49 @@ fn hit_walker(
     Some(walker.index)
 }
 
-/// During a throw, after its first frame and before the object leaves the
-/// hands, a walker its `hit_early` box touches in the hands knocks back
-/// and breaks an object holding the missing character, as one thrown the
-/// way the player faces. Returns where it broke, if it did.
+/// A walker the object in the player's hands meets knocks back and
+/// breaks it, as thrown-objects.md ("A carried object") describes. During
+/// a throw, after its first frame and before the object leaves the
+/// hands, that's a walker its `hit_early` box touches the way the player
+/// faces. With a `carried_turn`, carried (after the frame the carrying
+/// starts), on a pick-up's frames after its first and on a put-down's
+/// before it's set down, it's one its `hit` box touches as if thrown
+/// right, moved `carried_turn` px right with the player facing left. Not
+/// on a frame the player bounces. The walker is knocked back as by one
+/// thrown right, whichever way the player faces ("During a pick-up, a
+/// throw or a put-down"). Where the object is in the hands is
+/// [`carry::in_hands`].
 ///
 /// One holding nothing breaks in the hands on a thrower its
-/// `thrower_early` box holds then, and while carried on one its
-/// `thrower` box holds, the way the player faces, and knocks it out (see
-/// [`knock_out`]). A throw goes on without it; carried, the player is no
-/// longer carrying it.
+/// `thrower_early` box holds during a throw, and while carried on one
+/// its `thrower` box holds, the way the player faces, and knocks it out
+/// (see [`knock_out`]); a walker in reach on the same frame isn't hit.
 ///
-/// With a `carried_turn`, one that was carried at the end of the last
-/// step and still is also breaks on a walker its `hit` box
-/// touches, as one thrown right, moved `carried_turn` px right with the
-/// player facing left, and knocks the walker back as one thrown right
-/// does (thrown-objects.md, "A carried object"). Not on a frame the
-/// player bounces. The player is no longer carrying it, and keeps the
-/// carrying pose until it lands if it's in the air. The walker it broke
-/// on is returned: it can still hurt the player on the next step, unless
-/// the object held the missing character, which is freed where it was in
-/// the hands (holder-breaking.md, "Carried into a walker").
+/// Carried, the player is no longer carrying it, and keeps the carrying
+/// pose until it lands if it's in the air. A pick-up, a throw or a
+/// put-down goes on to its end without it. The walker it broke on is
+/// returned: it can still hurt the player on the next step it moves.
+/// One holding the missing character frees it where it was in the hands
+/// (holder-breaking.md, "Carried into a walker"); the world waits, and
+/// the walker can hurt the player on the first step after the wait. In
+/// the hands it doesn't break on throwers.
 /// Engine choices: walkers of every size are hit by the box (the spec
-/// measured medium and large walkers hit and small ones out of reach); a
-/// thrower in reach on the same frame is hit instead.
+/// measured medium and large walkers hit while carried and small ones out
+/// of reach).
 fn hands_hits(world: &mut World, physics: &Physics) -> (Option<Vec2>, Option<usize>) {
     let Some(hands) = world.player.hands else {
         return (None, None);
     };
     let release = frames(physics[Param::ThrowRelease]);
+    let set_down = frames(physics[Param::PutDownTime]).saturating_sub(1);
     let throwing = hands.act == Act::Throw && hands.frame > 0 && hands.frame < release;
-    if !throwing && hands.act != Act::Carry {
+    let lifting = match hands.act {
+        Act::PickUp => hands.frame > 0,
+        Act::PutDown => hands.frame < set_down,
+        _ => false,
+    };
+    let carried = hands.act == Act::Carry;
+    if !throwing && !lifting && !carried {
         return (None, None);
     }
     let object = &world.things[hands.thing];
@@ -1027,48 +1039,49 @@ fn hands_hits(world: &mut World, physics: &Physics) -> (Option<Vec2>, Option<usi
     else {
         return (None, None);
     };
-    let pos = carry::in_hands(&world.player);
+    let pos = carry::in_hands(&world.player, object);
     let right = world.player.facing == Facing::Right;
-    if holder.is_some() && throwing {
-        if hit_walker(world, hit_early.bounds(pos, right), right).is_none() {
-            return (None, None);
-        }
-        world.things[hands.thing].active = false;
-        return (Some(pos), None);
-    }
     let box_ = if throwing { thrower_early } else { thrower };
-    let thrower = thrower_at(world, box_, thrower_turn, pos, right).filter(|_| holder.is_none());
+    let thrower =
+        thrower_at(world, box_, thrower_turn, pos, right).filter(|_| holder.is_none() && !lifting);
     let mut walker = None;
     if let Some(index) = thrower {
         knock_out(world, index);
     } else {
-        let carried = hands.act == Act::Carry && hands.frame > frames(physics[Param::PickUpTime]);
-        let turn = carried_turn.filter(|_| carried && !world.events.contains(&Event::Bounce));
-        let Some(turn) = turn else {
+        let bounced = world.events.contains(&Event::Bounce);
+        let held = carried && hands.frame > frames(physics[Param::PickUpTime]);
+        let reach = if bounced {
+            None
+        } else if throwing {
+            Some(hit_early.bounds(pos, right))
+        } else {
+            carried_turn.filter(|_| held || lifting).map(|turn| {
+                let at = if right {
+                    pos
+                } else {
+                    Vec2::new(pos.x + turn, pos.y)
+                };
+                hit.bounds(at, true)
+            })
+        };
+        let Some(reach) = reach else {
             return (None, None);
         };
-        let at = if right {
-            pos
-        } else {
-            Vec2::new(pos.x + turn, pos.y)
-        };
-        walker = hit_walker(world, hit.bounds(at, true), true);
+        walker = hit_walker(world, reach, true);
         if walker.is_none() {
             return (None, None);
         }
-        if !world.player.grounded() {
+        if carried && !world.player.grounded() {
             world.player.pose.carried_air = true;
         }
     }
     // Its pieces aren't in the spec.
     world.things[hands.thing].active = false;
-    if !throwing {
+    if carried {
         world.player.hands = None;
     }
-    if holder.is_some() {
-        return (Some(pos), None);
-    }
-    (None, walker)
+    let freed = holder.map(|_| pos);
+    (freed, walker)
 }
 
 /// Each ball there is now: its index, where it is, and the part of its
@@ -1133,7 +1146,12 @@ fn meet_balls(world: &mut World, before: &[(usize, Vec2, Option<usize>)], physic
                     continue;
                 }
                 let right = world.player.facing == Facing::Right;
-                (carry::in_hands(&world.player), right, throwing, true)
+                (
+                    carry::in_hands(&world.player, object),
+                    right,
+                    throwing,
+                    true,
+                )
             }
             _ => continue,
         };
