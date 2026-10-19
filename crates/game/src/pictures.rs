@@ -1,7 +1,8 @@
 //! Which of its own pictures the player shows when it's held still: the
 //! stop after a roll, a jump and its landing, a bounce, the first
 //! standing pictures after them, and the first character's roll,
-//! walking, running and turning pictures
+//! walking, running and turning pictures, on the ground and in the air
+//! after walking off a ledge without a face
 //! (`spec/behavior/player-frames.md`).
 //!
 //! The pictures come from a character's sheet in a pack
@@ -18,9 +19,9 @@
 //!   standing pictures, the second character walking or running, or
 //!   bouncing after B + 4) are the engine's own art, as are the second
 //!   character's in the air from T + 16 until it lands.
-//! - Walking or running in the air after walking off a ledge, and
-//!   crouching or getting up, show the engine's own art, as does the
-//!   second character's roll.
+//! - Walking or running in the air after walking off a ledge with a
+//!   face, and crouching or getting up, show the engine's own art, as
+//!   does the second character's roll.
 //! - The second character's landing pictures are shown after a jump
 //!   that lands on the floor it took off from, the landings the spec
 //!   says they're for.
@@ -286,24 +287,30 @@ impl PictureClock {
             } else {
                 second_landing(landed, player.since_land, player.gait, player.state)
             }
-        } else if first && player.grounded() {
+        } else if first && (player.grounded() || upright_fall(player)) {
             walking(player)
         } else {
             None
         };
-        // Standing starts from a stop's last picture, a landing's, or
-        // on the landing frame after the first character's bounce.
+        // Standing starts from a stop's last picture, a landing's, the
+        // first character's walking, running or turning, or on the
+        // landing frame after the first character's bounce. After a
+        // walk-off without a face it starts, or goes on, in the air.
         let standing_now = self.shown.is_none()
-            && player.state == State::Idle
-            && player.grounded()
+            && (player.grounded()
+                && matches!(player.state, State::Idle | State::Walk | State::Run)
+                || first && upright_fall(player))
             && player.roll_stop == 0
+            && player.crouch.held == 0
+            && player.crouch.rising == 0
             && matches!(player.gait, Gait::Standing);
         self.standing = match self.standing {
             _ if !standing_now => None,
             Some(c) => Some(c.saturating_add(1)),
             None => before
                 .is_some_and(|(set, _)| {
-                    matches!(set, Set::Stop | Set::Jump) || (first && set == Set::Bounce)
+                    matches!(set, Set::Stop | Set::Jump)
+                        || (first && matches!(set, Set::Bounce | Set::Walking))
                 })
                 .then_some(0),
         };
@@ -311,6 +318,13 @@ impl PictureClock {
             self.shown = standing(first, c);
         }
     }
+}
+
+/// In the air after walking or running off a ledge without a face,
+/// where the mode goes on (`ground-speed.md`, "After a fall or a
+/// bounce").
+fn upright_fall(player: &clamber_sim::Player) -> bool {
+    !player.grounded() && player.walked_off && !player.walked_off_face && player.roll.is_none()
 }
 
 /// The feet line: level y rounded up to a whole px.
@@ -377,8 +391,8 @@ fn standing(first: bool, c: u8) -> Option<(Set, &'static str)> {
     Some((Set::Standing, label))
 }
 
-/// The first character walking, running or turning on the ground, on
-/// the step its frame ends in or turn frame T + n.
+/// The first character walking, running or turning on the ground or in
+/// a walk-off's fall, on the step its frame ends in or turn frame T + n.
 fn walking(player: &clamber_sim::Player) -> Option<(Set, &'static str)> {
     if player.roll.is_some()
         || player.roll_stop > 0
@@ -907,7 +921,148 @@ mod tests {
         let run = run(world(FLAT, 0), &hold(&[Action::Left], 1, 30));
         let turn = run.frames(Event::Turn);
         assert_eq!(turn, [14], "facing changes on T + 4");
-        run.check(10, &[("turn-a", 2), ("turn-b", 4), ("turn-a", 2), ("", 1)]);
+        run.check(
+            10,
+            &[("turn-a", 2), ("turn-b", 4), ("turn-a", 2), ("stand-1", 3)],
+        );
+    }
+
+    #[test]
+    fn standing_after_walking_or_a_turn() {
+        let run = run(world(FLAT, 0), &hold(&[Action::Right], 6, 60));
+        let stand = run
+            .shown
+            .iter()
+            .position(|&l| l == Some("stand-1"))
+            .unwrap();
+        assert!(
+            run.shown[10..stand]
+                .iter()
+                .all(|l| l.unwrap().starts_with("walk-"))
+        );
+        run.check(
+            stand,
+            &[
+                ("stand-1", 3),
+                ("stand-2", 3),
+                ("stand-3", 3),
+                ("stand-4", 3),
+                ("stand-5", 3),
+                ("", 1),
+            ],
+        );
+    }
+
+    fn walk_off_ledge() -> String {
+        std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../content/test/walk-off-ledge.level"
+        ))
+        .unwrap()
+    }
+
+    /// Plays `keys` off the ledge and on flat floor from the same x:
+    /// the pictures are the same on every frame before `until`, in the
+    /// air too. Gives the run off the ledge and its first airborne and
+    /// landing frames.
+    fn same_as_on_flat_floor(keys: &[Vec<Action>], until: usize) -> (Run, usize, usize) {
+        let off = run(world(&walk_off_ledge(), 0), keys);
+        let flat = run(world(FLAT, 0), keys);
+        let l = off.grounded.iter().position(|g| !g).unwrap();
+        let g = off.frames(Event::Land)[0];
+        assert!(g > l + 10, "a fall: L {l}, G {g}");
+        assert_eq!(off.shown[..until], flat.shown[..until]);
+        (off, l, g)
+    }
+
+    #[test]
+    fn walking_goes_on_in_the_air_after_a_walk_off() {
+        let walk: Vec<Vec<Action>> = (0..80).map(|_| vec![Action::Right]).collect();
+        let (run, l, g) = same_as_on_flat_floor(&walk, 80);
+        assert!(
+            run.shown[l..=g]
+                .iter()
+                .all(|l| l.unwrap().starts_with("walk-"))
+        );
+    }
+
+    /// Right held from frame 10 until the fall's second frame, then
+    /// `then` held.
+    fn off_the_ledge_then(then: &[Action]) -> Vec<Vec<Action>> {
+        let walk = run(world(&walk_off_ledge(), 0), &hold(&[Action::Right], 60, 80));
+        let l = walk.grounded.iter().position(|g| !g).unwrap();
+        (0..90)
+            .map(|f| match f {
+                0..10 => vec![],
+                f if f <= l => vec![Action::Right],
+                _ => then.to_vec(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_turn_in_the_air_after_a_walk_off() {
+        // Until the turn's end: walking back, it meets the ledge's side.
+        let keys = off_the_ledge_then(&[Action::Left]);
+        let flat = run(world(FLAT, 0), &keys);
+        let t = flat
+            .shown
+            .iter()
+            .position(|&l| l == Some("turn-a"))
+            .unwrap();
+        let (run, l, g) = same_as_on_flat_floor(&keys, t + 8);
+        assert!(
+            l < t && t + 8 < g,
+            "the turn is in the air: L {l}, T {t}, G {g}"
+        );
+        run.check(t, &[("turn-a", 2), ("turn-b", 4), ("turn-a", 2)]);
+        assert_eq!(run.frames(Event::Turn), [t + 4]);
+    }
+
+    #[test]
+    fn standing_in_the_air_after_a_walk_off() {
+        let (run, l, g) = same_as_on_flat_floor(&off_the_ledge_then(&[]), 90);
+        let stand = run
+            .shown
+            .iter()
+            .position(|&l| l == Some("stand-1"))
+            .unwrap();
+        assert!(
+            l < stand && stand < g,
+            "standing starts in the air: L {l}, {stand}, G {g}"
+        );
+        assert!(
+            run.shown[l..stand]
+                .iter()
+                .all(|l| l.unwrap().starts_with("walk-"))
+        );
+        run.check(
+            stand,
+            &[
+                ("stand-1", 3),
+                ("stand-2", 3),
+                ("stand-3", 3),
+                ("stand-4", 3),
+                ("stand-5", 3),
+                ("", 1),
+            ],
+        );
+    }
+
+    #[test]
+    fn running_started_in_the_air_after_a_walk_off() {
+        // Action pressed in the air: on flat floor it would roll.
+        let keys = off_the_ledge_then(&[Action::Right, Action::Action]);
+        let run = run(world(&walk_off_ledge(), 0), &keys);
+        let l = run.grounded.iter().position(|g| !g).unwrap();
+        let g = run.frames(Event::Land)[0];
+        let r = run.shown.iter().position(|&l| l == Some("run-1")).unwrap();
+        assert!(
+            l < r && r < g,
+            "running starts in the air: L {l}, {r}, G {g}"
+        );
+        let gait = |l: &str| l.starts_with("walk-") || l.starts_with("run-");
+        assert!(run.shown[l..=g].iter().all(|l| gait(l.unwrap())));
     }
 
     /// The picture on cycle frame `c` of a roll.
