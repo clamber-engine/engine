@@ -988,17 +988,19 @@ fn hit_walker(
 /// [`knock_out`]). A throw goes on without it; carried, the player is no
 /// longer carrying it.
 ///
-/// With a `carried_turn`, one holding nothing that was carried at the end
-/// of the last step and still is also breaks on a walker its `hit` box
+/// With a `carried_turn`, one that was carried at the end of the last
+/// step and still is also breaks on a walker its `hit` box
 /// touches, as one thrown right, moved `carried_turn` px right with the
 /// player facing left, and knocks the walker back as one thrown right
 /// does (thrown-objects.md, "A carried object"). Not on a frame the
 /// player bounces. The player is no longer carrying it, and keeps the
 /// carrying pose until it lands if it's in the air. The walker it broke
-/// on is returned: it can still hurt the player on the next step.
+/// on is returned: it can still hurt the player on the next step, unless
+/// the object held the missing character, which is freed where it was in
+/// the hands (holder-breaking.md, "Carried into a walker").
 /// Engine choices: walkers of every size are hit by the box (the spec
-/// measured large walkers hit and small ones out of reach); a thrower in
-/// reach on the same frame is hit instead.
+/// measured medium and large walkers hit and small ones out of reach); a
+/// thrower in reach on the same frame is hit instead.
 fn hands_hits(world: &mut World, physics: &Physics) -> (Option<Vec2>, Option<usize>) {
     let Some(hands) = world.player.hands else {
         return (None, None);
@@ -1027,16 +1029,17 @@ fn hands_hits(world: &mut World, physics: &Physics) -> (Option<Vec2>, Option<usi
     };
     let pos = carry::in_hands(&world.player);
     let right = world.player.facing == Facing::Right;
-    if holder.is_some() {
-        if !throwing || hit_walker(world, hit_early.bounds(pos, right), right).is_none() {
+    if holder.is_some() && throwing {
+        if hit_walker(world, hit_early.bounds(pos, right), right).is_none() {
             return (None, None);
         }
         world.things[hands.thing].active = false;
         return (Some(pos), None);
     }
     let box_ = if throwing { thrower_early } else { thrower };
+    let thrower = thrower_at(world, box_, thrower_turn, pos, right).filter(|_| holder.is_none());
     let mut walker = None;
-    if let Some(index) = thrower_at(world, box_, thrower_turn, pos, right) {
+    if let Some(index) = thrower {
         knock_out(world, index);
     } else {
         let carried = hands.act == Act::Carry && hands.frame > frames(physics[Param::PickUpTime]);
@@ -1061,6 +1064,9 @@ fn hands_hits(world: &mut World, physics: &Physics) -> (Option<Vec2>, Option<usi
     world.things[hands.thing].active = false;
     if !throwing {
         world.player.hands = None;
+    }
+    if holder.is_some() {
+        return (Some(pos), None);
     }
     (None, walker)
 }
@@ -1360,7 +1366,9 @@ fn has_contact(thing: &Thing) -> bool {
 /// theirs, on whole pixels. The box is `bounce_width` wide, centred
 /// `bounce_offset` in front of the player, and reaches from the top of
 /// the body to `bounce_below` under the feet. A player on the ground,
-/// rolling, or rising at `bounce_max_rise` or faster doesn't bounce.
+/// rolling, or rising at `bounce_max_rise` or faster doesn't bounce,
+/// nor one throwing after the throw's first frame and up to the one the
+/// object leaves the hands on (walker-contact.md, "Carrying").
 /// Returns the enemies bounced on, which are defeated once they've
 /// moved this frame.
 fn bounce_on_boxes(world: &mut World, physics: &Physics) -> Vec<usize> {
@@ -1372,7 +1380,11 @@ fn bounce_on_boxes(world: &mut World, physics: &Physics) -> Vec<usize> {
     } else {
         player.vel.y.is_negative()
     };
-    if player.grounded() || player.state == State::Roll || rising_fast {
+    let release = frames(physics[Param::ThrowRelease]);
+    let throwing = player
+        .hands
+        .is_some_and(|h| h.act == Act::Throw && h.frame > 0 && h.frame <= release);
+    if player.grounded() || player.state == State::Roll || rising_fast || throwing {
         return bounced;
     }
     let at = whole_pixels(player.pos);
@@ -1553,7 +1565,8 @@ fn hurt_ahead(world: &World, physics: &Physics, carried_into: Option<usize>) -> 
     );
     let fidget =
         physics[Param::HurtFidgetWidth] > Fixed::ZERO && pose::fidgeting(&player.pose, fidget_time);
-    let carrying = physics[Param::HurtCarryWidth] > Fixed::ZERO && pose::hurt_carrying(player);
+    let carrying =
+        physics[Param::HurtCarryWidth] > Fixed::ZERO && pose::hurt_carrying(player, physics);
     let (airborne, lifted) = if carrying {
         (false, false)
     } else {

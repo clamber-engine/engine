@@ -258,3 +258,118 @@ fn a_crate_just_picked_up_doesnt_break_on_its_first_carried_frame() {
     carry_step(&mut w);
     assert!(!w.things[1].active);
 }
+
+/// Whether the crate a player carries at `object_x` breaks on a still
+/// medium walker at 300 facing `heading` on the first step.
+fn breaks_on_medium_walker(object_x: i32, facing: Facing, heading: &str) -> bool {
+    let mut w = carrying(f64::from(object_x), facing, MEDIUM, (300.0, 0.0, heading));
+    carry_step(&mut w);
+    !w.things[1].active
+}
+
+#[test]
+fn a_carried_object_breaks_on_a_medium_walker_in_the_measured_ranges() {
+    // thrown-objects.md, "When the walker is hit", the medium walker's
+    // table, with the player on its floor (H of 41 and 42).
+    for (heading, facing, low, high) in [
+        ("right", Facing::Right, -20, 35),
+        ("right", Facing::Left, -25, 30),
+        ("left", Facing::Right, -30, 25),
+        ("left", Facing::Left, -35, 20),
+    ] {
+        let row = format!("walker {heading}, player {facing:?}");
+        assert!(
+            !breaks_on_medium_walker(300 + low - 1, facing, heading),
+            "{row}"
+        );
+        assert!(breaks_on_medium_walker(300 + low, facing, heading), "{row}");
+        assert!(
+            breaks_on_medium_walker(300 + high, facing, heading),
+            "{row}"
+        );
+        assert!(
+            !breaks_on_medium_walker(300 + high + 1, facing, heading),
+            "{row}"
+        );
+    }
+}
+
+/// Whether a player standing 22 px right of a still small walker heading
+/// left, doing `act` and on its frame `frame` at the end of the first
+/// step, is hurt on the second. 22 is in the upright range (−19 to 24)
+/// and not the carrying one (−18 to 19).
+fn hurt_during(act: Act, frame: u8) -> bool {
+    let mut w = carrying(322.0, Facing::Right, SMALL, (300.0, 0.0, "left"));
+    w.things[1].active = false;
+    w.player.hands = Some(Hands {
+        thing: 1,
+        act,
+        frame: frame - 1,
+        press: None,
+    });
+    let held: Actions = match act {
+        Act::PickUp | Act::Carry => Action::Action.into(),
+        Act::Throw | Act::PutDown => Actions::NONE,
+    };
+    step(&mut w, &InputFrame::single(Frame::after(held, held)));
+    assert_eq!(w.player.hands.map(|h| (h.act, h.frame)), Some((act, frame)));
+    assert!(!w.events.contains(&Event::Hurt), "hurt on the first frame");
+    step(&mut w, &InputFrame::single(Frame::after(held, held)));
+    w.events.contains(&Event::Hurt)
+}
+
+#[test]
+fn pick_ups_throws_and_put_downs_have_the_carrying_pose() {
+    // walker-contact.md, "Carrying": G to G + 14, Q to Q + 42 of a throw
+    // and Q to Q + 12 of a put-down; upright from Q + 13 of a put-down.
+    for frame in [1, 7, 14] {
+        assert!(!hurt_during(Act::PickUp, frame), "G + {frame}");
+    }
+    for frame in [1, 21, 22, 42] {
+        assert!(!hurt_during(Act::Throw, frame), "throw Q + {frame}");
+    }
+    for frame in [1, 12] {
+        assert!(!hurt_during(Act::PutDown, frame), "put-down Q + {frame}");
+    }
+    assert!(hurt_during(Act::PutDown, 13), "put-down Q + 13");
+}
+
+/// Whether a player throwing, on frame `frame` of the throw on the step
+/// it falls onto a still large walker 10 px above its floor, bounces.
+/// With `frame` 0 the throw starts on that step.
+fn bounces_throwing(frame: u8) -> bool {
+    let mut w = carrying(300.0, Facing::Right, LARGE, (300.0, 0.0, "left"));
+    w.things[1].active = false;
+    w.player.ground = None;
+    // After this frame's gravity it falls 1/16 px, to 10 above the floor.
+    w.player.pos.y = Fixed::from_int(390) - fx(0.0625);
+    w.player.vel.y = fx(0.0625 - 0.4375);
+    if frame > 0 {
+        w.player.hands = Some(Hands {
+            thing: 1,
+            act: Act::Throw,
+            frame: frame - 1,
+            press: None,
+        });
+    }
+    step(
+        &mut w,
+        &InputFrame::single(Frame::after(Actions::NONE, Actions::NONE)),
+    );
+    assert_eq!(
+        w.player.hands.map(|h| (h.act, h.frame)),
+        Some((Act::Throw, frame))
+    );
+    w.events.contains(&Event::Bounce)
+}
+
+#[test]
+fn no_bounce_while_the_object_is_still_in_the_hands_of_a_throw() {
+    // walker-contact.md, "Carrying": no bounce on Q + 1 to Q + 21; a
+    // bounce on Q and from Q + 22.
+    assert!(bounces_throwing(0), "Q");
+    for frame in [1, 10, 21] {
+        assert!(!bounces_throwing(frame), "Q + {frame}");
+    }
+    assert!(bounces_throwing(22), "Q + 22");
+}

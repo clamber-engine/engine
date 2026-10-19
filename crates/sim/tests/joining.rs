@@ -437,3 +437,59 @@ fn breaks_in_the_hands_during_a_throw() {
     assert!(play.world.player.hands.is_none());
     assert!(!play.world.things[0].active);
 }
+
+/// walker-contact.md's large and medium walkers' boxes, standing still,
+/// with walker.md's other values.
+const STILL_LARGE_WALKER: &str = "speed = 0, facing = \"left\", size = [26, 38], offset = 0.5, \
+    response = 0.125, turn_delay = 4, defeat_jump = 6, defeat_gravity = 0.4375, \
+    defeat_max_fall = 8";
+const STILL_MEDIUM_WALKER: &str = "speed = 0, facing = \"left\", size = [25, 25], offset = 5, \
+    response = 0.125, turn_delay = 4, defeat_jump = 6, defeat_gravity = 0.4375, \
+    defeat_max_fall = 8";
+
+/// holder-breaking.md, "Carried into a walker": a medium or large walker
+/// that meets the carried object breaks it on S. The character appears
+/// where it's carried, the player and the walker wait to S + 33, the
+/// walker (`vx` −4) steps on from S + 34, and the player isn't hurt, even
+/// with the walker in its hurt range.
+#[test]
+fn breaks_carried_into_a_walker() {
+    for walker in [STILL_LARGE_WALKER, STILL_MEDIUM_WALKER] {
+        let entity =
+            format!("[[entities]]\ntype = \"crawler\"\nat = [330, 400]\nparams = {{ {walker} }}");
+        let mut play = Play::new(&level(&format!("{FLAT}\n{entity}")));
+        play.world.things[1].pos.x = f(210.0);
+        play.step(&[A]);
+        assert!(!play.world.things[0].active, "S");
+        assert!(play.world.player.hands.is_none());
+        assert!(matches!(play.world.things[1].phase, Phase::Knocked { .. }));
+        assert_eq!(play.world.things[1].vx, f(-4.0));
+        let at = play.world.things[1].pos;
+        let mut stand = play.clone_world();
+        for n in 1..=33 {
+            stand.step(&[]);
+            assert_eq!(stand.world.things[1].pos, at, "S + {n}");
+        }
+        stand.step(&[]);
+        assert!(stand.world.things[1].pos.x < at.x, "S + 34");
+        joins(&mut play, (200, 368));
+        walks_on(&mut play);
+        for _ in 0..46 {
+            play.step(&[]);
+            assert!(play.world.player.knockout.is_none());
+        }
+    }
+}
+
+/// holder-breaking.md, "Carried into a walker": a small walker on the
+/// player's floor never meets it, and hurts the player.
+#[test]
+fn a_small_walker_never_meets_it_carried() {
+    let entity =
+        format!("[[entities]]\ntype = \"crawler\"\nat = [330, 400]\nparams = {{ {SMALL_WALKER} }}");
+    let mut play = Play::new(&level(&format!("{FLAT}\n{entity}")));
+    play.world.things[1].pos.x = f(215.0);
+    play.hold(&[A], 3);
+    assert!(play.world.join.is_none());
+    assert!(play.world.player.knockout.is_some());
+}

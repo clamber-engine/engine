@@ -135,8 +135,10 @@
 #   thrower. A thrower it breaks on is knocked out, and a ball is gone.
 #   In the hands it doesn't break on throwers. On the
 #   frames of a throw before it leaves the hands, but not the first, it
-#   breaks on walkers its `hit_early` box touches in the hands.
-#   Carried, put down, lying or dropped, it doesn't break.
+#   breaks on walkers its `hit_early` box touches in the hands, and
+#   carried, with a `hit_carried_turn`, on walkers as one holding nothing
+#   does; the walker then doesn't hurt the player. Put down, lying or
+#   dropped, it doesn't break.
 #   With `hit_wall_exit` and `hit_wall_exit_early`, thrown and moving
 #   right, it opens wall exits those boxes hold, as `hit_thrower` does
 #   throwers.

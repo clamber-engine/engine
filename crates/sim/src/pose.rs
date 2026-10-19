@@ -45,7 +45,7 @@ use clamber_fixed::Fixed;
 use clamber_pack::{Param, Physics};
 
 use crate::archetype::{Poses, WalkerContact};
-use crate::player::{Act, Player, State};
+use crate::player::{Act, Player, State, frames};
 use crate::world::Event;
 
 /// A pose with its own ranges.
@@ -352,12 +352,17 @@ pub fn hurt_crouching(player: &Player) -> bool {
 
 /// Whether `player` has the carrying pose for the preset's hurt box at
 /// the end of the last step (spec/behavior/walker-contact.md,
-/// "Carrying"): from G + 15 of the pick-up while action stays held, on
-/// the ground and in the air, and after the object breaks on a walker in
-/// the air until the player lands (thrown-objects.md, "A carried
-/// object").
-pub fn hurt_carrying(player: &Player) -> bool {
-    player.hands.is_some_and(|h| h.act == Act::Carry) || player.pose.carried_air
+/// "Carrying"): from the first frame of a pick-up while action stays
+/// held, on the ground and in the air, on every frame of a throw, on a
+/// put-down's frames but its last, and after the object breaks on a
+/// walker in the air until the player lands (thrown-objects.md, "A
+/// carried object"). Engine choice: a pick-up in the air has it too.
+pub fn hurt_carrying(player: &Player, physics: &Physics) -> bool {
+    let set_down = frames(physics[Param::PutDownTime]).saturating_sub(1);
+    player
+        .hands
+        .is_some_and(|h| h.act != Act::PutDown || h.frame < set_down)
+        || player.pose.carried_air
 }
 
 /// Whether a player with `clock` is in the fidget pose at the end of the
