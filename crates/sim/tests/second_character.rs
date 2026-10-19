@@ -30,12 +30,17 @@ struct Play {
 }
 
 fn second() -> Play {
+    second_on(FLAT)
+}
+
+/// [`second`] on the level `src`.
+fn second_on(src: &str) -> Play {
     let mut feel = generic_feel("classic-1").unwrap();
     feel.roster.push(CharacterFeel {
         physics: Presets::builtin().slot("classic-1", 1).unwrap(),
         abilities: BTreeMap::from([(ROLL.to_string(), BTreeMap::new())]),
     });
-    let level = Arc::new(Level::from_toml_str(FLAT, "flat").unwrap());
+    let level = Arc::new(Level::from_toml_str(src, "flat").unwrap());
     let mut world = World::new(level, Arc::new(feel));
     world.player.character = 1;
     if let Some(other) = &mut world.other {
@@ -338,6 +343,7 @@ const DOWN: Action = Action::Down;
 /// One step of `steps`.
 struct Row {
     x: Fixed,
+    y: Fixed,
     vx: Fixed,
     vy: Fixed,
     facing: Facing,
@@ -357,6 +363,7 @@ fn steps(play: &mut Play, n: usize, keys: impl Fn(usize) -> Vec<Action>) -> Vec<
             let p = &play.world.player;
             Row {
                 x: p.pos.x,
+                y: p.pos.y,
                 vx: p.vel.x,
                 vy: p.vel.y,
                 facing: p.facing,
@@ -670,4 +677,207 @@ fn jumping_out_of_a_roll() {
             assert_eq!(rows[t].vx, f(expect as f64 / 256.0), "{p}, step {t}");
         }
     }
+}
+
+/// Flat ground at y = 400 up to x = 1600, then a short steep face falling
+/// right (four columns, 4 px apart) and flat floor `drop` px below
+/// y = 400 beyond it, with the player standing at `x`.
+fn faced_ledge(drop: i32, x: f64) -> Play {
+    let mut points = vec![[0, 400], [1600, 400]];
+    for c in 1600..1604 {
+        let y = 402 + 4 * (c - 1600);
+        points.extend([[c, y], [c + 1, y]]);
+    }
+    points.extend([
+        [1604, 400 + drop],
+        [4096, 400 + drop],
+        [4096, 599],
+        [0, 599],
+    ]);
+    let src = format!(
+        "format = 1\nname = \"ledge\"\nsize = [4096, 600]\nstart = [{x}, 400]\n\
+         [[collision]]\nshape = \"polygon\"\npoints = {points:?}\n"
+    );
+    second_on(&src)
+}
+
+/// The edge of [`faced_ledge`]'s top: the face starts in this column.
+const EDGE: f64 = 1600.0;
+
+/// On [`faced_ledge`] with `drop`, walking right from x = 1400, then
+/// Action and Right on frame S and Right alone after it, with S chosen
+/// so that the roll leaves the ground on S + `lead`. The rows from S on,
+/// `n` of them, with `adjust(frame, play)` called before each frame, and
+/// the player's `y` on S - 1.
+fn roll_off_faced_ledge(
+    drop: i32,
+    lead: usize,
+    n: usize,
+    adjust: impl Fn(usize, &mut Play),
+) -> (Vec<Row>, Fixed) {
+    let held = |f: usize, s: usize| if f == s { vec![A, R] } else { vec![R] };
+    // Walking rolls from starts moved in steps of 1/16 px, to find the
+    // leave frames on or right after S.
+    for nudge in 0..32 {
+        let start = || {
+            let mut w = faced_ledge(drop, 1400.0);
+            w.world.player.pos.x += f(f64::from(nudge) / 16.0);
+            w
+        };
+        for s in 40..120 {
+            let rows = steps(&mut start(), s + lead + 1, |i| held(i, s));
+            if frames_with(&rows, Event::LeaveGround).first() != Some(&(s + lead)) {
+                continue;
+            }
+            assert_eq!(rows[s - 1].vx, f(2.25), "walking before S");
+            assert_eq!(frames_with(&rows, Event::RollStart), [s]);
+            let mut w = start();
+            let before = steps(&mut w, s, |i| held(i, s));
+            let rows = (0..n)
+                .map(|i| {
+                    adjust(i, &mut w);
+                    steps(&mut w, 1, |_| held(s + i, s)).pop().unwrap()
+                })
+                .collect();
+            return (rows, before[s - 1].y);
+        }
+    }
+    panic!("no roll leaves the ground on S + {lead}");
+}
+
+#[test]
+fn a_roll_off_a_ledge_hovers_by_when_it_leaves_the_ground() {
+    // rolling-off-ledges.md, "The second character": which frames after
+    // L hover by L - S, two more than the first character's. A hover
+    // frame moves down 1/256 and ends with `vy` 1/256.
+    let drop = 3.4375;
+    let hover = 0.00390625;
+    for lead in 0..=14 {
+        let hovers = |after: usize| match lead {
+            0 => (1..=10).contains(&after),
+            1..=9 => after <= 11,
+            10 => after == 0,
+            _ => false,
+        };
+        let (rows, y0) = roll_off_faced_ledge(160, lead, lead + 18, |_, _| {});
+        let mut vy = hover;
+        for after in 0..18 {
+            let moved = if hovers(after) {
+                vy = hover;
+                hover
+            } else if after == 0 {
+                vy = hover;
+                drop
+            } else {
+                vy += 0.4375;
+                vy
+            };
+            let i = lead + after;
+            assert_eq!(rows[i].state, State::Roll, "lead {lead}, L + {after}");
+            let before = if i == 0 { y0 } else { rows[i - 1].y };
+            assert_eq!(
+                (rows[i].y - before, rows[i].vy),
+                (f(moved), f(vy)),
+                "lead {lead}, L + {after}"
+            );
+        }
+    }
+}
+
+#[test]
+fn roll_off_a_ledge_hover_example() {
+    // rolling-off-ledges.md, "The second character", the example of a
+    // hover: L = S + 7, Action tapped. Below the height on L - 1.
+    let (rows, _) = roll_off_faced_ledge(160, 7, 80, |_, _| {});
+    let below = |after: usize| rows[7 + after].y - rows[6].y;
+    for (after, fallen, vy) in [
+        (0, 0.00390625, 0.00390625),
+        (11, 0.046875, 0.00390625),
+        (12, 0.48828125, 0.44140625),
+        (13, 1.3671875, 0.87890625),
+    ] {
+        assert_eq!((below(after), rows[7 + after].vy), (f(fallen), f(vy)));
+    }
+    let land = frames_with(&rows, Event::Land)[0];
+    assert!(rows[..land + 25].iter().all(|r| r.state == State::Roll));
+    assert_eq!(frames_with(&rows, Event::RollEnd), [land + 25]);
+}
+
+#[test]
+fn a_roll_off_a_ledge_ends_25_frames_after_landing() {
+    // rolling-off-ledges.md, "The second character", when the roll ends:
+    // D = G + 25, except D = G after a fall of exactly 25 frames; falls of
+    // 24 or 26 frames end at G + 25.
+    let ends = |lead: usize, nudge: i32| {
+        let (rows, _) = roll_off_faced_ledge(160, lead, 100, |i, w| {
+            if i == lead + 5 {
+                w.world.player.pos.y += Fixed::from_int(nudge);
+            }
+        });
+        let leave = frames_with(&rows, Event::LeaveGround)[0];
+        let land = frames_with(&rows, Event::Land)[0];
+        assert!(rows[..land].iter().all(|r| r.state == State::Roll));
+        let end = frames_with(&rows, Event::RollEnd)[0];
+        (land - leave, end - land)
+    };
+    let falls: Vec<_> = (-60..=40).map(|px| ends(12, px)).collect();
+    for fall in 24..=26 {
+        let end = if fall == 25 { 0 } else { 25 };
+        assert!(falls.contains(&(fall, end)), "{fall}-frame fall");
+    }
+    assert!(
+        falls
+            .iter()
+            .all(|&(fall, end)| end == if fall == 25 { 0 } else { 25 })
+    );
+    // With a hover too.
+    let falls: Vec<_> = (40..=140).map(|px| ends(3, px)).collect();
+    assert!(falls.contains(&(25, 0)));
+    assert!(
+        falls
+            .iter()
+            .all(|&(fall, end)| end == if fall == 25 { 0 } else { 25 })
+    );
+}
+
+#[test]
+fn roll_off_a_ledge_example() {
+    // rolling-off-ledges.md, "The second character", the first example:
+    // standing about 33 px in front of the ledge, Right held and Action
+    // pressed on frame 0. Held, the roll carries on to D + 6; tapped, it
+    // stops on D = G + 25.
+    for held in [true, false] {
+        let mut w = faced_ledge(60, EDGE - 33.0);
+        let rows = steps(&mut w, 80, |i| {
+            if i == 0 || held { vec![A, R] } else { vec![R] }
+        });
+        assert_eq!(frames_with(&rows, Event::RollStart), [0]);
+        let leave = frames_with(&rows, Event::LeaveGround)[0];
+        let land = frames_with(&rows, Event::Land)[0];
+        assert_eq!((leave, land), (16, 31), "held {held}");
+        let d = land + 25;
+        assert!(rows[..d].iter().all(|r| r.state == State::Roll));
+        let end = if held { d + 6 } else { d };
+        assert_eq!(frames_with(&rows, Event::RollEnd), [end], "held {held}");
+    }
+}
+
+#[test]
+fn a_roll_stopped_at_the_top_of_a_face_pushes_off_to_size_3() {
+    // rolling-off-ledges.md, "The second character", pushing off: at the
+    // top of the face within reach of the edge, Action alone stays put
+    // until D; with Right from S + 1 it pushes off at 2 on S + 1, and
+    // holding Right then makes the roll's size 3, not 3.375.
+    let x = EDGE - 10.0;
+    let mut w = faced_ledge(160, x);
+    let rows = steps(&mut w, D + 1, |i| if i == 0 { vec![A] } else { vec![] });
+    assert!(rows[..D].iter().all(|r| r.state == State::Roll));
+    assert!(rows.iter().all(|r| r.x == f(x) && r.vx == Fixed::ZERO));
+    assert_eq!(frames_with(&rows, Event::RollEnd), [D]);
+
+    let mut w = faced_ledge(160, x);
+    let rows = steps(&mut w, 3, |i| if i == 0 { vec![A] } else { vec![R] });
+    assert_eq!((rows[0].x, rows[0].vx), (f(x), Fixed::ZERO));
+    assert_eq!(rows[1].vx, f(2.0));
+    assert_eq!(w.world.player.roll.unwrap().speed, f(3.0));
 }

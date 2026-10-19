@@ -1089,6 +1089,12 @@ roll_carry_time = 6
 roll_lone_run_any_dir = 1
 roll_stop_press_lengthens = 1
 roll_slide_turns = 1
+# Off a ledge with a steep face (rolling-off-ledges.md, "The second
+# character") it hovers for two frames more, up to L - S = 10, and a
+# fall of exactly 25 frames ends the roll on landing.
+roll_leave_hover = 10
+roll_leave_hover_time = 12
+roll_fall_end = 25
 # Its roll's attack box (18 wide, 3 ahead) gives its defeat ranges against
 # all three walkers (rolling-into-walkers.md, "The second character").
 roll_attack_width = 18
