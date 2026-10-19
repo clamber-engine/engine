@@ -9,7 +9,10 @@
 //! it's losing a life, `recover` while it's held still after a roll, and
 //! `land` while it stands after a landing ([`player_animation`]). Sprites face right and are mirrored to face left.
 //! A character in roster slot `n` past the first uses the sheet's `n`th
-//! named palette or variant image, in name order, if it has one. Entities play their
+//! named palette or variant image, in name order, if it has one. Where a
+//! pack has a sheet of a character's own pictures ([`CHARACTER`] and its
+//! roster slot), the player shows them on the frames they're given for
+//! ([`crate::pictures`]) instead. Entities play their
 //! sheet's first animation, except a reached checkpoint, which plays
 //! `reached`, a defeated enemy, which plays `defeated`, a launcher
 //! that just fired, which plays `fire`, and a spring whose top is pressed
@@ -24,11 +27,16 @@ use clamber_sim::{
 };
 use clamber_sprite::{Playback, SpriteSheet};
 
+use crate::pictures::{self, PictureClock};
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
 use crate::surface::Surface;
 
 /// The sheet the player is drawn with.
 pub const PLAYER: &str = "player";
+
+/// What a character's own sheet is named, before its roster slot: the
+/// pictures it shows when held still ([`crate::pictures`]).
+pub const CHARACTER: &str = "character-";
 
 /// The sprite sheets the player and entities are drawn with.
 #[derive(Clone, Debug)]
@@ -37,6 +45,8 @@ pub struct Cast {
     player: Option<SheetId>,
     /// The player's palettes or variants for roster slots after the first.
     alternates: Vec<PaletteId>,
+    /// Characters' own sheets, by roster slot.
+    characters: BTreeMap<usize, SheetId>,
     kinds: BTreeMap<String, SheetId>,
 }
 
@@ -59,10 +69,19 @@ impl Cast {
         let mut kinds: BTreeMap<_, _> = ids.into_iter().collect();
         let player = kinds.remove(PLAYER);
         let alternates = player.map_or_else(Vec::new, |id| bank.palettes(id).collect());
+        let mut characters = BTreeMap::new();
+        kinds.retain(|name, &mut id| {
+            let slot = name.strip_prefix(CHARACTER).and_then(|n| n.parse().ok());
+            if let Some(slot) = slot {
+                characters.insert(slot, id);
+            }
+            slot.is_none()
+        });
         Cast {
             bank,
             player,
             alternates,
+            characters,
             kinds,
         }
     }
@@ -101,6 +120,11 @@ impl Cast {
         self.player.is_some()
     }
 
+    /// Whether any character has a sheet of its own pictures.
+    pub fn has_pictures(&self) -> bool {
+        !self.characters.is_empty()
+    }
+
     /// Whether things of `kind` have a sheet to be drawn with.
     pub fn has_kind(&self, kind: &str) -> bool {
         self.kinds.contains_key(kind)
@@ -116,7 +140,30 @@ impl Cast {
         y: f32,
     ) {
         let player = &world.player;
+        if let Some(sprite) = self.picture(player.character, pose, x, y) {
+            let sprite = Sprite {
+                flip_x: player.facing == Facing::Left,
+                ..sprite
+            };
+            self.bank.draw(canvas, &sprite);
+            return;
+        }
         self.draw_character(canvas, player.character, player.facing, pose, x, y);
+    }
+
+    /// The player's own picture for `pose`, from the sheet of the
+    /// character in roster slot `slot`, if it has the picture's whole set.
+    /// Its origin is a px left of the feet (`formats/sprites.md`, "Where
+    /// the picture is drawn").
+    fn picture(&self, slot: usize, pose: &Pose, x: f32, y: f32) -> Option<Sprite> {
+        let (set, label) = pose.pictures.shown()?;
+        let &id = self.characters.get(&slot)?;
+        let sheet = self.bank.sheet(id);
+        let all = pictures::labels(slot, set)
+            .iter()
+            .all(|l| sheet.animation(l).is_some());
+        let frame = *sheet.animation(label).filter(|_| all)?.frames.first()?;
+        Some(Sprite::new(id, frame, x - 1.0, y))
     }
 
     /// Draws the other character in `pose` with its feet at `(x, y)`, if
@@ -225,6 +272,7 @@ impl Cast {
             *pose = Pose {
                 animation,
                 playback: Playback::new(),
+                pictures: pose.pictures,
             };
             return;
         }
@@ -238,12 +286,14 @@ impl Cast {
     }
 }
 
-/// Which animation an actor is playing, and how far through it.
+/// Which animation an actor is playing, and how far through it, and for
+/// the player which of its own pictures it shows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Pose {
     /// Index into the sheet's animations.
     pub animation: usize,
     pub playback: Playback,
+    pub pictures: PictureClock,
 }
 
 /// Every actor's pose: the player's, the other character's, the lost
@@ -276,7 +326,9 @@ impl Poses {
     }
 
     /// Moves every pose on a logic frame, for `world` as it is now.
-    pub fn update(&mut self, cast: &Cast, world: &World) {
+    /// `jump_next`: a jump starts on the player's next frame.
+    pub fn update(&mut self, cast: &Cast, world: &World, jump_next: bool) {
+        self.player.pictures.update(world, jump_next);
         let id = cast.player;
         let landing = cast.playing(id, &self.player, LAND);
         let animation = cast.animation(id, Some(player_animation(world, landing)));
@@ -475,16 +527,16 @@ mod tests {
         let mut shown = Vec::new();
         for _ in 0..5 {
             shown.push(player_pixels(&cast, &world, &poses.player)[0]);
-            poses.update(&cast, &world);
+            poses.update(&cast, &world, false);
         }
         assert_eq!(shown, [R, R, G, G, R]);
         world.player.state = State::Walk;
-        poses.update(&cast, &world);
+        poses.update(&cast, &world, false);
         assert_eq!(poses.player.playback, Playback::new(), "starts over");
         assert_eq!(player_pixels(&cast, &world, &poses.player)[0], B);
         // No `jump` animation: the sheet's first plays instead.
         world.player.state = State::Jump;
-        poses.update(&cast, &world);
+        poses.update(&cast, &world, false);
         assert_eq!(player_pixels(&cast, &world, &poses.player)[0], R);
     }
 
@@ -521,7 +573,7 @@ mod tests {
         renamed.sheet.animations[1].name = "reached".into();
         let cast = Cast::new(vec![(CHECKPOINT.to_string(), renamed)]);
         world.flow.checkpoints.push(0);
-        poses.update(&cast, &world);
+        poses.update(&cast, &world, false);
         assert_eq!(poses.things[0].animation, 1);
         let mut canvas = Canvas::new(2, 1);
         let thing = world.things[0].clone();
@@ -541,7 +593,7 @@ mod tests {
         let mut world = world();
         let mut poses = Poses::new(&cast, &world);
         world.flow.outcome = Outcome::Dying(10);
-        poses.update(&cast, &world);
+        poses.update(&cast, &world, false);
         assert_eq!(player_pixels(&cast, &world, &poses.player)[0], B);
     }
 
@@ -558,14 +610,14 @@ mod tests {
         let mut world = world();
         let mut poses = Poses::new(&recovering, &world);
         world.player.roll_stop = 1;
-        poses.update(&recovering, &world);
+        poses.update(&recovering, &world, false);
         assert_eq!(player_pixels(&recovering, &world, &poses.player)[0], B);
         // Sliding in the stop too.
         world.player.state = State::Walk;
-        poses.update(&recovering, &world);
+        poses.update(&recovering, &world, false);
         assert_eq!(player_pixels(&recovering, &world, &poses.player)[0], B);
         world.player.roll_stop = 0;
-        poses.update(&recovering, &world);
+        poses.update(&recovering, &world, false);
         assert_eq!(player_pixels(&recovering, &world, &poses.player)[0], R);
         // Not in the air, nor without the art.
         world.player.roll_stop = 1;
@@ -573,7 +625,7 @@ mod tests {
         assert_eq!(player_animation(&world, false), "fall");
         world.player.state = State::Idle;
         let mut poses = Poses::new(&cast(), &world);
-        poses.update(&cast(), &world);
+        poses.update(&cast(), &world, false);
         assert_eq!(poses.player.animation, 0, "the first animation");
     }
 
@@ -586,12 +638,12 @@ mod tests {
         let mut world = world();
         let mut poses = Poses::new(&cast, &world);
         world.events.push(Event::Land);
-        poses.update(&cast, &world);
+        poses.update(&cast, &world, false);
         world.events.clear();
         let mut shown = Vec::new();
         for _ in 0..4 {
             shown.push(player_pixels(&cast, &world, &poses.player)[0]);
-            poses.update(&cast, &world);
+            poses.update(&cast, &world, false);
         }
         assert_eq!(
             shown,
@@ -600,10 +652,10 @@ mod tests {
         );
         // Walking off cuts it short.
         world.events.push(Event::Land);
-        poses.update(&cast, &world);
+        poses.update(&cast, &world, false);
         world.events.clear();
         world.player.state = State::Walk;
-        poses.update(&cast, &world);
+        poses.update(&cast, &world, false);
         assert_eq!(player_animation(&world, true), "walk");
     }
 
@@ -666,5 +718,48 @@ mod tests {
         let crate_sheet = alone.bank.sheet(alone.kinds["crate"]);
         assert_eq!(checkpoint.animations, crate_sheet.animations);
         assert!(checkpoint.animation("reached").is_none());
+    }
+
+    /// A character sheet of 1x1 frames like [`sheet`]'s, with an
+    /// animation for each of `labels`.
+    fn character_sheet(labels: &[&str]) -> SpriteSheet {
+        let tags: Vec<String> = labels
+            .iter()
+            .map(|l| format!(r#"{{ "name": "{l}", "from": 0, "to": 0, "direction": "forward" }}"#))
+            .collect();
+        let json = format!(
+            r#"{{
+                "frames": [ {{ "frame": {{ "x": 0, "y": 0, "w": 2, "h": 1 }}, "ticks": 1 }} ],
+                "meta": {{ "image": "c.png", "frameTags": [{}], "clamber": {{ "pixelArt": true }} }}
+            }}"#,
+            tags.join(",")
+        );
+        let SpriteSheet { image, .. } = sheet();
+        SpriteSheet::new(Sheet::from_json_str(&json, "c").unwrap(), image).unwrap()
+    }
+
+    #[test]
+    fn the_player_shows_its_own_picture_a_px_left_when_the_whole_set_is_there() {
+        let world = world();
+        let pose = Pose {
+            pictures: PictureClock::showing(crate::pictures::Set::Bounce, "bounce-1"),
+            ..Pose::default()
+        };
+        for (labels, want) in [
+            (&["bounce-1", "bounce-2"][..], [R, Color::default()]),
+            // Without bounce-2 the set isn't there: the engine's art.
+            (&["bounce-1"][..], [Color::default(), R]),
+        ] {
+            let cast = Cast::new(vec![
+                (PLAYER.to_string(), sheet()),
+                (format!("{CHARACTER}0"), character_sheet(labels)),
+            ]);
+            assert!(cast.has_pictures());
+            assert!(!cast.has_kind("character-0"));
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_player(&mut canvas, &world, &pose, 2.0, 0.0);
+            let got = [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()];
+            assert_eq!(got, want, "{labels:?}");
+        }
     }
 }

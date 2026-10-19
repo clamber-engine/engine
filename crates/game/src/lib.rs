@@ -62,6 +62,7 @@ mod map;
 mod menu;
 mod music;
 mod panel;
+mod pictures;
 mod prefs;
 mod prompts;
 pub mod report;
