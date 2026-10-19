@@ -887,14 +887,19 @@ impl App {
                     return Ok(());
                 };
                 // Pixel art is drawn a pixel to a unit and scaled up as
-                // it's presented; the rest is drawn at the window's size.
+                // it's presented, except what's over it; the rest is
+                // drawn at the window's size.
                 let look = self.session.look();
+                let fit = Fit::new(look.view, (size.width, size.height)).scale;
                 let scale = match look.pixel_art {
                     true => 1,
-                    false => Fit::new(look.view, (size.width, size.height)).scale,
+                    false => fit,
                 };
-                if self.canvas.scale != scale || self.canvas.view() != look.view {
-                    self.canvas = Canvas::scaled(look.view, scale);
+                let canvas = &self.canvas;
+                if (canvas.view_scale, canvas.over_scale) != (scale, fit)
+                    || canvas.view() != look.view
+                {
+                    self.canvas = Canvas::over_at(look.view, scale, fit);
                 }
                 self.session.draw(&mut self.canvas, alpha);
                 if graph {

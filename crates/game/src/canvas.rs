@@ -20,8 +20,15 @@ pub const fn rgb(r: u8, g: u8, b: u8) -> Color {
 pub struct Canvas {
     pub width: u32,
     pub height: u32,
-    /// Pixels per view unit, at least 1.
+    /// Pixels per view unit now, at least 1.
     pub scale: u32,
+    /// Pixels per view unit for the game view, which
+    /// [`clear`](Surface::clear) goes back to.
+    pub view_scale: u32,
+    /// Pixels per view unit for what's over the game view
+    /// ([`Surface::over_view`]), a whole multiple of `view_scale`: the
+    /// view is scaled up to it, nearest neighbour, before menus are drawn.
+    pub over_scale: u32,
     /// Row by row from the top left.
     pub pixels: Vec<Color>,
     /// What quads with normal maps are lit by.
@@ -36,15 +43,42 @@ impl Canvas {
 
     /// A canvas showing `view` units at `scale` pixels each.
     pub fn scaled(view: (u32, u32), scale: u32) -> Canvas {
+        Canvas::over_at(view, scale, scale)
+    }
+
+    /// A canvas showing `view` units at `scale` pixels each, and what's
+    /// over the view at `over` pixels each (rounded down to a whole
+    /// multiple of `scale`).
+    pub fn over_at(view: (u32, u32), scale: u32, over: u32) -> Canvas {
         let scale = scale.max(1);
         let (width, height) = (view.0 * scale, view.1 * scale);
         Canvas {
             width,
             height,
             scale,
+            view_scale: scale,
+            over_scale: (over / scale).max(1) * scale,
             pixels: vec![0; (width * height) as usize],
             lighting: Lighting::default(),
         }
+    }
+
+    /// Redraws what's drawn so far at `scale` pixels per unit, a whole
+    /// multiple of the scale now, each pixel becoming a block of them.
+    fn rescale(&mut self, scale: u32) {
+        let by = (scale / self.scale) as usize;
+        let (w, h) = (self.width as usize, self.height as usize);
+        let mut pixels = vec![0; w * by * h * by];
+        for (y, row) in pixels.chunks_exact_mut(w * by).enumerate() {
+            let src = &self.pixels[y / by * w..][..w];
+            for (x, px) in row.iter_mut().enumerate() {
+                *px = src[x / by];
+            }
+        }
+        self.pixels = pixels;
+        self.width = (w * by) as u32;
+        self.height = (h * by) as u32;
+        self.scale = scale;
     }
 
     /// The pixel at `(x, y)`, in pixels.
@@ -246,7 +280,19 @@ impl Surface for Canvas {
     }
 
     fn clear(&mut self, color: Color) {
+        if self.scale != self.view_scale {
+            let view = self.view();
+            self.scale = self.view_scale;
+            (self.width, self.height) = (view.0 * self.scale, view.1 * self.scale);
+            self.pixels.truncate((self.width * self.height) as usize);
+        }
         self.pixels.fill(color);
+    }
+
+    fn over_view(&mut self) {
+        if self.scale < self.over_scale {
+            self.rescale(self.over_scale);
+        }
     }
 
     fn fill_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
@@ -487,6 +533,38 @@ mod tests {
             9, 0, 0, 0, 0, 9,
             9, 9, 9, 9, 9, 9,
         ]);
+    }
+
+    #[test]
+    fn draws_over_the_view_at_its_own_scale() {
+        let mut canvas = Canvas::over_at((2, 1), 1, 3);
+        canvas.clear(0);
+        canvas.plot(1, 0, RED);
+        // The view is scaled up 3 times, then a band a third of a unit
+        // high is a pixel high at the menus' scale.
+        canvas.over_view();
+        assert_eq!((canvas.width, canvas.height, canvas.view()), (6, 3, (2, 1)));
+        let (top, bottom) = (1.0 / 3.0, 2.0 / 3.0);
+        canvas.fill_polygon(
+            &[(0.0, top), (2.0, top), (2.0, bottom), (0.0, bottom)],
+            9,
+            255,
+        );
+        #[rustfmt::skip]
+        assert_eq!(canvas.pixels, [
+            0, 0, 0, RED, RED, RED,
+            9, 9, 9, 9, 9, 9,
+            0, 0, 0, RED, RED, RED,
+        ]);
+        // Drawn again at the window's size, it's the same size as the
+        // view drawn at 3 then shown 1 to 1.
+        let mut out = vec![7; 6 * 3];
+        present(&canvas, &mut out, 6, 3, 8);
+        assert_eq!(out, canvas.pixels);
+        // The next frame starts at the view's scale again.
+        canvas.clear(0);
+        assert_eq!((canvas.width, canvas.height, canvas.scale), (2, 1, 1));
+        assert_eq!(canvas.pixels, [0, 0]);
     }
 
     #[test]
