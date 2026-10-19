@@ -298,10 +298,9 @@ params! {
     SwitchSteps => "switch_steps",
     /// As `switch_steps`, when the approach frame is a later one.
     SwitchLateSteps => "switch_late_steps",
-    /// Above 0, a jump out of a timed roll that starts on the ground
-    /// lands with its switch frame as any other jump does. 0, and for a
-    /// jump out of a roll in the air: the landing is counted as one
-    /// without a switch frame.
+    /// Above 0, a jump out of a timed roll, on the ground or in the air,
+    /// lands with its switch frame as any other jump does. 0: the landing
+    /// is counted as one without a switch frame.
     RollJumpSwitch => "roll_jump_switch",
     /// With a stride cycle (`stride_steps`), the frames from a jump's
     /// landing are in no gait: no turn starts, and facing follows the

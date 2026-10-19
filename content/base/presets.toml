@@ -600,9 +600,9 @@ switch_from = 20
 switch_reach = 71
 switch_steps = [3, 7, 12, 16]
 switch_late_steps = [2, 6, 11, 15]
-# So does a jump out of a roll pressed on the ground (jump-input.md, "The
-# switch frame M"); the second character's don't ("Landings this doesn't
-# cover").
+# So does a jump out of a roll, pressed on the ground or in the air
+# (jump-input.md, "The switch frame M"); the second character's don't
+# ("Landings this doesn't cover").
 roll_jump_switch = 1
 # After a jump's landing, walking, running or standing starts 6 frames
 # after a later switch frame, or 10 or 9 after a landing that is itself

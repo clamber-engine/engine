@@ -1329,9 +1329,8 @@ impl Player {
             self.coyote = None;
         }
         if (starts && wait == 0) || due {
-            // One pressed on the ground can land with its switch frame.
             self.rolled_jump = (self.state == State::Roll || roll_jump)
-                && !(physics[Param::RollJumpSwitch] > Fixed::ZERO && self.grounded());
+                && physics[Param::RollJumpSwitch] == Fixed::ZERO;
             self.approach = None;
             if self.state == State::Roll {
                 events.push(Event::RollEnd);

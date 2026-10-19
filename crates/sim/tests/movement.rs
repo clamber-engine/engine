@@ -3286,12 +3286,23 @@ fn classic_roll_off_raised_jumping(
     jump: std::ops::Range<usize>,
     adjust: impl Fn(usize, &mut Play),
 ) -> Vec<Row> {
+    classic_roll_off_raised_pressing(lead, n, |f| jump.contains(&f), adjust)
+}
+
+/// [`classic_roll_off_raised`], with Jump held too on the frames, counted
+/// from S, for which `jump` is true.
+fn classic_roll_off_raised_pressing(
+    lead: usize,
+    n: usize,
+    jump: impl Fn(usize) -> bool,
+    adjust: impl Fn(usize, &mut Play),
+) -> Vec<Row> {
     let held = |f: usize, s: usize| {
         let mut keys = match f.cmp(&s) {
             std::cmp::Ordering::Equal => vec![Action::Action, Action::Right],
             _ => vec![Action::Right],
         };
-        if f >= s && jump.contains(&(f - s)) {
+        if f >= s && jump(f - s) {
             keys.push(Action::Jump);
         }
         keys
@@ -3391,6 +3402,36 @@ fn classic_jumping_during_a_roll_hover() {
                 (rows[f].y - rows[f - 1].y, rows[f].vy),
                 (moved, vy),
                 "held {held}, T + {k}"
+            );
+        }
+    }
+}
+
+#[test]
+fn classic_landing_after_a_roll_jump_in_the_air_waits_for_the_switch_frame() {
+    // spec/behavior/jump-input.md, "The switch frame M": the first
+    // character's jumps out of a roll pressed in the air, on a hover
+    // frame or not, take off on P + 1 and land as any other jump, with
+    // E = M + 2, not L + 3. Off `RAISED_176` these land with M = L + 2
+    // (`switch_steps`), as some measured ones did.
+    for (lead, after) in [(7, 3), (7, 12), (0, 4), (3, 0), (10, 2)] {
+        let p = lead + after;
+        for held in [1, 12] {
+            let rows = classic_roll_off_raised_jumping(lead, 120, p..p + held, |_, _| {});
+            assert_eq!(frames_with(&rows, Event::JumpStart), [p + 1]);
+            let l = frames_with(&rows, Event::Land)[0];
+            let rows = classic_roll_off_raised_pressing(
+                lead,
+                l + 20,
+                |f| (p..p + held).contains(&f) || f + 1 >= l,
+                |_, _| {},
+            );
+            assert_eq!(frames_with(&rows, Event::Land), [l]);
+            let e = frames_with(&rows, Event::JumpStart);
+            assert_eq!(
+                e,
+                [p + 1, l + 4],
+                "lead {lead}, P = L + {after}, held {held}"
             );
         }
     }
