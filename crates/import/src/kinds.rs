@@ -29,6 +29,9 @@ pub enum Kind {
     Letter(u8),
     /// A golden figure, adding to the figure count (`figure.md`).
     Figure,
+    /// A picture game: three places with turning pictures of animals
+    /// (`picture-game.md`).
+    PictureGame,
     /// An object that can be carried and holds nothing.
     Barrel,
     /// An object that can be carried and holds the missing character.
@@ -83,7 +86,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 35] = [
+    pub const ALL: [Kind; 36] = [
         Kind::SmallWalker,
         Kind::MediumWalker,
         Kind::LargeWalker,
@@ -95,6 +98,7 @@ impl Kind {
         Kind::Letter(3),
         Kind::Letter(4),
         Kind::Figure,
+        Kind::PictureGame,
         Kind::Barrel,
         Kind::Holder,
         Kind::EndMarker,
@@ -135,6 +139,7 @@ impl Kind {
             Kind::Letter(3) => "letter-3",
             Kind::Letter(_) => "letter-4",
             Kind::Figure => "figure",
+            Kind::PictureGame => "picture-game",
             Kind::Barrel => "barrel",
             Kind::Holder => "holder",
             Kind::EndMarker => "end-marker",
@@ -284,6 +289,10 @@ impl Kind {
             }
             // figure.md's values are the archetype's own.
             Kind::Figure => "idol",
+            // picture-game.md: placed only in the area behind the first
+            // level's second wall exit, which isn't built yet (#84). No
+            // archetype has the kind's name, so it does nothing.
+            Kind::PictureGame => self.name(),
             Kind::Barrel => "crate",
             Kind::Holder => {
                 set("holds_character", Value::Boolean(true));
@@ -689,6 +698,10 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             (
                 "b0b7540b3c061784c8c319b69b0c7db7ed9c67a84d094cefd7b05fa52dcbe7a4",
                 Kind::SmallWalker,
+            ),
+            (
+                "b385c7b245393be6cd321db16e512bdd8b46ece28189f0ea2b5769eed2dd6a51",
+                Kind::PictureGame,
             ),
             (
                 "bc061647de9b607ad9eb002282563c85bb821236cf557781087f987a0ba862aa",
@@ -1127,7 +1140,7 @@ mod tests {
                 })
             })
             .collect();
-        assert_eq!(want.len(), 66);
+        assert_eq!(want.len(), 67);
         assert_eq!(kind_rows("title-1"), want);
         assert!(kind_rows("title-2").is_empty());
     }
@@ -1426,6 +1439,11 @@ mod tests {
             let (name, params) = kind.entity();
             if kind == Kind::EndMarker {
                 assert_eq!(name, END);
+                continue;
+            }
+            if kind == Kind::PictureGame {
+                assert_eq!(name, "picture-game");
+                assert!(!Archetypes::builtin().names().any(|n| n == name));
                 continue;
             }
             if [Kind::Exit, Kind::WallExit].contains(&kind) {

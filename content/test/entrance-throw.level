@@ -1,0 +1,21 @@
+# clamber level v1
+#
+# For scenario entrance-throw: "the first level begun from the level map,
+# with its entrance at the start point (behavior/level-start.md); flat
+# floor 185 px below the start point, from 100 px to 360 px right of it,
+# with nothing above it in that span up to the start point's height; no
+# walls or other ground along the throw's path; no entities other than
+# the entrance within 120 px of the player at any time". The entrance is
+# the only entity, and the floor is exactly that span.
+format = 1
+name = "Test: the entrance throw"
+size = [1024, 480]
+start = [300, 200]
+
+[[collision]]
+shape = "rect"
+rect = [400, 385, 260, 80]
+
+[[entities]]
+type = "entrance"
+at = [300, 200]

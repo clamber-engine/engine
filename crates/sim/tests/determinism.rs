@@ -67,11 +67,11 @@ fn scenarios_move_the_player() {
     for (scenario, level) in scenarios() {
         let feel = Arc::new(generic_feel("default").unwrap());
         let mut world = World::new(level.clone(), feel);
-        // A swimming scenario is underwater throughout; the others start
-        // and end on the ground.
+        // A swimming scenario is underwater throughout; the others end on
+        // the ground, and start on it or in the level's entrance.
         let swimming = world.player.state == State::Swim;
         assert!(
-            swimming || world.player.grounded(),
+            swimming || world.player.grounded() || world.in_entrance(),
             "{} starts in the air",
             scenario.id
         );
