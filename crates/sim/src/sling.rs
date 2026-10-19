@@ -87,6 +87,7 @@ pub(crate) fn catch(world: &mut World) {
         return;
     }
     let crouch_start = frames(world.player_physics()[Param::CrouchStart]);
+    let set_down = frames(world.player_physics()[Param::PutDownTime]).saturating_sub(1);
     let x = player.pos.x.floor();
     let feet = ceil(player.pos.y);
     let caught = world.things.iter().enumerate().find_map(|(i, t)| {
@@ -103,7 +104,7 @@ pub(crate) fn catch(world: &mut World) {
         };
         let below = feet - at.1;
         let (past, below) = (i32::try_from(past).ok()?, i32::try_from(below).ok()?);
-        let span = collect::span(&values.reach, player, crouch_start);
+        let span = collect::span(&values.reach, player, crouch_start, set_down);
         span.contains(past, below).then_some(Slung {
             thing: i,
             values,

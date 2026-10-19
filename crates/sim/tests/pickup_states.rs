@@ -1,13 +1,13 @@
 //! Bunch and letter pickup ranges during the ground action, turns, the
-//! frames after a roll, falls without a jump and bounces in Classic 1
-//! (spec/behavior/bunches.md and spec/behavior/letters.md, "Pickup
-//! ranges").
+//! frames after a roll, falls without a jump, bounces and carrying in
+//! Classic 1 (spec/behavior/bunches.md and spec/behavior/letters.md,
+//! "Pickup ranges").
 
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
-use clamber_sim::{Event, Facing, FlowEvent, InputFrame, World, generic_feel, step};
+use clamber_sim::{Act as Hands, Event, Facing, FlowEvent, InputFrame, World, generic_feel, step};
 
 use Action::{Action as Act, Down, Jump, Left, Right};
 
@@ -17,6 +17,7 @@ const STAND: [i32; 4] = [-15, 21, -8, 40];
 const ROLL: [i32; 4] = [-13, 21, -4, 38];
 const AIR: [i32; 4] = [-15, 18, 13, 57];
 const BOUNCE: [i32; 4] = [-17, 27, -7, 39];
+const CARRY: [i32; 4] = [-14, 16, -8, 40];
 const NONE: [i32; 4] = [1, 0, 1, 0];
 
 /// Classic 1 on flat ground at `F` up to x = 700 and a floor 176 px
@@ -62,6 +63,7 @@ struct Row {
     ground: bool,
     turn: Option<u8>,
     ground_action: bool,
+    hands: Option<Hands>,
     events: Vec<Event>,
 }
 
@@ -83,6 +85,7 @@ fn play(mut world: World, keys: &[Vec<Action>]) -> (Vec<Row>, Option<usize>) {
             ground: p.grounded(),
             turn: p.turn,
             ground_action: p.ground_action.is_some(),
+            hands: p.hands.map(|h| h.act),
             events: world.events.clone(),
         });
         let took = world
@@ -396,4 +399,180 @@ fn a_bounce_off_a_walker_has_its_own_ranges_and_none_while_frozen() {
     let b = first(&rows, Event::Bounce);
     assert!(rows[b - 2..].iter().all(|r| r.facing == Facing::Left));
     check_bounce(300, &behind, &left(wait));
+}
+
+/// A crate on the floor 20 px right of `start`, where it's picked up
+/// from.
+fn crate_world(start: i32, at: &[(i32, i32)]) -> World {
+    let x = start + 20;
+    let src = format!("\n[[entities]]\ntype = \"crate\"\nat = [{x}, {F}]\n");
+    walker_world("cluster", start, &src, at)
+}
+
+/// Whether each step has the carrying ranges by bunches.md, "Carrying an
+/// object": from a pick-up's first step, to `Q` + 42 of a throw and `Q` +
+/// 12 of a put-down, `Q` being the step the hands start either.
+fn carry_steps(rows: &[Row]) -> Vec<bool> {
+    let mut until = None;
+    let mut before = None;
+    rows.iter()
+        .enumerate()
+        .map(|(n, r)| {
+            if r.hands != before {
+                match r.hands {
+                    Some(Hands::Throw) => until = Some(n + 42),
+                    Some(Hands::PutDown) => until = Some(n + 12),
+                    _ => {}
+                }
+            }
+            before = r.hands;
+            match r.hands {
+                Some(Hands::PickUp | Hands::Carry) => true,
+                _ => until.is_some_and(|u| n <= u),
+            }
+        })
+        .collect()
+}
+
+/// Checks a bunch around the player playing `keys` from 300 with a
+/// crate to pick up: the carrying ranges by [`carry_steps`] and the
+/// standing ones on every other step, at each of `anchors`.
+fn check_carry(keys: &[Vec<Action>], anchors: &[usize]) {
+    let (rows, _) = play(crate_world(300, &[]), keys);
+    let carry = carry_steps(&rows);
+    check_in(
+        |at| crate_world(300, at),
+        keys,
+        anchors,
+        |_, n| if carry[n] { CARRY } else { STAND },
+    );
+}
+
+fn first_hands(rows: &[Row], act: Hands) -> usize {
+    rows.iter()
+        .position(|r| r.hands == Some(act))
+        .unwrap_or_else(|| panic!("no {act:?}"))
+}
+
+#[test]
+fn carrying_standing_walking_and_turning_has_the_carrying_ranges() {
+    let k = keys(&[
+        (&[], 4),
+        (&[Act], 25),
+        (&[Act, Right], 20),
+        (&[Act, Left], 25),
+        (&[Act], 10),
+        (&[], 60),
+    ]);
+    let (rows, _) = play(crate_world(300, &[]), &k);
+    let p = first_hands(&rows, Hands::PickUp);
+    let u = rows.iter().position(|r| r.turn.is_some()).unwrap();
+    let q = first_hands(&rows, Hands::Throw);
+    assert!(p < u && u + 8 < q && rows[q + 42].ground);
+    // The turn's first four steps face the old way.
+    assert!(rows[u..u + 4].iter().all(|r| r.facing == Facing::Right));
+    assert!(rows[u + 4..u + 8].iter().all(|r| r.facing == Facing::Left));
+    check_carry(
+        &k,
+        &[
+            p - 1,
+            p,
+            p + 14,
+            p + 30,
+            u,
+            u + 3,
+            u + 4,
+            q,
+            q + 21,
+            q + 42,
+            q + 43,
+        ],
+    );
+}
+
+#[test]
+fn a_throw_while_walking_has_the_carrying_ranges_to_q_plus_42() {
+    let k = keys(&[(&[], 4), (&[Act], 20), (&[Act, Right], 15), (&[Right], 70)]);
+    let (rows, _) = play(crate_world(300, &[]), &k);
+    let q = first_hands(&rows, Hands::Throw);
+    assert!(rows[q - 1].x > rows[q - 5].x);
+    check_carry(&k, &[q - 1, q, q + 22, q + 42, q + 43, q + 50]);
+}
+
+#[test]
+fn a_jump_with_an_object_has_the_carrying_ranges_throughout() {
+    // In place with Jump held, a short one, and walking then turning in
+    // the air; landing still carrying.
+    for k in [
+        keys(&[(&[], 4), (&[Act], 20), (&[Act, Jump], 60), (&[Act], 10)]),
+        keys(&[(&[], 4), (&[Act], 20), (&[Act, Jump], 3), (&[Act], 60)]),
+        keys(&[
+            (&[], 4),
+            (&[Act], 20),
+            (&[Act, Right], 10),
+            (&[Act, Right, Jump], 6),
+            (&[Act, Left, Jump], 50),
+            (&[Act], 10),
+        ]),
+    ] {
+        let (rows, _) = play(crate_world(300, &[]), &k);
+        let t = first(&rows, Event::JumpStart);
+        let land = first(&rows, Event::Land);
+        assert!(land > t + 10 && rows[land + 5].hands == Some(Hands::Carry));
+        check_carry(
+            &k,
+            &[t - 1, t, t + 5, t + 6, t + 12, land - 1, land, land + 3],
+        );
+    }
+}
+
+#[test]
+fn a_throw_in_the_air_has_the_carrying_ranges_to_q_plus_42() {
+    // Thrown late in the jump, landing before Q + 42.
+    let k = keys(&[(&[], 4), (&[Act], 20), (&[Act, Jump], 20), (&[Jump], 80)]);
+    let (rows, _) = play(crate_world(300, &[]), &k);
+    let q = first_hands(&rows, Hands::Throw);
+    let land = first(&rows, Event::Land);
+    assert!(!rows[q].ground && land > q && land < q + 40);
+    check_carry(&k, &[q - 1, q, q + 21, land, land + 3, q + 42, q + 43]);
+}
+
+#[test]
+fn a_jump_taken_carrying_stands_after_the_throw() {
+    // Thrown just after the take-off, still in the air on Q + 43, and a
+    // jump pressed on Q + 22 that ends the throw.
+    for k in [
+        keys(&[(&[], 4), (&[Act], 20), (&[Act, Jump], 3), (&[Jump], 80)]),
+        keys(&[(&[], 4), (&[Act], 20), (&[], 22), (&[Jump], 80)]),
+    ] {
+        let (rows, _) = play(crate_world(300, &[]), &k);
+        let q = first_hands(&rows, Hands::Throw);
+        let land = q + rows[q..]
+            .iter()
+            .position(|r| r.events.contains(&Event::Land))
+            .expect("a landing");
+        assert!(!rows[q + 43].ground && land > q + 45);
+        check_carry(&k, &[q + 22, q + 42, q + 43, land - 1, land, land + 3]);
+    }
+}
+
+#[test]
+fn a_put_down_has_the_carrying_ranges_to_q_plus_12() {
+    // Put down, then picked up again with a press held through Q + 14.
+    let k = keys(&[
+        (&[], 4),
+        (&[Act], 20),
+        (&[Down, Act], 3),
+        (&[Down], 5),
+        (&[Act], 40),
+        (&[], 50),
+    ]);
+    let (rows, _) = play(crate_world(300, &[]), &k);
+    let q = first_hands(&rows, Hands::PutDown);
+    let again = q + rows[q..]
+        .iter()
+        .position(|r| r.hands == Some(Hands::PickUp))
+        .expect("a new pick-up");
+    assert_eq!(again, q + 14);
+    check_carry(&k, &[q, q + 12, q + 13, again, again + 20]);
 }

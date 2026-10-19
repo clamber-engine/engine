@@ -154,6 +154,7 @@ pub(crate) fn after(world: &mut World) {
         && let_go_speed;
     if !can_hold(world) || walking_out {
         world.player.hands = None;
+        world.player.thrown = None;
         let facing = world.player.facing;
         let let_go = (world.player.knockout.is_some() || walking_out) && let_go_speed;
         let thing = &mut world.things[hands.thing];

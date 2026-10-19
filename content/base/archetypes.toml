@@ -264,7 +264,13 @@
 #   bounce is in the air as any other time) applies from a bounce's
 #   frame until it lands, except on the frames the player holds still
 #   after it, when it isn't taken at all; from the landing frame on,
-#   the ranges on the ground apply. The ground action takes `stand`, also in the air. In the
+#   the ranges on the ground apply. `carry = [past from, to, below
+#   from, to]` (left out: carrying changes nothing) applies above all
+#   the others from a pick-up to the end of a throw, even one a jump or
+#   a roll ends sooner, or to the frame before a put-down sets the
+#   object down; a jump that took off then has the ranges on the ground
+#   for the rest of it and after its landing, instead of `jump` and
+#   `air`. The ground action takes `stand`, also in the air. In the
 #   air after `jump`, `air_below = [[vy, below], ...]` lifts the lowest
 #   `below`: the first pair whose `vy` is at least the player's vertical
 #   speed gives it, past them all it's `air`'s. Only the character under
@@ -1075,6 +1081,11 @@ upright_fall = true
 # Bouncing off a walker (bunches.md, "Bouncing off a walker"); the spec
 # measured walker bounces only, and Clamber takes every bounce so.
 bounce = [-17, 27, -7, 39]
+# Carrying an object, from the pick-up to the end of a throw or to the
+# frame before a put-down sets it down (bunches.md, "Carrying an
+# object"). The spec measured it on flat ground and after pick-ups on
+# the ground only.
+carry = [-14, 16, -8, 40]
 
 # A letter of the level's word (spec/behavior/letters.md): entities set
 # which with `letter`, from 1 to the preset's `letter_count`. It's

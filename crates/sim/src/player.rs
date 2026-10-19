@@ -281,6 +281,13 @@ pub struct Player {
     pub hop: Option<u8>,
     /// What the hands are doing with an object, if anything.
     pub hands: Option<Hands>,
+    /// Frames since letting go of action for the latest throw, from 0,
+    /// up to the throw's last frame even if a jump or a roll ended it
+    /// sooner.
+    pub thrown: Option<u8>,
+    /// The last jump took off with an object in the hands or during a
+    /// throw's frames, until the player next leaves the ground.
+    pub carried_jump: bool,
     /// The object a pick-up starts with on this step if action is held,
     /// found before it (see [`crate::carry`]).
     pub pick: Option<usize>,
@@ -420,6 +427,8 @@ impl Player {
             knockout: None,
             hop: None,
             hands: None,
+            thrown: None,
+            carried_jump: false,
             pick: None,
             inside: false,
             through: None,
@@ -2384,6 +2393,10 @@ impl Player {
     fn use_hands(&mut self, input: &Frame, physics: &Physics, events: &mut Vec<Event>) -> Busy {
         let held = |a| input.held.contains(a);
         let time = |param| frames(physics[param]);
+        self.thrown = self
+            .thrown
+            .map(|n| n.saturating_add(1))
+            .filter(|&n| n < time(Param::ThrowTime));
         if let Some(hands) = &mut self.hands {
             hands.frame = hands.frame.saturating_add(1);
             let over = match hands.act {
@@ -2420,6 +2433,9 @@ impl Player {
             let down = hands.act == Act::Carry && self.grounded() && held(Action::Down);
             let act = if down { Act::PutDown } else { Act::Throw };
             self.hands = Some(Hands::new(hands.thing, act));
+            if act == Act::Throw {
+                self.thrown = Some(0);
+            }
         }
         let pressed = input.pressed.contains(Action::Action);
         let throw_still = time(Param::ThrowStill);

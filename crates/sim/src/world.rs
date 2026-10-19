@@ -1162,6 +1162,8 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
         }
         None => out.push(0),
     }
+    out.push(p.thrown.map_or(0, |n| n.saturating_add(1)));
+    out.push(p.carried_jump.into());
     match p.pick {
         Some(i) => {
             out.push(1);

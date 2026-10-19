@@ -77,7 +77,7 @@ use clamber_pack::Param;
 
 use crate::archetype::{Arrive, Behavior, MAX_LETTERS, Reach, Span};
 use crate::flow::{Flow, FlowEvent, Outcome};
-use crate::player::{Facing, Player, State, frames};
+use crate::player::{Act, Facing, Player, State, frames};
 use crate::pose::Air;
 use crate::view::{self, View};
 use crate::world::{Event, Phase, World};
@@ -948,8 +948,14 @@ pub(crate) fn count(flow: &mut Flow, life: u32) {
 }
 
 /// Keeps count of the steps since the player last landed, while it stays
-/// on the ground, and since its last bounce.
+/// on the ground, and since its last bounce, and notes whether the last
+/// jump was taken carrying.
 fn note_landing(player: &mut Player, events: &[Event]) {
+    if events.contains(&Event::JumpStart) {
+        player.carried_jump = player.hands.is_some() || player.thrown.is_some();
+    } else if events.contains(&Event::LeaveGround) {
+        player.carried_jump = false;
+    }
     let was_down = player.since_land.is_some();
     player.since_land = if events.contains(&Event::Land) {
         Some(0)
@@ -989,6 +995,7 @@ fn take(world: &mut World, start: Option<View>) {
     let half = world.feel.world[Param::RelicSize].floor() / 2;
     let player = &world.player;
     let crouch_start = frames(world.player_physics()[Param::CrouchStart]);
+    let set_down = frames(world.player_physics()[Param::PutDownTime]).saturating_sub(1);
     let walking_out = world.ending.is_some();
     let arrive = whole(world.feel.world[Param::LifeItemLivesArrive]);
     let x = player.pos.x.floor();
@@ -1045,7 +1052,7 @@ fn take(world: &mut World, start: Option<View>) {
         // During the walk-out, by the walking ranges.
         let span = match walking_out {
             true => reach.walk,
-            false => span(&reach, player, crouch_start),
+            false => span(&reach, player, crouch_start, set_down),
         };
         if !span.contains(past, below) {
             continue;
@@ -1126,9 +1133,20 @@ fn take(world: &mut World, start: Option<View>) {
 /// (above 0) is crouching. The ground action stands, also in the air
 /// after it goes over a ledge. With a `bounce` row, a bounce takes it
 /// until landing, except on the frames held still after it, and the
-/// landing goes straight to the ranges on the ground.
-pub(crate) fn span(reach: &Reach, player: &Player, crouch_start: u8) -> Span {
-    if let Some(age) = player.jump_age {
+/// landing goes straight to the ranges on the ground. With a `carry`
+/// row, carrying takes it before all of these, up to the put-down's
+/// `set_down` frame, and a jump taken carrying has the ranges on the
+/// ground once carrying is over, in the air and after landing.
+pub(crate) fn span(reach: &Reach, player: &Player, crouch_start: u8, set_down: u8) -> Span {
+    let carried = reach.carry.is_some() && player.carried_jump;
+    if let Some(carry) = reach.carry
+        && carrying(player, set_down)
+    {
+        return carry;
+    }
+    if let Some(age) = player.jump_age
+        && !carried
+    {
         if age < reach.jump_early {
             return reach.jump;
         }
@@ -1149,10 +1167,11 @@ pub(crate) fn span(reach: &Reach, player: &Player, crouch_start: u8) -> Span {
     }
     let clock = &player.pose;
     let upright = reach.upright_fall && clock.upright_fall && clock.air == Air::Fall;
-    if !upright && !player.grounded() {
+    if !upright && !carried && !player.grounded() {
         return air(reach, player.vel.y);
     }
     if !upright
+        && !carried
         && bounced.is_none()
         && player
             .since_land
@@ -1173,6 +1192,16 @@ pub(crate) fn span(reach: &Reach, player: &Player, crouch_start: u8) -> Span {
     match player.state {
         State::Idle | State::GroundAction => reach.stand,
         _ => reach.walk,
+    }
+}
+
+/// Whether `player` has an object in its hands, or is still in a throw's
+/// frames, before the put-down's `set_down` frame.
+fn carrying(player: &Player, set_down: u8) -> bool {
+    match player.hands {
+        Some(h) if h.act == Act::PutDown => h.frame < set_down,
+        Some(_) => true,
+        None => player.thrown.is_some(),
     }
 }
 

@@ -979,6 +979,11 @@ pub struct Reach {
     /// player holds still after it, and the ranges on the ground from
     /// its landing. `None`: a bounce is in the air as any other time.
     pub bounce: Option<Span>,
+    /// From a pick-up to the end of a throw, even one a jump or a roll
+    /// ends sooner, or to the frame before a put-down sets the object
+    /// down, whatever else the player does. `None`: carrying changes
+    /// nothing.
+    pub carry: Option<Span>,
 }
 
 /// The most `air_below` steps a [`Reach`] can have.
@@ -3376,6 +3381,7 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         "roll_after",
         "upright_fall",
         "bounce",
+        "carry",
     ];
     if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
         return Err(format!("{path}.{key}: no such value"));
@@ -3494,6 +3500,10 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         bounce: match table.get("bounce") {
             None => None,
             Some(_) => Some(span("bounce")?),
+        },
+        carry: match table.get("carry") {
+            None => None,
+            Some(_) => Some(span("carry")?),
         },
     })
 }
