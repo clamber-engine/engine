@@ -33,7 +33,8 @@ pub const FOLLOWING: &str = "following";
 /// Pictures that are shown together, by label and picture hash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PictureSet {
-    /// The set's name: `stop`, `standing`, `jump`, `bounce` or `walking`.
+    /// The set's name: `stop`, `standing`, `jump`, `bounce`, `roll` or
+    /// `walking`.
     pub name: &'static str,
     pub pictures: &'static [(&'static str, &'static str)],
 }
@@ -49,8 +50,8 @@ pub struct CharacterPictures {
 }
 
 /// The first character's sets ("The stop after a roll", the first
-/// standing pictures, "A jump and its landing", "A bounce's frozen
-/// frames", "Walking, running and turning").
+/// standing pictures, "A jump and its landing", "A bounce", "A roll",
+/// "Walking, running and turning").
 const FIRST: &[PictureSet] = &[
     PictureSet {
         name: "stop",
@@ -189,6 +190,111 @@ const FIRST: &[PictureSet] = &[
             (
                 "bounce-2",
                 "d7ab095272be3883968fbd0f50465575c56b5fa07c75cdda6498fc6afb23a819",
+            ),
+            (
+                "bounce-3",
+                "82b10e9e5284a5d7da3511ece46a3a1052c767a488f058eda5b50b5161f264d6",
+            ),
+            (
+                "bounce-4",
+                "2a9654187a97444654379b13ffd68a1dce8360fd8d853e5ae7650c76e250b45e",
+            ),
+            (
+                "bounce-5",
+                "573acc69a0425780cb567326d0d78d01790f8028d81d7dab95b80dfb29cc53e8",
+            ),
+            (
+                "bounce-6",
+                "dfd4fd3b8ca07a92e673c34cc0a2241d9673315d001f701a5203fab2acb493c8",
+            ),
+            (
+                "bounce-7",
+                "a163baa8a900201b09e2822617500831372addfd2ec17c7f2c1fcd18cb8a63c9",
+            ),
+            (
+                "bounce-8",
+                "47fdd0574f55acec29b9f0a0375f116fa75c763827ad42409d431e5bfcd900dd",
+            ),
+            (
+                "bounce-9",
+                "c0544693ffe6ae05c34743f5b32e5c6cc9af49e19a83f5d3cae03af76e83d29e",
+            ),
+            (
+                "bounce-10",
+                "63fae7d24294916456ed1789a492597fe524071d723f2219653efc48855450fe",
+            ),
+            (
+                "bounce-11",
+                "0d51a9f292934cb73ad19bd0d3048caf1cbc6bf73f873be6a24f8a76dd1c7026",
+            ),
+            (
+                "bounce-12",
+                "7cd131cc14f39d102ab4aea666665020317e54b9994347c3b480fc71c0352055",
+            ),
+            (
+                "bounce-13",
+                "a23e743d7f0f325ccc808e58c4531cc5ee498f9448916ac4c4925eecff86d798",
+            ),
+            (
+                "bounce-14",
+                "ae93828761146d17e8742278e97029f2bac74e6e486b6081509e8d78afa3856a",
+            ),
+            (
+                "bounce-15",
+                "91bff11041ab77dcd73ec276ff502050ffac922ef4cda780eaad4585c4b5473c",
+            ),
+            (
+                "bounce-16",
+                "e94fccbe55b920f8bb70ac1f6fab29a70e19de81c274b5c67e265f1718766519",
+            ),
+        ],
+    },
+    PictureSet {
+        name: "roll",
+        pictures: &[
+            (
+                "roll-1",
+                "d1293eefe586b6d7c5a8206301e9732a4b325de17de865693bb031da337f0ad3",
+            ),
+            (
+                "roll-2",
+                "22aee199cd0021b2d3aaf0d9a5c94a8ce9b7e2c0cf673a9260f0e57aa82c8507",
+            ),
+            (
+                "roll-3",
+                "440441b302e863b5196d6ea694ecbe51741e6cfd1e05b955b858f3cd8b54cf90",
+            ),
+            (
+                "roll-4",
+                "2047f847707e77d5cc284d43a5df149c615a53bec99cc9340321a287da1e5352",
+            ),
+            (
+                "roll-5",
+                "e0c36ff720d8dcd46f0b558d54e84c3f7e5a1ad038df0a548fba39a54cd7cda8",
+            ),
+            (
+                "roll-6",
+                "c1cbbc6557606bbf7e94d694a9b3ed51902ddae2e58c4e53df3de6ae40bc2f30",
+            ),
+            (
+                "roll-7",
+                "3ae1e0344b600798af6eb10e4e1a86ddb4a28fd55e3912f8a81b16cf99cd670f",
+            ),
+            (
+                "roll-8",
+                "2d7740e2363b34945b5c1a3b8ef8dbde1a8154799757a37a37f63adb0560d0d9",
+            ),
+            (
+                "roll-9",
+                "17f2a4a92f37caf7ff88e5412f36496d92b3699ef92f4dac1c9d39d148db4ca1",
+            ),
+            (
+                "roll-end",
+                "bfa91eacc23022b5cf106533b4a0aa3baebcb414263d38c2dc0c774d8e1d1171",
+            ),
+            (
+                "stop",
+                "3c6fdd12d20a9444c3256170405e94b7d6cf88b1aed7902e3e3aee6c0debf603",
             ),
         ],
     },

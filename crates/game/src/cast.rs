@@ -750,10 +750,11 @@ mod tests {
             pictures: PictureClock::showing(crate::pictures::Set::Bounce, "bounce-1"),
             ..Pose::default()
         };
+        let set = crate::pictures::labels(0, crate::pictures::Set::Bounce);
         for (labels, want) in [
-            (&["bounce-1", "bounce-2"][..], [R, Color::default()]),
-            // Without bounce-2 the set isn't there: the engine's art.
-            (&["bounce-1"][..], [Color::default(), R]),
+            (set, [R, Color::default()]),
+            // Without its last picture the set isn't there: the engine's art.
+            (&set[..set.len() - 1], [Color::default(), R]),
         ] {
             let cast = Cast::new(vec![
                 (PLAYER.to_string(), sheet()),
