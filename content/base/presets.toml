@@ -343,6 +343,9 @@ view_share_y = 0
 view_speed_share_y = 0
 view_share_y_quick = 0
 view_speed_share_y_quick = 0
+view_share_y_fast = 0
+view_speed_share_y_fast = 0
+view_begin_hold_y = 0
 view_quick_below = 0
 view_quick_fall_below = 0
 view_quick_fall = 0
@@ -351,6 +354,9 @@ view_shake_count = 0
 view_shake_delay = 0
 view_shake_period = 0
 view_shake_size = 0
+view_begin_shake_count = 0
+view_begin_shake_delay = 0
+view_begin_shake_size = 0
 view_pull_share = 0
 view_pull_max = 0
 view_lag_keep = 0
@@ -966,6 +972,19 @@ view_shake_count = 22
 view_shake_delay = 26
 view_shake_period = 4
 view_shake_size = 4
+# When an area begins (view-vertical.md): the view's top keeps its frame
+# 0 aim while the characters are in the entrance or the player in a keg,
+# and through the throw until the fast frames; on those it aims by the
+# feet with the rates 2 and 4. From two frames after the entrance
+# bursts it shakes 24 times, 4 frames apart, starting 5 px down. It
+# moves at most 8 px a frame, shakes included.
+view_begin_hold_y = 1
+view_share_y_fast = 4
+view_speed_share_y_fast = 2
+view_begin_shake_count = 24
+view_begin_shake_delay = 2
+view_begin_shake_size = 5
+view_move_max_y = 8
 appear_left = 31
 appear_right = 32
 # A placed thing that needs the view's rows too, and a point where two

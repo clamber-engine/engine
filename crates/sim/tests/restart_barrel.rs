@@ -723,3 +723,23 @@ fn coming_back_at_it_directly_resumes_as_after_a_lost_life() {
     }
     assert!(direct.world.resume.is_none(), "the resume is over");
 }
+
+/// view-vertical.md, "When an area begins", resuming at the restart
+/// point: the view's top keeps its frame 0 target through frame 62 while
+/// the player is lifted inside the keg, and follows as usual from 63.
+#[test]
+fn the_view_keeps_its_target_while_in_the_keg() {
+    let mut play = Play::new(900);
+    play.touch_and_fall_out();
+    let view = play.world.view.unwrap();
+    assert_eq!((view.top, view.gap), (f(400.0 - 160.0 + 0.5), Fixed::ZERO));
+    for frame in 1..=62 {
+        play.step(&[]);
+        let now = play.world.view.unwrap();
+        assert_eq!((now.top, now.gap), (view.top, view.gap), "frame {frame}");
+    }
+    for _ in 63..=80 {
+        play.step(&[]);
+    }
+    assert_ne!(play.world.view.unwrap().gap, Fixed::ZERO);
+}

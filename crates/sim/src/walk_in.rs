@@ -175,7 +175,7 @@ pub(crate) fn hold(world: &mut World) -> bool {
         let back = world.player_physics()[Param::ViewBeginBack];
         let begin = Begin {
             back: (back > Fixed::ZERO).then_some(back),
-            fast: 0,
+            ..Begin::default()
         };
         view::update(world, begin);
     }

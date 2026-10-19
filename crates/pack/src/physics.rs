@@ -1343,6 +1343,19 @@ params! {
     ViewShareYQuick => "view_share_y_quick",
     /// `view_speed_share_y` when the view follows quickly. Whole frames.
     ViewSpeedShareYQuick => "view_speed_share_y_quick",
+    /// Above 0, on the fast frames after the lead is thrown out of the
+    /// level's entrance (`view_begin_far`), the view's top aims by the
+    /// feet as with no ground below, and moves by the smoothed gap
+    /// divided by this instead, whatever the feet and the camera rule
+    /// say. Whole frames.
+    ViewShareYFast => "view_share_y_fast",
+    /// `view_speed_share_y` on those frames. Whole frames.
+    ViewSpeedShareYFast => "view_speed_share_y_fast",
+    /// Above 0, when an area begins with the characters in the level's
+    /// entrance or the player in a keg, the view's top keeps the aim it
+    /// had on frame 0 while they're in it, and from the throw until the
+    /// fast frames start; it moves toward it as usual.
+    ViewBeginHoldY => "view_begin_hold_y",
     /// The view follows quickly when the player's feet are this far
     /// below its top or further. Whole px.
     ViewQuickBelow => "view_quick_below",
@@ -1364,8 +1377,18 @@ params! {
     ViewShakeDelay => "view_shake_delay",
     /// The shakes are this many frames apart. Whole frames.
     ViewShakePeriod => "view_shake_period",
-    /// See `view_shake_count`. px.
+    /// See `view_shake_count`. Each pair after the first is half the
+    /// size of the one before, rounded up to 1/256 px. px.
     ViewShakeSize => "view_shake_size",
+    /// Above 0, the level's entrance bursting makes the view's top shake
+    /// this many times, `view_shake_period` frames apart, as a ground
+    /// action does. Whole times.
+    ViewBeginShakeCount => "view_begin_shake_count",
+    /// The first of those shakes is this many frames after the burst.
+    /// Whole frames.
+    ViewBeginShakeDelay => "view_begin_shake_delay",
+    /// The first of those shakes' size. px.
+    ViewBeginShakeSize => "view_begin_shake_size",
     /// Above 0, the view follows across by pull and goal instead (see
     /// `clamber_sim::View`): it aims `view_back` (`view_back_left`) left
     /// of the player, and each frame its speed is pulled by the gap to
@@ -1428,8 +1451,8 @@ params! {
     /// ... and this far above them once that's below it. In between, it
     /// keeps its aim. Whole px.
     ViewFall => "view_fall",
-    /// The most the view moves vertically in a frame by pull and goal.
-    /// px.
+    /// Above 0, the most the view's top moves in a frame, shakes
+    /// included. px.
     ViewMoveMaxY => "view_move_max_y",
     /// The vertical sway, where the camera rule says `sway`, takes this
     /// many steps per logic frame (see `view_sway`). Steps per frame.

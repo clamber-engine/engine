@@ -380,3 +380,25 @@ fn the_view_follows_the_entrance_as_the_example() {
         assert_eq!(view.speed.to_f64() * 8192.0, f64::from(s), "frame {frame}");
     }
 }
+
+/// view-vertical.md, "When an area begins", the level's start: the
+/// view's top keeps its frame 0 target (feet line 300, so 140.5), shakes
+/// 5 px down two frames after the entrance bursts and 5 px up four frames
+/// later, and from the fast frames aims by the feet.
+#[test]
+fn the_view_holds_its_target_and_shakes_vertically() {
+    let mut play = Play::new(1);
+    let top = |play: &Play| play.world.view.unwrap().top.to_f64();
+    play.until(0, &[]);
+    assert_eq!(top(&play), 140.5);
+    play.until(42, &[]);
+    assert_eq!(top(&play), 140.5);
+    play.until(43, &[]);
+    assert_eq!(top(&play), 145.5);
+    play.until(47, &[]);
+    // Q eased toward the 5 px gap above, and the step took 5 px off.
+    assert!(top(&play) < 140.5 && top(&play) > 140.0);
+    // Thrown up out of the entrance on the fast frames, the view rises.
+    play.until(66, &[]);
+    assert!(top(&play) < 135.0, "{}", top(&play));
+}

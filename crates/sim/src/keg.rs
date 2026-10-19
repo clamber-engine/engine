@@ -14,7 +14,8 @@
 //! frame 0, with the player at the restart point and the view where it
 //! starts when an area begins (or the keg's `view_back` left of it).
 //! With `view_begin_back` above 0 the view follows as usual from frame
-//! 1, also while the player is in the keg. From frame 1 the player is `lift`
+//! 1, also while the player is in the keg, but with `view_begin_hold_y`
+//! its top keeps its frame 0 aim while it's there. From frame 1 the player is `lift`
 //! higher, inside the keg, and not drawn. The keg shakes, and bursts on
 //! frame `burst` as when broken; from the frame after, the player is in
 //! the air and in play, falling as any fall does, except that a jump can

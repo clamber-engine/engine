@@ -1330,12 +1330,13 @@ fn advance(world: &mut World, input: &InputFrame) {
         world.frame += 1;
         return;
     }
-    let begin = entrance::view_begin(world);
+    let mut begin = entrance::view_begin(world);
     if keg::hold(world, &input.players[0]) || entrance::hold(world) {
         // Everything waits while the player is in the keg or the
         // entrance, but the view from frame 1 when it begins as an area
-        // does.
+        // does. Its top keeps its aim while the player is in a keg.
         let physics = world.player_physics();
+        begin.hold_y |= world.resume.is_some();
         if world.frame > 0 && physics[Param::ViewBeginBack] > Fixed::ZERO {
             view::update(world, begin);
         }

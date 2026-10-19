@@ -137,7 +137,9 @@ impl World {
 /// throw's frame with `view_begin_back` in place of the back and facing
 /// parts, and from the frame after until the lead lands with
 /// `view_begin_back_far`, quickly from `view_begin_far` frames after the
-/// throw's. To be taken before the frame's step changes the entering.
+/// throw's. Until then the view's top keeps its aim, and it starts to
+/// shake when the entrance bursts. To be taken before the frame's step
+/// changes the entering.
 pub(crate) fn view_begin(world: &World) -> Begin {
     let Some((e, v)) = entering(world) else {
         return Begin::default();
@@ -155,12 +157,17 @@ pub(crate) fn view_begin(world: &World) -> Begin {
         return Begin {
             back: Some(back),
             fast: 0,
+            hold_y: true,
+            burst: world.frame == u32::from(v.burst),
         };
     };
     let far = u32::from(frames(physics[Param::ViewBeginFar]));
+    let fast = since.saturating_sub(far);
     Begin {
         back: Some(physics[Param::ViewBeginBackFar]),
-        fast: since.saturating_sub(far),
+        fast,
+        hold_y: fast == 0,
+        burst: false,
     }
 }
 

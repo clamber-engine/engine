@@ -72,8 +72,22 @@
 //!   from `view_shake_delay` frames after the press frame, every
 //!   `view_shake_period` frames, an offset is added to its top after it
 //!   has moved. The offsets alternate down and up, starting with
-//!   `view_shake_size` down and halving after each pair. The smoothed gap
-//!   isn't changed by them.
+//!   `view_shake_size` down and halving after each pair, rounded up to
+//!   [`Y_GRAIN`]. The smoothed gap isn't changed by them. With
+//!   `view_begin_shake_count` above 0, the level's entrance bursting
+//!   makes it shake the same way, by its own count, delay and size.
+//! - With `view_move_max_y` above 0, it moves at most that far a step,
+//!   shakes included.
+//! - When an area begins, with `view_begin_hold_y` above 0, it keeps its
+//!   frame 0 aim while the characters are in the level's entrance or the
+//!   player in a keg, and after the throw until the view follows
+//!   quickly; it moves toward it as usual. With `view_share_y_fast`
+//!   above 0, on the frames the view follows quickly after the throw it
+//!   aims by the feet, with no ground, at the rates `view_share_y_fast`
+//!   and `view_speed_share_y_fast`.
+//! - The picture's top row is the top's rounded down, but row 0 while
+//!   the top is less than 1 px above the level's (the engine does this
+//!   for every preset).
 //!
 //! With `view_pull_share_y` above 0 as well, the top follows by pull and
 //! goal instead, as the left edge does, at three sets of rates chosen by
@@ -144,6 +158,11 @@ pub(crate) struct Begin {
     pub back: Option<Fixed>,
     /// The `k`-th fast frame in a row, or 0 on a frame that isn't fast.
     pub fast: u32,
+    /// With `view_begin_hold_y` above 0, the top keeps its aim from the
+    /// frame before.
+    pub hold_y: bool,
+    /// The level's entrance bursts on this frame.
+    pub burst: bool,
 }
 
 /// The view's state.
@@ -162,6 +181,12 @@ pub struct View {
     /// Frames since the press frame of the ground action whose shake is
     /// under way, if one is.
     pub shake: Option<u8>,
+    /// Frames since the level's entrance burst, while its shake is under
+    /// way.
+    pub begin_shake: Option<u8>,
+    /// Where the top aimed on the step before, when it doesn't follow by
+    /// pull and goal, kept inside the limits.
+    pub target_y: Fixed,
     /// What the picture's left edge is kept between, if anything (see
     /// [`ends`]).
     pub ends: Option<(i64, i64)>,
@@ -221,6 +246,8 @@ impl View {
             top,
             gap: Fixed::ZERO,
             shake: None,
+            begin_shake: None,
+            target_y: top,
             ends: ends(level, physics),
             frames: 0,
             speed_y: Fixed::ZERO,
@@ -240,9 +267,14 @@ impl View {
         }
     }
 
-    /// The top edge rounded down to a whole px.
+    /// The top edge rounded down to a whole px, but row 0 while it's
+    /// less than 1 px above the level's top (view-vertical.md, "The
+    /// picture near the top").
     pub fn y(&self) -> i64 {
-        self.top.floor()
+        match self.top.floor() {
+            -1 => 0,
+            y => y,
+        }
     }
 
     /// One step of following `player`, as `begin` says. `defeated` says
@@ -261,13 +293,16 @@ impl View {
         } else {
             self.shake.map(|n| n.saturating_add(1))
         };
-        let count = u32::try_from(physics[Param::ViewShakeCount].floor()).unwrap_or(0);
-        let last = frames(physics[Param::ViewShakeDelay]).saturating_add(
-            frames(physics[Param::ViewShakePeriod])
-                .saturating_mul(u8::try_from(count.saturating_sub(1)).unwrap_or(u8::MAX)),
-        );
-        if count == 0 || self.shake.is_some_and(|n| n > last) {
+        if Shake::ACTION.over(self.shake, physics) {
             self.shake = None;
+        }
+        self.begin_shake = if begin.burst {
+            Some(0)
+        } else {
+            self.begin_shake.map(|n| n.saturating_add(1))
+        };
+        if Shake::BEGIN.over(self.begin_shake, physics) {
+            self.begin_shake = None;
         }
         if defeated {
             self.hold = frames(physics[Param::ViewHold]);
@@ -291,7 +326,7 @@ impl View {
         if vertical(physics) && pulled_y(physics) {
             self.pull_y(player, level, physics);
         } else if vertical(physics) {
-            self.follow_y(player, level, physics);
+            self.follow_y(player, level, physics, begin);
         }
         if pulled {
             self.pull(player, level, physics);
@@ -481,28 +516,37 @@ impl View {
         if k <= most { k } else { 2 * most + 1 - k }
     }
 
-    /// One step of following `player` vertically.
-    fn follow_y(&mut self, player: &Player, level: &Level, physics: &Physics) {
+    /// One step of following `player` vertically, as `begin` says.
+    fn follow_y(&mut self, player: &Player, level: &Level, physics: &Physics, begin: Begin) {
         let feet = ceil(player.pos.y);
-        let top = self.y();
+        let top = self.top.floor();
         let below = feet - top;
         let near_top = (0..=whole(physics[Param::ViewFeetTop])).contains(&below);
+        let fast = begin.fast > 0 && physics[Param::ViewShareYFast] > Fixed::ZERO;
+        let held = begin.hold_y && physics[Param::ViewBeginHoldY] > Fixed::ZERO;
         let (aim, below) = match ground_below(player, feet, level, physics) {
+            _ if fast || held => (feet, below),
             None => (feet, below),
             Some(_) if near_top => (top, 0),
             Some(ground) => (ground, below),
         };
-        let (target, quick_here) = limit(
+        let (mut target, quick_here) = limit(
             aim - whole(physics[Param::ViewFeet]),
             player,
             level,
             physics,
         );
+        if held {
+            target = self.target_y;
+        }
+        self.target_y = target;
         let quick = quick_here
             || below >= whole(physics[Param::ViewQuickBelow])
             || (below >= whole(physics[Param::ViewQuickFallBelow])
                 && player.vel.y > physics[Param::ViewQuickFall]);
-        let (share, speed_share) = if quick {
+        let (share, speed_share) = if fast {
+            (Param::ViewShareYFast, Param::ViewSpeedShareYFast)
+        } else if quick {
             (Param::ViewShareYQuick, Param::ViewSpeedShareYQuick)
         } else {
             (Param::ViewShareY, Param::ViewSpeedShareY)
@@ -517,26 +561,76 @@ impl View {
         let smoothed = units(self.gap) + (units(gap) - units(self.gap)).div_euclid(ease);
         self.gap = Fixed::from_bits(smoothed * grain);
         let moved = smoothed.div_euclid(whole(physics[share]));
-        self.top += Fixed::from_bits(moved * grain);
-        self.top += self.shake_offset(physics);
+        let mut step = Fixed::from_bits(moved * grain)
+            + Shake::ACTION.offset(self.shake, physics)
+            + Shake::BEGIN.offset(self.begin_shake, physics);
+        let most = physics[Param::ViewMoveMaxY];
+        if most > Fixed::ZERO {
+            step = step.clamp(-most, most);
+        }
+        self.top += step;
+    }
+}
+
+/// A shake of the view's top: from `delay` frames after it starts, every
+/// `view_shake_period` frames, `count` offsets alternately down and up,
+/// starting `size` down, each pair after the first half the size of the
+/// one before, rounded up to [`Y_GRAIN`].
+struct Shake {
+    count: Param,
+    delay: Param,
+    size: Param,
+}
+
+impl Shake {
+    /// A ground action's.
+    const ACTION: Shake = Shake {
+        count: Param::ViewShakeCount,
+        delay: Param::ViewShakeDelay,
+        size: Param::ViewShakeSize,
+    };
+
+    /// The level's entrance bursting's.
+    const BEGIN: Shake = Shake {
+        count: Param::ViewBeginShakeCount,
+        delay: Param::ViewBeginShakeDelay,
+        size: Param::ViewBeginShakeSize,
+    };
+
+    /// Whether a shake `since` frames after it started is over, or there
+    /// is none.
+    fn over(&self, since: Option<u8>, physics: &Physics) -> bool {
+        let count = u32::try_from(physics[self.count].floor()).unwrap_or(0);
+        let last = frames(physics[self.delay]).saturating_add(
+            frames(physics[Param::ViewShakePeriod])
+                .saturating_mul(u8::try_from(count.saturating_sub(1)).unwrap_or(u8::MAX)),
+        );
+        count == 0 || since.is_some_and(|n| n > last)
     }
 
-    /// The shake's offset to the top on this frame, down positive.
-    fn shake_offset(&self, physics: &Physics) -> Fixed {
-        let Some(since) = self.shake else {
+    /// The offset to the top `since` frames after the shake started,
+    /// down positive.
+    fn offset(&self, since: Option<u8>, physics: &Physics) -> Fixed {
+        let Some(since) = since else {
             return Fixed::ZERO;
         };
-        let delay = frames(physics[Param::ViewShakeDelay]);
         let period = whole(physics[Param::ViewShakePeriod]);
-        let Some(after) = since.checked_sub(delay).map(i64::from) else {
+        let Some(after) = since
+            .checked_sub(frames(physics[self.delay]))
+            .map(i64::from)
+        else {
             return Fixed::ZERO;
         };
         if after % period != 0 {
             return Fixed::ZERO;
         }
         let n = after / period;
-        let size = physics[Param::ViewShakeSize].to_bits() >> (n / 2).min(63);
-        Fixed::from_bits(if n % 2 == 0 { size } else { -size })
+        let grain = Y_GRAIN.to_bits();
+        let mut size = physics[self.size].to_bits().div_euclid(grain);
+        for _ in 0..n / 2 {
+            size = (size + 1).div_euclid(2);
+        }
+        Fixed::from_bits(grain * if n % 2 == 0 { size } else { -size })
     }
 }
 
@@ -1899,6 +1993,107 @@ mod tests {
             Begin::default(),
         );
         assert_eq!(view.gap.to_bits() >> (FRAC_BITS - 8), -64 * 256 / 8);
+    }
+
+    #[test]
+    fn follows_vertically_through_a_level_start() {
+        // view-vertical.md, "When an area begins", example (d): one limit
+        // entry, top 0 and bottom 300, the entrance bursting on frame 41,
+        // the throw on 51 and the fast frames from 57 to the landing on
+        // 92.
+        let physics = physics();
+        let level = ground(
+            "[[regions]]\nrect = [0, 0, 4000, 2000]\n\
+             camera = { limits = [0, 0, 4000, 524] }",
+        );
+        let feet = |f: i64| match f {
+            ..=56 => 200,
+            57..=66 => 200 - 3 * (f - 56),
+            _ => (170 + 9 * (f - 66)).min(400),
+        };
+        let at = |f: u32| {
+            let f = i64::from(f);
+            let vy = match f {
+                57..=66 => -3,
+                67..=91 => 9,
+                _ => 0,
+            };
+            at_feet(feet(f), vy, f >= 92)
+        };
+        let mut view = View::settled(&at(0), &level, &physics);
+        assert_eq!((view.top, view.gap), (fx(40.5), Fixed::ZERO));
+        let rows: &[(u32, f64, i64)] = &[
+            (1, 40.5, 0),
+            (42, 40.5, 0),
+            (43, 45.5, 0),
+            (44, 45.4921875, -80),
+            (47, 40.4453125, -291),
+            (48, 40.42578125, -273),
+            (56, 40.28515625, -290),
+            (57, 39.79296875, -502),
+            (58, 38.8828125, -929),
+            (59, 38.75390625, -1410),
+            (66, 19.1015625, -2907),
+            (67, 18.35546875, -1403),
+            (75, 62.296875, 9113),
+            (80, 102.296875, 10543),
+            (85, 142.296875, 11827),
+            (91, 190.296875, 13363),
+            (92, 198.296875, 13107),
+            (93, 199.0859375, 12963),
+            (95, 200.55859375, 12664),
+            (99, 203.58984375, 12037),
+            (100, 204.3125, 11875),
+            (127, 220.0078125, 7538),
+            (131, 221.7578125, 6974),
+            (135, 223.36328125, 6439),
+            (150, 228.34765625, 4709),
+            (200, 236.81640625, 1501),
+        ];
+        let mut next = rows.iter().peekable();
+        for frame in 1..=200u32 {
+            let begin = Begin {
+                fast: frame.saturating_sub(56) * u32::from(frame <= 92),
+                hold_y: frame <= 56,
+                burst: frame == 41,
+                ..Begin::default()
+            };
+            view.follow(&at(frame), &level, &physics, false, begin);
+            if let Some(&&(f, top, gap)) = next.peek()
+                && f == frame
+            {
+                assert_eq!(view.top, fx(top), "frame {f}");
+                assert_eq!(view.gap.to_bits() >> (FRAC_BITS - 8), gap, "frame {f}");
+                next.next();
+            }
+        }
+        assert!(next.peek().is_none());
+    }
+
+    #[test]
+    fn the_entrance_shake_halves_rounding_up() {
+        // view-vertical.md, "When an area begins": 1280, 640, 320, 160,
+        // 80, 40, 20, 10, 5, 3, 2 and 1 in 1/256 px.
+        let physics = physics();
+        let offsets: Vec<i64> = (43u8 - 41..=135 - 41)
+            .step_by(4)
+            .map(|n| Shake::BEGIN.offset(Some(n), &physics).to_bits() >> (FRAC_BITS - 8))
+            .collect();
+        let sizes = [1280, 640, 320, 160, 80, 40, 20, 10, 5, 3, 2, 1];
+        let expected: Vec<i64> = sizes.iter().flat_map(|&s| [s, -s]).collect();
+        assert_eq!(offsets, expected);
+        assert!(!Shake::BEGIN.over(Some(135 - 41), &physics));
+        assert!(Shake::BEGIN.over(Some(136 - 41), &physics));
+    }
+
+    #[test]
+    fn the_picture_near_the_top_shows_row_0() {
+        // view-vertical.md, "The picture near the top".
+        let mut view = View::default();
+        for (top, row) in [(-1.0, 0), (-0.5, 0), (0.0, 0), (0.75, 0), (-1.25, -2)] {
+            view.top = fx(top);
+            assert_eq!(view.y(), row, "{top}");
+        }
     }
 
     /// A player at 1000 with its feet at `y`, on the ground if

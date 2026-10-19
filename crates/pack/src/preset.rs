@@ -626,6 +626,9 @@ mod tests {
                     | Param::ViewSpeedShareY
                     | Param::ViewShareYQuick
                     | Param::ViewSpeedShareYQuick
+                    | Param::ViewShareYFast
+                    | Param::ViewSpeedShareYFast
+                    | Param::ViewBeginHoldY
                     | Param::ViewQuickBelow
                     | Param::ViewQuickFallBelow
                     | Param::ViewQuickFall
@@ -634,6 +637,9 @@ mod tests {
                     | Param::ViewShakeDelay
                     | Param::ViewShakePeriod
                     | Param::ViewShakeSize
+                    | Param::ViewBeginShakeCount
+                    | Param::ViewBeginShakeDelay
+                    | Param::ViewBeginShakeSize
                     | Param::ViewPullShare
                     | Param::ViewPullMax
                     | Param::ViewLagKeep
