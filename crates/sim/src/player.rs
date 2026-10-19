@@ -3227,6 +3227,7 @@ impl Player {
         let through = |c| columns::falls_through(level, c, self.pos.y);
         let mut falls = through(to);
         let mut next = from;
+        let mut past_face = false;
         while next != to && !falls {
             next += i64::from(dir);
             falls = through(next);
@@ -3238,7 +3239,20 @@ impl Player {
                     columns::floor(level, next, self.pos.y).filter(|f| self.pos.y - f.y > rise)
                 })
                 .map(|f| f.collider);
-            if let Some(collider) = columns::blocks(level, next, dir, self.pos.y, slope).or(high) {
+            let mut blocked = columns::blocks(level, next, dir, self.pos.y, slope);
+            if next != to && blocked.is_some() && !columns::steps_up(level, next, dir, self.pos.y) {
+                // Only the column the move ends in counts as a face
+                // column it can't go into. Past a face's top it is
+                // stopped by floor more than a step above where it was.
+                blocked = None;
+                past_face = true;
+            } else if next == to && past_face && blocked.is_none() {
+                blocked = columns::floor(level, from, self.pos.y)
+                    .zip(columns::floor(level, to, self.pos.y))
+                    .filter(|(was, end)| was.y - end.y > STEP)
+                    .map(|(_, end)| end.collider);
+            }
+            if let Some(collider) = blocked.or(high) {
                 let edge = columns::left_edge(from);
                 let moved = (self.pos.x - edge).abs();
                 self.pos.x = edge;

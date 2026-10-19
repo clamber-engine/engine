@@ -314,6 +314,13 @@ pub(crate) fn blocks(
     }
 }
 
+/// Whether the floor of `column` is more than a step higher than that of
+/// the column before it going `dir` (-1 or 1): one of the rises
+/// [`blocks`] stops at that isn't a face.
+pub(crate) fn steps_up(level: &Level, column: i64, dir: i32, feet: Fixed) -> bool {
+    rise(level, column - i64::from(dir), column, feet).is_some_and(|h| h > STEP)
+}
+
 /// The ground holding a thrown object's `y` in `column`, or else the
 /// nearest below, down to two steps: as [`object_floor`], however far
 /// above `y` its top is. Breaking sees the floor this way

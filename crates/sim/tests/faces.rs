@@ -1792,3 +1792,97 @@ fn classic_2_a_step_down_onto_a_slope_is_walked_down() {
         assert_eq!(p.pos.y, Fixed::from_int(FLOOR + drop));
     }
 }
+
+/// The floor of "Moving past a face's top", with its columns 0 to 3 at
+/// 100 to 103: a face rising to the right with floors 15, 11, 7 and 3 px
+/// below the starting floor, no floor left of it, and the starting
+/// floor from column 104 on.
+fn past_the_top(c: i32) -> Option<i32> {
+    match c {
+        ..100 => None,
+        100..104 => Some(15 - 4 * (c - 100)),
+        _ => Some(0),
+    }
+}
+
+/// Falls onto [`past_the_top`] from `x`, `y` (relative to the example's
+/// columns and floor) with `vx` and `vy` (1/256), holding `before` on the
+/// frame before and `held` on each of the rows, and returns `x`, `y`,
+/// `vx` (1/256) and whether grounded after each.
+fn past_the_top_rows(
+    (x, y, vx, vy): (f64, f64, i64, i64),
+    before: &[Action],
+    held: &[&[Action]],
+) -> Vec<(Fixed, Fixed, i64, bool)> {
+    let mut world = ground(past_the_top, 110.0);
+    let p = &mut world.player;
+    p.pos = Vec2::new(fx(100.0 + x), fx(y) + Fixed::from_int(FLOOR));
+    p.vel = Vec2::new(fx(vx as f64 / 256.0), fx(vy as f64 / 256.0));
+    p.ground = None;
+    p.state = State::Fall;
+    let mut previous = before;
+    held.iter()
+        .map(|&keys| {
+            press(&mut world, previous, keys);
+            previous = keys;
+            let (x, vx, y, grounded) = row(&world);
+            (x - fx(100.0), y, vx, grounded)
+        })
+        .collect()
+}
+
+#[test]
+fn a_move_past_one_face_column_onto_floor_7_px_higher_follows_it() {
+    let r: &[Action] = &[Action::Right];
+    let rows = past_the_top_rows((0.55859375, 0.4375, 512, 1568), r, &[r, r, r]);
+    assert_eq!(
+        rows,
+        [
+            (fx(2.55859375), fx(7.0), 512, true),
+            (fx(4.30859375), fx(0.0), 448, true),
+            (fx(6.08984375), fx(0.0), 456, true),
+        ]
+    );
+}
+
+#[test]
+fn a_move_past_two_face_columns_onto_floor_11_px_higher_is_blocked() {
+    let a: &[Action] = &[Action::Action];
+    let rows = past_the_top_rows(
+        (-0.69921875, 7.0, 758, 1792),
+        &[Action::Right, Action::Action],
+        &[a, a, a],
+    );
+    assert_eq!(
+        rows,
+        [
+            (fx(1.89453125), fx(11.0), 664, true),
+            (fx(1.0), fx(11.0), 0, true),
+            (fx(0.8125), fx(15.0), -48, true),
+        ]
+    );
+}
+
+#[test]
+fn after_a_bounce_the_switch_frame_is_the_landing_frame() {
+    // Falling from a bounce onto face column 108 of `landing_face` with
+    // no speed sideways and nothing held: M = L, so the push carries the
+    // player down from L + 1.
+    let mut world = mid_jump(0, 108.5, 40.0, 0, 768);
+    world.player.jump_age = None;
+    world.player.state = State::Bounce;
+    let mut rows = Vec::new();
+    for _ in 0..3 {
+        hold(&mut world, &[]);
+        rows.push((world.events.contains(&Event::Land), row(&world)));
+    }
+    let level_y = |y: f64| fx(y - 81.0);
+    assert_eq!(
+        rows,
+        [
+            (true, (fx(108.5), 0, level_y(48.0), true)),
+            (false, (fx(108.3125), -48, level_y(48.0), true)),
+            (false, (fx(107.9609375), -90, level_y(52.0), true)),
+        ]
+    );
+}
