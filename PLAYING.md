@@ -95,7 +95,8 @@ at the checkpoint once you've touched it, with all your hit points.
 Up and Down pick a row, Left and Right pick the player or the keyboard or
 gamepad column, jump starts a remap, and pause goes back. Your bindings
 are saved to `%APPDATA%\Clamber\input.toml` on Windows, and
-`~/.config/clamber/input.toml` on Linux. Delete that file to go back to
+`~/.config/clamber/input.toml` on Linux and
+`~/Library/Application Support/Clamber/input.toml` on macOS. Delete that file to go back to
 the defaults.
 
 **Movement** on the title screen picks how the game feels: Default,
@@ -156,8 +157,9 @@ one. On a keyboard, you can also type a path there or paste one with
 Ctrl+V, then press Enter to open that folder or import that file
 (Escape stops typing). A path that doesn't start at a drive or `/` is
 taken from the folder shown. The pack goes into
-`%LOCALAPPDATA%\Clamber\packs` on Windows, and
-`~/.local/share/clamber/packs` on Linux. After each import, Clamber
+`%LOCALAPPDATA%\Clamber\packs` on Windows,
+`~/.local/share/clamber/packs` on Linux and
+`~/Library/Application Support/Clamber/packs` on macOS. After each import, Clamber
 writes a report on it to `import-report.txt` in that folder (the screen
 shows where) and replaces the one from the import before. It has only
 counts, steps and states, nothing from the game itself, so it's safe to
@@ -201,3 +203,23 @@ collision view on.
 
 Warnings and errors show in the terminal, and are also written to
 `~/.config/clamber/clamber.log`.
+
+## On macOS, from source
+
+You need a current stable Rust ([rustup](https://rustup.rs)) and the
+Xcode command line tools (`xcode-select --install`). Sound and gamepads
+need nothing else, so the game builds with both on Apple silicon:
+
+```
+git clone https://github.com/clamber-engine/engine.git
+cd engine
+cargo run --release -p clamber-game --features audio,gamepad
+```
+
+Run it from the checkout, so it finds the `content` folder. As on Linux,
+the `spec` submodule is only needed for the tests, and
+`cargo run --release -p clamber-game -- --help` lists the other options.
+
+Warnings and errors show in the terminal, and are also written to
+`~/Library/Application Support/Clamber/clamber.log`, along with
+`input.toml` and `prefs.toml`.
