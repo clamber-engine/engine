@@ -1,5 +1,6 @@
 //! Bunch and letter pickup ranges during the ground action, turns, the
-//! frames after a roll, falls without a jump, bounces and carrying in
+//! frames after a roll, falls without a jump, bounces, carrying and
+//! knock-outs in
 //! Classic 1 (spec/behavior/bunches.md and spec/behavior/letters.md,
 //! "Pickup ranges").
 
@@ -64,6 +65,8 @@ struct Row {
     turn: Option<u8>,
     ground_action: bool,
     hands: Option<Hands>,
+    knocked_out: bool,
+    back: bool,
     events: Vec<Event>,
 }
 
@@ -86,6 +89,8 @@ fn play(mut world: World, keys: &[Vec<Action>]) -> (Vec<Row>, Option<usize>) {
             turn: p.turn,
             ground_action: p.ground_action.is_some(),
             hands: p.hands.map(|h| h.act),
+            knocked_out: p.knockout.is_some(),
+            back: world.flow.events.contains(&FlowEvent::Respawn),
             events: world.events.clone(),
         });
         let took = world
@@ -575,4 +580,45 @@ fn a_put_down_has_the_carrying_ranges_to_q_plus_12() {
         .expect("a new pick-up");
     assert_eq!(again, q + 14);
     check_carry(&k, &[q, q + 12, q + 13, again, again + 20]);
+}
+
+/// Checks a bunch around a knock-out by a walker with `keys` from
+/// `start` (bunches.md, "Being hit"): the standing ranges up to `H` - 1
+/// and none from the hit step `H` to the level's last step.
+fn check_knock_out(start: i32, walkers: &str, keys: &[Vec<Action>]) {
+    let (rows, _) = play(walker_world("cluster", start, walkers, &[]), keys);
+    let h = rows
+        .iter()
+        .position(|r| r.knocked_out)
+        .expect("a knock-out");
+    let last = rows.iter().position(|r| r.back).expect("play comes back") - 1;
+    let keys = &keys[..=last];
+    check_in(
+        |at| walker_world("cluster", start, walkers, at),
+        keys,
+        &[h - 2, h - 1, h, h + 1, h + 10, h + 30, last],
+        |_, n| if n < h { STAND } else { NONE },
+    );
+}
+
+#[test]
+fn no_bunch_is_taken_while_knocked_out() {
+    let ahead = crawler(360, "left");
+    // Standing while a walker walks in from in front, the same facing
+    // away from it, and walking into it.
+    check_knock_out(300, &ahead, &keys(&[(&[], 400)]));
+    check_knock_out(300, &ahead, &keys(&[(&[Left], 1), (&[], 400)]));
+    check_knock_out(200, &ahead, &keys(&[(&[Right], 400)]));
+    // Jump pressed two steps before the hit, on the ground.
+    let (rows, _) = play(
+        walker_world("cluster", 300, &ahead, &[]),
+        &keys(&[(&[], 400)]),
+    );
+    let h = rows.iter().position(|r| r.knocked_out).unwrap();
+    let k = keys(&[(&[], h - 2), (&[Jump], 3), (&[], 400)]);
+    let (rows, _) = play(walker_world("cluster", 300, &ahead, &[]), &k);
+    assert_eq!(rows.iter().position(|r| r.knocked_out), Some(h));
+    // The jump starts on H - 1, still on the ground on H.
+    assert!(rows[h - 1].events.contains(&Event::JumpStart) && rows[h].ground);
+    check_knock_out(300, &ahead, &k);
 }
