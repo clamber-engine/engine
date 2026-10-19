@@ -3937,6 +3937,49 @@ fn classic_roll_started_in_the_air_ends_on_landing_30_frames_after() {
     assert!((26..=35).all(|n| seen.contains(&n)), "{seen:?}");
 }
 
+#[test]
+fn classic_roll_started_in_the_air_lands_on_s_prime_and_hover_frames() {
+    // spec/behavior/rolling-off-ledges.md, "When the stop carries the
+    // player off the edge": the landing rule applies on every airborne
+    // frame from S' = 46 on, hover frames included. With the height set
+    // on one frame from S' - 1 to S' + 10 to 1 to 16 px above the floor
+    // (576), the roll lands 0 to 16 frames after S' as any landing
+    // (`vy` 0, the roll goes on, the same horizontal speed) and ends on
+    // G + 30.
+    let keys = |f: usize| match f {
+        0 | 28 => vec![Action::Action],
+        f if f >= 29 => vec![Action::Right],
+        _ => vec![],
+    };
+    let unmoved = play(&mut classic_raised(1596), 120, keys);
+    let mut seen = std::collections::BTreeSet::new();
+    for at in 45..=56 {
+        for h in (256..=16 * 256).step_by(13).chain(5 * 256..=5 * 256 + 12) {
+            let mut w = classic_raised(1596);
+            let mut rows = play(&mut w, at, keys);
+            w.player.pos.y = Fixed::from_int(576) - Fixed::from_ratio_pow2(h, 8);
+            rows.extend(play(&mut w, 120 - at, |f| keys(f + at)));
+            let ctx = format!("height {h}/256 set before {at}");
+            let Some(g) = (46..rows.len()).find(|&f| rows[f].grounded) else {
+                panic!("{ctx}: no landing");
+            };
+            if rows[45].grounded {
+                continue;
+            }
+            assert_eq!(rows[46].state, State::Roll, "{ctx}");
+            assert!(rows[at..g].iter().all(|r| r.y <= 571.0), "{ctx}");
+            assert_eq!((rows[g].y, rows[g].vy), (576.0, 0.0), "{ctx}");
+            assert_eq!(rows[g].state, State::Roll, "{ctx}");
+            for f in 46..=g {
+                assert_eq!(rows[f].vx, unmoved[f].vx, "{ctx}, frame {f}");
+            }
+            assert_eq!(frames_with(&rows, Event::RollEnd)[1], g + 30, "{ctx}");
+            seen.insert(g - 46);
+        }
+    }
+    assert!((0..=10).all(|n| seen.contains(&n)), "{seen:?}");
+}
+
 /// Classic 2 standing at x = 500, playing `held(frame)` for `n` frames.
 fn classic_2_rolls(n: usize, held: impl Fn(usize) -> Vec<Action>) -> Vec<Row> {
     let mut w = classic_2_clear();
