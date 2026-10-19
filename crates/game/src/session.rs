@@ -779,6 +779,30 @@ impl Session {
         self.play_level(&level, Some(pack))
     }
 
+    /// Plays `pack`'s level at `path` straight away, without the title
+    /// screen, from its start or from its arrival called `arrival`: for
+    /// headless replays.
+    pub fn play_installed(
+        &mut self,
+        path: &Path,
+        pack: Installed,
+        arrival: Option<&str>,
+    ) -> Result<(), String> {
+        self.play_level(path, Some(pack))?;
+        if let Some(name) = arrival {
+            let level = self.game.world.level.clone();
+            let at = level
+                .arrival(name)
+                .cloned()
+                .ok_or_else(|| format!("{} has no arrival {name}", path.display()))?;
+            let world = World::try_arriving(level, self.game.world.feel.clone(), &at)
+                .map_err(|e| e.to_string())?;
+            self.game.replace_world(world);
+        }
+        self.screen = Screen::Playing;
+        Ok(())
+    }
+
     /// Plays the level at `path` with the movement being played, and
     /// `pack`'s sprites if it has them. Keeps the debug view setting,
     /// and turns it on for a level with nothing else to see.

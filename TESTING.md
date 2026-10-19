@@ -107,6 +107,55 @@ clamber-trace report                                # conformance summary
 The research harness writes the same trace format from the emulator, so
 `diff` also works for research-side sanity checks.
 
+`clamber-replay` (in `crates/game`) is for differential testing against
+the original, frame by frame, positions and pictures. It replays an input
+recording on a level of an imported pack from the level's start, with no
+window, deterministically:
+
+```
+clamber-replay --pack <dir> --inputs <file> --out <dir> [--level <id>]
+               [--preset <id>] [--arrival <name>] [--frames 0..3600]
+               [--every 1] [--layers]
+```
+
+- `--pack` is an imported pack's folder (the one holding
+  `manifest.toml`); `--level` is a file name in its `levels/` folder
+  without `.level`, the first one by default. `--arrival` starts at one
+  of the level's arrivals instead of its start. The preset defaults to
+  the one holding the pack's title's values (`classic-1` for `title-1`).
+- `--inputs` is a scenario (`.scn`), a trace (`.trace`, its `input`
+  column), or a file of held actions, one line per frame from frame 0:
+
+  ```
+  # clamber-inputs v1
+  R
+  RJ
+  .
+  ```
+
+  Each line is the actions held that frame in the order `LRUDJASPT`, as
+  in a trace's `input` column, `.` for none. Blank lines and other `#`
+  lines are skipped.
+- `--out` gets `replay.trace`, the trace of every frame played from frame
+  0 (as `clamber-trace record` writes, positions from where the player
+  started), and `<frame>.png` (six digits) for each frame in `--frames`
+  (`<from>..<to>`, `to` not included), every `--every`th: the picture as
+  shown after that frame's step, at the pack's own resolution, as the
+  Original rendering mode draws it. Play goes from frame 0 either way, so
+  a long run can be looked at in pieces with `--frames`; the trace stops
+  at the last frame of the range.
+- With `--layers`, each part of the game's picture is also written on its
+  own, transparent where it draws nothing: `<frame>-backdrop.png`,
+  `<frame>-layer-<index>-<name>.png` for each of the level's layers,
+  `<frame>-sprites.png` and `<frame>-hud.png`. Menus over the game are
+  only in the whole picture.
+
+Play goes as in the game: through exits into other areas, and onto the
+pause, level complete and game over screens if the inputs lead there. A
+frame on which the game holds still (a pause the world asks for) has a
+row with no events. The engine's tests replay a made-up pack only; real
+packs and dumps from them never go into the repository.
+
 ## Adding a scenario
 
 1. A scenario is added to `spec` (either side can propose one; it goes

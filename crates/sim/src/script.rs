@@ -36,10 +36,13 @@ impl Script {
 
     /// The scenario's inputs for each of its frames.
     pub fn from_scenario(scenario: &Scenario) -> Script {
+        Script::from_buttons((0..scenario.frames).map(|f| scenario.held(f)))
+    }
+
+    /// The buttons held on each frame, in order, as actions.
+    pub fn from_buttons(held: impl IntoIterator<Item = Buttons>) -> Script {
         Script {
-            held: (0..scenario.frames)
-                .map(|f| actions(scenario.held(f)))
-                .collect(),
+            held: held.into_iter().map(actions).collect(),
         }
     }
 

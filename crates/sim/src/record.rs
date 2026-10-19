@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use clamber_fixed::{FRAC_BITS, Fixed};
 use clamber_input::Frame;
-use clamber_level::Level;
+use clamber_level::{Level, Vec2};
 use clamber_pack::Feel;
 use clamber_trace::trace::{self, Source};
-use clamber_trace::{Decimal, Row, Scenario, Trace};
+use clamber_trace::{Buttons, Decimal, Row, Scenario, Trace};
 
 use crate::archetype::ArchetypeError;
 use crate::player::{Facing, State};
@@ -41,23 +41,7 @@ pub fn record(
     let mut rows = Vec::with_capacity(scenario.frames as usize);
     run(&mut world, &Script::from_scenario(scenario), |w| {
         let frame = rows.len() as u32;
-        let p = &w.player;
-        rows.push(Row {
-            frame,
-            input: scenario.held(frame),
-            x: decimal(p.pos.x - start.x),
-            y: decimal(p.pos.y - start.y),
-            vx: decimal(p.vel.x),
-            vy: decimal(p.vel.y),
-            state: state(p.state),
-            // A swimmer on the floor is on the ground (`swimming.md`).
-            ground: p.grounded() || p.swim_floor,
-            facing: match p.facing {
-                Facing::Left => trace::Facing::Left,
-                Facing::Right => trace::Facing::Right,
-            },
-            events: w.events.iter().map(|&e| event(e)).collect(),
-        });
+        rows.push(row(w, frame, scenario.held(frame), start, true));
     });
     Ok(Trace {
         scenario: scenario.id.clone(),
@@ -65,6 +49,33 @@ pub fn record(
         extra,
         rows,
     })
+}
+
+/// The trace row for frame `frame` of play in `world`, with `input`
+/// held, the player's position measured from `start`. Its events are
+/// those of the world's last step if it `stepped` on this frame, and
+/// none if it didn't.
+pub fn row(world: &World, frame: u32, input: Buttons, start: Vec2, stepped: bool) -> Row {
+    let p = &world.player;
+    Row {
+        frame,
+        input,
+        x: decimal(p.pos.x - start.x),
+        y: decimal(p.pos.y - start.y),
+        vx: decimal(p.vel.x),
+        vy: decimal(p.vel.y),
+        state: state(p.state),
+        // A swimmer on the floor is on the ground (`swimming.md`).
+        ground: p.grounded() || p.swim_floor,
+        facing: match p.facing {
+            Facing::Left => trace::Facing::Left,
+            Facing::Right => trace::Facing::Right,
+        },
+        events: match stepped {
+            true => world.events.iter().map(|&e| event(e)).collect(),
+            false => Vec::new(),
+        },
+    }
 }
 
 fn decimal(v: Fixed) -> Decimal {

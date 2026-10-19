@@ -40,6 +40,20 @@ const ENTITY_BOX: i32 = 12;
 /// went further was put somewhere else in one jump.
 const JUMP: f64 = 32.0;
 
+/// A part of a game's picture, to draw on its own ([`Game::draw_part`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Part {
+    /// The colour behind everything.
+    Backdrop,
+    /// The level's layer with this index.
+    Layer(usize),
+    /// The characters and the things in the level, and what's left of
+    /// broken kegs.
+    Sprites,
+    /// The HUD, and the image of a taken relic.
+    Hud,
+}
+
 pub struct Game {
     pub world: World,
     pub camera: Camera,
@@ -270,29 +284,55 @@ impl Game {
     /// state before the last step to the state after it. A canvas showing
     /// more or less than the camera's view is centred where it is.
     pub fn draw(&self, canvas: &mut dyn Surface, alpha: f64) {
+        self.draw_parts(canvas, alpha, None);
+        let (now, full) = self.world.brightness();
+        if now < full {
+            let dark = 255 * (full - now) / full;
+            canvas.shade(BLACK, dark as u8);
+        }
+    }
+
+    /// Draws one part of what [`draw`](Game::draw) does, as it would be
+    /// drawn there, over what's on the canvas already: nothing else, and
+    /// not darkened by the picture's brightness.
+    pub fn draw_part(&self, canvas: &mut dyn Surface, alpha: f64, part: Part) {
+        self.draw_parts(canvas, alpha, Some(part));
+    }
+
+    /// Draws every part, or only `only`; the debug view only with every
+    /// part.
+    fn draw_parts(&self, canvas: &mut dyn Surface, alpha: f64, only: Option<Part>) {
+        let shows = |part: Part| only.is_none_or(|o| o == part);
         let origin = self.camera.top_left_of(canvas.view(), alpha);
         let to_screen = |p: (f64, f64)| (p.0 - origin.0, p.1 - origin.1);
-        canvas.clear(SKY);
+        if shows(Part::Backdrop) {
+            canvas.clear(SKY);
+        }
 
         let level = &self.world.level;
         canvas.light(&lighting(level, origin, canvas.view()));
         let behind = self.world.behind_scenery();
         let dim = self.world.dim_step();
         let time = (self.world.frame as f64 + alpha) / clamber_sim::STEPS_PER_SECOND as f64;
+        let layers = |canvas: &mut dyn Surface, keep: &dyn Fn(&Layer) -> bool| {
+            let keep = |i: usize, l: &Layer| shows(Part::Layer(i)) && keep(l);
+            self.art.draw_some(canvas, level, origin, dim, time, keep);
+        };
+        let back = |l: &Layer| l.depth == Depth::Back;
+        let sprites = shows(Part::Sprites);
         if behind {
             // The characters go behind the scenery, the back layers that
             // move with the world, but in front of backdrops.
-            let back = |l: &Layer| l.depth == Depth::Back;
             let scenery = |l: &Layer| l.parallax == Vec2::ints(1, 1);
-            self.art
-                .draw_some(canvas, level, origin, dim, time, |l| back(l) && !scenery(l));
-            self.draw_characters(canvas, alpha, origin);
-            self.art
-                .draw_some(canvas, level, origin, dim, time, |l| back(l) && scenery(l));
+            layers(canvas, &|l| back(l) && !scenery(l));
+            if sprites {
+                self.draw_characters(canvas, alpha, origin);
+            }
+            layers(canvas, &|l| back(l) && scenery(l));
         } else {
-            self.art.draw(canvas, level, Depth::Back, origin, dim, time);
+            layers(canvas, &back);
         }
-        if self.debug {
+        if self.debug && only.is_none() {
             for region in &level.regions {
                 let points = match &region.area {
                     Area::Rect(r) => r.corners(),
@@ -332,22 +372,18 @@ impl Game {
             }
         }
 
-        self.draw_things(canvas, &to_screen, alpha, false);
-
-        self.draw_kegs(canvas, &to_screen);
-
-        if !behind {
-            self.draw_characters(canvas, alpha, origin);
+        if sprites {
+            self.draw_things(canvas, &to_screen, alpha, false);
+            self.draw_kegs(canvas, &to_screen);
+            if !behind {
+                self.draw_characters(canvas, alpha, origin);
+            }
+            self.draw_things(canvas, &to_screen, alpha, true);
         }
-        self.draw_things(canvas, &to_screen, alpha, true);
-        self.art
-            .draw(canvas, level, Depth::Front, origin, dim, time);
-        draw_hud(canvas, &self.world);
-        self.draw_relic_image(canvas);
-        let (now, full) = self.world.brightness();
-        if now < full {
-            let dark = 255 * (full - now) / full;
-            canvas.shade(BLACK, dark as u8);
+        layers(canvas, &|l| l.depth == Depth::Front);
+        if shows(Part::Hud) {
+            draw_hud(canvas, &self.world);
+            self.draw_relic_image(canvas);
         }
     }
 

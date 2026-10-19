@@ -131,7 +131,7 @@ pub use player::{
     Knockout, Landing, Player, ROLL, Roll, RollSize, SWAP_FRAMES, State, Stride,
 };
 pub use pose::{Air, Pose, PoseClock, Stance, hurt_pose, pose, stance};
-pub use record::record;
+pub use record::{record, row};
 pub use ride::{RidePart, Riding};
 pub use rope::{OnRope, ROPE};
 pub use script::{InputFrame, Script};

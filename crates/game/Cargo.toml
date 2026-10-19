@@ -6,6 +6,14 @@ license.workspace = true
 publish = false
 description = "The Clamber game: a window, the simulation at 60 Hz, rendering and input"
 
+[[bin]]
+name = "clamber-game"
+path = "src/main.rs"
+
+[[bin]]
+name = "clamber-replay"
+path = "src/bin/replay.rs"
+
 [features]
 # Sound output. Off by default because on Linux it links ALSA, which
 # needs the system's development package to build.

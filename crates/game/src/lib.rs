@@ -38,7 +38,9 @@
 //!
 //! Everything here except the window itself works headlessly, so a
 //! [`Session`] or [`Game`] can be stepped and drawn in tests, and
-//! [`capture`]d to a GIF and screenshots without a display.
+//! [`capture`]d to a GIF and screenshots without a display. An imported
+//! pack's level can be [`replay`]ed from an input recording, with its
+//! trace and the picture of each frame, part by part.
 
 mod beyond;
 mod camera;
@@ -66,6 +68,7 @@ mod panel;
 mod pictures;
 mod prefs;
 mod prompts;
+pub mod replay;
 pub mod report;
 mod session;
 mod sound;
@@ -90,7 +93,7 @@ pub use controls::{Controls, Request, Row, TIMEOUT};
 pub use credits::{Credits, DEFAULT_CREDITS};
 pub use display::{Look, Presenting, Rendering};
 pub use feels::Feels;
-pub use game::Game;
+pub use game::{Game, Part};
 pub use gpu::Gpu;
 pub use hud::draw_hud;
 pub use import::{Edit, Games, Importing, Picker};

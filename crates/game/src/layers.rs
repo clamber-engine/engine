@@ -139,10 +139,10 @@ impl LayerArt {
         dim: (u32, u32),
         time: f64,
     ) {
-        self.draw_some(surface, level, origin, dim, time, |l| l.depth == depth);
+        self.draw_some(surface, level, origin, dim, time, |_, l| l.depth == depth);
     }
 
-    /// Draws the layers `keep` says to, in order, for a view whose top
+    /// Draws the layers `keep` says to, by index and layer, in order, for a view whose top
     /// left is at `origin`, with the dimming at step `dim.0` of `dim.1`,
     /// `time` seconds into the level.
     pub fn draw_some(
@@ -152,9 +152,10 @@ impl LayerArt {
         origin: (f64, f64),
         dim: (u32, u32),
         time: f64,
-        keep: impl Fn(&Layer) -> bool,
+        keep: impl Fn(usize, &Layer) -> bool,
     ) {
-        for layer in level.layers.iter().filter(|l| keep(l)) {
+        let kept = level.layers.iter().enumerate().filter(|(i, l)| keep(*i, l));
+        for (_, layer) in kept {
             let dim = if layer.dim { dim } else { (0, 0) };
             let art = |(image, normals): (&str, Option<&str>)| {
                 let texture = self.dimmed(image, layer.pixel_art, dim)?;
