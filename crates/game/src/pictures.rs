@@ -1,6 +1,7 @@
 //! Which of its own pictures the player shows when it's held still: the
 //! stop after a roll, a jump and its landing, a bounce's frozen frames
-//! and the first standing pictures after them
+//! and the first standing pictures after them, and the first
+//! character's walking, running and turning pictures
 //! (`spec/behavior/player-frames.md`).
 //!
 //! The pictures come from a character's sheet in a pack
@@ -14,9 +15,11 @@
 //! Engine choices where the spec says nothing:
 //!
 //! - The pictures after the ones given (standing on after the first
-//!   standing pictures, walking, running, a bounce after B + 4) are the
-//!   engine's own art, as are the second character's in the air from
-//!   T + 16 until it lands.
+//!   standing pictures, the second character walking or running, a
+//!   bounce after B + 4) are the engine's own art, as are the second
+//!   character's in the air from T + 16 until it lands.
+//! - Walking or running in the air after walking off a ledge, and
+//!   crouching or getting up, show the engine's own art.
 //! - The second character's landing pictures are shown after a jump
 //!   that lands on the floor it took off from, the landings the spec
 //!   says they're for.
@@ -39,12 +42,14 @@ pub enum Set {
     Jump,
     /// A bounce's frozen frames.
     Bounce,
+    /// Walking, running and turning on the ground.
+    Walking,
 }
 
 /// Each set's labels, for the first character (slot 0) and the second
 /// (slot 1).
-pub const SETS: [[(Set, &[&str]); 4]; 2] = [
-    [
+pub const SETS: [&[(Set, &[&str])]; 2] = [
+    &[
         (Set::Stop, &["roll-end", "stop", "stand-1"]),
         (
             Set::Standing,
@@ -59,8 +64,9 @@ pub const SETS: [[(Set, &[&str]); 4]; 2] = [
             ],
         ),
         (Set::Bounce, &["bounce-1", "bounce-2"]),
+        (Set::Walking, &WALKING),
     ],
-    [
+    &[
         (
             Set::Stop,
             &["s-stop-1", "s-stop-2", "s-stop-3", "s-stop-4", "s-stop-5"],
@@ -76,6 +82,17 @@ pub const SETS: [[(Set, &[&str]); 4]; 2] = [
         ),
         (Set::Bounce, &["s-bounce-1", "s-bounce-2"]),
     ],
+];
+
+/// The first character's walking, running and turning pictures: a
+/// walking and a running picture per step of the stride cycle, then the
+/// two turning pictures.
+const WALKING: [&str; 42] = [
+    "walk-1", "walk-2", "walk-3", "walk-4", "walk-5", "walk-6", "walk-7", "walk-8", "walk-9",
+    "walk-10", "walk-11", "walk-12", "walk-13", "walk-14", "walk-15", "walk-16", "walk-17",
+    "walk-18", "walk-19", "walk-20", "run-1", "run-2", "run-3", "run-4", "run-5", "run-6", "run-7",
+    "run-8", "run-9", "run-10", "run-11", "run-12", "run-13", "run-14", "run-15", "run-16",
+    "run-17", "run-18", "run-19", "run-20", "turn-a", "turn-b",
 ];
 
 /// The labels of `set` for the character in roster slot `slot`.
@@ -218,6 +235,8 @@ impl PictureClock {
             } else {
                 second_landing(landed, player.since_land, player.gait, player.state)
             }
+        } else if first && player.grounded() {
+            walking(player)
         } else {
             None
         };
@@ -301,6 +320,28 @@ fn standing(first: bool, c: u8) -> Option<(Set, &'static str)> {
         false => return None,
     };
     Some((Set::Standing, label))
+}
+
+/// The first character walking, running or turning on the ground, on
+/// the step its frame ends in or turn frame T + n.
+fn walking(player: &clamber_sim::Player) -> Option<(Set, &'static str)> {
+    if player.roll.is_some()
+        || player.roll_stop > 0
+        || player.crouch.held > 0
+        || player.crouch.rising > 0
+    {
+        return None;
+    }
+    let label = match (player.turn, player.gait) {
+        (Some(2..=5), _) => "turn-b",
+        (Some(_), _) => "turn-a",
+        (None, Gait::Walking(stride)) => *WALKING[..20].get(stride.step.checked_sub(1)? as usize)?,
+        (None, Gait::Running(stride)) => {
+            *WALKING[20..40].get(stride.step.checked_sub(1)? as usize)?
+        }
+        _ => return None,
+    };
+    Some((Set::Walking, label))
 }
 
 /// On T + `age` in the air, with the approach frame A − T if it has come.
@@ -621,7 +662,7 @@ mod tests {
         // `roll_end` comes on D + 3 for the first character.
         let d = first.frames(Event::RollEnd)[0] - 3;
         assert_eq!(first.roll_stop[d + 3], 0, "carried on");
-        first.check(d, &[("stop", 3), ("", 1)]);
+        first.check(d, &[("stop", 3), ("walk-1", 1)]);
         let second = run(world(FLAT, 1), &roll(&held, 80));
         let end = second.frames(Event::RollEnd)[0];
         let d = (0..end).find(|&f| second.shown[f].is_some()).unwrap();
@@ -668,12 +709,77 @@ mod tests {
         run.check(b, &[("bounce-1", 4), ("bounce-2", 1), ("", 1)]);
     }
 
+    /// Nothing held for 10 frames, then `then` held for `hold` frames,
+    /// then nothing, `total` frames in all.
+    fn hold(then: &[Action], hold: usize, total: usize) -> Vec<Vec<Action>> {
+        (0..total)
+            .map(|f| {
+                if (10..10 + hold).contains(&f) {
+                    then.to_vec()
+                } else {
+                    vec![]
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn walking_from_standing_still() {
+        // player-frames.md's example: Right held from frame 0.
+        let run = run(world(FLAT, 0), &hold(&[Action::Right], 40, 60));
+        run.check(
+            10,
+            &[
+                ("walk-1", 3),
+                ("walk-2", 3),
+                ("walk-3", 2),
+                ("walk-4", 3),
+                ("walk-5", 2),
+                ("walk-6", 2),
+                ("walk-7", 2),
+                ("walk-8", 1),
+                ("walk-9", 1),
+            ],
+        );
+    }
+
+    #[test]
+    fn running_shows_a_running_picture_per_step() {
+        // A roll carried on into walking, then running.
+        let run = run(world(FLAT, 0), &roll(&[Action::Action, Action::Right], 90));
+        let walk = run.shown.iter().position(|&l| l == Some("walk-1")).unwrap();
+        let from = run.shown.iter().position(|&l| l == Some("run-1")).unwrap();
+        assert!(
+            run.shown[walk..from]
+                .iter()
+                .all(|l| l.unwrap().starts_with("walk-"))
+        );
+        let steps: Vec<usize> = run.shown[from..]
+            .iter()
+            .map(|l| l.unwrap().strip_prefix("run-").unwrap().parse().unwrap())
+            .collect();
+        assert!(
+            steps
+                .windows(2)
+                .all(|w| w[1] == w[0] || w[1] == w[0] % 20 + 1)
+        );
+        assert!(steps.contains(&20), "{steps:?}");
+    }
+
+    #[test]
+    fn a_turn_from_standing_still() {
+        let run = run(world(FLAT, 0), &hold(&[Action::Left], 1, 30));
+        let turn = run.frames(Event::Turn);
+        assert_eq!(turn, [14], "facing changes on T + 4");
+        run.check(10, &[("turn-a", 2), ("turn-b", 4), ("turn-a", 2), ("", 1)]);
+    }
+
     #[test]
     fn the_sets_are_the_importer_s() {
         for (slot, sets) in SETS.iter().enumerate() {
             let decoder = clamber_import::CharacterDecoder::of("title-1").unwrap();
             let character = decoder.characters.iter().find(|c| c.slot == slot).unwrap();
-            let names = ["stop", "standing", "jump", "bounce"];
+            let names = ["stop", "standing", "jump", "bounce", "walking"];
             for ((set, labels), name) in sets.iter().zip(names) {
                 let theirs = character.sets.iter().find(|s| s.name == name).unwrap();
                 let theirs: Vec<&str> = theirs.pictures.iter().map(|&(l, _)| l).collect();
