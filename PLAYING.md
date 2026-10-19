@@ -201,6 +201,11 @@ are always drawn at the window's full resolution, including those over
 the game view, and Clamber's own game is always drawn at full
 resolution, so the setting isn't shown for it.
 
+In Enhanced mode, an imported game's sprites, tiles and backgrounds can
+be drawn with higher-resolution pictures from replacement art packs,
+which hold only new art and can be shared. [`ART-PACKS.md`](ART-PACKS.md)
+says where they go and how to make one.
+
 **Import a game…** on the title screen turns your own copy of a
 supported game into a personal pack for Clamber to play. Choose the file
 in the window that opens; it starts in the folder you imported from last

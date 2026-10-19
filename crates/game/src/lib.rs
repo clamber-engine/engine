@@ -80,6 +80,7 @@ mod title;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use clamber_import::{Replacements, replace_sheet};
 use clamber_level::Level;
 use clamber_pack::Feel;
 use clamber_sim::World;
@@ -121,11 +122,49 @@ pub const SPRITES: &str = "base/sprites";
 /// folders of `sprites` (a later folder's sheet replacing an earlier
 /// one's of the same name, [`Cast::load_layered`]), played with `feel`.
 pub fn load_game(path: &Path, sprites: &[&Path], feel: Arc<Feel>) -> Result<Game, String> {
+    load_game_with(
+        path,
+        sprites,
+        feel,
+        &Replacements::default(),
+        &mut Vec::new(),
+    )
+}
+
+/// [`load_game`], with the layers' images and the sprite sheets that
+/// `replacements` has pictures for drawn with them when the game isn't
+/// drawn on the original's pixel grid ([`Game::with_replaced`]).
+/// Replacements that don't fit are added to `problems`.
+pub fn load_game_with(
+    path: &Path,
+    sprites: &[&Path],
+    feel: Arc<Feel>,
+    replacements: &Replacements,
+    problems: &mut Vec<String>,
+) -> Result<Game, String> {
     let level = Level::load(path).map_err(|e| e.to_string())?;
     let art = LayerArt::load(&level, path.parent().unwrap_or(Path::new("")))?;
-    let cast = Cast::load_layered(sprites)?;
+    let sheets = Cast::load_sheets(sprites)?;
+    let (mut replaced_art, mut replaced_cast) = (None, None);
+    if !replacements.is_empty() {
+        replaced_art = art.replaced(&level, replacements, problems);
+        let mut any = false;
+        let replaced: Vec<_> = sheets
+            .iter()
+            .map(|(name, sheet)| {
+                let made = replace_sheet(sheet, replacements, problems);
+                any |= made.is_some();
+                (name.clone(), made.unwrap_or_else(|| sheet.clone()))
+            })
+            .collect();
+        replaced_cast = any.then(|| Cast::new(replaced));
+    }
+    let cast = Cast::new(sheets.into_iter().collect());
     let world = World::try_new(Arc::new(level), feel).map_err(|e| e.to_string())?;
-    Ok(Game::new(world).with_art(art).with_cast(cast))
+    Ok(Game::new(world)
+        .with_art(art)
+        .with_cast(cast)
+        .with_replaced(replaced_art, replaced_cast))
 }
 
 /// The content folder: next to the executable for a packaged build,

@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use clamber_import::{Importer, Installed, Widescreen};
+use clamber_import::{Importer, Installed, Replacements, Widescreen};
 
 use clamber_input::{Action, Device, Event, Frame, Input, Settings};
 use clamber_level::Arrival;
@@ -35,7 +35,7 @@ use crate::sound::{Cue, cues};
 use crate::surface::Surface;
 use crate::text::{ADVANCE, LINE, draw_text, draw_text_centred};
 use crate::title::{draw_logo, draw_scene};
-use crate::{SPRITES, content_dir, load_game};
+use crate::{SPRITES, content_dir, load_game_with};
 
 /// Where the credits screen's lines start, and how many show at once.
 const CREDITS_TOP: i32 = 34;
@@ -231,6 +231,9 @@ pub struct Session {
     pub pack: Option<Installed>,
     /// Where imported packs go, if anywhere.
     pub packs_dir: Option<PathBuf>,
+    /// Where replacement art packs for imported games are, if anywhere
+    /// ([`clamber_import::Replacements`]).
+    pub art_dir: Option<PathBuf>,
     pub importer: Arc<Importer>,
     /// The level map of the pack being played, if it has one: a new game
     /// begins on it, and finishing a level entered from it goes back
@@ -269,6 +272,7 @@ impl Session {
             bundled: None,
             pack: None,
             packs_dir: None,
+            art_dir: None,
             importer: Arc::new(Importer::builtin()),
             map: None,
             file_dialog: false,
@@ -848,7 +852,9 @@ impl Session {
     /// The level at `path` with the movement being played, and `pack`'s
     /// sprites (over the game's own) and look if it has them, at its start. Keeps the debug
     /// view setting, and turns it on for a level with nothing else to
-    /// see.
+    /// see. A pixel-art pack's pictures that the replacement art packs
+    /// in the [`Session::art_dir`] have replacements for are drawn with
+    /// them in Enhanced mode.
     fn load(&self, path: &Path, pack: Option<&Installed>) -> Result<Game, String> {
         let own = content_dir().join(SPRITES);
         let packed = pack.and_then(Installed::sprites);
@@ -860,7 +866,20 @@ impl Session {
         };
         look.pixel_art &= self.rendering_for(pack) != Some(Rendering::Enhanced);
         let feel = look.feel(&self.game.world.feel);
-        let mut game = load_game(path, &sprites, feel)?.with_look(look);
+        let mut problems = Vec::new();
+        let replacements = match (pack.filter(|p| p.manifest.pixel_art), &self.art_dir) {
+            (Some(_), Some(dir)) => {
+                let (replacements, troubles) = Replacements::load(dir);
+                problems.extend(troubles);
+                replacements
+            }
+            _ => Replacements::default(),
+        };
+        let game = load_game_with(path, &sprites, feel, &replacements, &mut problems);
+        for problem in problems {
+            report::warn(format!("replacement art: {problem}"));
+        }
+        let mut game = game?.with_look(look);
         game.debug |= self.game.debug;
         Ok(game)
     }

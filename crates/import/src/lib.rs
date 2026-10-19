@@ -39,6 +39,7 @@ mod manifest;
 mod music;
 mod nibbles;
 mod placements;
+mod replacements;
 mod songs;
 mod sound;
 mod sprites;
@@ -84,6 +85,10 @@ pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable, Widescree
 pub use music::{Fit, LevelSong, Music, RATE, render};
 pub use nibbles::{NIBBLE_HEADER, unpack_nibbles};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements, RECORD_SIZE, Record};
+pub use replacements::{
+    ART_FORMAT, ART_MANIFEST, ArtManifest, DUMP_INDEX, MAX_FACTOR, PICTURES, Replacements, art_dir,
+    dump_pictures, frame_hash, image_hash, replace_image, replace_sheet, replace_tileset,
+};
 pub use songs::{
     CHANNELS, Effects, GAIN, HEADER_SIZE, OUTPUTS_PER_PERIOD, Player, START_PERIOD, Settings,
     SettingsSet, Step, UNIT_PITCH, Voice, VoiceStep, read_effects,

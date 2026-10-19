@@ -54,6 +54,13 @@ pub enum Part {
     Hud,
 }
 
+/// Replacement art for a game's layers and sprites, where it has any.
+#[derive(Clone, Default)]
+struct Replaced {
+    art: Option<Arc<LayerArt>>,
+    cast: Option<Arc<Cast>>,
+}
+
 pub struct Game {
     pub world: World,
     pub camera: Camera,
@@ -71,6 +78,10 @@ pub struct Game {
     art: Arc<LayerArt>,
     /// The sprites the player and entities are drawn with.
     cast: Arc<Cast>,
+    /// `art` and `cast` with replacement art packs' pictures, drawn
+    /// instead of them when the game isn't drawn on the original's pixel
+    /// grid ([`Look::pixel_art`]).
+    replaced: Replaced,
     /// Where each actor is in its animation.
     poses: Poses,
     /// Frames left of a pause the world asked for ([`World::pause`]).
@@ -100,6 +111,36 @@ impl Game {
             world,
             art: Arc::default(),
             cast,
+            replaced: Replaced::default(),
+        }
+    }
+
+    /// Draws with `art` and `cast` instead of the game's own, where they
+    /// are given, when it isn't drawn on the original's pixel grid. They
+    /// have the same layers, sheets and frames as the game's own.
+    pub fn with_replaced(self, art: Option<LayerArt>, cast: Option<Cast>) -> Game {
+        Game {
+            replaced: Replaced {
+                art: art.map(Arc::new),
+                cast: cast.map(Arc::new),
+            },
+            ..self
+        }
+    }
+
+    /// The art the level's layers are drawn with now.
+    fn drawn_art(&self) -> &LayerArt {
+        match &self.replaced.art {
+            Some(art) if !self.look.pixel_art => art,
+            _ => &self.art,
+        }
+    }
+
+    /// The sprites the player and entities are drawn with now.
+    fn drawn_cast(&self) -> &Cast {
+        match &self.replaced.cast {
+            Some(cast) if !self.look.pixel_art => cast,
+            _ => &self.cast,
         }
     }
 
@@ -220,6 +261,7 @@ impl Game {
             art: self.art.clone(),
             poses: Poses::new(&self.cast, &world),
             cast: self.cast.clone(),
+            replaced: self.replaced.clone(),
             ..Game::new(world).with_look(self.look)
         };
     }
@@ -316,7 +358,8 @@ impl Game {
         let time = (self.world.frame as f64 + alpha) / clamber_sim::STEPS_PER_SECOND as f64;
         let layers = |canvas: &mut dyn Surface, keep: &dyn Fn(&Layer) -> bool| {
             let keep = |i: usize, l: &Layer| shows(Part::Layer(i)) && keep(l);
-            self.art.draw_some(canvas, level, origin, dim, time, keep);
+            self.drawn_art()
+                .draw_some(canvas, level, origin, dim, time, keep);
         };
         let back = |l: &Layer| l.depth == Depth::Back;
         let sprites = shows(Part::Sprites);
@@ -424,7 +467,7 @@ impl Game {
             let (x, y) = to_screen(at);
             if self.cast.has_kind(&thing.kind) {
                 let at = (x as f32, y as f32);
-                self.cast
+                self.drawn_cast()
                     .draw_thing_faded(canvas, thing, &pose, at, opacity);
             }
             let (x, y) = (x.round() as i32, y.round() as i32);
@@ -466,7 +509,7 @@ impl Game {
         if self.cast.has_kind(&thing.kind) {
             let pose = &self.poses.things[image.thing];
             let half = image.size as f32 / 2.0;
-            self.cast
+            self.drawn_cast()
                 .draw_thing(canvas, thing, pose, x as f32 + half, y as f32 + half);
         } else {
             canvas.stroke_rect(x, y, image.size, image.size, ENTITY);
@@ -482,7 +525,8 @@ impl Game {
             let (x, y) = to_screen(point(at));
             if self.cast.has_kind(&keg.kind) {
                 let pose = &self.poses.things[resume.keg];
-                self.cast.draw_thing(canvas, keg, pose, x as f32, y as f32);
+                self.drawn_cast()
+                    .draw_thing(canvas, keg, pose, x as f32, y as f32);
             } else {
                 let half = ENTITY_BOX / 2;
                 let (x, y) = (x.round() as i32, y.round() as i32);
@@ -515,7 +559,7 @@ impl Game {
         let (x, y) = between(self.previous, player.pos, alpha, origin);
         if self.cast.has_player() {
             let (x, y) = (x as f32, y as f32);
-            self.cast
+            self.drawn_cast()
                 .draw_player(canvas, &self.world, &self.poses.player, x, y);
             return;
         }
@@ -538,7 +582,7 @@ impl Game {
         let (x, y) = between(previous, other.pos, alpha, origin);
         if self.cast.has_player() {
             let (x, y) = (x as f32, y as f32);
-            self.cast
+            self.drawn_cast()
                 .draw_other(canvas, &self.world, &self.poses.other, x, y);
             return;
         }
@@ -560,7 +604,7 @@ impl Game {
         let (x, y) = between(previous, body.pos, alpha, origin);
         if self.cast.has_player() {
             let (x, y) = (x as f32, y as f32);
-            self.cast
+            self.drawn_cast()
                 .draw_leaving(canvas, &self.world, &self.poses.leaving, x, y);
             return;
         }
@@ -678,6 +722,7 @@ mod tests {
     use clamber_sim::{Fixed, Outcome, generic_feel};
 
     use super::*;
+    use crate::surface::{DrawList, Drawn};
 
     const LEVEL: &str = r#"
         format = 1
@@ -848,6 +893,73 @@ mod tests {
         // The dim ambient light doesn't touch it.
         assert_eq!(at(420.0, 220.0), rgb(100, 110, 120));
         assert_eq!(at(620.0, 330.0), rgb(100, 110, 120));
+    }
+
+    #[test]
+    fn draws_replacement_art_in_enhanced_mode_only() {
+        let tiles = r#"
+            [[layers]]
+            name = "wall"
+            pixel_art = true
+            parallax = [0, 0]
+            tiles = { tileset = "tiles.png", tile_size = [8, 8], columns = 1, data = [1] }
+        "#;
+        let level = Level::from_toml_str(&format!("{LEVEL}{tiles}"), "test").unwrap();
+        let mut image = clamber_sprite::RgbaImage::new(8, 8);
+        image.data.fill([100, 110, 120, 255]);
+        let mut art = LayerArt::default();
+        art.insert("tiles.png", image.clone(), true);
+
+        let dir = std::env::temp_dir().join(format!("clamber-replaced-{}", std::process::id()));
+        let pictures = dir.join("hd").join(clamber_import::PICTURES);
+        std::fs::create_dir_all(&pictures).unwrap();
+        std::fs::write(dir.join("hd/art.toml"), "format = 1\nname = \"HD\"\n").unwrap();
+        let all = clamber_sprite::Rect {
+            x: 0,
+            y: 0,
+            w: 8,
+            h: 8,
+        };
+        let hash = clamber_import::image_hash(&image, all).unwrap();
+        let mut hd = clamber_sprite::RgbaImage::new(32, 32);
+        hd.data.fill([1, 2, 3, 255]);
+        let png = clamber_sprite::encode_png(&hd);
+        std::fs::write(pictures.join(format!("{hash}.png")), png).unwrap();
+        let (replacements, problems) = clamber_import::Replacements::load(&dir);
+        assert!(problems.is_empty(), "{problems:?}");
+        let replaced = art.replaced(&level, &replacements, &mut Vec::new());
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        let world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
+        let look = Look {
+            view: (256, 224),
+            pixel_art: true,
+            widescreen: Widescreen::OriginalFraming,
+        };
+        let mut game = Game::new(world)
+            .with_art(art)
+            .with_replaced(replaced, None)
+            .with_look(look);
+        game.debug = false;
+        let tile = |game: &Game| {
+            let mut list = DrawList::new(look.view);
+            game.draw(&mut list, 1.0);
+            list.items
+                .into_iter()
+                .find_map(|d| match d {
+                    Drawn::Quad(q) if q.texture.pixel_art => Some(q),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        let original = tile(&game);
+        game.look.pixel_art = false;
+        let enhanced = tile(&game);
+        // The same place and size, from four times the texels.
+        assert_eq!(enhanced.dst, original.dst);
+        assert_eq!((original.texture.width(), original.src.w), (8, 8));
+        assert_eq!((enhanced.texture.width(), enhanced.src.w), (32, 32));
+        assert_eq!(enhanced.texture.levels[0].get(31, 31), [1, 2, 3, 255]);
     }
 
     #[test]

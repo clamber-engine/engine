@@ -4,11 +4,13 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clamber_import::{Image, Imported, Importer, import_report, packs_dir, skipped_summary};
+use clamber_import::{
+    Image, Imported, Importer, dump_pictures, import_report, packs_dir, skipped_summary,
+};
 
 const USAGE: &str = "\
 usage: clamber-import <image> [--into <dir>] [--replace] [--import-report <file>]
-                      [--audio-quality <q>]
+                      [--audio-quality <q>] [--dump-pictures <dir>]
 
 Reads your own copy of a supported game and writes a personal content
 pack for Clamber to play. The pack is yours alone: it can't be exported
@@ -21,6 +23,11 @@ or shared.
                         the game in it
 --audio-quality <q>     encode music at Ogg Vorbis quality <q>, from -1
                         (smallest) to 10 (best); 6 by default
+--dump-pictures <dir>   also write the pack's pictures into <dir>, each
+                        named after the hash a replacement art pack
+                        names it by, as templates to paint over; they're
+                        from your copy of the game, so keep them to
+                        yourself
 ";
 
 fn main() -> ExitCode {
@@ -28,6 +35,7 @@ fn main() -> ExitCode {
     let mut into = None;
     let mut replace = false;
     let mut report = None;
+    let mut dump = None;
     let mut quality = clamber_audio::encode::DEFAULT_QUALITY;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -44,6 +52,10 @@ fn main() -> ExitCode {
             "--audio-quality" => match args.next().map(|q| q.parse::<f32>()) {
                 Some(Ok(q)) if (-1.0..=10.0).contains(&q) => quality = q,
                 _ => return usage("`--audio-quality` needs a number from -1 to 10"),
+            },
+            "--dump-pictures" => match args.next() {
+                Some(dir) => dump = Some(PathBuf::from(dir)),
+                None => return usage("`--dump-pictures` needs a folder"),
             },
             "--into" => match args.next() {
                 Some(dir) => into = Some(PathBuf::from(dir)),
@@ -78,7 +90,19 @@ fn main() -> ExitCode {
     match result {
         Ok(imported) => {
             show(&imported);
-            ExitCode::SUCCESS
+            let Some(dir) = dump else {
+                return ExitCode::SUCCESS;
+            };
+            match dump_pictures(&imported.dir, &dir) {
+                Ok(count) => {
+                    println!("Wrote {count} pictures to {}", dir.display());
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("clamber-import: {e}");
+                    ExitCode::FAILURE
+                }
+            }
         }
         Err(e) => {
             eprintln!("clamber-import: {e}");

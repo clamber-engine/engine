@@ -8,11 +8,17 @@
 //! drawn in the colours of the dimming's step (`crate::dim`). A layer
 //! that sways leans each image about its bottom edge, by the time alone,
 //! so it never touches the simulation.
+//!
+//! An image can be a whole number of times its size in the level file
+//! says, as a replacement art pack's are ([`LayerArt::replaced`]): it's
+//! drawn with that many more texels per unit, tiles and all, so it covers
+//! the same part of the world.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use clamber_import::{Replacements, replace_image, replace_tileset};
 use clamber_level::{Depth, Layer, LayerContent, Level, Prop, Sway, Tile, TileLayer, Tileset};
 use clamber_sprite::{Rect, RgbaImage, decode_png};
 
@@ -24,7 +30,8 @@ use crate::surface::{Flip, Quad, Surface, Texture};
 /// whether they're pixel art.
 #[derive(Clone, Debug, Default)]
 pub struct LayerArt {
-    textures: BTreeMap<(String, bool), Arc<Texture>>,
+    /// With how many times the size the level gives it each one is.
+    textures: BTreeMap<(String, bool), (Arc<Texture>, u32)>,
     /// Images in the dimming's colours, made as they're first drawn, by
     /// path, pixel art or not, step and steps.
     dimmed: Arc<Mutex<BTreeMap<DimKey, Arc<Texture>>>>,
@@ -64,12 +71,68 @@ impl LayerArt {
     /// Adds an image under the path layers name it by, for layers that
     /// are pixel art or not.
     pub fn insert(&mut self, path: &str, image: RgbaImage, pixel_art: bool) {
+        self.insert_scaled(path, image, pixel_art, 1);
+    }
+
+    /// Adds an image `factor` times the size layers draw it at.
+    fn insert_scaled(&mut self, path: &str, image: RgbaImage, pixel_art: bool, factor: u32) {
         let texture = Texture::new(image, pixel_art);
-        self.textures.insert((path.to_string(), pixel_art), texture);
+        self.textures
+            .insert((path.to_string(), pixel_art), (texture, factor));
     }
 
     fn get(&self, path: &str, pixel_art: bool) -> Option<&Arc<Texture>> {
-        self.textures.get(&(path.to_string(), pixel_art))
+        self.textures
+            .get(&(path.to_string(), pixel_art))
+            .map(|t| &t.0)
+    }
+
+    /// How many times the size `level` gives it the image `path` is.
+    fn factor(&self, path: &str, pixel_art: bool) -> u32 {
+        self.textures
+            .get(&(path.to_string(), pixel_art))
+            .map_or(1, |t| t.1)
+    }
+
+    /// This art with the pixel-art images of `level`'s layers that
+    /// `replacements` has pictures for replaced: tiles in tilesets, and
+    /// other images whole. Images with normal maps are kept as they are.
+    /// `None` when nothing is replaced. Replacements that don't fit are
+    /// added to `problems`.
+    pub fn replaced(
+        &self,
+        level: &Level,
+        replacements: &Replacements,
+        problems: &mut Vec<String>,
+    ) -> Option<LayerArt> {
+        let mut art = LayerArt {
+            textures: self.textures.clone(),
+            dimmed: Arc::default(),
+        };
+        let mut any = false;
+        let mut done = std::collections::BTreeSet::new();
+        for layer in level.layers.iter().filter(|l| l.pixel_art) {
+            for (path, normals) in images(layer) {
+                if normals.is_some() || !done.insert(path) {
+                    continue;
+                }
+                let Some(texture) = self.get(path, true) else {
+                    continue;
+                };
+                let image = &texture.levels[0];
+                let made = match &layer.content {
+                    LayerContent::Tiles(tiles) => {
+                        replace_tileset(image, &tiles.tileset, replacements, problems)
+                    }
+                    _ => replace_image(image, replacements, problems),
+                };
+                if let Some((image, factor)) = made {
+                    art.insert_scaled(path, image, true, factor);
+                    any = true;
+                }
+            }
+        }
+        any.then_some(art)
     }
 
     fn check(&self, level: &Level) -> Result<(), String> {
@@ -167,8 +230,8 @@ impl LayerArt {
                 (offset.0 - origin.0 * parallax.0) as f32,
                 (offset.1 - origin.1 * parallax.1) as f32,
             );
-            let look = Look {
-                scale: layer.scale as f32,
+            let look = |path: &str| Look {
+                scale: (layer.scale * self.factor(path, layer.pixel_art)) as f32,
                 opacity: (layer.opacity.clamp(0.0, 1.0) * 255.0).round() as u8,
                 sway: layer.sway,
                 time,
@@ -187,6 +250,7 @@ impl LayerArt {
                         texture: &texture,
                         normals: normals.as_ref(),
                     };
+                    let look = look(path);
                     let lean = look.lean(offset.0, texture.height() as f32 / look.scale);
                     draw_image(surface, art, look, lean, at, (*repeat_x, *repeat_y));
                 }
@@ -199,7 +263,15 @@ impl LayerArt {
                         texture: &texture,
                         normals: normals.as_ref(),
                     };
-                    draw_tiles(surface, art, look, tiles, at);
+                    let factor = self.factor(&set.image, layer.pixel_art);
+                    let set = Tileset {
+                        tile_width: set.tile_width * factor,
+                        tile_height: set.tile_height * factor,
+                        margin: set.margin * factor,
+                        spacing: set.spacing * factor,
+                        ..set.clone()
+                    };
+                    draw_tiles(surface, art, look(&set.image), &set, tiles, at);
                 }
                 LayerContent::Props(props) => {
                     for prop in props {
@@ -211,7 +283,7 @@ impl LayerArt {
                             texture: &texture,
                             normals: normals.as_ref(),
                         };
-                        draw_prop(surface, art, look, prop, at);
+                        draw_prop(surface, art, look(&prop.image), prop, at);
                     }
                 }
             }
@@ -355,11 +427,11 @@ fn draw_tiles(
     surface: &mut dyn Surface,
     Art { texture, normals }: Art,
     look: Look,
+    set: &Tileset,
     tiles: &TileLayer,
     at: (f32, f32),
 ) {
     let scale = look.scale;
-    let set = &tiles.tileset;
     let image = &texture.levels[0];
     let (tw, th) = (
         set.tile_width as f32 / scale,

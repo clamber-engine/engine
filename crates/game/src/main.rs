@@ -337,6 +337,7 @@ fn load(options: &Options, saved: Option<&str>) -> Result<(Session, PathBuf), St
     session.level_path = level_path.clone();
     session.bundled = Some(level_path.clone());
     session.packs_dir = clamber_import::packs_dir();
+    session.art_dir = clamber_import::art_dir();
     session.credits = Credits::load(&content_dir().join(DEFAULT_CREDITS)).unwrap_or_else(|e| {
         report::warn(e);
         Credits::default()

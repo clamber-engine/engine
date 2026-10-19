@@ -96,6 +96,11 @@ impl Cast {
     /// earlier folder, so a pack's sheets stand in for the engine's own
     /// and the engine's draw what the pack has no sheet for.
     pub fn load_layered(dirs: &[&Path]) -> Result<Cast, String> {
+        Ok(Cast::new(Cast::load_sheets(dirs)?.into_iter().collect()))
+    }
+
+    /// The sheets [`Cast::load_layered`] makes a cast of, by name.
+    pub fn load_sheets(dirs: &[&Path]) -> Result<BTreeMap<String, SpriteSheet>, String> {
         let mut sheets = BTreeMap::new();
         for dir in dirs {
             let err = |e: std::io::Error| format!("{}: {e}", dir.display());
@@ -112,7 +117,7 @@ impl Cast {
                 sheets.insert(name.into_owned(), sheet);
             }
         }
-        Ok(Cast::new(sheets.into_iter().collect()))
+        Ok(sheets)
     }
 
     /// Whether the player has a sheet to be drawn with.
