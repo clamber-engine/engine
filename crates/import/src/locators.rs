@@ -22,6 +22,10 @@ pub enum Data {
     PaletteSet,
     PictureTable,
     FrameTable,
+    FirstLeadingPalette,
+    FirstFollowingPalette,
+    SecondLeadingPalette,
+    SecondFollowingPalette,
     PlacementList,
     CollectibleGroups,
     CollectibleShapes,
@@ -56,7 +60,7 @@ pub enum Data {
 }
 
 impl Data {
-    pub const ALL: [Data; 42] = [
+    pub const ALL: [Data; 46] = [
         Data::SampleTable,
         Data::SharedSampleList,
         Data::SampleSetTable,
@@ -68,6 +72,10 @@ impl Data {
         Data::PaletteSet,
         Data::PictureTable,
         Data::FrameTable,
+        Data::FirstLeadingPalette,
+        Data::FirstFollowingPalette,
+        Data::SecondLeadingPalette,
+        Data::SecondFollowingPalette,
         Data::PlacementList,
         Data::CollectibleGroups,
         Data::CollectibleShapes,
@@ -115,6 +123,14 @@ impl Data {
             Data::PaletteSet => "Level graphics: the first level's palette set",
             Data::PictureTable => "Level graphics: the first level's picture table",
             Data::FrameTable => "Sprite frames: the frame table",
+            Data::FirstLeadingPalette => "Sprite palettes: the first character's leading palette",
+            Data::FirstFollowingPalette => {
+                "Sprite palettes: the first character's following palette"
+            }
+            Data::SecondLeadingPalette => "Sprite palettes: the second character's leading palette",
+            Data::SecondFollowingPalette => {
+                "Sprite palettes: the second character's following palette"
+            }
             Data::PlacementList => "Placements: the first level's placement list",
             Data::CollectibleGroups => "Single collectibles: the first level's group list",
             Data::CollectibleShapes => "Single collectibles: shape table",
@@ -168,6 +184,10 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
         ("title-1", Data::PaletteSet) => (0xF9, 0xA1DC),
         ("title-1", Data::PictureTable) => (0xD9, 0xA3C0),
         ("title-1", Data::FrameTable) => (0xFB, 0xCC9C),
+        ("title-1", Data::FirstLeadingPalette) => (0xFC, 0x849A),
+        ("title-1", Data::FirstFollowingPalette) => (0xFC, 0x84B8),
+        ("title-1", Data::SecondLeadingPalette) => (0xFC, 0x8422),
+        ("title-1", Data::SecondFollowingPalette) => (0xFC, 0x8440),
         ("title-1", Data::PlacementList) => (0xFD, 0x95DC),
         ("title-1", Data::CollectibleGroups) => (0xF8, 0xC2ED),
         ("title-1", Data::CollectibleShapes) => (0xF8, 0xD75D),
