@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use clamber_level::{
-    Area, Band, Depth, Dir, Fixed, LayerContent, Level, Lighting, Prop, Rect, Shape, Sway, Tile,
-    Vec2, tiled,
+    Area, Band, Depth, Dim, Dir, Fixed, LayerContent, Level, Lighting, Prop, Rect, Shape, Sway,
+    Tile, Vec2, tiled,
 };
 use clamber_pack::{Adjust, Param};
 
@@ -39,7 +39,10 @@ fn reads_every_part() {
     assert_eq!(l.layers[2].offset, v(0.0, -32.0));
     assert_eq!((l.layers[0].scale, l.layers[0].pixel_art), (1, false));
     assert_eq!((l.layers[1].scale, l.layers[1].pixel_art), (4, true));
-    assert_eq!((l.layers[0].dim, l.layers[1].dim), (false, true));
+    assert_eq!(
+        (&l.layers[0].dim, &l.layers[1].dim),
+        (&Dim::None, &Dim::Palette)
+    );
     let LayerContent::Tiles(tiles) = &l.layers[1].content else {
         panic!("expected tiles");
     };
@@ -408,6 +411,27 @@ fn format_errors() {
             .to_string()
             .contains("start: is outside the level")
     );
+}
+
+/// A layer's dimming and darkening, read and saved again.
+#[test]
+fn reads_and_saves_how_layers_dim() {
+    let src = "format = 1\nsize = [100, 100]\nstart = [10, 10]\n\
+               [[layers]]\nname = \"sky\"\nimage = \"sky.png\"\ndim = { night = \"night.png\" }\n\
+               [[layers]]\nname = \"far\"\nimage = \"far.png\"\ndim = true\ndarker = true\n\
+               [[layers]]\nname = \"near\"\nimage = \"near.png\"\ndim = false\n";
+    let l = Level::from_toml_str(src, "x.level").unwrap();
+    let dims: Vec<_> = l.layers.iter().map(|l| (&l.dim, l.darker)).collect();
+    let night = Dim::Night("night.png".into());
+    assert_eq!(
+        dims,
+        [(&night, false), (&Dim::Palette, true), (&Dim::None, false)]
+    );
+    let back = Level::from_toml_str(&l.to_toml_string(), "saved").unwrap();
+    assert_eq!(back, l);
+    let err =
+        level_err("[[layers]]\nname = \"sky\"\nimage = \"a.png\"\ndim = { day = \"b.png\" }\n");
+    assert!(err.contains("`true`, `false` or `{ night"), "{err}");
 }
 
 /// A scene's timing and where play goes on after it, read, checked and

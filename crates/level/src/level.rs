@@ -213,9 +213,12 @@ pub struct Layer {
     /// Draw the image with sharp texel edges at any size, rather than
     /// filtered smoothly with mipmaps.
     pub pixel_art: bool,
-    /// The layer's colours change with the level's dimming, when a preset
-    /// has one.
-    pub dim: bool,
+    /// How the layer's colours change with the level's dimming, when a
+    /// preset has one.
+    pub dim: Dim,
+    /// The layer is drawn darker than its images: each channel, worked at
+    /// 5 bits, 4 less (at least 0) and then halved, after any dimming.
+    pub darker: bool,
     /// How opaque the layer is drawn, from 0 (not at all) to 1 (as its
     /// images are), so leaves in front of the player don't hide what's
     /// behind them.
@@ -229,6 +232,21 @@ pub struct Layer {
     /// How much further the layer is drawn on every other step: on the
     /// pictures after the level's odd steps, counting its first as 0.
     pub alternate: Vec2,
+}
+
+/// How a layer's colours change with the level's dimming.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Dim {
+    /// They don't.
+    #[default]
+    None,
+    /// Each colour changes as the preset's dimming says.
+    Palette,
+    /// Each texel goes in equal steps, one a step of the dimming, to the
+    /// colour of the same place in this image, relative to the level
+    /// file. Rounded down at 5 bits a channel, it shows that colour
+    /// exactly after the last step.
+    Night(String),
 }
 
 /// Rows of an image layer that scroll across together.
@@ -638,12 +656,30 @@ struct LayerFile {
     #[serde(default)]
     pixel_art: bool,
     #[serde(default)]
-    dim: bool,
+    dim: DimFile,
+    #[serde(default)]
+    darker: bool,
     opacity: Option<N>,
     sway: Option<SwayFile>,
     #[serde(default)]
     bands: Vec<BandFile>,
     alternate: Option<[N; 2]>,
+}
+
+/// `dim = true`, or `dim = { night = "image.png" }`.
+#[derive(Default, Deserialize)]
+#[serde(untagged, expecting = "`true`, `false` or `{ night = \"image.png\" }`")]
+enum DimFile {
+    #[default]
+    None,
+    Palette(bool),
+    Night(NightFile),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NightFile {
+    night: String,
 }
 
 #[derive(Deserialize)]
@@ -1260,7 +1296,12 @@ impl Reader<'_> {
             content,
             scale: l.scale,
             pixel_art: l.pixel_art,
-            dim: l.dim,
+            dim: match l.dim {
+                DimFile::None | DimFile::Palette(false) => Dim::None,
+                DimFile::Palette(true) => Dim::Palette,
+                DimFile::Night(n) => Dim::Night(n.night),
+            },
+            darker: l.darker,
             opacity,
             sway,
             bands,
@@ -1666,8 +1707,19 @@ impl Level {
             if l.pixel_art {
                 lt.insert("pixel_art".into(), Value::Boolean(true));
             }
-            if l.dim {
-                lt.insert("dim".into(), Value::Boolean(true));
+            match &l.dim {
+                Dim::None => {}
+                Dim::Palette => {
+                    lt.insert("dim".into(), Value::Boolean(true));
+                }
+                Dim::Night(night) => {
+                    let mut dt = Table::new();
+                    dt.insert("night".into(), Value::String(night.clone()));
+                    lt.insert("dim".into(), Value::Table(dt));
+                }
+            }
+            if l.darker {
+                lt.insert("darker".into(), Value::Boolean(true));
             }
             if l.opacity != 1.0 {
                 lt.insert("opacity".into(), float(l.opacity));

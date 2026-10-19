@@ -19,7 +19,7 @@ use clamber_import::{
     installed, skipped_summary,
 };
 use clamber_input::{Action, Actions, Frame};
-use clamber_level::{Fixed, Level, Vec2};
+use clamber_level::{Dim, Fixed, Level, Vec2};
 use clamber_sim::{Event, InputFrame, Outcome, World, generic_feel, step};
 use clamber_sprite::decode_png;
 
@@ -379,6 +379,7 @@ fn writes_the_level_and_its_images() {
         "first-tiles.png",
         "first-backdrop.png",
         "first-horizon.png",
+        "first-horizon-night.png",
         "first-music.ogg",
     ] {
         assert!(dir.join(file).is_file(), "no {file}");
@@ -400,6 +401,12 @@ fn writes_the_level_and_its_images() {
     assert_eq!((horizon.width, horizon.height), (256, 48));
     assert_eq!(horizon.get(7, 0), [0; 4]);
     assert_eq!(horizon.get(8, 7), [0, 255, 0, 255]);
+    // The horizon goes to black during the dimming, and the far layer
+    // is drawn darker.
+    let night = Dim::Night("first-horizon-night.png".into());
+    assert_eq!(level.layers[1].dim, night);
+    assert_eq!(image("first-horizon-night.png").data, [[0, 0, 0, 255]]);
+    assert!(level.layers[2].darker && !level.layers[1].darker);
     assert!(level.surfaces.contains_key("normal"));
     assert!(!level.collision.colliders.is_empty());
 }

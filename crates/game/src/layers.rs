@@ -5,9 +5,9 @@
 //! stays put on screen. Its images cover one world unit per `scale`
 //! texels, filtered smoothly unless the layer is pixel art, and are lit
 //! by the level's lights if they have a normal map. A layer that dims is
-//! drawn in the colours of the dimming's step (`crate::dim`). A layer
-//! that sways leans each image about its bottom edge, by the time alone,
-//! so it never touches the simulation.
+//! drawn in the colours of the dimming's step, and a darker layer darker
+//! still (`crate::dim`). A layer that sways leans each image about its
+//! bottom edge, by the time alone, so it never touches the simulation.
 //!
 //! An image can be a whole number of times its size in the level file
 //! says, as a replacement art pack's are ([`LayerArt::replaced`]): it's
@@ -20,12 +20,12 @@ use std::sync::{Arc, Mutex};
 
 use clamber_import::{Replacements, replace_image, replace_tileset};
 use clamber_level::{
-    Depth, Fixed, Layer, LayerContent, Level, Prop, Sway, Tile, TileLayer, Tileset,
+    Depth, Dim, Fixed, Layer, LayerContent, Level, Prop, Sway, Tile, TileLayer, Tileset,
 };
 use clamber_sprite::{Rect, RgbaImage, decode_png};
 
 use crate::camera::point;
-use crate::dim::dim_image;
+use crate::dim::{darker_image, dim_image, toward_image};
 use crate::surface::{Flip, Quad, Surface, Texture};
 
 /// The images a level's layers draw, by the path the level gives them and
@@ -34,12 +34,40 @@ use crate::surface::{Flip, Quad, Surface, Texture};
 pub struct LayerArt {
     /// With how many times the size the level gives it each one is.
     textures: BTreeMap<(String, bool), (Arc<Texture>, u32)>,
-    /// Images in the dimming's colours, made as they're first drawn, by
-    /// path, pixel art or not, step and steps.
+    /// Images in the dimming's colours or darker, made as they're first
+    /// drawn, by path, pixel art or not, how and at which step.
     dimmed: Arc<Mutex<BTreeMap<DimKey, Arc<Texture>>>>,
 }
 
-type DimKey = (String, bool, (u32, u32));
+type DimKey = (String, bool, Shade);
+
+/// How a layer's image is coloured on a picture: its dimming, the step of
+/// how many, and whether it's darker.
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+struct Shade {
+    night: Option<String>,
+    step: (u32, u32),
+    darker: bool,
+}
+
+impl Shade {
+    fn of(layer: &Layer, step: (u32, u32)) -> Shade {
+        let step = match layer.dim {
+            Dim::None => (0, 0),
+            _ if step.0 == 0 => (0, 0),
+            _ => step,
+        };
+        let night = match &layer.dim {
+            Dim::Night(night) if step.0 > 0 => Some(night.clone()),
+            _ => None,
+        };
+        Shade {
+            night,
+            step,
+            darker: layer.darker,
+        }
+    }
+}
 
 impl LayerArt {
     /// Reads every image `level`'s layers use, relative to `dir`, the
@@ -48,9 +76,14 @@ impl LayerArt {
         let mut art = LayerArt::default();
         let mut decoded: BTreeMap<&str, RgbaImage> = BTreeMap::new();
         for layer in &level.layers {
+            let night = match &layer.dim {
+                Dim::Night(night) => Some(night.as_str()),
+                _ => None,
+            };
             for path in images(layer)
                 .into_iter()
                 .flat_map(|(image, normals)| [Some(image), normals])
+                .chain([night])
                 .flatten()
             {
                 if art.get(path, layer.pixel_art).is_some() {
@@ -176,17 +209,31 @@ impl LayerArt {
         Ok(())
     }
 
-    /// The image `path` in the colours of step `dim.0` of `dim.1` of the
-    /// dimming.
-    fn dimmed(&self, path: &str, pixel_art: bool, dim: (u32, u32)) -> Option<Arc<Texture>> {
+    /// The image `path` coloured as `shade` says.
+    fn dimmed(&self, path: &str, pixel_art: bool, shade: Shade) -> Option<Arc<Texture>> {
         let texture = self.get(path, pixel_art)?;
-        if dim.0 == 0 {
+        if shade == Shade::default() {
             return Some(texture.clone());
         }
+        let night = match &shade.night {
+            Some(night) => Some(self.get(night, pixel_art)?.clone()),
+            None => None,
+        };
         let mut dimmed = self.dimmed.lock().unwrap_or_else(|e| e.into_inner());
-        let key = (path.to_string(), pixel_art, dim);
+        let (step, steps) = shade.step;
+        let darker = shade.darker;
+        let key = (path.to_string(), pixel_art, shade);
         let made = dimmed.entry(key).or_insert_with(|| {
-            Texture::new(dim_image(&texture.levels[0], dim.0, dim.1), pixel_art)
+            let image = &texture.levels[0];
+            let mut image = match (&night, step) {
+                (_, 0) => image.clone(),
+                (Some(night), _) => toward_image(image, &night.levels[0], step, steps),
+                (None, _) => dim_image(image, step, steps),
+            };
+            if darker {
+                image = darker_image(&image);
+            }
+            Texture::new(image, pixel_art)
         });
         Some(made.clone())
     }
@@ -209,9 +256,9 @@ impl LayerArt {
         let time = viewing.time;
         let kept = level.layers.iter().enumerate().filter(|(i, l)| keep(*i, l));
         for (_, layer) in kept {
-            let dim = if layer.dim { viewing.dim } else { (0, 0) };
+            let shade = Shade::of(layer, viewing.dim);
             let art = |(image, normals): (&str, Option<&str>)| {
-                let texture = self.dimmed(image, layer.pixel_art, dim)?;
+                let texture = self.dimmed(image, layer.pixel_art, shade.clone())?;
                 let normals = normals.and_then(|p| self.get(p, layer.pixel_art)).cloned();
                 Some((texture, normals))
             };
@@ -1012,7 +1059,10 @@ mod tests {
              dim = true\n\
              [[layers]]\nname = \"near\"\nimage = \"b.png\"\npixel_art = true\n",
         );
-        assert!(level.layers[0].dim && !level.layers[1].dim);
+        assert_eq!(
+            (&level.layers[0].dim, &level.layers[1].dim),
+            (&Dim::Palette, &Dim::None)
+        );
         let colour = [165, 99, 49, 255];
         let mut solid = RgbaImage::new(4, 2);
         solid.data.fill(colour);
@@ -1037,5 +1087,46 @@ mod tests {
         assert_eq!(shown((16, 32)), (before, dimmed));
         // Again, from the images already made.
         assert_eq!(shown((16, 32)), (before, dimmed));
+    }
+    #[test]
+    fn layers_dim_to_their_night_image_and_darker_layers_are_darker() {
+        let level = level(
+            "[[layers]]\nname = \"sky\"\nimage = \"a.png\"\npixel_art = true\nrepeat = [true, true]\n\
+             dim = { night = \"night.png\" }\n\
+             [[layers]]\nname = \"far\"\nimage = \"b.png\"\npixel_art = true\n\
+             dim = true\ndarker = true\n",
+        );
+        assert_eq!(level.layers[0].dim, Dim::Night("night.png".into()));
+        assert!(level.layers[1].darker && !level.layers[0].darker);
+        let colour = [165, 99, 49, 255];
+        let mut solid = RgbaImage::new(4, 2);
+        solid.data.fill(colour);
+        let mut night = RgbaImage::new(1, 1);
+        night.data.fill([0, 0, 25, 255]);
+        let mut art = LayerArt::default();
+        art.insert("a.png", solid.clone(), true);
+        art.insert("b.png", solid, true);
+        art.insert("night.png", night.clone(), true);
+        let shown = |dim| {
+            let mut canvas = Canvas::new(8, 6);
+            let viewing = Viewing {
+                dim,
+                ..Viewing::default()
+            };
+            art.draw(&mut canvas, &level, Depth::Back, &viewing);
+            (canvas.get(7, 5).unwrap(), canvas.get(0, 0).unwrap())
+        };
+        let colour_of = |[r, g, b, _]: Rgba| rgb(r, g, b);
+        let darker = |c| colour_of(crate::dim::darker(c));
+        assert_eq!(shown((0, 32)), (colour_of(colour), darker(colour)));
+        let sky = colour_of(crate::dim::toward(colour, night.data[0], 16, 32));
+        let far = darker(crate::dim::dim(colour, 16, 32));
+        assert_eq!(shown((16, 32)), (sky, far));
+        assert_eq!(shown((32, 32)), (colour_of(night.data[0]), far_end(colour)));
+
+        fn far_end(colour: Rgba) -> u32 {
+            let [r, g, b, _] = crate::dim::darker(crate::dim::dim(colour, 32, 32));
+            rgb(r, g, b)
+        }
     }
 }

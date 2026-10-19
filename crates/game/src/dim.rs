@@ -5,8 +5,21 @@
 //! dimming. Over the dimming's steps, green goes in equal steps to `M`,
 //! 5/8 of itself, blue in equal steps to the same `M`, and red down to
 //! about 5/16 of itself, all rounded down at every step as the spec says.
+//!
+//! A layer can dim another way, each texel going in equal steps to a
+//! night colour ([`toward`]), and can be drawn darker ([`darker`]).
 
 use clamber_sprite::{Rgba, RgbaImage};
+
+/// An 8-bit channel at 5 bits.
+fn narrow(v: u8) -> i64 {
+    (i64::from(v) * 31 + 127) / 255
+}
+
+/// A 5-bit channel at 8 bits, as the importer writes it.
+fn wide(c: i64) -> u8 {
+    ((c * 255 + 15) / 31) as u8
+}
 
 /// `colour` after `step` of `steps`, worked at 5 bits a channel, keeping
 /// its alpha.
@@ -17,21 +30,79 @@ pub fn dim(colour: Rgba, step: u32, steps: u32) -> Rgba {
     }
     let k = i64::from(step.min(steps));
     let n = i64::from(steps);
-    let [r, g, b] = [r, g, b].map(|v| (i64::from(v) * 31 + 127) / 255);
+    let [r, g, b] = [r, g, b].map(narrow);
     let m = 5 * g / 8;
     // With 32 steps red goes down by ⌊11R / 2⌋ / 256 a step.
     let red = (8 * n * r - k * (11 * r / 2)).div_euclid(8 * n);
     let toward = |c: i64| c + (k * (m - c)).div_euclid(n);
-    let [r, g, b] = [red, toward(g), toward(b)].map(|c| ((c * 255 + 15) / 31) as u8);
+    let [r, g, b] = [red, toward(g), toward(b)].map(wide);
+    [r, g, b, a]
+}
+
+/// `colour` after `step` of `steps` going in equal steps to `night`,
+/// worked at 5 bits a channel and rounded down, keeping its alpha
+/// (`spec/behavior/dimming.md`, "The backdrop and the horizon layer").
+pub fn toward(colour: Rgba, night: Rgba, step: u32, steps: u32) -> Rgba {
+    let [r, g, b, a] = colour;
+    if step == 0 || steps == 0 || a == 0 {
+        return colour;
+    }
+    let k = i64::from(step.min(steps));
+    let n = i64::from(steps);
+    let channel = |c: u8, to: u8| {
+        let (c, to) = (narrow(c), narrow(to));
+        wide(c + (k * (to - c)).div_euclid(n))
+    };
+    [
+        channel(r, night[0]),
+        channel(g, night[1]),
+        channel(b, night[2]),
+        a,
+    ]
+}
+
+/// `colour` drawn darker: each channel, worked at 5 bits, 4 less (at
+/// least 0) and then halved, keeping its alpha (`spec/formats/graphics.md`,
+/// "The far layer's colours").
+pub fn darker(colour: Rgba) -> Rgba {
+    let [r, g, b, a] = colour;
+    let [r, g, b] = [r, g, b].map(|v| wide((narrow(v) - 4).max(0) / 2));
     [r, g, b, a]
 }
 
 /// `image` after `step` of `steps`.
 pub fn dim_image(image: &RgbaImage, step: u32, steps: u32) -> RgbaImage {
+    map_image(image, |_, _, c| dim(c, step, steps))
+}
+
+/// `image` after `step` of `steps` going to `night`, each texel to the
+/// texel at the same place in it, whatever its size.
+pub fn toward_image(image: &RgbaImage, night: &RgbaImage, step: u32, steps: u32) -> RgbaImage {
+    if night.width == 0 || night.height == 0 {
+        return image.clone();
+    }
+    let at = |x: u32, y: u32| {
+        let nx = u64::from(x) * u64::from(night.width) / u64::from(image.width.max(1));
+        let ny = u64::from(y) * u64::from(night.height) / u64::from(image.height.max(1));
+        night.get(nx as u32, ny as u32)
+    };
+    map_image(image, |x, y, c| toward(c, at(x, y), step, steps))
+}
+
+/// `image` drawn darker ([`darker`]).
+pub fn darker_image(image: &RgbaImage) -> RgbaImage {
+    map_image(image, |_, _, c| darker(c))
+}
+
+fn map_image(image: &RgbaImage, f: impl Fn(u32, u32, Rgba) -> Rgba) -> RgbaImage {
+    let width = image.width.max(1);
     RgbaImage {
         width: image.width,
         height: image.height,
-        data: image.data.iter().map(|&c| dim(c, step, steps)).collect(),
+        data: (0..)
+            .zip(&image.data)
+            .map(|(i, &c)| f(i % width, i / width, c))
+            .collect(),
     }
 }
 
@@ -79,6 +150,51 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn list_entries_go_to_their_night_colour() {
+        // dimming.md, "Example (made-up colours)": a list entry.
+        let (day, night) = (colour([20, 12, 6]), colour([0, 0, 3]));
+        for (step, after) in [
+            (0, [20, 12, 6]),
+            (1, [19, 11, 5]),
+            (2, [18, 11, 5]),
+            (16, [10, 6, 4]),
+            (31, [0, 0, 3]),
+            (32, [0, 0, 3]),
+        ] {
+            assert_eq!(toward(day, night, step, 32), colour(after), "step {step}");
+        }
+    }
+
+    #[test]
+    fn the_far_layer_dims_then_is_darker() {
+        // dimming.md, "Example (made-up colours)": a far-layer pixel.
+        let c = colour([20, 12, 6]);
+        for (step, after) in [
+            (0, [8, 4, 1]),
+            (1, [7, 3, 1]),
+            (16, [4, 2, 1]),
+            (32, [1, 1, 1]),
+        ] {
+            assert_eq!(darker(dim(c, step, 32)), colour(after), "step {step}");
+        }
+        // graphics.md, "The far layer's colours".
+        assert_eq!(darker(colour([31, 10, 3])), colour([13, 3, 0]));
+    }
+
+    #[test]
+    fn night_images_of_any_size_cover_the_image() {
+        let mut image = RgbaImage::new(2, 4);
+        image.data.fill(colour([20, 12, 6]));
+        image.data[0][3] = 0;
+        let mut night = RgbaImage::new(1, 2);
+        night.data = vec![colour([0, 0, 3]), colour([0, 0, 0])];
+        let after = toward_image(&image, &night, 32, 32);
+        assert_eq!(after.data[0], image.data[0], "clear texels stay");
+        assert_eq!(after.data[1..4], [colour([0, 0, 3]); 3]);
+        assert_eq!(after.data[4..], [colour([0, 0, 0]); 4]);
     }
 
     #[test]

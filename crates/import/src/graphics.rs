@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 
 use clamber_fixed::Fixed;
-use clamber_level::{Band, Depth, Layer, LayerContent, Rgb, Tile, TileLayer, Tileset, Vec2};
+use clamber_level::{Band, Depth, Dim, Layer, LayerContent, Rgb, Tile, TileLayer, Tileset, Vec2};
 use clamber_sprite::{Rgba, RgbaImage, encode_png};
 
 use crate::COLUMN_BANDS;
@@ -592,7 +592,9 @@ impl Background {
     /// tileset holding each tile in each palette row it's drawn with. The
     /// far layer is a picture repeating both ways, at half the view's
     /// speed across and a quarter up and down ("Where the far layer is"),
-    /// in its darker colours. The backdrop and the horizon layer stay at
+    /// in its palette colours and drawn darker ("The far layer's
+    /// colours"), so it dims as `spec/behavior/dimming.md` says ("The far
+    /// layer"). The backdrop and the horizon layer stay at
     /// the same rows of the picture; the backdrop's rows are a row lower
     /// after odd frames ("The backdrop"), and the horizon layer's bands
     /// move across at their own speeds.
@@ -618,8 +620,10 @@ impl Background {
             // Picture row j shows far picture row ⌊T / 4⌋ + 1 + j.
             Vec2::ints(0, -1),
         );
-        let mut background =
-            Background::grid(grid, tiles, palettes, &palettes.far(), far, place, prefix)?;
+        let mut background = Background::grid(grid, tiles, palettes, far, place, prefix)?;
+        for layer in &mut background.layers {
+            layer.darker = layer.name.starts_with("far");
+        }
         if let Some(sky) = sky {
             let mut layers = Background::sky(sky, palettes, prefix, &mut background.images);
             layers.append(&mut background.layers);
@@ -660,6 +664,10 @@ impl Background {
             },
         );
         backdrop.alternate = Vec2::ints(0, 1);
+        // The backdrop's entries go to night colours of their own, but
+        // where they're stored isn't covered yet
+        // (`spec/behavior/dimming.md`, "Not covered"), so until then it
+        // dims as the palette rows do (#334).
 
         let horizon = format!("{prefix}horizon.png");
         let image = sky.block.picture(palettes, &sky.horizon);
@@ -675,6 +683,13 @@ impl Background {
                 repeat_y: false,
             },
         );
+        // Every colour of the horizon goes to black ("The backdrop and the
+        // horizon layer").
+        let night = format!("{prefix}horizon-night.png");
+        let mut black = RgbaImage::new(1, 1);
+        black.set(0, 0, [0, 0, 0, 255]);
+        images.insert(night.clone(), encode_png(&black));
+        horizon.dim = Dim::Night(night);
         horizon.bands = (0..)
             .zip(HORIZON_BANDS)
             .map(|(k, rows)| Band {
@@ -728,8 +743,7 @@ impl Background {
         );
         let squares = 0..SCENE_FAR_COLUMNS * CELL_SQUARES;
         let place = (Vec2::new(half, half), far);
-        let mut background =
-            Background::grid(grid, tiles, palettes, palettes, squares, place, prefix)?;
+        let mut background = Background::grid(grid, tiles, palettes, squares, place, prefix)?;
 
         let side = SCREEN_SQUARES as u32 * TILE;
         let mut image = RgbaImage::new(side, side);
@@ -770,7 +784,6 @@ impl Background {
         grid: &GridPicture,
         tiles: &TileSet,
         palettes: &PaletteSet,
-        far_palettes: &PaletteSet,
         far: std::ops::Range<usize>,
         place: (Vec2, Vec2),
         prefix: &str,
@@ -788,7 +801,7 @@ impl Background {
             }
             let name = if raised { "far-raised" } else { "far" };
             let path = format!("{prefix}{name}.png");
-            let image = draw(grid, tiles, far_palettes, far.clone(), FAR_BANDS, raised);
+            let image = draw(grid, tiles, palettes, far.clone(), FAR_BANDS, raised);
             images.insert(path.clone(), encode_png(&image));
             (if raised { &mut front } else { &mut back }).push(layer(
                 name,
@@ -969,7 +982,8 @@ fn layer(name: &str, parallax: Vec2, offset: Vec2, content: LayerContent) -> Lay
         pixel_art: true,
         // Its colours are the background's rows, which the dimming
         // changes (`spec/behavior/dimming.md`).
-        dim: true,
+        dim: Dim::Palette,
+        darker: false,
         opacity: 1.0,
         sway: None,
         bands: Vec::new(),
@@ -1279,13 +1293,14 @@ mod tests {
             );
             let image = rgba(&background.images[path]);
             assert_eq!((image.width, image.height), (512, 256));
-            // In the darker colours ("The far layer's colours").
-            let darker = palettes.far();
+            // In the palette colours, drawn darker ("The far layer's
+            // colours").
+            assert!(l.darker && l.dim == Dim::Palette, "{name}");
             for y in 0..256 {
                 for x in 0..512 {
                     let entry = grid.entry(4 + x as usize / 8, y as usize / 8);
                     let want = if entry.raised() == raised {
-                        shown(&tiles, &darker, entry, x % 8, y % 8)
+                        shown(&tiles, &palettes, entry, x % 8, y % 8)
                     } else {
                         [0; 4]
                     };
