@@ -1,7 +1,11 @@
 //! Draws a frame's [`DrawList`] through the GPU at the window's own
 //! resolution: the view scaled to fit at its own shape, letterboxed in
 //! black, with smoothly filtered textures drawn from their mipmaps and
-//! pixel art kept sharp, quads on whole pixels, and edges smoothed by multisampling. Quads with
+//! pixel art kept sharp, and edges smoothed by multisampling. On the
+//! original's pixel grid quads are on whole pixels; at the window's
+//! resolution they're where they are, between pixels too, and pixel art
+//! is sampled sharp but blended across texel edges so it moves smoothly
+//! (#304). Quads with
 //! normal maps are lit in the shader just as the software canvas lights
 //! them. Frames are presented in step with the display's refresh with
 //! vsync or VRR.
@@ -25,7 +29,9 @@ use crate::surface::{
 /// are premultiplied by alpha; `flash` replaces a texel's colour with the
 /// vertex colour, keeping its alpha times the vertex's. `lit` says whether to light the
 /// texel by its normal (`w`), and how the quad is flipped (`xyz`, see
-/// [`crate::surface::normal`]); [`Lighting::at`] is the same sum.
+/// [`crate::surface::normal`]); [`Lighting::at`] is the same sum. `texels`
+/// is how the texture is sampled ([`Texels`]), with a sampler that
+/// filters linearly.
 const SHADER: &str = "
 struct View {
     size: vec2<f32>,
@@ -64,6 +70,7 @@ struct In {
     @location(3) bounds: vec4<f32>,
     @location(4) flash: f32,
     @location(5) lit: vec4<f32>,
+    @location(6) texels: f32,
 }
 
 struct Out {
@@ -74,6 +81,7 @@ struct Out {
     @location(3) flash: f32,
     @location(4) at: vec2<f32>,
     @location(5) lit: vec4<f32>,
+    @location(6) texels: f32,
 }
 
 @vertex
@@ -87,6 +95,7 @@ fn vertex(in: In) -> Out {
     out.flash = in.flash;
     out.at = in.position;
     out.lit = in.lit;
+    out.texels = in.texels;
     return out;
 }
 
@@ -118,7 +127,22 @@ fn decode(c: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fragment(in: Out) -> @location(0) vec4<f32> {
-    let uv = clamp(in.uv, in.bounds.xy, in.bounds.zw);
+    let size = vec2<f32>(textureDimensions(image));
+    let texels = in.uv * size;
+    // Texels to a pixel along each axis.
+    let across = max(fwidth(texels), vec2<f32>(1e-6));
+    var at = texels;
+    if in.texels > 1.5 {
+        // Sharp, but blended across a pixel at each edge between texels.
+        let edge = floor(texels + 0.5);
+        at = edge + clamp((texels - edge) / across, vec2<f32>(-0.5), vec2<f32>(0.5));
+    }
+    at = clamp(at, in.bounds.xy * size, in.bounds.zw * size);
+    if in.texels > 0.5 && in.texels < 1.5 {
+        // The nearest texel's centre.
+        at = floor(at) + 0.5;
+    }
+    let uv = at / size;
     var texel = textureSample(image, sampling, uv);
     let encoded = textureSample(normals, sampling, uv);
     if in.lit.w > 0.5 && encoded.a > 0.0 {
@@ -290,7 +314,6 @@ fn open_device(
 /// A texture on the GPU, ready to draw with.
 struct Loaded {
     view: wgpu::TextureView,
-    pixel_art: bool,
     /// The last frame it was drawn in.
     used: u64,
 }
@@ -337,8 +360,23 @@ struct Painter {
     frame: u64,
 }
 
-/// Floats per vertex: position, uv, colour, bounds, flash and lit.
-const FLOATS: usize = 17;
+/// Floats per vertex: position, uv, colour, bounds, flash, lit and
+/// texels.
+const FLOATS: usize = 18;
+
+/// How a vertex's texture is sampled, as the shader's `texels`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Texels {
+    /// Filtered by the sampler: smooth textures, and what's drawn with
+    /// its own sampler.
+    Filtered = 0,
+    /// The nearest texel: pixel art on whole pixels.
+    Nearest = 1,
+    /// Pixel art anywhere: each texel flat, blended with the next across
+    /// a pixel where they meet, so it stays sharp at any scale and moves
+    /// by less than a pixel without texels changing width (#304).
+    Sharp = 2,
+}
 
 /// Bytes of the lighting uniform: four vectors, then each light's two.
 const LIGHTING_BYTES: u64 = (4 + 2 * MAX_LIGHTS as u64) * 16;
@@ -413,7 +451,7 @@ impl Painter {
         });
         let attributes = wgpu::vertex_attr_array![
             0 => Float32x2, 1 => Float32x2, 2 => Float32x4, 3 => Float32x4, 4 => Float32,
-            5 => Float32x4
+            5 => Float32x4, 6 => Float32
         ];
         let pipeline_for = |format, samples| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -583,11 +621,7 @@ impl Painter {
         }
         match upload(&self.device, &self.queue, texture) {
             Some(view) => {
-                let loaded = Loaded {
-                    view,
-                    pixel_art: texture.pixel_art,
-                    used: frame,
-                };
+                let loaded = Loaded { view, used: frame };
                 self.textures.insert(texture.id(), loaded);
                 true
             }
@@ -611,17 +645,14 @@ impl Painter {
         }
         let image = &self.textures[&texture];
         let normals_view = normals.map_or(&self.flat, |n| &self.textures[&n].view);
-        let sampler = if image.pixel_art {
-            &self.sharp
-        } else {
-            &self.smooth
-        };
+        // Pixel art has one level, filtered or not as the shader says
+        // ([`Texels`]).
         let group = bind(
             &self.device,
             &self.texture_layout,
             &image.view,
             normals_view,
-            sampler,
+            &self.smooth,
         );
         self.groups.insert((texture, normals), group);
     }
@@ -631,25 +662,27 @@ impl Painter {
         self.frame += 1;
         let size = (target.width(), target.height());
         let view = (list.view.0 as f32, list.view.1 as f32);
+        // The game view on whole pixels of the original's grid, or at the
+        // window's resolution between pixels too, so it moves smoothly
+        // (#304).
         let mut mesh = Mesh {
-            pixels: match list.pixel_art {
-                true => 1.0,
-                false => letterbox(list.view, size).2 / view.0,
-            },
+            pixels: if list.pixel_art { 1.0 } else { 0.0 },
+            sharp: !list.pixel_art,
             ..Mesh::default()
         };
         mesh.rect([0.0, 0.0, view.0, view.1], list.background, 255);
-        // Over a pixel-art view, menus are drawn at the window's
-        // resolution, after it's scaled up, on whole window pixels.
-        let over = list.over.filter(|_| list.pixel_art);
-        let (game_view, menus) = list.items.split_at(over.unwrap_or(list.items.len()));
+        let (game_view, menus) = list.items.split_at(list.over.unwrap_or(list.items.len()));
         for item in game_view {
             self.add(&mut mesh, item);
         }
         let under = mesh.cut();
-        if over.is_some() {
-            mesh.pixels = pixel_fit(list.view, size).2 / view.0;
-        }
+        // Menus over it on whole window pixels: over a pixel-art view,
+        // after it's scaled up.
+        mesh.pixels = match list.pixel_art {
+            true => pixel_fit(list.view, size).2,
+            false => letterbox(list.view, size).2,
+        } / view.0;
+        mesh.sharp = false;
         for item in menus {
             self.add(&mut mesh, item);
         }
@@ -758,7 +791,7 @@ impl Painter {
                     self.draw_batches(&mut pass, &mesh.batches[under..]);
                 }
                 _ => {
-                    // On whole pixels, as the quads' edges are.
+                    // On whole pixels, as menus' edges are.
                     let (x, y, w, h) = letterbox(list.view, size);
                     pass.set_viewport(x.floor(), y.floor(), w, h, 0.0, 1.0);
                     self.draw_batches(&mut pass, &mesh.batches);
@@ -935,10 +968,14 @@ struct Mesh {
     /// Pixels drawn into per view unit, to put quads' edges on whole
     /// pixels, or 0 to leave them where they are.
     pixels: f32,
+    /// Pixel art is sampled [`Texels::Sharp`], not
+    /// [`Texels::Nearest`], for quads that aren't on whole pixels.
+    sharp: bool,
 }
 
-/// Where a vertex samples from, and the bounds samples stay within.
-type Sample = ((f32, f32), [f32; 4]);
+/// Where a vertex samples from, the bounds samples stay within, and how
+/// it samples.
+type Sample = ((f32, f32), [f32; 4], Texels);
 
 /// A quad's two triangles, as corners of a unit square.
 const CORNERS: [(f32, f32); 6] = [
@@ -950,7 +987,7 @@ const CORNERS: [(f32, f32); 6] = [
     (0.0, 1.0),
 ];
 
-const SOLID: Sample = ((0.5, 0.5), [0.0, 0.0, 1.0, 1.0]);
+const SOLID: Sample = ((0.5, 0.5), [0.0, 0.0, 1.0, 1.0], Texels::Filtered);
 
 impl Mesh {
     fn vertex(
@@ -968,12 +1005,13 @@ impl Mesh {
             _ => self.batches.push((batch, n..n + 1)),
         }
         self.cut = false;
-        let (uv, bounds) = sample;
+        let (uv, bounds, texels) = sample;
         self.floats.extend([at.0, at.1, uv.0, uv.1]);
         self.floats.extend(color);
         self.floats.extend(bounds);
         self.floats.push(flash);
         self.floats.extend(lit);
+        self.floats.push(texels as u8 as f32);
     }
 
     /// Ends the batches so far, so they can be drawn apart from the
@@ -1032,22 +1070,18 @@ impl Mesh {
         let size = (texture.width() as f32, texture.height() as f32);
         let src = quad.src;
         let (x, y, w, h) = (src.x as f32, src.y as f32, src.w as f32, src.h as f32);
-        let bounds = if texture.pixel_art {
-            // Just short of the far edges, which belong to the next texels.
-            let shy = 1.0 / 64.0;
-            [
-                x / size.0,
-                y / size.1,
-                (x + w - shy) / size.0,
-                (y + h - shy) / size.1,
-            ]
-        } else {
-            [
-                (x + 0.5) / size.0,
-                (y + 0.5) / size.1,
-                (x + w - 0.5).max(x + 0.5) / size.0,
-                (y + h - 0.5).max(y + 0.5) / size.1,
-            ]
+        // The centres of the edge texels, so filtering doesn't reach the
+        // next frame's.
+        let bounds = [
+            (x + 0.5) / size.0,
+            (y + 0.5) / size.1,
+            (x + w - 0.5).max(x + 0.5) / size.0,
+            (y + h - 0.5).max(y + 0.5) / size.1,
+        ];
+        let texels = match (texture.pixel_art, self.sharp) {
+            (false, _) => Texels::Filtered,
+            (true, false) => Texels::Nearest,
+            (true, true) => Texels::Sharp,
         };
         // Premultiplied, with its opacity in alpha for a flash.
         let opacity = quad.opacity as f32 / 255.0;
@@ -1057,9 +1091,11 @@ impl Mesh {
         };
         let color = [color[0], color[1], color[2], opacity];
         let drawn = quad.flip.size((w, h));
-        // Every quad's edges on whole pixels, so layers and sprites
-        // scrolling between them don't shift against each other or
-        // change shape from frame to frame (#190).
+        // Edges on whole pixels when there are pixels to keep to, so
+        // layers and sprites scrolling between them don't shift against
+        // each other or change shape from frame to frame (#190). Left
+        // where they are, every quad is where its position puts it, so
+        // nothing shifts against anything either (#304).
         let pixels = self.pixels;
         let snap = |v: f32| match pixels > 0.0 {
             true => (v * pixels).round() / pixels,
@@ -1071,7 +1107,10 @@ impl Mesh {
             let (sx, sy) = quad.flip.source((cx * drawn.0, cy * drawn.1), (w, h));
             let uv = ((x + sx) / size.0, (y + sy) / size.1);
             let left = l + lean * (1.0 - cy);
-            ((left + (r - l) * cx, t + (b - t) * cy), (uv, bounds))
+            (
+                (left + (r - l) * cx, t + (b - t) * cy),
+                (uv, bounds, texels),
+            )
         };
         let batch = Some((texture.id(), normals));
         let on = |b: bool| if b { 1.0 } else { 0.0 };
@@ -1097,7 +1136,8 @@ fn scale_up(view: (f32, f32)) -> Vec<f32> {
     let mut mesh = Mesh::default();
     for (cx, cy) in CORNERS {
         let at = (cx * view.0, cy * view.1);
-        mesh.vertex(None, at, ((cx, cy), bounds), [1.0; 4], 0.0, [0.0; 4]);
+        let sample = ((cx, cy), bounds, Texels::Filtered);
+        mesh.vertex(None, at, sample, [1.0; 4], 0.0, [0.0; 4]);
     }
     mesh.floats
 }
@@ -1365,6 +1405,67 @@ mod tests {
         assert_eq!(row[..2], [BLUE, BLUE]);
         assert_eq!(row[4..], [RED, RED, 0]);
         assert!(row[2..4].iter().all(|&c| c >> 16 > 0x20 && c & 0xff > 0x20));
+    }
+
+    #[test]
+    fn moves_by_less_than_a_pixel_at_the_windows_resolution() {
+        let mut image = Pixels::new(2, 1);
+        image.data = vec![[255, 0, 0, 255], [0, 0, 255, 255]];
+        let quad = |x: f32| Quad {
+            texture: Texture::new(image.clone(), true),
+            src: Rect {
+                x: 0,
+                y: 0,
+                w: 2,
+                h: 1,
+            },
+            dst: [x, 0.0, x + 2.0, 1.0],
+            flip: Flip::default(),
+            flash: None,
+            opacity: 255,
+            lean: 0.0,
+            normals: None,
+        };
+        let purple = |c: u32| c >> 16 > 0x40 && c & 0xff > 0x40 && c >> 8 & 0xff == 0;
+        // Four pixels to a unit. An eighth of a unit on, half a pixel,
+        // the texels keep their width and the pixel where they meet
+        // blends them, as does the one on the quad's left edge.
+        let mut list = DrawList::new((3, 1));
+        list.quad(&quad(1.125));
+        let Some(out) = paint(&list, 12, 4) else {
+            return;
+        };
+        let row = &out[12..24];
+        assert_eq!(row[..4], [0; 4]);
+        assert!(
+            row[4] >> 16 > 0x40 && row[4] & 0xffff == 0,
+            "{:06x}",
+            row[4]
+        );
+        assert_eq!(row[5..8], [RED; 3]);
+        assert!(purple(row[8]), "{:06x}", row[8]);
+        assert_eq!(row[9..12], [BLUE; 3]);
+
+        // A quarter of a unit is a whole pixel, and sharp again.
+        let mut list = DrawList::new((3, 1));
+        list.quad(&quad(1.25));
+        let out = paint(&list, 12, 4).unwrap();
+        assert_eq!(
+            out[12..24],
+            [0, 0, 0, 0, 0, RED, RED, RED, RED, BLUE, BLUE, BLUE]
+        );
+
+        // Menus over the view stay on whole pixels, sampled sharp.
+        let mut list = DrawList::new((3, 1));
+        list.over_view();
+        list.quad(&quad(1.125));
+        let out = paint(&list, 12, 4).unwrap();
+        let row = &out[12..24];
+        assert!(
+            row.iter().all(|&c| [0, RED, BLUE].contains(&c)),
+            "{row:06x?}"
+        );
+        assert_eq!(row.iter().filter(|&&c| c == RED).count(), 4);
     }
 
     #[test]

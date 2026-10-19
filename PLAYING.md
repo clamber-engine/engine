@@ -195,6 +195,12 @@ setting; Left, Right or Pick switch between the two modes:
 - **Enhanced**: the game view is drawn at the window's full resolution
   and fills as much of it as it can. The original's art is scaled up
   with sharp pixels, while Clamber's own art is drawn in full detail.
+  The view and everything in it move smoothly, by less than a window
+  pixel at a time, instead of a whole original pixel; the original's
+  pixels stay the same size as they move, softened only along the
+  window pixel where two of them meet. Clamber's own game is drawn the
+  same way. (Without a GPU, Clamber's software drawing moves things by
+  whole window pixels.)
 
 Only drawing differs: the game plays exactly the same in both. Menus
 are always drawn at the window's full resolution, including those over
