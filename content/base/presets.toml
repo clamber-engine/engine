@@ -149,6 +149,7 @@ bounce_below = 0
 bounce_max_rise = 0
 bounce_holds_walkers = 0
 bounce_holds_all = 0
+bounce_again = 0
 stance_stand_speed = 0
 stance_run_speed = 0
 face_slope = 0
@@ -690,6 +691,10 @@ bounce_max_rise = 1.25
 # On a bounce's two frozen frames nothing else moves either (bounce.md,
 # "Everything else on the frozen frames").
 bounce_holds_all = 1
+# The player can bounce off another walker before landing from a bounce
+# (bounce.md, "Bouncing again before landing"; walker-contact.md,
+# "During a bounce").
+bounce_again = 1
 face_slope = 3
 face_speed = 1.5
 # After a jump's landing the face's push and start_rise_ahead wait for

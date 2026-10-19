@@ -434,6 +434,7 @@ mod tests {
                     | Param::BounceMaxRise
                     | Param::BounceHoldsWalkers
                     | Param::BounceHoldsAll
+                    | Param::BounceAgain
                     | Param::StanceStandSpeed
                     | Param::StanceRunSpeed
                     | Param::FaceSlope

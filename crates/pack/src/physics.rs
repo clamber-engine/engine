@@ -597,6 +597,13 @@ params! {
     /// pieces of a burst all keep where they are, and nothing is made up
     /// afterwards.
     BounceHoldsAll => "bounce_holds_all",
+    /// Above 0, the player can bounce again before landing from a bounce:
+    /// from the frame after the `bounce_freeze` frames up to the landing,
+    /// `bounce_max_rise` doesn't apply and walkers don't hurt it. On a
+    /// bounce's frozen frames nothing is bounced on, and on any frame
+    /// only one enemy is (the first placed); another one in reach is
+    /// checked again on the next frame that can bounce.
+    BounceAgain => "bounce_again",
     /// For walkers with a `contact` table: on the ground, a player moving
     /// faster than this is walking or running, and slower, standing.
     StanceStandSpeed => "stance_stand_speed",

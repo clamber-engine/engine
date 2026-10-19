@@ -655,6 +655,117 @@ fn classic_jump_held_since_the_bounce_does_not_jump_on_landing() {
     assert!(steps[b..].iter().all(|s| !s.2.contains(&Event::JumpStart)));
 }
 
+// Classic 1: bouncing again before landing (bounce.md, "Bouncing again
+// before landing"; walker-contact.md, "During a bounce").
+
+/// A classic-1 player falling slowly onto two still small walkers at
+/// `xs`, 14 px above their floor at the end of frame 0, which bounces
+/// on: the player in reach of both on it.
+fn classic_two_walkers(xs: [i32; 2]) -> World {
+    let entities = format!(
+        "{}{}",
+        small_walker(&xs[0].to_string(), "0", "left"),
+        small_walker(&xs[1].to_string(), "0", "left"),
+    );
+    let mut w = world_on("classic-1", [300, 0], &entities);
+    w.player.pos.y = Fixed::from_int(400 - 14) - fx(0.0625);
+    w.player.vel.y = fx(0.0625 - 0.4375);
+    w
+}
+
+/// The frames of `steps` with `event`.
+fn frames_with(steps: &[(Fixed, Fixed, Vec<Event>)], event: Event) -> Vec<usize> {
+    (0..steps.len())
+        .filter(|&n| steps[n].2.contains(&event))
+        .collect()
+}
+
+#[test]
+fn classic_bounces_off_one_walker_on_b_and_the_other_on_b_plus_3() {
+    // B is frame 0, B' is B + 3; jump pressed on B' + 3 (B + 6) and held.
+    let mut w = classic_two_walkers([300, 305]);
+    let mut things = Vec::new();
+    let mut previous = Actions::NONE;
+    let mut steps = Vec::new();
+    for n in 0..80 {
+        let held = if n >= 6 {
+            Action::Jump.into()
+        } else {
+            Actions::NONE
+        };
+        step(&mut w, &InputFrame::single(Frame::after(previous, held)));
+        previous = held;
+        steps.push((w.player.pos.y, w.player.vel.y, w.events.clone()));
+        things.push(w.things.iter().map(|t| t.phase).collect::<Vec<_>>());
+    }
+    let land = frames_with(&steps, Event::Land)[0];
+    assert_eq!(frames_with(&steps[..land], Event::Bounce), [0, 3]);
+    assert!(frames_with(&steps, Event::Hurt).is_empty());
+    // Only the first placed is bounced on B; the other is still there
+    // through the frozen frames.
+    assert_ne!(things[0][0], Phase::Ready);
+    assert_eq!(things[2][1], Phase::Ready);
+    assert_ne!(things[3][1], Phase::Ready);
+    // B' moves as the bounce did (gravity 0.4375), then vy is −7.125.
+    let y = |n: usize| steps[n].0;
+    assert_eq!(y(3) - y(0), fx(-6.6875));
+    assert_eq!(steps[3].1, fx(-7.125));
+    assert_eq!((y(4), y(5)), (y(3), y(3)));
+    // From B' + 3 the hold counts afresh: held from B' + 3, the lighter
+    // gravity, which the first bounce's hold alone wouldn't give.
+    assert_eq!(steps[6].1, fx(-6.84375));
+    assert_eq!(y(6) - y(5), fx(-6.84375));
+    assert_eq!(steps[7].1, fx(-6.5625));
+}
+
+#[test]
+fn classic_bounce_again_counts_the_hold_from_the_new_bounce() {
+    // Held on B + 3 and B + 4, let go on B + 5 and held again from B' + 3
+    // (B + 6): the lighter gravity again. A hold broken before B' + 3 and
+    // not held on it gives the heavier one.
+    let vy_at_b_plus_7 = |jump: fn(usize) -> bool| {
+        let mut w = classic_two_walkers([300, 305]);
+        let steps = play(&mut w, 8, jump);
+        assert_eq!(frames_with(&steps, Event::Bounce), [0, 3]);
+        steps[7].1
+    };
+    assert_eq!(vy_at_b_plus_7(|n| n != 5), fx(-7.125 + 2.0 * 0.28125));
+    assert_eq!(vy_at_b_plus_7(|n| n != 6), fx(-7.125 + 2.0 * 0.4375));
+}
+
+#[test]
+fn classic_bounce_again_while_rising_fast_and_no_hurt_until_landing() {
+    // A walker coming from the right, 23 px from the player on B, comes
+    // within the bounce range (I = -21) on B + 4, while the player rises
+    // after the first bounce: bounced on, never hurt by.
+    let entities = format!(
+        "{}{}",
+        small_walker("300", "0", "left"),
+        small_walker("323", "1", "left"),
+    );
+    let mut w = world_on("classic-1", [300, 0], &entities);
+    w.player.pos.y = Fixed::from_int(400 - 6) - fx(0.0625);
+    w.player.vel.y = fx(0.0625 - 0.4375);
+    let steps = play(&mut w, 120, |_| false);
+    let land = frames_with(&steps, Event::Land)[0];
+    assert_eq!(frames_with(&steps[..land], Event::Bounce), [0, 4]);
+    // Rising at -6.25 on B + 4 before the bounce, much faster than the
+    // 1.25 that stops a bounce otherwise.
+    assert_eq!(steps[3].1 + fx(0.4375), fx(-6.25));
+    assert!(frames_with(&steps, Event::Hurt).is_empty());
+}
+
+#[test]
+fn classic_jump_held_since_the_second_bounce_does_not_jump_on_landing() {
+    // jump-input.md, "After a bounce": after bouncing again, held without
+    // a break since B' + 3 is no jump.
+    let mut w = classic_two_walkers([300, 305]);
+    let steps = play(&mut w, 160, |n| n >= 6);
+    let l = frames_with(&steps, Event::Land)[0];
+    assert!(l + 20 < steps.len());
+    assert!(frames_with(&steps, Event::JumpStart).is_empty());
+}
+
 /// Whether a classic-1 player facing `facing`, falling straight down
 /// `i` px from a still walker made by `walker` heading `heading`, bounces
 /// off it.

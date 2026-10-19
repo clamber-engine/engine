@@ -54,13 +54,16 @@ pub enum Data {
     ScenePlacementList,
     SceneStartRecord,
     SceneViewLimits,
+    WallAreaPlacementList,
+    WallAreaStartRecord,
+    WallAreaViewLimits,
     MapPoints,
     MapCorners,
     PackedMap,
 }
 
 impl Data {
-    pub const ALL: [Data; 46] = [
+    pub const ALL: [Data; 49] = [
         Data::SampleTable,
         Data::SharedSampleList,
         Data::SampleSetTable,
@@ -104,6 +107,9 @@ impl Data {
         Data::ScenePlacementList,
         Data::SceneStartRecord,
         Data::SceneViewLimits,
+        Data::WallAreaPlacementList,
+        Data::WallAreaStartRecord,
+        Data::WallAreaViewLimits,
         Data::MapPoints,
         Data::MapCorners,
         Data::PackedMap,
@@ -163,6 +169,15 @@ impl Data {
             Data::ScenePlacementList => "Placements: the first level's scene's placement list",
             Data::SceneStartRecord => "Level start: the first level's scene's start record",
             Data::SceneViewLimits => "View limits: the first level's scene's record",
+            Data::WallAreaPlacementList => {
+                "Placements: the placement list of the area behind the first level's first wall exit"
+            }
+            Data::WallAreaStartRecord => {
+                "Level start: the start record of the area behind the first level's first wall exit"
+            }
+            Data::WallAreaViewLimits => {
+                "View limits: the record of the area behind the first level's first wall exit"
+            }
             Data::MapPoints => "Level map: point tables",
             Data::MapCorners => "Level map: corner records",
             Data::PackedMap => "Level ground: the first level's packed map",
@@ -216,6 +231,9 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
         ("title-1", Data::ScenePlacementList) => (0xFD, 0xD068),
         ("title-1", Data::SceneStartRecord) => (0xFC, 0xC03C),
         ("title-1", Data::SceneViewLimits) => (0xFC, 0xA5F2),
+        ("title-1", Data::WallAreaPlacementList) => (0xFD, 0x84D4),
+        ("title-1", Data::WallAreaStartRecord) => (0xFC, 0xBF38),
+        ("title-1", Data::WallAreaViewLimits) => (0xFC, 0x919E),
         ("title-1", Data::MapPoints) => (0xFC, 0xF47B),
         ("title-1", Data::MapCorners) => (0xC0, 0xD13C),
         ("title-2", Data::PackedMap) => (0xE3, 0xE006),

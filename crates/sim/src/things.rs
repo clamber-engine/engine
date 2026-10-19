@@ -41,6 +41,9 @@
 //!   collectibles, which then rise on at the speed they had.
 //! - With `bounce_holds_all`, nothing else moves on a bounce's frozen
 //!   frames (see [`holds_all`]), and goes on from where it was after.
+//! - With `bounce_again`, the player can bounce off another enemy before
+//!   landing from a bounce, however fast it rises, and walkers don't
+//!   hurt it until it lands (see [`bounce_on_boxes`]).
 //! - While a character is being lost, things don't act on the player,
 //!   and while the one that took over is protected, nothing hurts it
 //!   (see [`loss`](crate::loss)).
@@ -148,7 +151,11 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     if riding && !frozen && !knocked(world) {
         ride::attack(world);
     }
-    let mut bounced = if boxes && !riding && !knocked(world) {
+    // With `bounce_again`, nothing is bounced on during a bounce's frozen
+    // frames (walker-contact.md, "During a bounce").
+    let again = physics[Param::BounceAgain] > Fixed::ZERO;
+    let bounce_frozen = again && frozen && world.player.state == State::Bounce;
+    let mut bounced = if boxes && !riding && !knocked(world) && !bounce_frozen {
         bounce_on_boxes(world, &physics)
     } else {
         Vec::new()
@@ -421,7 +428,10 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         // Walkers don't hurt a player knocked off an animal before it
         // lands (riding-walkers.md's example flies on over one), but it
         // can bounce off them.
-        let walker = if hurt_boxes && !riding && !world.player.unseated {
+        // Nor do they hurt one in the air after a bounce, with
+        // `bounce_again` (walker-contact.md, "During a bounce").
+        let bouncing = again && world.player.state == State::Bounce;
+        let walker = if hurt_boxes && !riding && !world.player.unseated && !bouncing {
             hurt_ahead(world, &physics, carried_into)
         } else {
             None
@@ -1388,14 +1398,19 @@ fn has_contact(thing: &Thing) -> bool {
 /// the body to `bounce_below` under the feet. A player on the ground,
 /// rolling, or rising at `bounce_max_rise` or faster doesn't bounce,
 /// nor one throwing after the throw's first frame and up to the one the
-/// object leaves the hands on (walker-contact.md, "Carrying").
+/// object leaves the hands on (walker-contact.md, "Carrying"). With
+/// `bounce_again`, a player in the air after a bounce bounces however
+/// fast it rises, and only off the first placed enemy in reach.
 /// Returns the enemies bounced on, which are defeated once they've
 /// moved this frame.
 fn bounce_on_boxes(world: &mut World, physics: &Physics) -> Vec<usize> {
     let mut bounced = Vec::new();
     let player = &mut world.player;
     let max_rise = physics[Param::BounceMaxRise];
-    let rising_fast = if max_rise > Fixed::ZERO {
+    let again = physics[Param::BounceAgain] > Fixed::ZERO;
+    let rising_fast = if again && player.state == State::Bounce {
+        false
+    } else if max_rise > Fixed::ZERO {
         player.vel.y <= -max_rise
     } else {
         player.vel.y.is_negative()
@@ -1436,6 +1451,9 @@ fn bounce_on_boxes(world: &mut World, physics: &Physics) -> Vec<usize> {
             player.bounce(speed, freeze, &mut world.events);
             bounced.push(thing.index);
             world.flow.events.push(FlowEvent::Defeat(thing.index));
+            if again {
+                break;
+            }
         }
     }
     bounced
