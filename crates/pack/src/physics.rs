@@ -654,6 +654,10 @@ params! {
     /// approach frame, whichever is later. A jump can start
     /// `landing_lockout` frames after it. Whole frames.
     FaceTopLanding => "face_top_landing",
+    /// Above 0, a grounded frame that starts on the floor of a steep
+    /// face's lowest column, with no floor beyond it on its low side, and
+    /// ends in that column leaves the ground there.
+    FaceDropLeave => "face_drop_leave",
     /// Above 0, a grounded body standing still doesn't start moving toward
     /// ground that, this many columns ahead, is 8 px or more higher than
     /// its own column. Whole columns.

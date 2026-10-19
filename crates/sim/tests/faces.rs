@@ -436,6 +436,52 @@ fn left_held_on_the_last_frame_on_a_face_keeps_its_walking_target() {
     assert!(away);
 }
 
+/// A face falling to the left over columns 100 to 103, flat floor from
+/// column 104, and `beyond` left of column 100 ("Carried off a face's
+/// lowest column at a drop").
+fn drop_left(beyond: Option<i32>) -> impl Fn(i32) -> Option<i32> {
+    move |c| match c {
+        ..100 => beyond,
+        100..104 => Some(15 - 4 * (c - 100)),
+        _ => Some(0),
+    }
+}
+
+/// Five frames with nothing held from standing at x = 102 on
+/// [`drop_left`].
+fn carried_to_the_lowest_column(beyond: Option<i32>) -> Vec<(Fixed, i64, Fixed, bool)> {
+    let mut world = ground(drop_left(beyond), 102.0);
+    // Standing on the face, it's carried down from the first frame.
+    world.player.push = fx(-1.5);
+    (0..5)
+        .map(|_| {
+            hold(&mut world, &[]);
+            row(&world)
+        })
+        .collect()
+}
+
+#[test]
+fn a_faces_lowest_column_at_a_drop_is_left_on_the_next_frame_in_it() {
+    let rows = carried_to_the_lowest_column(None);
+    assert_eq!(
+        rows,
+        [
+            (fx(101.8125), -48, fx(11.0), true),
+            (fx(101.4609375), -90, fx(11.0), true),
+            // Into the lowest column: on its floor.
+            (fx(100.96875), -126, fx(15.0), true),
+            // Still in it: leaves, 3.4375 px down.
+            (fx(100.3515625), -158, fx(18.4375), false),
+            (fx(99.80859375), -139, fx(18.87890625), false),
+        ]
+    );
+    // With floor 1 px lower beyond it, the player stays on its floor.
+    let rows = carried_to_the_lowest_column(Some(16));
+    assert_eq!(rows[3].2, fx(15.0));
+    assert!(rows[3].3);
+}
+
 /// Flat floor up to a ledge with a short face falling right at its top,
 /// and a pit beyond.
 fn ledge(c: i32) -> Option<i32> {
@@ -631,6 +677,27 @@ fn a_slide_landing_waits_until_a_rise_stops_the_player() {
             (22, r, 112.0, 32.0, 0, 0, true),
             (23, r, 111.8125, 36.0, -48, 0, true),
             (24, r, 111.4609375, 36.0, -90, 0, true),
+        ],
+    );
+}
+
+#[test]
+fn a_landing_blocked_against_the_face_is_carried_down_with_uphill_held() {
+    let mut world = mid_jump(18, 106.53515625, 29.8125, 478, 224);
+    let r = Some(Action::Right);
+    check_rows(
+        &mut world,
+        Action::Right,
+        &[
+            (19, r, 108.41796875, 31.125, 482, 336, false),
+            // A, in face column 110: a slide landing.
+            (20, r, 110.3125, 32.875, 485, 448, false),
+            // L = M: blocked in the air, so its target counts as 0 and
+            // the push becomes -1.5 although Right is held.
+            (21, r, 110.0, 40.0, 0, 0, true),
+            (22, r, 109.8125, 44.0, -48, 0, true),
+            (23, r, 109.4609375, 44.0, -90, 0, true),
+            (24, r, 108.96875, 48.0, -126, 0, true),
         ],
     );
 }

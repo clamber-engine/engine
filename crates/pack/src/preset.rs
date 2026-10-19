@@ -444,6 +444,7 @@ mod tests {
                     | Param::FaceSpeed
                     | Param::FaceSlideSwitch
                     | Param::FaceTopLanding
+                    | Param::FaceDropLeave
                     | Param::StartRiseAhead
                     | Param::RiseKeepsTarget
                     | Param::AirStep

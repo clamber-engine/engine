@@ -1870,8 +1870,13 @@ impl Player {
         let hold = self.jump_hold;
         let feet = self.pos.y;
         self.blocked = false;
+        // Stopped in the air or on the floor (`face_slide_switch`).
+        let mut stopped = false;
         let moved = if slope > Fixed::ZERO && airborne {
-            self.move_in_air_by_columns(level, physics, events)
+            let before = self.vel.x;
+            let moved = self.move_in_air_by_columns(level, physics, events);
+            stopped = before != Fixed::ZERO && self.vel.x == Fixed::ZERO;
+            moved
         } else if slope > Fixed::ZERO {
             // A roll is also stopped by floor more than a step above its
             // own, and once blocked it's a stopped roll.
@@ -1879,6 +1884,7 @@ impl Player {
             let rise = (face_rolls && self.roll.is_some()).then_some(STEP);
             let moved = self.move_by_columns(level, slope, face.map(|way| (way, physics)), rise);
             self.blocked = before != Fixed::ZERO && self.vel.x == Fixed::ZERO;
+            stopped = self.blocked;
             if let Some(roll) = self.roll.as_mut().filter(|_| face_rolls) {
                 roll.stopped |= before != Fixed::ZERO && self.vel.x == Fixed::ZERO;
             }
@@ -1971,6 +1977,16 @@ impl Player {
                     None
                 };
             let over_end = self.takeoff && physics[Param::TakeoffOverEnd] > Fixed::ZERO;
+            // Staying in a face's lowest column with no floor beyond it.
+            let at_drop = face.is_some_and(|way| {
+                physics[Param::FaceDropLeave] > Fixed::ZERO
+                    && !self.takeoff
+                    && !stopped
+                    && columns::column(self.pos.x) == start_column
+                    && !columns::spans(level, start_column + i64::from(way))
+                        .iter()
+                        .any(|s| s.top >= feet)
+            });
             let left = if off_spring.is_some() {
                 // However near the floor below.
                 self.spring = None;
@@ -1978,6 +1994,10 @@ impl Player {
                     events.push(Event::LeaveGround);
                 }
                 !self.takeoff
+            } else if at_drop {
+                self.ground = None;
+                events.push(Event::LeaveGround);
+                true
             } else {
                 self.follow_ground(level, x, below, events)
             };
@@ -1990,7 +2010,12 @@ impl Player {
                     Some(gravity) if !leave_hovers => drop - physics[Param::FallGravity] + gravity,
                     _ => drop,
                 };
-                self.move_vertically(level, moved, Reach::NONE, slope > Fixed::ZERO, events);
+                if at_drop {
+                    // The column's own floor is under the feet.
+                    self.pos.y += self.vel.y;
+                } else {
+                    self.move_vertically(level, moved, Reach::NONE, slope > Fixed::ZERO, events);
+                }
                 self.vel.y = if left && self.through.is_some() {
                     // Falling through the floor keeps the drop's speed.
                     drop
@@ -2232,7 +2257,13 @@ impl Player {
             self.hopped_off = None;
         }
         if pushed {
-            self.push_down_face(level, events, jump_age, self.target - push, physics);
+            // A blocked frame's target counts as 0.
+            let target = if stopped {
+                Fixed::ZERO
+            } else {
+                self.target - push
+            };
+            self.push_down_face(level, events, jump_age, target, physics);
         }
         self.jump_age = if self.grounded() && !self.takeoff {
             None

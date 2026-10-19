@@ -157,6 +157,7 @@ face_slope = 0
 face_speed = 0
 face_slide_switch = 0
 face_top_landing = 0
+face_drop_leave = 0
 start_rise_ahead = 0
 rise_keeps_target = 0
 air_step = 0
@@ -717,6 +718,10 @@ face_slide_switch = 11
 # face's top, has M = max(L, A + 3) + 11 (jump-input.md, "After a jump
 # over a face's top").
 face_top_landing = 3
+# A face's lowest column with no floor beyond it is left on the next
+# frame that stays in it (steep-faces.md, "Following a face down, or
+# leaving it").
+face_drop_leave = 1
 start_rise_ahead = 5
 # Held toward such a rise, the target is the last frame's and facing
 # turns at once (steep-faces.md, "Holding toward a rise").
