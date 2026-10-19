@@ -182,6 +182,16 @@ pub(crate) fn gradient(level: &Level, column: i64, feet: Fixed, slope: Fixed, pi
     }
 }
 
+/// The nearest top of ground at or below `feet` under the middle of
+/// `column`, however far down.
+pub(crate) fn floor_below(level: &Level, column: i64, feet: Fixed) -> Option<Fixed> {
+    spans(level, column)
+        .into_iter()
+        .map(|s| s.top)
+        .filter(|&top| top >= feet)
+        .min()
+}
+
 /// Where the ground is under the middle of `column`, from the top down.
 pub(crate) fn spans(level: &Level, column: i64) -> Vec<Span> {
     level.collision.spans(middle(column))

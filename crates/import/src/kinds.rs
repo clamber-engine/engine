@@ -232,6 +232,22 @@ impl Kind {
                 // walker.md, "Turning at a barrier": X_b, where its x
                 // stops, is the edge of the vertical step.
                 set("stops_at_x", Value::Boolean(true));
+                // walker.md, "Walking off a ledge": 3 7/16 px down on the
+                // frame it leaves the floor and 113/256 on the next, then
+                // 7/16 more each frame up to 8, landing less than 5 px
+                // above the floor; walker-view.md, "A start above the
+                // floor": the same growth from no speed.
+                let drop = [
+                    ("leave", Value::Float(3.4375)),
+                    ("leave_speed", Value::Float(1.0 / 256.0)),
+                    ("gravity", Value::Float(0.4375)),
+                    ("max_fall", Value::Integer(8)),
+                    ("land", Value::Integer(5)),
+                ];
+                set(
+                    "drop",
+                    Value::Table(drop.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+                );
                 set("defeat_jump", Value::Integer(6));
                 set("defeat_gravity", Value::Float(0.4375));
                 set("defeat_max_fall", Value::Integer(8));
@@ -1467,6 +1483,14 @@ mod tests {
             );
             assert_eq!(archetype.behavior.is_walker(), walker, "{kind}");
             assert_eq!(name == WALKER, walker, "{kind}");
+            if let Behavior::Walker { drop, .. } = archetype.behavior {
+                // walker.md, "Walking off a ledge".
+                let drop = drop.unwrap_or_else(|| panic!("{kind} stops at ledges"));
+                let grains = |v: clamber_sim::Fixed| (v.to_bits() * 256) >> 32;
+                assert_eq!(grains(drop.leave), 880, "{kind}");
+                assert_eq!(grains(drop.leave_speed + drop.gravity), 113, "{kind}");
+                assert_eq!(grains(drop.max_fall), 8 * 256, "{kind}");
+            }
             match (kind, archetype.behavior) {
                 (Kind::Letter(n), Behavior::Collect { letter, .. }) => {
                     assert_eq!(letter, n, "{kind}")

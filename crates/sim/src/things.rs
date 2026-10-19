@@ -98,7 +98,7 @@ use clamber_fixed::Fixed;
 use clamber_level::{Dir, Level, Vec2};
 use clamber_pack::{Param, Physics};
 
-use crate::archetype::{Archetype, Behavior, Fall, Hit, Response};
+use crate::archetype::{Archetype, Behavior, Fall, Hit, Response, WalkerDrop};
 use crate::carry;
 use crate::columns;
 use crate::critter;
@@ -603,7 +603,14 @@ fn advance(
                     turn_around(thing, turn_delay);
                 }
             }
-            walk(level, thing, speed, &archetype, turn_delay);
+            walk(
+                level,
+                thing,
+                speed,
+                &archetype,
+                turn_delay,
+                physics[Param::FaceSlope],
+            );
         }
         Behavior::Patrol { path, period } => {
             let origin = level.entities[thing.index].at;
@@ -1210,18 +1217,29 @@ fn in_reach(
 /// facing following `turn_delay` frames after the next. With
 /// `stops_at_x`, the front of its box is at its `x` for both, so a wall
 /// stops it with its `x` at the wall (walker.md, "Turning at a
-/// barrier").
-fn walk(level: &Level, thing: &mut Thing, speed: Fixed, archetype: &Archetype, turn_delay: u8) {
+/// barrier"). With a `drop`, it walks off ledges instead, and moves
+/// across in the air as on the floor (see [`leaves_floor`] and
+/// [`drop_down`]); `slope` is the physics' `face_slope`.
+fn walk(
+    level: &Level,
+    thing: &mut Thing,
+    speed: Fixed,
+    archetype: &Archetype,
+    turn_delay: u8,
+    slope: Fixed,
+) {
     let Behavior::Walker {
         response,
         move_first,
         columns,
         stops_at_x,
+        drop,
         ..
     } = archetype.behavior
     else {
         return;
     };
+    let in_air = drop.zip(thing.air);
     let size = archetype.size;
     let target = match thing.heading {
         Facing::Left => -speed,
@@ -1231,6 +1249,9 @@ fn walk(level: &Level, thing: &mut Thing, speed: Fixed, archetype: &Archetype, t
     let vx = if move_first { thing.vx } else { eased };
     if vx == Fixed::ZERO {
         thing.vx = eased;
+        if let Some((drop, fall)) = in_air {
+            drop_down(level, thing, &drop, fall);
+        }
         return;
     }
     let front = match stops_at_x {
@@ -1266,6 +1287,30 @@ fn walk(level: &Level, thing: &mut Thing, speed: Fixed, archetype: &Archetype, t
     } else {
         x
     };
+    if let Some(drop) = drop
+        && wall.is_none()
+    {
+        thing.vx = eased;
+        match in_air {
+            Some((drop, fall)) => {
+                thing.pos.x = x;
+                drop_down(level, thing, &drop, fall);
+            }
+            None => {
+                let (from, to) = (columns::column(pos.x), columns::column(x));
+                match ground_at(foot) {
+                    Some(hit) if !leaves_floor(level, from, to, sign, pos.y, slope) => {
+                        thing.pos = Vec2::new(x, hit.point.y);
+                    }
+                    _ => {
+                        thing.pos = Vec2::new(x, pos.y + drop.leave);
+                        thing.air = Some(drop.leave_speed);
+                    }
+                }
+            }
+        }
+        return;
+    }
     let ground = ground_at(x + sign * front).and_then(|_| ground_at(foot));
     match (wall, ground) {
         (None, Some(hit)) => {
@@ -1281,6 +1326,69 @@ fn walk(level: &Level, thing: &mut Thing, speed: Fixed, archetype: &Archetype, t
             turn_around(thing, turn_delay.saturating_add(1));
         }
     }
+    if let Some((drop, fall)) = in_air {
+        drop_down(level, thing, &drop, fall);
+    }
+}
+
+/// Whether a walker on the floor at `feet` leaves it on a frame that
+/// ends in column `to` after starting in `from`, heading `sign` (−1 or
+/// 1), though `to` has floor: when it ends a second frame in a row in
+/// the lowest column of a steep face falling the way it's heading, and
+/// the column on has no floor it follows (walker.md, "Walking off a
+/// ledge"). Without steep faces (`slope` 0) it never does.
+fn leaves_floor(level: &Level, from: i64, to: i64, sign: Fixed, feet: Fixed, slope: Fixed) -> bool {
+    let dir = if sign.is_negative() { -1 } else { 1 };
+    if slope <= Fixed::ZERO || from != to || columns::face(level, to, feet, slope) != Some(dir) {
+        return false;
+    }
+    let on = columns::middle(to + i64::from(dir));
+    let from = Vec2::new(on, feet - STEP);
+    level.collision.cast(from, Dir::Down, STEP + STEP).is_none()
+}
+
+/// Moves a walker in the air with `drop` down on a frame, its speed down
+/// `fall` before the frame: the speed grows by `gravity`, up to
+/// `max_fall`, and it moves down by it. It lands on the floor of the
+/// column holding its `x` once that leaves its feet less than `land`
+/// above it or below it, of the floor that wasn't above its feet before
+/// the move (walker.md, "Walking off a ledge", "Landing"). Below the
+/// level it's gone for good.
+fn drop_down(level: &Level, thing: &mut Thing, drop: &WalkerDrop, fall: Fixed) {
+    let fall = (fall + drop.gravity).min(drop.max_fall);
+    let to = thing.pos.y + fall;
+    let column = columns::column(thing.pos.x);
+    match columns::floor_below(level, column, thing.pos.y) {
+        Some(floor) if floor - to < drop.land => {
+            thing.pos.y = floor;
+            thing.air = None;
+        }
+        _ => {
+            thing.pos.y = to;
+            thing.air = Some(fall);
+            // Not covered by the spec (walker.md, "Not covered"): one
+            // that falls out of the level doesn't come back with the
+            // view, as a defeated one doesn't.
+            if to > level.size.y {
+                thing.active = false;
+                thing.phase = Phase::Gone;
+            }
+        }
+    }
+}
+
+/// Puts a walker with a `drop` in the air, with no speed down, if its
+/// start is above the floor under it (walker-view.md, "A start above the
+/// floor"), and on the floor otherwise: with ground at its feet, or above
+/// them by up to a step, as it walks.
+pub(crate) fn drop_from_start(level: &Level, thing: &mut Thing) {
+    let Some(Behavior::Walker { drop: Some(_), .. }) = thing.archetype.map(|a| a.behavior) else {
+        thing.air = None;
+        return;
+    };
+    let from = Vec2::new(thing.pos.x, thing.pos.y - STEP);
+    let on_floor = level.collision.cast(from, Dir::Down, STEP + TINY).is_some();
+    thing.air = (!on_floor).then_some(Fixed::ZERO);
 }
 
 /// `v` eased toward `target` by `response` (see [`Response`]).

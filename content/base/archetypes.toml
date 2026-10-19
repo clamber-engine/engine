@@ -27,6 +27,17 @@
 #   `stops_at_x = true` (left out: false), it's its x rather than the
 #   front of its box that meets walls and ledges: a wall stops it with
 #   its x at the wall, and it walks on until its x would leave the floor. With
+#   `drop = { leave, leave_speed, gravity, max_fall, land }`, it walks
+#   off ledges instead of stopping at them, going on across in the air
+#   as on the floor: on the frame its x leaves the floor (no floor
+#   within a step below), or the second frame in a row in the lowest
+#   column of a steep face with no such floor on the way it heads, it
+#   moves `leave` down, with `leave_speed` as its speed down. One placed
+#   above the floor starts in the air with none. In the air its speed
+#   down grows by `gravity` each frame, up to `max_fall`, and it moves
+#   down by it; it lands on the floor of the column holding its x, of
+#   the floor not above its feet before the move, once it's less than
+#   `land` above it or below it. Below the level it's gone for good. With
 #   `range = [left, right]`, offsets from where it's placed, it also
 #   turns once its x rounded down is past an end, the way it's heading,
 #   without stopping (`range = []`: no range). Its facing, which it's

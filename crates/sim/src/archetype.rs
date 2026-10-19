@@ -46,6 +46,8 @@ pub enum Behavior {
     /// the preset's hurt box rises that far against it when the
     /// airborne pose lifts it, instead of the preset's `hurt_jump_lift`. A player riding an
     /// animal meets it as `rider` says instead (see [`ride`](crate::ride)).
+    /// With a `drop`, it walks off ledges and drops onto the floor from a
+    /// start above it, as that says, instead of stopping at ledges.
     Walker {
         speed: Fixed,
         response: Response,
@@ -56,6 +58,7 @@ pub enum Behavior {
         contact: Option<WalkerContact>,
         hurt_jump_lift: Option<Fixed>,
         rider: RiderReach,
+        drop: Option<WalkerDrop>,
         facing: Facing,
         turn_delay: u8,
         appear_wait: u8,
@@ -1013,6 +1016,24 @@ impl Span {
     }
 }
 
+/// How a walker leaves the floor at a ledge, falls and lands
+/// (walker.md, "Walking off a ledge", and walker-view.md, "A start above
+/// the floor"). It goes on moving across as on the floor. On the frame it
+/// leaves the floor it moves down by `leave` and ends with `leave_speed`
+/// as its speed down; a walker that starts above the floor starts with
+/// none. On each later frame in the air its speed down grows by
+/// `gravity`, up to `max_fall`, and it moves down by it. It lands once
+/// that leaves its feet less than `land` above the floor of the column
+/// holding its `x`, or at or below it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct WalkerDrop {
+    pub leave: Fixed,
+    pub leave_speed: Fixed,
+    pub gravity: Fixed,
+    pub max_fall: Fixed,
+    pub land: Fixed,
+}
+
 /// How a defeated walker leaves: it jumps up at `jump`, then falls
 /// under `gravity` up to `max_fall`, through the floor and out of the
 /// level. Hit by a thrown object, it's knocked back at `knock` px per
@@ -1499,6 +1520,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "contact",
             "hurt_jump_lift",
             "rider",
+            "drop",
         ],
         "patrol" => &["path", "period"],
         "scenery" => &[],
@@ -1788,6 +1810,10 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 },
                 hurt_jump_lift,
                 rider: parse_rider(get("rider")?, &format!("{path}.rider"))?,
+                drop: match table.get("drop") {
+                    None => None,
+                    Some(v) => Some(parse_walker_drop(v, &format!("{path}.drop"))?),
+                },
                 facing,
                 turn_delay,
                 appear_wait,
@@ -2827,6 +2853,39 @@ fn parse_rider(value: &Value, path: &str) -> Result<RiderReach, String> {
         )
         .map_err(|e| e.message)?,
     })
+}
+
+/// Reads a walker's `drop` table. Errors start with `path`.
+fn parse_walker_drop(value: &Value, path: &str) -> Result<WalkerDrop, String> {
+    const KEYS: [&str; 5] = ["leave", "leave_speed", "gravity", "max_fall", "land"];
+    let Value::Table(table) = value else {
+        return Err(format!("{path}: expected a table"));
+    };
+    if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
+        return Err(format!("{path}.{key}: a drop table has no such value"));
+    }
+    let number = |key: &str| {
+        let value = table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))?;
+        let n = clamber_pack::read_number(value, "", &format!("{path}.{key}"))
+            .map_err(|e| e.message)?;
+        if n.is_negative() {
+            return Err(format!("{path}.{key}: must not be negative"));
+        }
+        Ok(n)
+    };
+    let drop = WalkerDrop {
+        leave: number("leave")?,
+        leave_speed: number("leave_speed")?,
+        gravity: number("gravity")?,
+        max_fall: number("max_fall")?,
+        land: number("land")?,
+    };
+    if drop.gravity == Fixed::ZERO || drop.max_fall == Fixed::ZERO {
+        return Err(format!("{path}: `gravity` and `max_fall` must be positive"));
+    }
+    Ok(drop)
 }
 
 /// Reads a crate holding an animal's values. Errors start with `path`.

@@ -195,6 +195,7 @@ fn spawn(world: &mut World, pos: Vec2, velocity: Vec2) {
         vx: velocity.x,
         clock: 0,
         wait: 0,
+        air: None,
         phase: Phase::Flying {
             vy: velocity.y,
             ignoring: None,
@@ -480,6 +481,7 @@ mod tests {
             vx: Fixed::ZERO,
             clock: 0,
             wait: 0,
+            air: None,
             phase: Phase::Flying {
                 vy: f(vy),
                 ignoring: ignoring.map(f),

@@ -208,11 +208,7 @@ fn fall(level: &Level, animal: &mut Thing, ride: &Ride, n: u8) {
 
 /// The nearest floor top at or below `at` in its column.
 fn floor_under(level: &Level, at: Vec2) -> Option<Fixed> {
-    columns::spans(level, columns::column(at.x))
-        .into_iter()
-        .map(|s| s.top)
-        .filter(|&top| top >= at.y)
-        .min()
+    columns::floor_below(level, columns::column(at.x), at.y)
 }
 
 fn whole(n: i64) -> Fixed {

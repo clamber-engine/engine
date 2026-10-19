@@ -105,7 +105,7 @@ pub use archetype::{
     KEG_PIECES, Keg, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_FLUTTER, MAX_HOP_STEPS, MAX_IN_HANDS,
     MAX_LETTERS, MAX_RESPONSE_PARTS, MAX_SHAKE_STAGES, MAX_SPRING_RUNS, MAX_STRIKE_FRAMES,
     MAX_THROWS, MAX_TURN_PARTS, Meets, Offsets, Opens, Poses, Reach, Response, Ride, RiderReach,
-    Rope, Sling, Span, Spring, Stinger, Throw, ThrowerContact, WalkerContact,
+    Rope, Sling, Span, Spring, Stinger, Throw, ThrowerContact, WalkerContact, WalkerDrop,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;

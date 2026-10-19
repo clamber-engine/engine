@@ -313,6 +313,7 @@ mod tests {
             vx: f(0.1875),
             clock: 0,
             wait: 0,
+            air: None,
             phase: Phase::Rope {
                 target: f(0.1875),
                 reach: false,

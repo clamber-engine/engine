@@ -51,6 +51,7 @@ use crate::loss;
 use crate::player::{Facing, Knockout, Player, State, frames};
 use crate::sections::Placing;
 use crate::swap::Other;
+use crate::things;
 use crate::view;
 use crate::world::{Event, Phase, Thing, World};
 
@@ -303,6 +304,7 @@ pub(crate) fn afresh(world: &mut World) {
             }
             _ => {
                 *thing = Thing::placed(thing.index, &level.entities[thing.index], thing.archetype);
+                things::drop_from_start(&level, thing);
                 *fresh = true;
             }
         }

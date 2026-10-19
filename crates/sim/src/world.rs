@@ -111,6 +111,10 @@ pub struct Thing {
     pub clock: u32,
     /// Steps a walker that just appeared waits before it moves.
     pub wait: u8,
+    /// A walker's speed down while it's in the air off a ledge or above
+    /// its start's floor (with a [`WalkerDrop`](crate::WalkerDrop)), or
+    /// `None` on the floor.
+    pub air: Option<Fixed>,
     pub phase: Phase,
 }
 
@@ -137,6 +141,7 @@ impl Thing {
             vx,
             clock: 0,
             wait: 0,
+            air: None,
             phase: Phase::Ready,
         }
     }
@@ -380,7 +385,9 @@ impl World {
             .map(|(index, e)| {
                 let path = format!("entities[{index}]");
                 let archetype = archetypes.resolve(e, &level.name, &path)?;
-                Ok(Thing::placed(index, e, archetype))
+                let mut thing = Thing::placed(index, e, archetype);
+                things::drop_from_start(&level, &mut thing);
+                Ok(thing)
             })
             .collect::<Result<_, _>>()?;
         // A level with an entrance begins as an area does (view.md, "When

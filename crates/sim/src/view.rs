@@ -129,6 +129,7 @@ use crate::exit::{EXIT, WALL_EXIT};
 use crate::flow::FlowEvent;
 use crate::player::{Facing, Player, ceil, frames};
 use crate::sections::{Opening, Placed, Placing, Spot, Window};
+use crate::things;
 use crate::world::{Phase, Thing, World};
 
 /// What the view's speed is kept to, px per frame.
@@ -1140,7 +1141,11 @@ fn walkers_by(world: &mut World, physics: &Physics, (left, top): (i64, i64), app
             }
             placing.there[i] = true;
             for &e in &placed.entities[i] {
-                arrive(&mut world.things[e], world.level.entities[e].at);
+                arrive(
+                    &world.level,
+                    &mut world.things[e],
+                    world.level.entities[e].at,
+                );
             }
         }
     }
@@ -1190,7 +1195,7 @@ fn walkers_by(world: &mut World, physics: &Physics, (left, top): (i64, i64), app
         };
         if appear {
             if in_spot(thing.index).is_none() && start_near {
-                arrive(thing, start);
+                arrive(level, thing, start);
             }
         } else if thing.active && !defeated(thing) && !start_near && far {
             thing.active = false;
@@ -1214,7 +1219,7 @@ fn walkers_by(world: &mut World, physics: &Physics, (left, top): (i64, i64), app
             | Behavior::Collect { once: true, .. }
                 if appear && by_view && start_near =>
             {
-                arrive(thing, start);
+                arrive(level, thing, start);
             }
             Behavior::Collect { once: true, .. } if !appear && thing.active && !start_near => {
                 thing.active = false;
@@ -1407,12 +1412,13 @@ fn leaves(thing: &Thing, in_spot: bool) -> Option<Leaves> {
 }
 
 /// A thing that isn't in the level appearing at `start`: a walker at
-/// rest, heading the way it was placed, waiting its `appear_wait` steps;
+/// rest, heading the way it was placed, waiting its `appear_wait` steps,
+/// in the air if its start is above the floor;
 /// a thrower starting its timetable; an object that can be carried
 /// starting its clock; a stinger afresh, even after being
 /// knocked out. Defeated walkers, knocked-out throwers and thrown balls
 /// don't appear.
-fn arrive(thing: &mut Thing, start: Vec2) {
+fn arrive(level: &Level, thing: &mut Thing, start: Vec2) {
     if thing.active {
         return;
     }
@@ -1434,6 +1440,7 @@ fn arrive(thing: &mut Thing, start: Vec2) {
             thing.turn = 0;
             thing.clock = 0;
             thing.wait = appear_wait;
+            things::drop_from_start(level, thing);
         }
         Some(Behavior::Thrower { .. }) => thing.clock = 0,
         Some(Behavior::Ball(_)) => thing.pos = start,
