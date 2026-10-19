@@ -78,6 +78,8 @@ struct Row {
     struck: Vec<usize>,
     /// Each walker's `x`, `y` and its `vy` if it's falling.
     walkers: Vec<(Fixed, Fixed, Option<Fixed>)>,
+    /// Whether each walker is still there.
+    present: Vec<bool>,
     view: Option<i64>,
 }
 
@@ -131,6 +133,7 @@ fn act(w: &mut World, on_p: &[Action], put: &[(usize, usize, f64)], frames: usiz
                         (t.pos.x, t.pos.y, vy)
                     })
                     .collect(),
+                present: w.things.iter().map(|t| t.active).collect(),
                 view: w.view.map(|v| v.x()),
             }
         })
@@ -323,4 +326,110 @@ fn the_thrower_is_knocked_out_from_its_ledge() {
         assert_eq!(rows[20].walkers[0].0, Fixed::from_int(400));
         assert_eq!(acting(&rows).len(), 24);
     }
+}
+
+#[test]
+fn a_small_walker_on_flat_floor_is_there_for_the_last_time_on_k_plus_41() {
+    let mut w = world(100, Facing::Right, SMALL, "left", 1);
+    let rows = act(&mut w, &[D, A], &[(0, 0, 180.25)], 64);
+    assert_eq!(struck(&rows), [17]);
+    assert!(rows.iter().all(|r| r.view == rows[0].view));
+    let there: Vec<_> = (0..rows.len()).filter(|&k| rows[k].present[0]).collect();
+    assert_eq!(there, (0..=58).collect::<Vec<_>>());
+    // 95 px below the floor it walked on.
+    assert_eq!(rows[58].walkers[0].1.floor(), 495);
+}
+
+#[test]
+fn a_walker_put_outside_the_window_on_k_to_k_plus_2_is_removed_on_k_plus_3() {
+    for k in 17..=19 {
+        let mut w = world(100, Facing::Right, SMALL, "left", 1);
+        // Far right of the window from the end of frame `k` on.
+        let rows = act(&mut w, &[D, A], &[(0, 0, 180.25), (k + 1, 0, 1500.0)], 24);
+        assert_eq!(struck(&rows), [17]);
+        let there: Vec<_> = (0..rows.len()).filter(|&f| rows[f].present[0]).collect();
+        assert_eq!(there, (0..=19).collect::<Vec<_>>(), "put on {k}");
+    }
+}
+
+/// The player's state after each of `frames` frames of the ground action
+/// from P = 0 knocking out the example's walker on K = P + 17, then
+/// `keys` held from K + 1, with `tap` pressed every `every` frames. With
+/// `on_player`, the walker is put on the player's position before every
+/// frame from K + 1.
+fn played(
+    keys: &[Action],
+    (tap, every): (Action, usize),
+    on_player: bool,
+    frames: usize,
+) -> Vec<String> {
+    let mut w = world(100, Facing::Right, SMALL, "left", 1);
+    for _ in 0..4 {
+        step(&mut w, &InputFrame::default());
+    }
+    w.things[0].pos.x = fx(180.25);
+    let mut last = Actions::NONE;
+    (0..frames)
+        .map(|k| {
+            if on_player && k > 17 && w.things[0].active {
+                w.things[0].pos = w.player.pos;
+            }
+            let mut now: Actions = if k == 0 {
+                [D, A].into_iter().collect()
+            } else if k > 17 {
+                keys.iter().copied().collect()
+            } else {
+                Actions::NONE
+            };
+            if k > 17 && every > 0 && k % every == 0 {
+                now = now | tap.into();
+            }
+            step(&mut w, &InputFrame::single(Frame::after(last, now)));
+            last = now;
+            if k == 17 {
+                assert_eq!(
+                    w.things[0].phase,
+                    Phase::Falling {
+                        vy: fx(-6.0),
+                        hold: 0,
+                        glide: None
+                    }
+                );
+            }
+            format!(
+                "{k}: {:?} {:?} {:?} {:?} {:?}",
+                w.player.state, w.player.pos, w.player.vel, w.player.knockout, w.events
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_knocked_out_walker_never_touches_the_player() {
+    use Action::{Jump as J, Left as L};
+    // Nothing held, walking, running, rolling and jumping.
+    let inputs: [(&[Action], (Action, usize)); 5] = [
+        (&[], (J, 0)),
+        (&[R], (J, 0)),
+        (&[L, A], (J, 0)),
+        (&[R], (A, 5)),
+        (&[L], (J, 7)),
+    ];
+    for (keys, tap) in inputs {
+        let left = played(keys, tap, false, 59);
+        let put = played(keys, tap, true, 59);
+        assert_eq!(left, put, "{keys:?}, {tap:?}");
+    }
+    // As a control, a walker still walking put on the player the same
+    // way hurts it.
+    let mut w = world(100, Facing::Right, SMALL, "left", 1);
+    let rows = act(&mut w, &[D, A], &[(0, 0, 180.25)], 18);
+    assert_eq!(struck(&rows), [17]);
+    w.things[0].phase = Phase::Ready;
+    let hurt = (0..8).any(|_| {
+        w.things[0].pos = w.player.pos;
+        step(&mut w, &InputFrame::default());
+        w.events.contains(&Event::Hurt)
+    });
+    assert!(hurt);
 }

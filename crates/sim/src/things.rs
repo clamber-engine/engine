@@ -86,7 +86,9 @@
 //! as it was at the start of the step: left or right of it, or below its
 //! bottom edge (see [`fall_out`]). That's from the step after the hold
 //! for one bounced on or rolled into, and from the second after the hit
-//! for one hit by a thrown object. Other defeated enemies show as defeated for [`DEFEATED_FRAMES`], then
+//! for one hit by a thrown object, and from the step after the pause for
+//! one the ground action knocked out, which doesn't touch the player.
+//! Other defeated enemies show as defeated for [`DEFEATED_FRAMES`], then
 //! are gone. They stay gone after the player loses a life.
 
 use clamber_fixed::Fixed;
