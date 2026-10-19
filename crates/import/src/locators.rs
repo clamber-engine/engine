@@ -472,6 +472,7 @@ mod tests {
                 "First level",
                 "First level's room",
                 "First level's scene",
+                "Characters' pictures",
                 "Level map"
             ]
         );

@@ -496,13 +496,13 @@ pub struct SheetFiles {
 }
 
 /// Packs `pictures` into a sprite sheet whose image is `image`, coloured
-/// with `palette`. Sheet frame `i` is `pictures[i]`, named with its
-/// name, with the frame's origin as its origin, shown for one logic frame.
-/// Which pictures make which animation isn't in the spec yet, so there
-/// are none.
+/// with `palette`, with `others` as its named palettes. Sheet frame `i`
+/// is `pictures[i]`, with the frame's origin as its origin, shown for one
+/// logic frame, and is an animation of its own named with its name.
 pub fn sprite_sheet(
     pictures: &[(String, Picture)],
     palette: &SpritePalette,
+    others: &[(&str, &SpritePalette)],
     image: &str,
 ) -> Result<SheetFiles, String> {
     let sizes: Vec<(u32, u32)> = pictures
@@ -551,15 +551,34 @@ pub fn sprite_sheet(
             "ticks": 1,
         }));
     }
+    let tags: Vec<_> = pictures
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _))| json!({ "name": name, "from": i, "to": i, "direction": "forward" }))
+        .collect();
+    let palettes: serde_json::Map<String, serde_json::Value> = others
+        .iter()
+        .map(|&(name, p)| {
+            let colours: Vec<String> = p
+                .palette()
+                .0
+                .iter()
+                .map(|&[r, g, b, a]| format!("#{r:02x}{g:02x}{b:02x}{a:02x}"))
+                .collect();
+            (name.to_string(), json!(colours))
+        })
+        .collect();
     let meta = json!({
         "frames": frames,
         "meta": {
             "image": image,
             "size": { "w": sheet.width, "h": sheet.height },
             "scale": "1",
+            "frameTags": tags,
             "clamber": {
                 "origin": { "x": SHEET_ORIGIN, "y": SHEET_ORIGIN },
                 "pixelArt": true,
+                "palettes": palettes,
             },
         },
     });
@@ -972,7 +991,7 @@ mod tests {
                 (format!("frame-{n}"), p.unwrap())
             })
             .collect();
-        let files = sprite_sheet(&pictures, &palette(), "frames.png").unwrap();
+        let files = sprite_sheet(&pictures, &palette(), &[], "frames.png").unwrap();
         let meta = clamber_sprite::Sheet::from_json_str(&files.json, "frames.json").unwrap();
         assert_eq!(meta.image, "frames.png");
         assert!(meta.pixel_art);
@@ -983,6 +1002,11 @@ mod tests {
         assert_eq!(p, &palette().palette());
         let sheet = SpriteSheet::new(meta, image).unwrap();
         assert_eq!(sheet.sheet.frames.len(), numbers.len());
+        for (i, animation) in sheet.sheet.animations.iter().enumerate() {
+            assert_eq!(animation.name, pictures[i].0);
+            assert_eq!(animation.frames, [i]);
+        }
+        assert_eq!(sheet.sheet.animations.len(), numbers.len());
 
         // Frame 36 reaches from -128 to 134 each way.
         let o = 160;
@@ -999,6 +1023,24 @@ mod tests {
             }
             assert_eq!(drawn, want, "{}", pictures[i].0);
         }
+    }
+
+    #[test]
+    fn sheets_carry_their_other_palettes_by_name() {
+        let frames = frames();
+        let picture = frames[&35].picture(None, Mirror::default()).unwrap();
+        let mut bytes = vec![0; SpritePalette::SIZE];
+        bytes[0] = 0x1F;
+        let red = SpritePalette::new(&bytes).unwrap();
+        let files = sprite_sheet(
+            &[("a".into(), picture)],
+            &palette(),
+            &[("red", &red)],
+            "a.png",
+        );
+        let meta = clamber_sprite::Sheet::from_json_str(&files.unwrap().json, "a.json").unwrap();
+        assert_eq!(meta.palettes.len(), 1);
+        assert_eq!(meta.palettes["red"], red.palette());
     }
 
     #[test]
@@ -1124,7 +1166,7 @@ mod tests {
         assert!(frame.is_empty());
         let picture = frame.picture(None, Mirror::default()).unwrap();
         assert_eq!((picture.pixels.width, picture.pixels.height), (0, 0));
-        let files = sprite_sheet(&[("empty".into(), picture)], &palette(), "e.png").unwrap();
+        let files = sprite_sheet(&[("empty".into(), picture)], &palette(), &[], "e.png").unwrap();
         let meta = clamber_sprite::Sheet::from_json_str(&files.json, "e.json").unwrap();
         let sheet = SpriteSheet::new(meta, decode_png(&files.png).unwrap()).unwrap();
         assert_eq!(sheet.sheet.frames[0].rect.w, 0);

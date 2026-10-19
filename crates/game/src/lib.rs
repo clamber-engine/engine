@@ -111,12 +111,13 @@ pub const DEFAULT_LEVEL: &str = "base/levels/first.level";
 pub const SPRITES: &str = "base/sprites";
 
 /// A game of the level at `path`, with its layers' art, its music's
-/// folder, and the player and entities drawn from the sheets in
-/// `sprites`, played with `feel`.
-pub fn load_game(path: &Path, sprites: &Path, feel: Arc<Feel>) -> Result<Game, String> {
+/// folder, and the player and entities drawn from the sheets in the
+/// folders of `sprites` (a later folder's sheet replacing an earlier
+/// one's of the same name, [`Cast::load_layered`]), played with `feel`.
+pub fn load_game(path: &Path, sprites: &[&Path], feel: Arc<Feel>) -> Result<Game, String> {
     let level = Level::load(path).map_err(|e| e.to_string())?;
     let art = LayerArt::load(&level, path.parent().unwrap_or(Path::new("")))?;
-    let cast = Cast::load(sprites)?;
+    let cast = Cast::load_layered(sprites)?;
     let world = World::try_new(Arc::new(level), feel).map_err(|e| e.to_string())?;
     Ok(Game::new(world).with_art(art).with_cast(cast))
 }

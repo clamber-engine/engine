@@ -69,22 +69,31 @@ impl Cast {
 
     /// Reads every sheet in `dir`, each named after its metadata file.
     pub fn load(dir: &Path) -> Result<Cast, String> {
-        let err = |e: std::io::Error| format!("{}: {e}", dir.display());
-        let mut paths = Vec::new();
-        for entry in std::fs::read_dir(dir).map_err(err)? {
-            let path = entry.map_err(err)?.path();
-            if path.extension().is_some_and(|e| e == "json") {
-                paths.push(path);
+        Cast::load_layered(&[dir])
+    }
+
+    /// Reads every sheet in each of `dirs`, each named after its
+    /// metadata file. A sheet replaces one of the same name from an
+    /// earlier folder, so a pack's sheets stand in for the engine's own
+    /// and the engine's draw what the pack has no sheet for.
+    pub fn load_layered(dirs: &[&Path]) -> Result<Cast, String> {
+        let mut sheets = BTreeMap::new();
+        for dir in dirs {
+            let err = |e: std::io::Error| format!("{}: {e}", dir.display());
+            let mut paths = Vec::new();
+            for entry in std::fs::read_dir(dir).map_err(err)? {
+                let path = entry.map_err(err)?.path();
+                if path.extension().is_some_and(|e| e == "json") {
+                    paths.push(path);
+                }
+            }
+            for path in paths {
+                let name = path.file_stem().unwrap_or_default().to_string_lossy();
+                let sheet = SpriteSheet::load(&path).map_err(|e| e.to_string())?;
+                sheets.insert(name.into_owned(), sheet);
             }
         }
-        paths.sort();
-        let mut sheets = Vec::new();
-        for path in paths {
-            let name = path.file_stem().unwrap_or_default().to_string_lossy();
-            let sheet = SpriteSheet::load(&path).map_err(|e| e.to_string())?;
-            sheets.push((name.into_owned(), sheet));
-        }
-        Ok(Cast::new(sheets))
+        Ok(Cast::new(sheets.into_iter().collect()))
     }
 
     /// Whether the player has a sheet to be drawn with.
@@ -627,5 +636,35 @@ mod tests {
         }
         let checkpoint = cast.bank.sheet(cast.kinds[CHECKPOINT]);
         assert!(checkpoint.animation("reached").is_some());
+    }
+
+    #[test]
+    fn a_later_folder_s_sheets_replace_and_add_to_the_earlier_s() {
+        let own = crate::content_dir().join(crate::SPRITES);
+        let pack = std::env::temp_dir().join(format!("clamber-cast-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&pack);
+        std::fs::create_dir_all(&pack).unwrap();
+        // The pack draws checkpoints as crates, and has a kind of its own.
+        for (from, to) in [("crate", CHECKPOINT), ("crate", "made-up")] {
+            let json = std::fs::read_to_string(own.join(format!("{from}.json"))).unwrap();
+            std::fs::write(pack.join(format!("{to}.json")), json).unwrap();
+            for suffix in [".png", "-normals.png"] {
+                let image = own.join(format!("{from}{suffix}"));
+                if image.exists() {
+                    std::fs::copy(image, pack.join(format!("{from}{suffix}"))).unwrap();
+                }
+            }
+        }
+        let alone = Cast::load(&own).unwrap();
+        let layered = Cast::load_layered(&[&own, &pack]).unwrap();
+        std::fs::remove_dir_all(&pack).unwrap();
+        assert!(layered.has_player());
+        assert!(layered.has_kind("made-up"));
+        assert!(!alone.has_kind("made-up"));
+        assert_eq!(layered.kinds.len(), alone.kinds.len() + 1);
+        let checkpoint = layered.bank.sheet(layered.kinds[CHECKPOINT]);
+        let crate_sheet = alone.bank.sheet(alone.kinds["crate"]);
+        assert_eq!(checkpoint.animations, crate_sheet.animations);
+        assert!(checkpoint.animation("reached").is_none());
     }
 }

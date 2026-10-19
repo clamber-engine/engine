@@ -22,6 +22,7 @@
 //! The `clamber-import` command and the game's import menu both call
 //! [`Importer::import`].
 
+mod characters;
 mod collectibles;
 mod echo;
 mod graphics;
@@ -50,6 +51,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+pub use characters::{CHARACTER_SHEET, CharacterDecoder, CharacterPictures, FOLLOWING, PictureSet};
 pub use collectibles::{Collectibles, GROUP_SIZE, Group, Item, SPARK, Shape};
 pub use graphics::{
     Background, GridPicture, PaletteSet, Pictures, ScreenMap, TILE, TileEntry, TileSet, channels,
@@ -390,6 +392,9 @@ impl Importer {
                         settings: settings_rows(&known.title),
                     }));
                 }
+            }
+            if let Some(characters) = CharacterDecoder::of(&known.title) {
+                decoders.push(Box::new(characters));
             }
             if Rules::of(&known.title).is_some() && locate(&known.title, Data::MapPoints).is_some()
             {

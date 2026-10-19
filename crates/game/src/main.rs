@@ -327,7 +327,7 @@ fn load(options: &Options, saved: Option<&str>) -> Result<(Session, PathBuf), St
         report::warn(warning);
     }
     let sprites = content_dir().join(SPRITES);
-    let game = load_game(&level_path, &sprites, Arc::new(feel))?;
+    let game = load_game(&level_path, &[&sprites], Arc::new(feel))?;
     let mut session = Session::new(game);
     session.feels = feels;
     session.level_path = level_path.clone();

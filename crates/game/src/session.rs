@@ -785,13 +785,14 @@ impl Session {
     }
 
     /// The level at `path` with the movement being played, and `pack`'s
-    /// sprites and look if it has them, at its start. Keeps the debug
+    /// sprites (over the game's own) and look if it has them, at its start. Keeps the debug
     /// view setting, and turns it on for a level with nothing else to
     /// see.
     fn load(&self, path: &Path, pack: Option<&Installed>) -> Result<Game, String> {
-        let sprites = pack
-            .and_then(Installed::sprites)
-            .unwrap_or_else(|| content_dir().join(SPRITES));
+        let own = content_dir().join(SPRITES);
+        let packed = pack.and_then(Installed::sprites);
+        let mut sprites = vec![own.as_path()];
+        sprites.extend(packed.as_deref());
         let look = Look {
             widescreen: self.widescreen_for(pack),
             ..pack.map_or(Look::RENDERED, |p| Look::of(&p.manifest))
