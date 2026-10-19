@@ -82,6 +82,7 @@ switch_from = 0
 switch_reach = 0
 switch_steps = []
 switch_late_steps = []
+roll_jump_switch = 0
 landing_mode_wait = 0
 landing_mode_on_last = 0
 landing_mode_after_last = 0
@@ -599,6 +600,10 @@ switch_from = 20
 switch_reach = 71
 switch_steps = [3, 7, 12, 16]
 switch_late_steps = [2, 6, 11, 15]
+# So does a jump out of a roll pressed on the ground (jump-input.md, "The
+# switch frame M"); the second character's don't ("Landings this doesn't
+# cover").
+roll_jump_switch = 1
 # After a jump's landing, walking, running or standing starts 6 frames
 # after a later switch frame, or 10 or 9 after a landing that is itself
 # the switch frame (ground-speed.md, "After a landing").
@@ -1145,6 +1150,7 @@ roll_fall_end = 25
 # all three walkers (rolling-into-walkers.md, "The second character").
 roll_attack_width = 18
 roll_attack_offset = 3
+roll_jump_switch = 0
 # The second character follows by where the first is now.
 follow_lag = 0
 # The second character being hit isn't specified yet, so it's a hit with

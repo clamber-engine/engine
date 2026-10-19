@@ -356,6 +356,7 @@ mod tests {
                     | Param::SwitchReach
                     | Param::SwitchSteps
                     | Param::SwitchLateSteps
+                    | Param::RollJumpSwitch
                     | Param::LandingModeWait
                     | Param::LandingModeOnLast
                     | Param::LandingModeAfterLast

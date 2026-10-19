@@ -241,7 +241,8 @@ pub struct Player {
     /// After a landing, what the switch frame steep faces wait for is,
     /// until it has come (`face_slide_switch`).
     pub face_switch: Option<FaceSwitch>,
-    /// The jump under way, or the last one, started out of a roll.
+    /// The jump under way, or the last one, started out of a roll and
+    /// lands without a switch frame (`roll_jump_switch`).
     pub rolled_jump: bool,
     /// Falling after walking off the ground, until landing.
     pub walked_off: bool,
@@ -1328,7 +1329,9 @@ impl Player {
             self.coyote = None;
         }
         if (starts && wait == 0) || due {
-            self.rolled_jump = self.state == State::Roll || roll_jump;
+            // One pressed on the ground can land with its switch frame.
+            self.rolled_jump = (self.state == State::Roll || roll_jump)
+                && !(physics[Param::RollJumpSwitch] > Fixed::ZERO && self.grounded());
             self.approach = None;
             if self.state == State::Roll {
                 events.push(Event::RollEnd);

@@ -895,16 +895,43 @@ fn classic_landing_before_the_approach_frame() {
 }
 
 #[test]
-fn classic_landing_after_a_roll_jump_has_no_switch_frame() {
-    // spec/behavior/jump-input.md, "Landings this doesn't cover": a jump
-    // out of a roll lands with E = L + 3.
+fn classic_landing_after_a_roll_jump_waits_for_the_switch_frame() {
+    // spec/behavior/jump-input.md, "The switch frame M": the first
+    // character's jumps out of a roll pressed on the ground land as any
+    // other jump, with E = M + 2, not L + 3.
     let rolling = || {
         let mut w = classic();
         w.player.vel.x = Fixed::from_int(3);
         w.player.state = State::Roll;
         w
     };
-    let (t, _, l, e) = classic_standing_jump(rolling, 1);
+    for held in [1, 10, 14, 20] {
+        let jump = classic_standing_jump(rolling, held);
+        assert_eq!(jump, classic_standing_jump(classic, held), "held {held}");
+    }
+    let (_, _, l, e) = classic_standing_jump(rolling, 10);
+    assert_eq!(e, Some(l + 2));
+}
+
+#[test]
+fn classic_second_character_landing_after_a_roll_jump_has_no_switch_frame() {
+    // spec/behavior/jump-input.md, "Landings this doesn't cover": the
+    // second character's jump out of a roll lands with E = L + 3.
+    let rolling = || {
+        let mut feel = generic_feel("classic-1").unwrap();
+        feel.roster.push(CharacterFeel {
+            physics: clamber_pack::Presets::builtin()
+                .slot("classic-1", 1)
+                .unwrap(),
+            abilities: feel.roster[0].abilities.clone(),
+        });
+        let mut w = Play::new(feel);
+        w.player.character = 1;
+        w.player.vel.x = Fixed::from_int(3);
+        w.player.state = State::Roll;
+        w
+    };
+    let (t, _, l, e) = classic_standing_jump(rolling, 10);
     assert_eq!(t, 1);
     assert_eq!(e, Some(l + 3));
 }

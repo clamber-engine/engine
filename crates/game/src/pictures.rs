@@ -665,6 +665,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_jump_out_of_a_roll_shows_a_standing_jump_s_pictures() {
+        // player-frames.md: a jump out of a roll pressed on the ground
+        // shows the same air, landing and standing pictures, from
+        // `jump-1` on the press frame.
+        for hold in [1, 12] {
+            let still = run(world(FLAT, 0), &jump(10, hold, 120));
+            let mut keys = jump(20, hold, 140);
+            keys[10] = vec![Action::Action];
+            let rolled = run(world(FLAT, 0), &keys);
+            let (a, b) = (
+                still.frames(Event::JumpStart)[0],
+                rolled.frames(Event::JumpStart)[0],
+            );
+            assert_eq!(b, 21, "Jump pressed on T - 1");
+            assert_eq!(rolled.frames(Event::RollStart), [10]);
+            assert_eq!(
+                rolled.shown[b - 1..b + 70],
+                still.shown[a - 1..a + 70],
+                "hold {hold}"
+            );
+        }
+    }
+
     /// Action pressed for a frame on frame 10, then `then` held.
     fn roll(then: &[Action], total: usize) -> Vec<Vec<Action>> {
         (0..total)
