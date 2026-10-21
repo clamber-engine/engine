@@ -118,7 +118,8 @@ clamber-replay --pack <dir> --inputs <file> --out <dir> [--level <id>]
                [--frames 0..3600] [--every 1] [--layers]
 ```
 
-- `--pack` is an imported pack's folder (the one holding
+- `--pack` is an imported pack's folder (`packs/<id>`, whose `current`
+  file names the import in use; or that import's folder, holding
   `manifest.toml`); `--level` is a file name in its `levels/` folder
   without `.level`, the first one by default. `--arrival` starts at one
   of the level's arrivals instead of its start. `--restart` comes back at

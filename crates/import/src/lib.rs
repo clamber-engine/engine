@@ -64,7 +64,7 @@ pub use ground::{Below, COLUMN_BANDS, Ground, Half, Layout, Surface, TITLE_2_ORI
 pub use image::{
     COPIER_HEADER, Catalog, IMAGE_EXTENSIONS, Image, Known, MAX_IMAGE_SIZE, Outcome, Sha256Hash,
 };
-pub use installed::{Installed, check_shareable, installed};
+pub use installed::{CURRENT, Installed, check_shareable, current, installed, tidy};
 pub use kinds::{
     CRITTER, DEFAULT_THROWS, END, EXIT, FINGERPRINT_SIZE, Heading, KEG, Kind, KindRow,
     KindSettings, Patrol, ROOM_ENTRANCE, SLING, SettingsRow, Throw, WALKER, WALL_EXIT, WALL_RETURN,
@@ -156,6 +156,15 @@ pub enum ImportError {
         message: String,
     },
     Write(String),
+    /// Something, as a file manager window, held the pack's folder or a
+    /// file in it open so that the new import couldn't take the old
+    /// one's place. Trying again once it's closed will work.
+    Blocked {
+        /// The pack's folder.
+        folder: PathBuf,
+        /// What the system said, for the report.
+        detail: String,
+    },
 }
 
 impl fmt::Display for ImportError {
@@ -177,6 +186,22 @@ impl fmt::Display for ImportError {
                 write!(f, "couldn't convert the {decoder}: {message}")
             }
             ImportError::Write(message) => write!(f, "can't write the pack: {message}"),
+            ImportError::Blocked { folder, .. } => write!(
+                f,
+                "{} wouldn't let Clamber replace the old copy, in {}. It's probably \
+                 open in {} or another program. Close it and try again.",
+                if cfg!(windows) {
+                    "Windows"
+                } else {
+                    "The system"
+                },
+                folder.display(),
+                if cfg!(windows) {
+                    "File Explorer"
+                } else {
+                    "a file manager"
+                },
+            ),
         }
     }
 }
@@ -289,7 +314,12 @@ pub fn import_report(result: &Result<Imported, ImportError>) -> String {
                 }
             }
         }
-        Err(e) => out += &format!("Didn't import: {e}\n"),
+        Err(e) => {
+            out += &format!("Didn't import: {e}\n");
+            if let ImportError::Blocked { detail, .. } = e {
+                out += &format!("  {detail}\n");
+            }
+        }
     }
     out
 }
@@ -355,7 +385,7 @@ impl PackWriter {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Imported {
     pub manifest: Manifest,
-    /// The pack's folder.
+    /// The import's folder, inside the pack's folder.
     pub dir: PathBuf,
     /// The decoders that ran, in order.
     pub decoded: Vec<String>,
@@ -454,9 +484,9 @@ impl Importer {
             |path: &Path, e: std::io::Error| ImportError::Write(format!("{}: {e}", path.display()));
 
         let id = known.title.clone();
-        let dest = packs_dir.join(&id);
-        if dest.exists() && !replace {
-            return Err(ImportError::AlreadyImported(dest));
+        let top = packs_dir.join(&id);
+        if top.exists() && !replace {
+            return Err(ImportError::AlreadyImported(top));
         }
         fs::create_dir_all(packs_dir).map_err(|e| write_err(packs_dir, e))?;
         let staging = packs_dir.join(format!(".importing-{id}-{}", std::process::id()));
@@ -465,30 +495,14 @@ impl Importer {
 
         let result = self
             .fill(image, known, &staging, progress)
-            .and_then(|imported| {
-                let old = packs_dir.join(format!(".replaced-{id}-{}", std::process::id()));
-                let had_old = dest.exists();
-                if had_old {
-                    fs::rename(&dest, &old).map_err(|e| write_err(&dest, e))?;
-                }
-                if let Err(e) = fs::rename(&staging, &dest) {
-                    if had_old {
-                        let _ = fs::rename(&old, &dest);
-                    }
-                    return Err(write_err(&dest, e));
-                }
-                if had_old {
-                    let _ = fs::remove_dir_all(&old);
-                }
-                Ok(imported)
-            });
+            .and_then(|imported| Ok((imported, install(&staging, &top)?)));
         if result.is_err() {
             let _ = fs::remove_dir_all(&staging);
         }
-        let (manifest, decoded, pack) = result?;
+        let ((manifest, decoded, pack), dir) = result?;
         Ok(Imported {
             manifest,
-            dir: dest,
+            dir,
             decoded,
             skipped: pack.skipped,
             notes: pack.notes,
@@ -536,6 +550,70 @@ impl Importer {
         fs::write(&path, manifest.to_toml())
             .map_err(|e| ImportError::Write(format!("{}: {e}", path.display())))?;
         Ok((manifest, decoded, pack))
+    }
+}
+
+/// Moves the finished import in `staging` into the pack folder `top`,
+/// in a folder of its own, and makes it the one in use (the
+/// [`installed`] module). Returns its folder. Neither `top` nor an
+/// earlier import in it is renamed or removed, so a window open on
+/// them doesn't stop it; an earlier import is left for [`tidy`].
+fn install(staging: &Path, top: &Path) -> Result<PathBuf, ImportError> {
+    let blocked = |e: std::io::Error, path: &Path| match e.kind() {
+        std::io::ErrorKind::PermissionDenied => ImportError::Blocked {
+            folder: top.to_path_buf(),
+            detail: format!("{}: {e}", path.display()),
+        },
+        _ => ImportError::Write(format!("{}: {e}", path.display())),
+    };
+    retrying(|| fs::create_dir_all(top)).map_err(|e| blocked(e, top))?;
+    // After the imports there already, whichever is in use.
+    let number = fs::read_dir(top)
+        .map_err(|e| blocked(e, top))?
+        .filter_map(|e| {
+            let name = e.ok()?.file_name();
+            name.to_str()?.strip_prefix("import-")?.parse::<u64>().ok()
+        })
+        .max()
+        .unwrap_or(0)
+        + 1;
+    let name = format!("import-{number}");
+    let dir = top.join(&name);
+    retrying(|| fs::rename(staging, &dir)).map_err(|e| blocked(e, &dir))?;
+
+    // Written aside, then moved over the old one, so that it's always
+    // whole.
+    let pointer = top.join(CURRENT);
+    let next = top.join(format!(".{CURRENT}-{}", std::process::id()));
+    let switched = fs::write(&next, format!("{name}\n"))
+        .map_err(|e| blocked(e, &next))
+        .and_then(|()| retrying(|| fs::rename(&next, &pointer)).map_err(|e| blocked(e, &pointer)));
+    if let Err(e) = switched {
+        let _ = fs::remove_file(&next);
+        let _ = fs::remove_dir_all(&dir);
+        return Err(e);
+    }
+    Ok(dir)
+}
+
+/// Runs `op` until it succeeds, or for about two seconds while the
+/// system refuses it: what's in the way (a virus scanner reading the
+/// files just written, say) is often gone by then.
+fn retrying<T>(mut op: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    let mut wait = std::time::Duration::from_millis(20);
+    let mut waited = std::time::Duration::ZERO;
+    loop {
+        match op() {
+            Err(e)
+                if e.kind() == std::io::ErrorKind::PermissionDenied
+                    && waited < std::time::Duration::from_secs(2) =>
+            {
+                std::thread::sleep(wait);
+                waited += wait;
+                wait = (wait * 2).min(std::time::Duration::from_millis(500));
+            }
+            result => return result,
+        }
     }
 }
 

@@ -40,6 +40,30 @@ const PICKER_ROWS: usize = 11;
 /// player to share when something went wrong.
 pub const REPORT: &str = "import-report.txt";
 
+/// What the player is told when something holds the old copy of a pack
+/// open, so that importing it again can't replace it.
+const BLOCKED: &str = if cfg!(windows) {
+    "Windows wouldn't let Clamber replace the old copy. It's probably open \
+     in File Explorer or another program. Close it and press Retry."
+} else {
+    "Clamber couldn't replace the old copy. It's probably open in another \
+     program. Close it and press Retry."
+};
+
+/// Shows `folder` in the system's file manager.
+pub fn open_folder(folder: &Path) {
+    let program = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    if let Err(e) = std::process::Command::new(program).arg(folder).spawn() {
+        report::warn(format!("opening {}: {e}", folder.display()));
+    }
+}
+
 /// How a personal import is described, wherever one is shown.
 pub const PERSONAL: &str = "Personal import: yours to play, not to share";
 
@@ -411,6 +435,11 @@ pub enum After {
     Play,
     /// Import it again over the earlier import.
     Replace,
+    /// Try again, once what blocked replacing the earlier import is
+    /// closed.
+    Retry,
+    /// Show the pack's folder in the system's file manager.
+    OpenFolder,
     /// Back to the picker.
     Another,
     /// Back to where the picker was opened from.
@@ -547,6 +576,12 @@ impl Importing {
                 ("Choose another file", After::Another),
                 ("Done", After::Done),
             ]),
+            Err(ImportError::Blocked { .. }) => Menu::new([
+                ("Retry", After::Retry),
+                ("Open folder", After::OpenFolder),
+                ("Choose another file", After::Another),
+                ("Done", After::Done),
+            ]),
             Err(_) => Menu::new([
                 ("Choose another file", After::Another),
                 ("Done", After::Done),
@@ -622,6 +657,13 @@ impl Importing {
                 }
                 self.draw_report(canvas, centre, y + LINE);
             }
+            Some(Err(ImportError::Blocked { folder, .. })) => {
+                heading(canvas, "CAN'T IMPORT", FAILED);
+                let y = paragraph(canvas, centre, y, BLOCKED, HEADING);
+                let folder = fit_end(&folder.display().to_string(), WIDTH);
+                draw_text_centred(canvas, centre, y + LINE, &folder, SUBTITLE);
+                self.draw_report(canvas, centre, y + 3 * LINE);
+            }
             Some(Err(e)) => {
                 heading(canvas, "CAN'T IMPORT", FAILED);
                 let y = paragraph(canvas, centre, y, &capitalized(&e.to_string()), HEADING);
@@ -635,6 +677,14 @@ impl Importing {
 }
 
 impl Importing {
+    /// The pack folder an import couldn't replace the old copy in.
+    pub fn blocked_folder(&self) -> Option<&Path> {
+        match &self.result {
+            Some(Err(ImportError::Blocked { folder, .. })) => Some(folder),
+            _ => None,
+        }
+    }
+
     /// Where the report is, if it was written.
     fn draw_report(&self, canvas: &mut dyn Surface, centre: i32, top: i32) {
         if let Some(path) = &self.report {

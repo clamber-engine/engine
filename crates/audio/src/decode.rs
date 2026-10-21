@@ -24,6 +24,7 @@ const PREROLL: u64 = 4 * 1152;
 /// Where to read encoded audio from.
 #[derive(Clone, Debug)]
 pub enum Input {
+    /// A file, read whole when it's opened rather than kept open.
     File(std::path::PathBuf),
     /// Encoded bytes, with the file extension as a format hint.
     Bytes(std::sync::Arc<[u8]>, Option<String>),
@@ -77,7 +78,11 @@ impl Decoding {
                 if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                     hint.with_extension(ext);
                 }
-                Box::new(std::fs::File::open(path).map_err(|e| err(e.to_string()))?)
+                // Read whole rather than streamed, so the file isn't held
+                // open while it plays: an open file can't be replaced or
+                // removed on Windows, as when a pack is imported again.
+                let bytes = std::fs::read(path).map_err(|e| err(e.to_string()))?;
+                Box::new(Cursor::new(bytes))
             }
             Input::Bytes(bytes, ext) => {
                 if let Some(ext) = ext {

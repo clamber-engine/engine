@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use clamber_import::{
-    Catalog, Decoder, Image, ImportError, Importer, Known, MANIFEST, Manifest, NotShareable,
-    PackWriter, check_shareable, installed,
+    CURRENT, Catalog, Decoder, Image, ImportError, Importer, Installed, Known, MANIFEST, Manifest,
+    NotShareable, PackWriter, check_shareable, installed, tidy,
 };
 
 /// A fresh folder outside the source tree.
@@ -73,7 +73,12 @@ fn entries(dir: &Path) -> Vec<String> {
 fn writes_a_personal_pack() {
     let packs = scratch("writes").join("packs");
     let imported = importer(false).import(&image(), &packs, false).unwrap();
-    assert_eq!(imported.dir, packs.join("title-9"));
+    assert_eq!(imported.dir, packs.join("title-9/import-1"));
+    assert_eq!(entries(&packs.join("title-9")), [CURRENT, "import-1"]);
+    assert_eq!(
+        fs::read_to_string(packs.join("title-9").join(CURRENT)).unwrap(),
+        "import-1\n"
+    );
     assert_eq!(imported.decoded, ["probe"]);
     assert_eq!(
         fs::read_to_string(imported.dir.join("levels/size.txt")).unwrap(),
@@ -100,17 +105,152 @@ fn keeps_an_earlier_import_unless_replacing() {
     let packs = scratch("replace");
     let importer = importer(false);
     importer.import(&image(), &packs, false).unwrap();
-    fs::write(packs.join("title-9/extra"), "old").unwrap();
+    fs::write(packs.join("title-9/import-1/extra"), "old").unwrap();
     assert_eq!(
         importer.import(&image(), &packs, false),
         Err(ImportError::AlreadyImported(packs.join("title-9")))
     );
-    assert!(packs.join("title-9/extra").exists());
+    assert!(packs.join("title-9/import-1/extra").exists());
 
-    importer.import(&image(), &packs, true).unwrap();
-    assert!(!packs.join("title-9/extra").exists());
-    assert!(packs.join("title-9").join(MANIFEST).exists());
+    let imported = importer.import(&image(), &packs, true).unwrap();
+    assert_eq!(imported.dir, packs.join("title-9/import-2"));
+    assert!(!imported.dir.join("extra").exists());
+    assert_eq!(
+        Installed::load(&packs.join("title-9")).unwrap().dir,
+        imported.dir
+    );
     assert_eq!(entries(&packs), ["title-9"]);
+    // The earlier import goes once nothing could be using it.
+    assert_eq!(
+        entries(&packs.join("title-9")),
+        [CURRENT, "import-1", "import-2"]
+    );
+    tidy(&packs);
+    assert_eq!(entries(&packs.join("title-9")), [CURRENT, "import-2"]);
+}
+
+/// Holds `path` open, as a file manager window or a program reading a
+/// file does. On Windows that stops it being renamed or removed.
+fn hold_open(path: &Path) -> fs::File {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // Folders open only with FILE_FLAG_BACKUP_SEMANTICS. Sharing
+        // reads and writes but not deleting, like a file manager.
+        options.custom_flags(0x0200_0000).share_mode(0x1 | 0x2);
+    }
+    options.open(path).unwrap()
+}
+
+#[test]
+fn replaces_an_import_while_its_folder_and_files_are_open() {
+    let packs = scratch("held");
+    let importer = importer(false);
+    importer.import(&image(), &packs, false).unwrap();
+    let held = [
+        hold_open(&packs.join("title-9")),
+        hold_open(&packs.join("title-9/import-1")),
+        hold_open(&packs.join("title-9/import-1/levels")),
+        hold_open(&packs.join("title-9/import-1/levels/size.txt")),
+    ];
+
+    let imported = importer.import(&image(), &packs, true).unwrap();
+    assert_eq!(imported.dir, packs.join("title-9/import-2"));
+    let pack = Installed::load(&packs.join("title-9")).unwrap();
+    assert_eq!(pack.dir, imported.dir);
+    // Tidying leaves what's held for later, and doesn't touch the import
+    // in use.
+    tidy(&packs);
+    assert_eq!(
+        fs::read_to_string(imported.dir.join("levels/size.txt")).unwrap(),
+        "1024"
+    );
+
+    drop(held);
+    tidy(&packs);
+    assert_eq!(entries(&packs.join("title-9")), [CURRENT, "import-2"]);
+    // And once more over that.
+    let imported = importer.import(&image(), &packs, true).unwrap();
+    assert_eq!(imported.dir, packs.join("title-9/import-3"));
+}
+
+#[test]
+fn replaces_a_pack_imported_before_imports_had_folders() {
+    let packs = scratch("unversioned");
+    let importer = importer(false);
+    let imported = importer.import(&image(), &packs, false).unwrap();
+    // Laid out the old way: the pack's files right in its folder.
+    let top = packs.join("title-9");
+    fs::remove_file(top.join(CURRENT)).unwrap();
+    for name in [MANIFEST, "levels"] {
+        fs::rename(imported.dir.join(name), top.join(name)).unwrap();
+    }
+    fs::remove_dir(&imported.dir).unwrap();
+    assert_eq!(Installed::load(&top).unwrap().dir, top);
+    tidy(&packs);
+    assert_eq!(entries(&top), ["levels", MANIFEST]);
+
+    let _held = hold_open(&top);
+    let imported = importer.import(&image(), &packs, true).unwrap();
+    assert_eq!(imported.dir, top.join("import-1"));
+    assert_eq!(Installed::load(&top).unwrap().dir, imported.dir);
+    tidy(&packs);
+    assert_eq!(entries(&top), [CURRENT, "import-1"]);
+}
+
+/// Where the system refuses to change the pack's folder, as Windows
+/// does while something holds it open, the earlier import stays.
+#[cfg(unix)]
+#[test]
+fn a_blocked_replacement_keeps_the_earlier_import() {
+    use std::os::unix::fs::PermissionsExt;
+    let packs = scratch("blocked");
+    let importer = importer(false);
+    importer.import(&image(), &packs, false).unwrap();
+    let top = packs.join("title-9");
+    let mode = |m| fs::set_permissions(&top, fs::Permissions::from_mode(m));
+    mode(0o555).unwrap();
+    let err = importer.import(&image(), &packs, true).unwrap_err();
+    mode(0o755).unwrap();
+    let ImportError::Blocked { folder, detail } = err else {
+        panic!("{err}");
+    };
+    assert_eq!(folder, top);
+    assert!(detail.contains("import-2"), "{detail}");
+    assert_eq!(entries(&packs), ["title-9"]);
+    assert_eq!(entries(&top), [CURRENT, "import-1"]);
+    assert_eq!(Installed::load(&top).unwrap().dir, top.join("import-1"));
+    let imported = importer.import(&image(), &packs, true).unwrap();
+    assert_eq!(imported.dir, top.join("import-2"));
+}
+
+#[test]
+fn says_plainly_when_something_blocks_replacing() {
+    let blocked = ImportError::Blocked {
+        folder: PathBuf::from("packs").join("title-9"),
+        detail: "made-up detail".into(),
+    };
+    let message = blocked.to_string();
+    assert!(message.contains("replace the old copy"), "{message}");
+    assert!(message.contains(&format!("{}", Path::new("packs/title-9").display())));
+    assert!(message.ends_with("Close it and try again."), "{message}");
+    assert!(!message.contains("made-up detail"), "{message}");
+    let report = clamber_import::import_report(&Err(blocked));
+    assert!(report.contains("made-up detail"), "{report}");
+}
+
+#[test]
+fn a_pointer_to_somewhere_else_is_refused() {
+    let packs = scratch("pointer");
+    importer(false).import(&image(), &packs, false).unwrap();
+    let top = packs.join("title-9");
+    for bad in ["../title-9", ".hidden", "a/b", ""] {
+        fs::write(top.join(CURRENT), bad).unwrap();
+        assert!(Installed::load(&top).is_err(), "{bad:?}");
+        assert!(check_shareable(&top).is_err(), "{bad:?}");
+    }
 }
 
 #[test]
@@ -123,8 +263,9 @@ fn a_failed_import_leaves_nothing_behind() {
         "couldn't convert the probe: made-up failure"
     );
     assert_eq!(entries(&packs), ["title-9"]);
+    assert_eq!(entries(&packs.join("title-9")), [CURRENT, "import-1"]);
     assert_eq!(
-        fs::read_to_string(packs.join("title-9/levels/size.txt")).unwrap(),
+        fs::read_to_string(packs.join("title-9/import-1/levels/size.txt")).unwrap(),
         "1024"
     );
 }
@@ -191,7 +332,7 @@ fn lists_installed_packs_and_their_levels() {
     let packs = scratch("installed");
     assert_eq!(installed(&packs.join("none")), (Vec::new(), Vec::new()));
     importer(false).import(&image(), &packs, false).unwrap();
-    let levels = packs.join("title-9/levels");
+    let levels = packs.join("title-9/import-1/levels");
     fs::write(levels.join("b.level"), "").unwrap();
     fs::write(levels.join("a.level"), "").unwrap();
     fs::create_dir(packs.join(".importing-title-9-1")).unwrap();
@@ -229,6 +370,7 @@ fn nothing_in_a_personal_import_is_shareable() {
         refused
     );
     assert_eq!(check_shareable(&imported.dir.join("not/there")), refused);
+    assert_eq!(check_shareable(&packs.join("title-9")), refused);
     assert_eq!(check_shareable(&packs), Ok(()));
 
     let other = scratch("shareable-other");

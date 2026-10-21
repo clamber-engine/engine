@@ -316,3 +316,24 @@ fn a_loop_through_silence_has_a_gap() {
     assert!((s.gap - 40.0 / 8000.0).abs() < 1e-6, "{s:?}");
     assert!(seam::check(&tone(0, 100), 10, 200).is_err(), "past the end");
 }
+
+#[test]
+fn music_from_a_file_does_not_keep_it_open() {
+    let frames = 30000;
+    let dir = std::env::temp_dir().join(format!("clamber-audio-held-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("ramp.wav");
+    let samples: Vec<i16> = (1..=frames as i16).collect();
+    std::fs::write(&path, wav(8000, 1, &samples)).unwrap();
+    let mut m = Music::open(Input::file(&path), None, 8000).unwrap();
+
+    // Replaced as it plays, as when its pack is imported again. On
+    // Windows a file still open couldn't be removed at all.
+    std::fs::write(&path, wav(8000, 1, &vec![7; frames])).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    let _ = std::fs::remove_dir(&dir);
+    assert_eq!(
+        play(&mut m, frames),
+        (1..=frames as i32).collect::<Vec<_>>()
+    );
+}

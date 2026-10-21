@@ -701,7 +701,12 @@ impl Session {
             _ => None,
         };
         match after {
-            After::Replace => self.start_import(file, true),
+            After::Replace | After::Retry => self.start_import(file, true),
+            After::OpenFolder => {
+                if let Some(folder) = importing.blocked_folder() {
+                    crate::import::open_folder(folder);
+                }
+            }
             After::Another => {
                 self.back();
                 if let Screen::Choosing(_) = self.screen {
@@ -2264,7 +2269,7 @@ mod tests {
         s.draw(&mut canvas, 1.0);
         let importing = finish_import(&mut s);
         let imported = importing.result.clone().unwrap().unwrap();
-        assert_eq!(imported.dir, dir.join("packs/title-9"));
+        assert_eq!(imported.dir, dir.join("packs/title-9/import-1"));
         assert!(!imported.manifest.redistribute);
         assert_eq!(importing.menu.as_ref().unwrap().current(), After::Play);
         let report = dir.join("packs/import-report.txt");
@@ -2284,7 +2289,10 @@ mod tests {
             panic!("plays it from the title: {:?}", s.screen);
         };
         assert_eq!(s.game.world.level.name, "Imported level");
-        assert_eq!(s.level_path, dir.join("packs/title-9/levels/first.level"));
+        assert_eq!(
+            s.level_path,
+            dir.join("packs/title-9/import-1/levels/first.level")
+        );
         let pack = s.pack.as_ref().expect("a personal import");
         assert_eq!(pack.manifest.id, "title-9");
         let mut title = Game::canvas();
@@ -2306,7 +2314,7 @@ mod tests {
         import_the_game(&mut s);
         finish_import(&mut s);
         s.step(&press(Action::Pause));
-        let manifest = dir.join("packs/title-9/manifest.toml");
+        let manifest = dir.join("packs/title-9/import-1/manifest.toml");
         let text = std::fs::read_to_string(&manifest).unwrap();
         assert!(text.contains("pixel_art = true"), "{text}");
         std::fs::write(&manifest, format!("{text}view = [256, 224]\n")).unwrap();
@@ -2427,6 +2435,45 @@ mod tests {
         assert!(matches!(s.screen, Screen::Picker(..)), "{:?}", s.screen);
         s.step(&press(Action::Pause));
         assert!(matches!(s.screen, Screen::Title(_)));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Where the system refuses to change the pack's folder, as Windows
+    /// does while something holds it open, the player can retry once
+    /// it's closed.
+    #[cfg(unix)]
+    #[test]
+    fn a_blocked_import_can_be_retried() {
+        use std::os::unix::fs::PermissionsExt;
+        let (mut s, dir) = importing_session("blocked");
+        import_the_game(&mut s);
+        finish_import(&mut s);
+        s.step(&press(Action::Pause));
+        let top = dir.join("packs/title-9");
+        let mode = |m| std::fs::set_permissions(&top, std::fs::Permissions::from_mode(m));
+        mode(0o555).unwrap();
+
+        import_the_game(&mut s);
+        finish_import(&mut s);
+        s.step(&press(Action::Jump));
+        let importing = finish_import(&mut s);
+        assert_eq!(importing.blocked_folder(), Some(top.as_path()));
+        let menu = importing.menu.as_ref().unwrap();
+        let labels: Vec<_> = menu.items.iter().map(|i| i.0.as_str()).collect();
+        assert_eq!(
+            labels,
+            ["Retry", "Open folder", "Choose another file", "Done"]
+        );
+        let report = std::fs::read_to_string(dir.join("packs/import-report.txt")).unwrap();
+        assert!(report.contains("replace the old copy"), "{report}");
+        let mut canvas = Game::canvas();
+        s.draw(&mut canvas, 1.0);
+
+        mode(0o755).unwrap();
+        s.step(&press(Action::Jump));
+        let importing = finish_import(&mut s);
+        let imported = importing.result.clone().unwrap().unwrap();
+        assert_eq!(imported.dir, top.join("import-2"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -2599,7 +2646,8 @@ mod tests {
         s.step(&press(Action::Pause));
         // A pack with nothing to play is listed, but can't be picked.
         std::fs::create_dir_all(dir.join("packs/title-8")).unwrap();
-        let manifest = std::fs::read_to_string(dir.join("packs/title-9/manifest.toml")).unwrap();
+        let manifest =
+            std::fs::read_to_string(dir.join("packs/title-9/import-1/manifest.toml")).unwrap();
         let manifest = manifest.replace("title-9", "title-8");
         std::fs::write(dir.join("packs/title-8/manifest.toml"), manifest).unwrap();
 
