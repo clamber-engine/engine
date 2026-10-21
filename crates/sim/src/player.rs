@@ -2175,13 +2175,18 @@ impl Player {
                     .is_some();
         }
         if events.contains(&Event::Land) {
-            let lockout = frames(
-                physics[if self.walked_off {
-                    Param::FallLandingLockout
-                } else {
-                    Param::LandingLockout
-                }],
-            );
+            let face_fall = self.walked_off && self.walked_off_face && !self.rolled_off;
+            let lockout = match frames(physics[Param::FaceFallJump]) {
+                // A jump from that frame after the landing frame on.
+                n if n > 0 && face_fall && physics[Param::FaceFallLanding] > Fixed::ZERO => n - 1,
+                _ => frames(
+                    physics[if self.walked_off {
+                        Param::FallLandingLockout
+                    } else {
+                        Param::LandingLockout
+                    }],
+                ),
+            };
             // A jump can start `lockout` frames after the switch frame,
             // which is otherwise the frame after landing.
             let (switch, settle) = match jump_age {

@@ -81,6 +81,7 @@ takeoff_over_end = 0
 jump_delay = 0
 landing_lockout = 0
 fall_landing_lockout = 0
+face_fall_jump = 0
 switch_from = 0
 switch_reach = 0
 switch_steps = []
@@ -1160,6 +1161,12 @@ roll_attack_offset = 3
 # second character"). The spec covers landings on the third or a later
 # `s-air-6` frame; the engine lands earlier ones the same way.
 jump_landing_mode = 17
+# After a fall from a steep face it has 7 landing frames, G to G + 6, its
+# mode starts on G + 7, and a jump can start from G + 2 (ground-speed.md,
+# "After a fall or a bounce", and jump-input.md, "Landings this doesn't
+# cover").
+face_fall_landing = 7
+face_fall_jump = 2
 # Its stride cycle (ground-speed.md, "The second character's stride
 # cycle") has 16 walking and 13 running steps of 512 rather than 256:
 # walking at v/2 and running at v/4 + v/8, both at least 256, so the

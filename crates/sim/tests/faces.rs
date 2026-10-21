@@ -724,7 +724,18 @@ fn fall_from_face(
 ) -> Option<Vec<FallRow>> {
     let mut world = ground(faced_ledge(drop), 250.0);
     world.player.vel.x = Fixed::from_int(3);
-    let mut previous = vec![Action::Right, Action::Action];
+    fall_from_face_in(world, &[Action::Right, Action::Action], air, held)
+}
+
+/// [`fall_from_face`] from `world`, holding `onto` up to the frame that
+/// leaves the face.
+fn fall_from_face_in(
+    mut world: World,
+    onto: &[Action],
+    air: &[Action],
+    held: impl Fn(usize) -> Vec<Action>,
+) -> Option<Vec<FallRow>> {
+    let mut previous = onto.to_vec();
     let mut step_with = |world: &mut World, keys: Vec<Action>| {
         press(world, &previous, &keys);
         previous = keys;
@@ -740,7 +751,7 @@ fn fall_from_face(
         )
     };
     while !world.events.contains(&Event::LeaveGround) {
-        step_with(&mut world, vec![Action::Right, Action::Action]);
+        step_with(&mut world, onto.to_vec());
         assert!(world.player.pos.x < Fixed::from_int(310));
     }
     assert!(world.player.walked_off_face);
@@ -1039,20 +1050,31 @@ fn classic_2_facing_waits_a_frame_after_landing_on_the_face() {
 fn at_the_ledge(slot: usize, x: f64, vx: f64) -> World {
     let mut world = ground(ledge, x);
     if slot == 1 {
-        let mut feel = generic_feel("classic-1").unwrap();
-        feel.roster.push(clamber_pack::CharacterFeel {
-            physics: clamber_pack::Presets::builtin()
-                .slot("classic-1", 1)
-                .unwrap(),
-            abilities: Default::default(),
-        });
-        world = World::new(world.level.clone(), Arc::new(feel));
-        world.player.character = 1;
-        if let Some(other) = &mut world.other {
-            other.character = 0;
-        }
+        world = second_leading(&world, false);
     }
     world.player.vel.x = fx(vx);
+    world
+}
+
+/// A fresh world on `world`'s level with Classic 1's second character,
+/// able to roll if `roll`, under control.
+fn second_leading(world: &World, roll: bool) -> World {
+    let abilities = roll
+        .then(|| (clamber_sim::ROLL.to_string(), Default::default()))
+        .into_iter()
+        .collect();
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(clamber_pack::CharacterFeel {
+        physics: clamber_pack::Presets::builtin()
+            .slot("classic-1", 1)
+            .unwrap(),
+        abilities,
+    });
+    let mut world = World::new(world.level.clone(), Arc::new(feel));
+    world.player.character = 1;
+    if let Some(other) = &mut world.other {
+        other.character = 0;
+    }
     world
 }
 
@@ -2171,4 +2193,166 @@ fn a_roll_press_on_a_face_waits_held_for_the_first_frame_off_it() {
     // A press on Q or later rolls on its own frame.
     assert_eq!(coast_and_roll(14, 1).0, [14]);
     assert_eq!(coast_and_roll(15, 1).0, [15]);
+}
+
+/// One frame of [`second_fall`]: `vx` (1/256), facing, gait, whether a
+/// turn is under way, whether the frame started a jump, whether it
+/// started a roll, and the frames Down has been held for a crouch.
+type SecondFallRow = (i64, Facing, Gait, bool, bool, bool, u8);
+
+/// The second character, leading, walking right onto the face of
+/// [`faced_ledge`] at `vx` holding `onto`, and on down it into a fall:
+/// G, and the rows from G to G + 14 with `keys(n)` held on G + `n` from
+/// the frame it leaves the ground (`n` negative before G).
+fn second_fall(
+    drop: i32,
+    vx: f64,
+    onto: &[Action],
+    keys: impl Fn(i64) -> Vec<Action>,
+) -> Vec<SecondFallRow> {
+    let world = || {
+        let mut w = second_leading(&ground(faced_ledge(drop), 250.0), true);
+        w.player.vel.x = fx(vx);
+        w
+    };
+    let run = |g: Option<usize>| {
+        let mut w = world();
+        let mut previous = onto.to_vec();
+        let mut left = false;
+        let mut landed = None;
+        let mut rows = Vec::new();
+        for n in 0..300 {
+            let held = match g {
+                Some(g) if left => keys(n as i64 - g as i64),
+                _ if left => vec![],
+                _ => onto.to_vec(),
+            };
+            press(&mut w, &previous, &held);
+            previous = held;
+            if w.events.contains(&Event::LeaveGround) {
+                assert!(w.player.walked_off_face, "on the face first");
+                left = true;
+            }
+            let p = &w.player;
+            rows.push((
+                grains(p.vel.x),
+                p.facing,
+                p.gait,
+                p.turn.is_some(),
+                w.events.contains(&Event::JumpStart),
+                w.events.contains(&Event::RollStart),
+                p.crouch.held,
+            ));
+            if landed.is_none() && w.events.contains(&Event::Land) {
+                landed = Some(n);
+            }
+            if let Some(landed) = landed
+                && n == g.unwrap_or(landed) + 14
+            {
+                return (landed, rows);
+            }
+        }
+        panic!("{drop}: no landing");
+    };
+    let (g, _) = run(None);
+    let (landed, rows) = run(Some(g));
+    assert_eq!(landed, g, "{drop}: the same landing frame");
+    rows[g..].to_vec()
+}
+
+#[test]
+fn the_second_character_s_7_landing_frames_after_a_fall_from_a_face() {
+    use Action::{Action as A, Left as L, Right as R};
+    // spec/behavior/ground-speed.md, "After a fall or a bounce": the
+    // second character, leading, has landing frames G to G + 6 after a
+    // fall from a steep face, with facing kept and no turn whatever is
+    // held, and its mode starts on G + 7 as at the end of a turn, at step
+    // 1 of its own stride cycle.
+    for drop in [40, 100, 176] {
+        // Action, if held, is held from the frame that leaves the face,
+        // too early to start a roll.
+        let after = |held: &'static [Action]| {
+            second_fall(drop, 2.25, &[R], move |n| match n {
+                0.. => held.to_vec(),
+                _ => held.iter().copied().filter(|&k| k == A).collect(),
+            })
+        };
+        for held in [&[][..], &[L], &[A, L], &[R], &[A, R]] {
+            let rows = after(held);
+            assert!(rows.iter().all(|r| !r.5), "{drop} {held:?}: no roll");
+            for (n, row) in rows[..7].iter().enumerate() {
+                assert!(matches!(row.2, Gait::Landing(_)), "{drop} {held:?} G + {n}");
+                assert_eq!((row.1, row.3), (Facing::Right, false), "{drop} G + {n}");
+            }
+            let g7 = &rows[7];
+            match held {
+                [] => assert_eq!(g7.2, Gait::Standing, "{drop}"),
+                [.., L] => assert!(g7.3, "{drop} {held:?}: a turn on G + 7"),
+                [R] => assert!(matches!(g7.2, Gait::Walking(s) if s.step == 1)),
+                _ if g7.0 >= 512 => assert!(matches!(g7.2, Gait::Running(s) if s.step == 1)),
+                _ => assert!(matches!(g7.2, Gait::Walking(s) if s.step == 1)),
+            }
+        }
+        // Running onto the face with Action and Right held throughout:
+        // running on G + 7 at v ≥ 512.
+        let rows = second_fall(drop, 3.375, &[A, R], |_| vec![A, R]);
+        assert!(rows[..7].iter().all(|r| matches!(r.2, Gait::Landing(_))));
+        assert!(rows[7].0 >= 512, "{drop}: {}", rows[7].0);
+        assert!(
+            matches!(rows[7].2, Gait::Running(s) if s.step == 1),
+            "{drop}"
+        );
+    }
+}
+
+#[test]
+fn after_the_second_character_s_fall_from_a_face_rolls_jumps_and_crouches() {
+    use Action::{Action as A, Down as D, Jump as J, Right as R};
+    // spec/behavior/ground-speed.md, "After a fall or a bounce", and
+    // jump-input.md, "Landings this doesn't cover" (E = L + 2), for the
+    // second character leading.
+    let first = |rows: &[SecondFallRow], hit: fn(&SecondFallRow) -> bool| rows.iter().position(hit);
+    for drop in [40, 100] {
+        let from = |key: Action, p: i64| {
+            second_fall(
+                drop,
+                2.25,
+                &[R],
+                move |n| {
+                    if n >= p { vec![key] } else { vec![] }
+                },
+            )
+        };
+        // A press on G - 4 to G + 1, held, jumps on G + 2; a later one on
+        // P jumps on P + 1.
+        for p in -4..=7 {
+            let want = if p <= 1 { 2 } else { p as usize + 1 };
+            assert_eq!(
+                first(&from(J, p), |r| r.4),
+                Some(want),
+                "{drop}: Jump on G{p:+}"
+            );
+        }
+        // A press made in the air on G - 6 or later and held rolls on
+        // G + 1 (roll-input.md, "In the air"); a press on a landing
+        // frame, or on G + 7, rolls on that frame.
+        assert_eq!(first(&from(A, -7), |r| r.5), None, "{drop}");
+        for p in -6..=7 {
+            let want = p.max(1) as usize;
+            assert_eq!(
+                first(&from(A, p), |r| r.5),
+                Some(want),
+                "{drop}: Action on G{p:+}"
+            );
+        }
+        // A crouch starts on the first frame from G + 2 on with Down held.
+        for p in 0..=7 {
+            let want = p.max(2) as usize;
+            assert_eq!(
+                first(&from(D, p), |r| r.6 > 0),
+                Some(want),
+                "{drop}: Down on G{p:+}"
+            );
+        }
+    }
 }

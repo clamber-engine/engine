@@ -286,6 +286,11 @@ params! {
     /// As `landing_lockout`, after landing from a fall that didn't start
     /// with a jump, such as walking off a ledge. Whole frames.
     FallLandingLockout => "fall_landing_lockout",
+    /// Above 0, after a fall from a steep face with landing frames
+    /// (`face_fall_landing`), a jump can start from this frame after the
+    /// landing frame on, instead of by `fall_landing_lockout`. Whole
+    /// frames.
+    FaceFallJump => "face_fall_jump",
     /// Above 0, a landing after a jump (not one out of a roll) has a
     /// switch frame M, and the first frame a jump can start is
     /// `landing_lockout` frames after M; other landings count as M on the

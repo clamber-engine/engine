@@ -494,6 +494,23 @@ impl World {
         physics
     }
 
+    /// The player ends the last step on the floor of a steep face's
+    /// column (`face_slope`), and isn't rolling.
+    pub fn player_on_face(&self) -> bool {
+        let player = &self.player;
+        let slope = self.player_physics()[Param::FaceSlope];
+        slope > Fixed::ZERO
+            && player.ground.is_some()
+            && player.roll.is_none()
+            && crate::columns::face(
+                &self.level,
+                crate::columns::column(player.pos.x),
+                player.pos.y,
+                slope,
+            )
+            .is_some()
+    }
+
     /// The things that aren't in the level but would appear at their
     /// start if the view reached them, as they'd be on appearing, at
     /// their start: those near a view `width` px wide with its left edge
