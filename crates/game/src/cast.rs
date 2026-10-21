@@ -12,7 +12,9 @@
 //! named palette or variant image, in name order, if it has one. Where a
 //! pack has a sheet of a character's own pictures ([`CHARACTER`] and its
 //! roster slot), the player shows them on the frames they're given for
-//! ([`crate::pictures`]) instead. Entities play their
+//! ([`crate::pictures`]) instead, and so do walkers
+//! ([`crate::walker_pictures`]), throwers and balls
+//! ([`crate::thrower_pictures`]) with sheets of theirs. Entities play their
 //! sheet's first animation, except a reached checkpoint, which plays
 //! `reached`, a defeated enemy, which plays `defeated`, a launcher
 //! that just fired, which plays `fire`, and a spring whose top is pressed
@@ -30,6 +32,7 @@ use clamber_sprite::{Playback, SpriteSheet};
 use crate::pictures::{self, PictureClock};
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
 use crate::surface::Surface;
+use crate::thrower_pictures::{self, Group};
 use crate::walker_pictures::{self, Size, WalkerClock};
 
 /// The sheet the player is drawn with.
@@ -236,21 +239,52 @@ impl Cast {
         opacity: u8,
     ) {
         let facing = pose.walker.facing().unwrap_or(thing.facing);
+        let shown = thrower_pictures::shown(thing);
         let sprite = match self.walker_picture(pose, x, y) {
-            Some(sprite) => Some(sprite),
-            None => self
-                .kinds
-                .get(&thing.kind)
-                .map(|&id| self.sprite(id, pose, x, y)),
-        };
-        if let Some(sprite) = sprite {
-            let sprite = Sprite {
+            Some(sprite) => Some(Sprite {
                 flip_x: facing == Facing::Left,
-                opacity,
                 ..sprite
+            }),
+            None => shown.and_then(|shown| self.thrower_picture(shown, x, y)),
+        };
+        let sprite = sprite.or_else(|| {
+            let &id = self.kinds.get(&thing.kind)?;
+            // The engine's art keeps a ball's mirroring.
+            let (flip_x, flip_y) = match shown {
+                Some(shown) if shown.group == Group::Ball => (shown.flip_x, shown.flip_y),
+                _ => (facing == Facing::Left, false),
             };
-            self.bank.draw(canvas, &sprite);
+            Some(Sprite {
+                flip_x,
+                flip_y,
+                ..self.sprite(id, pose, x, y)
+            })
+        });
+        if let Some(sprite) = sprite {
+            self.bank.draw(canvas, &Sprite { opacity, ..sprite });
         }
+    }
+
+    /// A thrower's or a ball's own picture, from its group's sheet, if
+    /// that has the whole group, mirrored as `shown` says. Its origin is
+    /// a px left of the thing's position (`formats/sprites.md`, "Where
+    /// the picture is drawn").
+    fn thrower_picture(&self, shown: thrower_pictures::Shown, x: f32, y: f32) -> Option<Sprite> {
+        let &id = self.kinds.get(shown.group.sheet())?;
+        let sheet = self.bank.sheet(id);
+        let all = thrower_pictures::labels(shown.group)
+            .iter()
+            .all(|l| sheet.animation(l).is_some());
+        let frame = *sheet
+            .animation(shown.label)
+            .filter(|_| all)?
+            .frames
+            .first()?;
+        Some(Sprite {
+            flip_x: shown.flip_x,
+            flip_y: shown.flip_y,
+            ..Sprite::new(id, frame, x - 1.0, y)
+        })
     }
 
     /// A walker's own picture for `pose`, from its kind's sheet, if that
@@ -768,13 +802,19 @@ mod tests {
     /// A character sheet of 1x1 frames like [`sheet`]'s, with an
     /// animation for each of `labels`.
     fn character_sheet(labels: &[&str]) -> SpriteSheet {
+        labelled_sheet(labels, 0)
+    }
+
+    /// A sheet whose `labels` all show the 2-px frame `x` px into
+    /// [`sheet`]'s image.
+    fn labelled_sheet(labels: &[&str], x: u32) -> SpriteSheet {
         let tags: Vec<String> = labels
             .iter()
             .map(|l| format!(r#"{{ "name": "{l}", "from": 0, "to": 0, "direction": "forward" }}"#))
             .collect();
         let json = format!(
             r#"{{
-                "frames": [ {{ "frame": {{ "x": 0, "y": 0, "w": 2, "h": 1 }}, "ticks": 1 }} ],
+                "frames": [ {{ "frame": {{ "x": {x}, "y": 0, "w": 2, "h": 1 }}, "ticks": 1 }} ],
                 "meta": {{ "image": "c.png", "frameTags": [{}], "clamber": {{ "pixelArt": true }} }}
             }}"#,
             tags.join(",")
@@ -844,6 +884,124 @@ mod tests {
             // its origin, so its first pixel is left of it.
             let got = [canvas.get(0, 0).unwrap(), canvas.get(1, 0).unwrap()];
             assert_eq!(got, want, "{labels:?}");
+        }
+    }
+
+    #[test]
+    fn a_thrower_shows_its_pictures_with_its_timetable() {
+        let level = LEVEL.to_string()
+            + r#"
+            [[entities]]
+            type = "thrower"
+            at = [50, 20]
+        "#;
+        let level = Level::from_toml_str(&level, "test").unwrap();
+        let mut world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
+        let thrower = |world: &World| {
+            let thing = world.things.iter().find(|t| t.kind == "thrower").unwrap();
+            thrower_pictures::shown(thing).unwrap().label
+        };
+        let balls = |world: &World| {
+            world
+                .things
+                .iter()
+                .filter(|t| t.active && t.kind == clamber_sim::BALL)
+                .count()
+        };
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            clamber_sim::step(&mut world, &clamber_sim::InputFrame::default());
+            seen.push((thrower(&world), balls(&world)));
+        }
+        // It appears on the first step, and throws up on the third.
+        assert_eq!(
+            seen,
+            [
+                ("throw-1", 0),
+                ("throw-2", 0),
+                ("throw-3", 1),
+                ("throw-3", 1)
+            ]
+        );
+        let ball = world
+            .things
+            .iter()
+            .find(|t| t.kind == clamber_sim::BALL)
+            .unwrap();
+        assert_eq!(thrower_pictures::shown(ball).unwrap().label, "ball-1");
+    }
+
+    #[test]
+    fn a_thrower_shows_its_picture_a_px_left_unmirrored_when_the_whole_group_is_there() {
+        let level = LEVEL.to_string()
+            + r#"
+            [[entities]]
+            type = "thrower"
+            at = [50, 20]
+        "#;
+        let level = Level::from_toml_str(&level, "test").unwrap();
+        let world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
+        let mut thing = world
+            .things
+            .iter()
+            .find(|t| t.kind == "thrower")
+            .unwrap()
+            .clone();
+        thing.facing = Facing::Left;
+        let group = thrower_pictures::labels(Group::Thrower);
+        for (labels, want) in [
+            (group, [Color::default(), G, Color::default()]),
+            // Without its last picture the group isn't there: the
+            // engine's art, mirrored to face left.
+            (
+                &group[..group.len() - 1],
+                [Color::default(), R, Color::default()],
+            ),
+        ] {
+            let cast = Cast::new(vec![
+                ("thrower".to_string(), sheet()),
+                (
+                    thrower_pictures::THROWER.to_string(),
+                    labelled_sheet(labels, 2),
+                ),
+            ]);
+            let mut canvas = Canvas::new(3, 1);
+            cast.draw_thing(&mut canvas, &thing, &Pose::default(), 2.0, 0.0);
+            let got = [0, 1, 2].map(|x| canvas.get(x, 0).unwrap());
+            assert_eq!(got, want, "{labels:?}");
+        }
+    }
+
+    #[test]
+    fn a_ball_is_mirrored_as_its_turn_says_with_the_engines_art_too() {
+        let mut thing = world().things[0].clone();
+        thing.kind = clamber_sim::BALL.to_string();
+        thing.archetype = clamber_sim::Archetypes::builtin().named(clamber_sim::BALL);
+        thing.facing = Facing::Right;
+        // Steps 15 to 17: `ball-2`, mirrored both ways.
+        thing.clock = 15;
+        let group = thrower_pictures::labels(Group::Ball);
+        for (sheets, want) in [
+            (vec![(thrower_pictures::BALL, labelled_sheet(group, 2))], G),
+            (vec![(clamber_sim::BALL, sheet())], R),
+        ] {
+            let cast = Cast::new(
+                sheets
+                    .into_iter()
+                    .map(|(n, s)| (n.to_string(), s))
+                    .collect(),
+            );
+            let mut canvas = Canvas::new(4, 4);
+            cast.draw_thing(&mut canvas, &thing, &Pose::default(), 2.0, 2.0);
+            // Mirrored about its origin both ways, its first pixel is up
+            // and left of it.
+            let lit: Vec<_> = (0..4)
+                .flat_map(|y| (0..4).map(move |x| (x, y)))
+                .filter(|&(x, y)| canvas.get(x, y).unwrap() != Color::default())
+                .collect();
+            let origin = if want == G { 1 } else { 2 };
+            assert_eq!(lit, [(origin - 1, 1)], "{want:?}");
+            assert_eq!(canvas.get(origin - 1, 1).unwrap(), want);
         }
     }
 }
