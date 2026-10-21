@@ -913,6 +913,62 @@ const SECOND: &[PictureSet] = &[
                 "s-bounce-2",
                 "b40d5b5deb112862c4fbd80476cf07c51a7a34b8c2ecdab4b975905b3ce73b7b",
             ),
+            (
+                "s-bounce-3",
+                "6d00935beacd8d1aa9132aeefcbb5fe1212d862ff399d1c42565d681391d4c1e",
+            ),
+            (
+                "s-bounce-4",
+                "337e5a0cb19407f73b9ce127df4d26b57b3dd0af94f8643237799239287a56c2",
+            ),
+            (
+                "s-bounce-5",
+                "8aceee657d8fc0c0bb9ab430babf1e1b93572e5d1d2d86fee519da833882fe28",
+            ),
+            (
+                "s-bounce-6",
+                "f43c08340af52289063e212bafbea81dab2897593605b90e11f24c25883a0c81",
+            ),
+            (
+                "s-bounce-7",
+                "fcb4b92464b38a724435e380537c6d082949c4cc6d113bb25f6f347190491cb1",
+            ),
+            (
+                "s-bounce-8",
+                "0aace791815d4b0cbb14e91f535d3514a035a0fa4a388fdc36d0225b637847dd",
+            ),
+            (
+                "s-bounce-9",
+                "0aa65508b13d245ae3f29bb0eb15600bbf47ef4c3a423ac6118044838ce87a44",
+            ),
+            (
+                "s-bounce-10",
+                "bea4c83e3be641088b82bbf4ce44b6bc5c508bdb8090fe9f50acce4d90d3d434",
+            ),
+            (
+                "s-bounce-11",
+                "86bceffe08e6d18e6aba9d84bf2baa893324af2eeb4fcd438390ef711b5fb726",
+            ),
+            (
+                "s-bounce-12",
+                "a2a53de5711e1a842dd8e08b87c6b3ba72cd8ad36ae1ececf5c97ebab5c8e5d4",
+            ),
+            (
+                "s-bounce-13",
+                "22eddc0614067e72edc56d44e6f033d8b12b7843145de6605610e1dacd0c2617",
+            ),
+            (
+                "s-bounce-14",
+                "75e2e9bdc8f8f9382ea757d02926bd639bd04ed2276f71d832af5efc844deb21",
+            ),
+            (
+                "s-bounce-15",
+                "bdb86eca5e54140127e549ba52052970ba2a632de159305d8acaf108aa511280",
+            ),
+            (
+                "s-bounce-16",
+                "0c1aef55a7181b1fa3480ea66052e869ddffe751ed47d796cde4fff3b6e91dc4",
+            ),
         ],
     },
     PictureSet {

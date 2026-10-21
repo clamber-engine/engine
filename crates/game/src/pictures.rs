@@ -15,10 +15,8 @@
 //!
 //! Engine choices where the spec says nothing:
 //!
-//! - The pictures after the ones given (the second character bouncing
-//!   after B + 4) are the engine's own art, as are the second
-//!   character's in the air from T + 16 until it lands, and standing
-//!   after its bounces.
+//! - The second character's pictures in the air from T + 16 until it
+//!   lands are the engine's own art.
 //! - The second character's walking, running and turning pictures,
 //!   given on flat ground, show on any ground too; in the air after a
 //!   walk-off they are the engine's own art.
@@ -33,7 +31,7 @@
 //!   when `s-air-1` ends. A jump out of a roll pressed in the air takes
 //!   off from where it was in the fall.
 //! - Jumps that land before their approach frame, landings after falls,
-//!   the second character's landings after bounces, and anything while
+//!   and anything while
 //!   carrying, swapping, hurt or losing a life show the engine's own art.
 //! - The standing list goes on on a slope or at a ledge as on flat
 //!   floor, for either character.
@@ -117,7 +115,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
                 "s-air-6", "s-land-1", "s-land-2", "s-land-3", "s-land-4",
             ],
         ),
-        (Set::Bounce, &["s-bounce-1", "s-bounce-2"]),
+        (Set::Bounce, &SECOND_BOUNCE),
         (Set::Roll, &SECOND_ROLL),
         (Set::Walking, &SECOND_WALKING),
     ],
@@ -144,6 +142,14 @@ const SECOND_WALKING: [&str; 31] = [
     "s-walk-15", "s-walk-16", "s-run-1", "s-run-2", "s-run-3", "s-run-4", "s-run-5", "s-run-6",
     "s-run-7", "s-run-8", "s-run-9", "s-run-10", "s-run-11", "s-run-12", "s-run-13",
     "s-stand-5", "s-stand-7",
+];
+
+/// The second character's bounce pictures.
+#[rustfmt::skip]
+const SECOND_BOUNCE: [&str; 16] = [
+    "s-bounce-1", "s-bounce-2", "s-bounce-3", "s-bounce-4", "s-bounce-5", "s-bounce-6",
+    "s-bounce-7", "s-bounce-8", "s-bounce-9", "s-bounce-10", "s-bounce-11", "s-bounce-12",
+    "s-bounce-13", "s-bounce-14", "s-bounce-15", "s-bounce-16",
 ];
 
 /// The second character's roll pictures: `s-roll-1` to `s-roll-12`, then
@@ -392,8 +398,8 @@ impl PictureClock {
             None
         };
         // Standing starts from a stop's last picture, a landing's,
-        // walking, running or turning, on the landing frame after the
-        // first character's bounce, or once up from crouching. After
+        // walking, running or turning, on the landing frame after a
+        // bounce, or once up from crouching. After
         // the first character's walk-off without a face it starts, or
         // goes on, in the air.
         let standing_now = self.shown.is_none()
@@ -410,8 +416,8 @@ impl PictureClock {
             Some(c) => Some(c.saturating_add(1)),
             None => before
                 .is_some_and(|(set, _)| {
-                    matches!(set, Set::Stop | Set::Jump)
-                        || (first && matches!(set, Set::Bounce | Set::Walking))
+                    matches!(set, Set::Stop | Set::Jump | Set::Bounce)
+                        || (first && set == Set::Walking)
                 })
                 .then_some(0)
                 .or((crouched || !first && moved).then_some(0)),
@@ -442,15 +448,14 @@ fn stages(approach: u8, physics: &clamber_pack::Physics) -> [u8; 7] {
     }
 }
 
-/// On B + `n`: the first character's 16 pictures 2 frames each from
-/// `bounce-2` on B + 4, round and round until the landing.
+/// On B + `n`: the character's first bounce picture to B + 3, then its
+/// 16 pictures 2 frames each from the second on B + 4, round and round
+/// until the landing.
 fn bounce(first: bool, n: u8) -> Option<(Set, &'static str)> {
-    let label = match (first, n) {
-        (true, 0..=3) => "bounce-1",
-        (true, _) => labels(0, Set::Bounce)[usize::from((n - 2) / 2) % 16],
-        (false, 0..=3) => "s-bounce-1",
-        (false, 4) => "s-bounce-2",
-        _ => return None,
+    let labels = labels(usize::from(!first), Set::Bounce);
+    let label = match n {
+        0..=3 => labels[0],
+        _ => labels[usize::from((n - 2) / 2) % 16],
     };
     Some((Set::Bounce, label))
 }
@@ -1306,33 +1311,47 @@ mod tests {
             .expect("a hop bounces")
     }
 
-    #[test]
-    fn a_bounce_s_frozen_frames() {
-        let (run, b, _) = bounce_run(1, 1, &[]);
-        run.check(b, &[("s-bounce-1", 4), ("s-bounce-2", 1), ("", 1)]);
+    /// `slot`'s bounce pictures from B to G − 1 ("A bounce"): the first
+    /// to B + 3, then each 2 frames from the second on B + 4, then
+    /// round again from the first on B + 34.
+    fn bounce_list(slot: usize, b: usize, g: usize) -> Vec<(&'static str, usize)> {
+        let labels = labels(slot, Set::Bounce);
+        let mut want = vec![(labels[0], 4)];
+        let mut f = b + 4;
+        let mut i = 1;
+        while f < g {
+            let n = (g - f).min(2);
+            want.push((labels[i % 16], n));
+            f += n;
+            i += 1;
+        }
+        want
     }
 
     #[test]
     fn the_first_character_s_bounce_pictures_until_the_landing() {
         let (run, b, g) = bounce_run(0, 20, &[Action::Jump]);
-        let air = g - b;
-        assert!(air > 34, "round again from B + 34: {air}");
-        let mut want = vec![("bounce-1", 4)];
-        for i in 2..=16 {
-            want.push((labels(0, Set::Bounce)[i - 1], 2));
-        }
-        // Then round again from bounce-1, 2 frames each, up to G − 1.
-        let mut f = b + 34;
-        let mut i = 0;
-        while f < g {
-            let n = (g - f).min(2);
-            want.push((labels(0, Set::Bounce)[i % 16], n));
-            f += n;
-            i += 1;
-        }
+        assert!(g - b > 34, "round again from B + 34: {}", g - b);
+        let mut want = bounce_list(0, b, g);
         // No landing pictures: standing from G, as in "Standing still".
         want.extend(standing_list(16));
         run.check(b, &want);
+    }
+
+    #[test]
+    fn the_second_character_s_bounce_pictures_until_the_landing() {
+        for hold in [1, 20] {
+            let (run, b, g) = bounce_run(1, hold, &[Action::Jump]);
+            assert!(
+                hold == 1 || g - b > 34,
+                "round again from B + 34: {}",
+                g - b
+            );
+            let mut want = bounce_list(1, b, g);
+            // No landing pictures: standing from G, with G as S.
+            want.extend(second_standing_list(30));
+            run.check(b, &want);
+        }
     }
 
     #[test]
@@ -1341,6 +1360,18 @@ mod tests {
         run.check(g, &[("walk-1", 1)]);
         let (run, _, g) = bounce_run(0, 1, &[Action::Left]);
         run.check(g, &[("turn-a", 2)]);
+    }
+
+    #[test]
+    fn the_second_character_s_mode_from_a_bounce_s_landing_frame() {
+        // "A bounce", "The second character, from B + 4 to the landing":
+        // the mode that starts on G shows its own pictures from G.
+        let (run, _, g) = bounce_run(1, 1, &[Action::Right]);
+        run.check(g, &[("s-walk-1", 1)]);
+        let (run, _, g) = bounce_run(1, 1, &[Action::Action, Action::Right]);
+        run.check(g, &[("s-run-1", 1)]);
+        let (run, _, g) = bounce_run(1, 1, &[Action::Left]);
+        run.check(g, &[("s-stand-5", 2), ("s-stand-7", 4), ("s-stand-5", 2)]);
     }
 
     /// Nothing held for 10 frames, then `then` held for `hold` frames,

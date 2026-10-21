@@ -324,16 +324,24 @@ fn play(
 /// A classic-1 player falling from 100 px up onto a still walker under
 /// it: the world and the frame it bounces on.
 fn classic_bounce() -> (World, usize) {
-    let mut w = world_on("classic-1", [300, 300], &small_walker("300", "0", "left"));
+    bounce_from(|| world_on("classic-1", [300, 300], &small_walker("300", "0", "left")))
+}
+
+/// [`classic_bounce`] with the second character leading.
+fn second_bounce() -> (World, usize) {
+    bounce_from(|| second_on([300, 300], &small_walker("300", "0", "left")))
+}
+
+/// A fresh world from `make`, and the frame B its player bounces on with
+/// nothing held.
+fn bounce_from(make: impl Fn() -> World) -> (World, usize) {
+    let mut w = make();
     let steps = play(&mut w, 60, |_| false);
     let b = steps
         .iter()
         .position(|s| s.2.contains(&Event::Bounce))
         .expect("bounces");
-    (
-        world_on("classic-1", [300, 300], &small_walker("300", "0", "left")),
-        b,
-    )
+    (make(), b)
 }
 
 #[test]
@@ -500,7 +508,17 @@ type BounceRow = (i64, Facing, Gait, bool);
 /// and `on_g` from the landing frame G on, and `vx` set to `before_g` (if
 /// given) at the end of G - 1. The rows from G - 1 to G + 20.
 fn classic_bounce_landing(air: Actions, on_g: Actions, before_g: Option<Fixed>) -> Vec<BounceRow> {
-    let (mut probe, b) = classic_bounce();
+    bounce_landing(classic_bounce, air, on_g, before_g)
+}
+
+/// [`classic_bounce_landing`] for the bounce `bounce` gives.
+fn bounce_landing(
+    bounce: fn() -> (World, usize),
+    air: Actions,
+    on_g: Actions,
+    before_g: Option<Fixed>,
+) -> Vec<BounceRow> {
+    let (mut probe, b) = bounce();
     let input = |n: usize, g: usize| match n {
         _ if n >= g => on_g,
         _ if n >= b + 3 => air,
@@ -520,7 +538,7 @@ fn classic_bounce_landing(air: Actions, on_g: Actions, before_g: Option<Fixed>) 
             break;
         }
     }
-    let (mut w, _) = classic_bounce();
+    let (mut w, _) = bounce();
     let mut previous = Actions::NONE;
     let mut rows: Vec<BounceRow> = Vec::new();
     for n in 0..=g + 20 {
@@ -583,6 +601,37 @@ fn classic_after_a_bounce_a_mode_starts_on_landing() {
         assert!(walking(rows[1].2) && !rows[1].3, "{air:?}");
         let rows = classic_bounce_landing(keys(air), Actions::NONE, None);
         assert_eq!((rows[1].2, rows[1].3), (Gait::Standing, false));
+    }
+}
+
+#[test]
+fn second_after_a_bounce_a_mode_starts_on_landing() {
+    use Action::{Action as A, Left as L, Right as R};
+    let keys = |a: &[Action]| a.iter().copied().collect::<Actions>();
+    // spec/behavior/ground-speed.md, "After a fall or a bounce": the
+    // second character, leading, keeps its facing from the bounce to G
+    // and gets the same mode on G as the first, at step 1 of its own
+    // stride cycle.
+    for air in [&[][..], &[L], &[A, L], &[R]] {
+        let landing = |on_g: &[Action]| bounce_landing(second_bounce, keys(air), keys(on_g), None);
+        let rows = landing(&[L]);
+        assert_eq!(
+            (rows[1].1, rows[1].2, rows[1].3),
+            (Facing::Right, Gait::Standing, true),
+            "{air:?}"
+        );
+        let rows = landing(&[R]);
+        assert!(
+            matches!(rows[1].2, Gait::Walking(s) if s.step == 1) && !rows[1].3,
+            "{air:?}"
+        );
+        let rows = landing(&[A, L]);
+        assert!(
+            matches!(rows[1].2, Gait::Running(s) if s.step == 1) && !rows[1].3,
+            "{air:?}"
+        );
+        let rows = landing(&[]);
+        assert_eq!((rows[1].2, rows[1].3), (Gait::Standing, false), "{air:?}");
     }
 }
 
