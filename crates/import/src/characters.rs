@@ -1044,6 +1044,71 @@ const SECOND: &[PictureSet] = &[
             ),
         ],
     },
+    PictureSet {
+        name: "roll",
+        pictures: &[
+            (
+                "s-roll-1",
+                "e260be4d643b60d179a121d8ff3c1a35544d1e8702187f7045b02ce161de83a0",
+            ),
+            (
+                "s-roll-2",
+                "31b1f1a114521437f19b56f634e49bb1ac7259a92c5c76f8082bb503e251ef6d",
+            ),
+            (
+                "s-roll-3",
+                "ebc797fcd18aa1296403e90e2757811cc25dee8462ec551733622f27882b473d",
+            ),
+            (
+                "s-roll-4",
+                "59f4f382ebc48159f5a6754cac558d074ef7519aa292428bc62b0c3e18a35a1c",
+            ),
+            (
+                "s-roll-5",
+                "1dd1870acb5e3f688c51ac1a61d60de5c7ade3e87c0be0f6c5e5d564f7e644d3",
+            ),
+            (
+                "s-roll-6",
+                "61ba547c495768606592c53d3f3ea0c34856a0e5ff345cc6a02dbbf4d547ea2b",
+            ),
+            (
+                "s-roll-7",
+                "d8ee99f24af7f6b97be549ad1f1da3c52c4f9f7b1d435e3113dbc99d93efb846",
+            ),
+            (
+                "s-roll-8",
+                "e0a00910dc3eee70bf1b4338a0dbf062adcb39cc3831230505f1869d3490f9ce",
+            ),
+            (
+                "s-roll-9",
+                "63238f2f6c22296738e176547600218be84ac62a5ac014431dc5c8d7863fbc22",
+            ),
+            (
+                "s-roll-10",
+                "3703eeedf0cfa4d90863a4e946ac30f89993ed703d7452fa24864ecf1e3df207",
+            ),
+            (
+                "s-roll-11",
+                "e9dc4951bf49354c3ffd9893d2c1f714ddd55d1a18c8412086f6bdeb2175a9ab",
+            ),
+            (
+                "s-roll-12",
+                "14ae06e25a39a6d3a2b9a3ff492d8ca5924125d02f5bca6575c9eaf1cc4fe3b7",
+            ),
+            (
+                "s-stop-3",
+                "61ec973d83cb594930dbecbd50d3ea924bc198149e28dbae44e03303ea485cb8",
+            ),
+            (
+                "s-stop-4",
+                "183c7d39b26859c048f13e80381738893ab18b8bb73c6c446a42d238f0d2b5cd",
+            ),
+            (
+                "s-stop-5",
+                "96d312d91fd5b4aabea2271d5ad6cf667142dbb37228ef558e72f8381d0af7ba",
+            ),
+        ],
+    },
 ];
 
 /// Files by path in the pack, with their contents.

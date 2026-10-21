@@ -2128,8 +2128,13 @@ impl Player {
             let carried = self.roll.is_some_and(|r| r.carry);
             self.advance_timed_roll(held(Action::Action), physics, events);
             if carried && events.contains(&Event::RollEnd) && strides && self.grounded() {
-                // A roll that carried on ends walking, whatever is held.
-                self.gait = Gait::Walking(Stride::START);
+                // A roll that carried on ends walking, whatever is held,
+                // or standing if it was stopped.
+                self.gait = if self.vel.x == Fixed::ZERO {
+                    Gait::Standing
+                } else {
+                    Gait::Walking(Stride::START)
+                };
             }
             if self.grounded() && !events.contains(&Event::Land) {
                 self.air_stopped = false;
@@ -2894,12 +2899,13 @@ impl Player {
         }
     }
 
-    /// The speed of a frame of a stopped timed roll, before it carries
-    /// on, or of one that this frame stops: on the ground, starting
-    /// slowly with no floor ahead (`roll_edge_speed`). A stopped roll
-    /// eases toward 0, or down the steep face `face` falls if it starts
-    /// on one, until it pushes off with `dir` held the way it goes, on a
-    /// frame that doesn't start on a face. `None` for any other frame.
+    /// The speed of a frame of a stopped timed roll, or of one that this
+    /// frame stops: on the ground before it carries on, starting slowly
+    /// with no floor ahead (`roll_edge_speed`). A stopped roll eases
+    /// toward 0, or down the steep face `face` falls if it starts on
+    /// one, until it pushes off with `dir` held the way it goes, on a
+    /// frame that doesn't start on a face, carrying on included.
+    /// `None` for any other frame.
     fn stopped_roll(
         &mut self,
         level: &Level,
@@ -2907,10 +2913,15 @@ impl Player {
         face: Option<i32>,
         physics: &Physics,
     ) -> Option<Fixed> {
-        let mut roll = self.roll.filter(|r| !r.carry)?;
+        let mut roll = self.roll?;
         let way = direction(roll.dir);
         let slow = physics[Param::RollEdgeSpeed];
-        if !roll.stopped && slow > Fixed::ZERO && self.grounded() && self.vel.x.abs() <= slow {
+        if !roll.stopped
+            && !roll.carry
+            && slow > Fixed::ZERO
+            && self.grounded()
+            && self.vel.x.abs() <= slow
+        {
             let ahead = physics[Param::RollEdgeAhead].floor() * i64::from(way);
             let depth = match physics[Param::RollEdgeDepth] {
                 Fixed::ZERO => STEP + STEP,

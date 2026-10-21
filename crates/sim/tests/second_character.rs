@@ -1157,3 +1157,65 @@ fn walking_at_the_end_of_step_13_comes_before_its_turn_check() {
     assert_eq!(rows[walk].0, "walk 1", "{rows:?}");
     assert!(rows.iter().all(|(m, _)| m != "turn"), "{rows:?}");
 }
+
+/// After a slow roll pressed on frame 0 with Action alone held to D + 5,
+/// `then` held from D + 6: the facing on D + 5, then the turn, facing,
+/// mode and counter on D + 6 and D + 7.
+fn after_carrying_on(
+    play: &mut Play,
+    then: &[Action],
+) -> (Facing, Vec<(bool, Facing, String, i64)>) {
+    steps(play, D + 6, |_| vec![A]);
+    let before = play.world.player.facing;
+    let rows = (0..2)
+        .map(|_| {
+            let (mode, counter) = gaits(play, 1, |_| then.to_vec()).remove(0);
+            let p = &play.world.player;
+            (p.turn.is_some(), p.facing, mode, counter)
+        })
+        .collect();
+    (before, rows)
+}
+
+#[test]
+fn walking_starts_on_d_plus_6_after_carrying_on() {
+    // ground-speed.md, "After a roll": walking starts on D + 6 at step 1
+    // (counter 512) whatever is held, facing a direction held then
+    // without a turn. From D + 7 the walking rules apply.
+    for (then, facing) in [
+        (&[][..], Facing::Right),
+        (&[A], Facing::Right),
+        (&[R], Facing::Right),
+        (&[A, R], Facing::Right),
+        (&[L], Facing::Left),
+        (&[A, L], Facing::Left),
+    ] {
+        let mut w = second();
+        let (before, rows) = after_carrying_on(&mut w, then);
+        assert_eq!(before, Facing::Right, "{then:?}");
+        assert_eq!(
+            rows[0],
+            (false, facing, "walk 1".to_string(), 512),
+            "{then:?}"
+        );
+        assert_eq!(rows[1].2, "walk 1", "{then:?}");
+        assert!(!rows[1].0, "{then:?}");
+    }
+}
+
+#[test]
+fn a_stopped_roll_carrying_on_stands_on_d_plus_6() {
+    // "After a roll": when `vx` is already 0 on D + 6, as for a roll
+    // stopped at the top of a face, the player stands on D + 6 instead.
+    let x = EDGE - 10.0;
+    let mut w = faced_ledge(160, x);
+    let rows = steps(&mut w, D + 6, |_| vec![A]);
+    assert!(
+        rows.iter()
+            .all(|r| r.state == State::Roll && r.vx == Fixed::ZERO)
+    );
+    let (mode, _) = gaits(&mut w, 1, |_| vec![A]).remove(0);
+    assert!(w.world.events.contains(&Event::RollEnd));
+    assert_eq!(mode, "Standing");
+    assert_eq!(w.world.player.vel.x, Fixed::ZERO);
+}

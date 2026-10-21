@@ -1,6 +1,6 @@
 //! Which of its own pictures the player shows when it's held still: the
 //! stop after a roll, a jump and its landing, a bounce, the standing
-//! pictures after them, the first character's roll, and walking,
+//! pictures after them, the roll, and walking,
 //! running and turning pictures, on the ground and, for the first
 //! character, in the air after walking off a ledge without a face
 //! (`spec/behavior/player-frames.md`).
@@ -23,8 +23,9 @@
 //!   given on flat ground, show on any ground too; in the air after a
 //!   walk-off they are the engine's own art.
 //! - Walking or running in the air after walking off a ledge with a
-//!   face, and crouching or getting up, show the engine's own art, as
-//!   does the second character's roll.
+//!   face, and crouching or getting up, show the engine's own art.
+//! - The second character's roll list goes on on slopes as on flat
+//!   floor.
 //! - The second character's landing pictures are shown after a jump
 //!   that lands on the floor it took off from or lower: the spec gives
 //!   them for landings on the fourth or a later `s-air-6` frame, which
@@ -52,7 +53,7 @@ pub enum Set {
     Jump,
     /// A bounce, until the landing.
     Bounce,
-    /// The roll cycle.
+    /// The roll cycle, or the second character's roll list.
     Roll,
     /// Walking, running and turning on the ground.
     Walking,
@@ -117,6 +118,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
             ],
         ),
         (Set::Bounce, &["s-bounce-1", "s-bounce-2"]),
+        (Set::Roll, &SECOND_ROLL),
         (Set::Walking, &SECOND_WALKING),
     ],
 ];
@@ -142,6 +144,15 @@ const SECOND_WALKING: [&str; 31] = [
     "s-walk-15", "s-walk-16", "s-run-1", "s-run-2", "s-run-3", "s-run-4", "s-run-5", "s-run-6",
     "s-run-7", "s-run-8", "s-run-9", "s-run-10", "s-run-11", "s-run-12", "s-run-13",
     "s-stand-5", "s-stand-7",
+];
+
+/// The second character's roll pictures: `s-roll-1` to `s-roll-12`, then
+/// the three stop pictures its roll list starts with.
+#[rustfmt::skip]
+const SECOND_ROLL: [&str; 15] = [
+    "s-roll-1", "s-roll-2", "s-roll-3", "s-roll-4", "s-roll-5", "s-roll-6", "s-roll-7",
+    "s-roll-8", "s-roll-9", "s-roll-10", "s-roll-11", "s-roll-12", "s-stop-3", "s-stop-4",
+    "s-stop-5",
 ];
 
 /// The first character's standing pictures: `stand-1` to `stand-11`,
@@ -234,10 +245,12 @@ pub struct PictureClock {
     takeoff_y: Option<i64>,
     /// The landing under way.
     landed: Option<Landed>,
-    /// Frames of a carried-on roll from D, 0 on D.
-    carried: Option<u8>,
-    /// The first character's roll cycle frame, 1 to 33, and the roll's
-    /// own frame count it was moved on at.
+    /// Frames of a carried-on roll from D, 0 on D, and the roll's own
+    /// frame count it was moved on at.
+    carried: Option<(u8, u8)>,
+    /// The roll cycle frame, 1 to 33, or for the second character the
+    /// roll list's place, 1 to 25, and the roll's own frame count it was
+    /// moved on at.
     cycle: Option<(u8, u8)>,
     /// Frames standing after a stop or a landing, 0 on the first.
     standing: Option<u32>,
@@ -314,19 +327,27 @@ impl PictureClock {
             self.landed = None;
         }
         self.carried = match player.roll {
-            Some(roll) if roll.carry => Some(self.carried.map_or(0, |c| c.saturating_add(1))),
+            Some(roll) if roll.carry => Some(match self.carried {
+                // Held still by a defeat's pause.
+                Some((c, at)) if at == roll.frame => (c, at),
+                Some((c, _)) => (c.saturating_add(1), roll.frame),
+                None => (0, roll.frame),
+            }),
             _ => None,
         };
         self.cycle = match player.roll {
-            Some(roll) if first && !roll.carry => {
-                let restart = events.contains(&Event::RollStart) || player.boosted;
+            Some(roll) if !roll.carry => {
                 let cycle = match self.cycle {
-                    _ if restart => 2 - u8::from(roll.from_stop),
+                    _ if player.boosted => 2,
+                    _ if events.contains(&Event::RollStart) => 2 - u8::from(roll.from_stop),
                     // The roll's first airborne frame, or its landing.
                     _ if roll.air == 1 || events.contains(&Event::Land) => 1,
                     // Held still by a defeat's pause.
                     Some((c, at)) if at == roll.frame => c,
-                    Some((c, _)) => c % 33 + 1,
+                    Some((c, _)) if first => c % 33 + 1,
+                    // Only places 6 to 25 of the list repeat.
+                    Some((25, _)) => 6,
+                    Some((c, _)) => c + 1,
                     None => 2,
                 };
                 Some((cycle, roll.frame))
@@ -352,10 +373,10 @@ impl PictureClock {
             bounce(first, n)
         } else if player.roll_stop > 0 && player.grounded() && player.roll.is_none() {
             stop(first, player.roll_stop - 1)
-        } else if let Some(c) = self.carried {
+        } else if let Some((c, _)) = self.carried {
             carried(first, c)
         } else if let Some((c, _)) = self.cycle {
-            Some((Set::Roll, labels(0, Set::Roll)[usize::from((c - 1) / 3)]))
+            Some((Set::Roll, roll(first, c)))
         } else if let Some(age) = jump_age {
             in_air(first, age, player.approach, &physics)
         } else if let Some(landed) = self.landed {
@@ -459,6 +480,19 @@ fn carried(first: bool, d: u8) -> Option<(Set, &'static str)> {
         _ => return None,
     };
     Some((Set::Stop, label))
+}
+
+/// On cycle frame `c` of the first character's roll, or place `c` of the
+/// second character's roll list.
+fn roll(first: bool, c: u8) -> &'static str {
+    let c = usize::from(c);
+    match (first, c) {
+        (true, _) => labels(0, Set::Roll)[(c - 1) / 3],
+        (false, 1) => SECOND_ROLL[0],
+        (false, 2..=4) => SECOND_ROLL[16 - c],
+        (false, 5) => SECOND_ROLL[1],
+        (false, _) => SECOND_ROLL[2 + (c - 6) / 2],
+    }
 }
 
 /// On frame `c` of standing, 0 on its first (S).
@@ -935,9 +969,235 @@ mod tests {
         assert_eq!(first.roll_stop[d + 3], 0, "carried on");
         first.check(d, &[("stop", 3), ("walk-1", 1)]);
         let second = run(world(FLAT, 1), &roll(&held, 80));
-        let end = second.frames(Event::RollEnd)[0];
-        let d = (0..end).find(|&f| second.shown[f].is_some()).unwrap();
+        // And on D + 6 for the second, walking from then.
+        let d = second.frames(Event::RollEnd)[0] - 6;
+        assert_eq!(d, second.frames(Event::RollStart)[0] + 24);
         second.check(d, &[("s-stop-1", 3), ("s-stop-2", 3), ("s-walk-1", 1)]);
+    }
+
+    /// The second character's roll list, place 1 to 25.
+    const PLACES: [&str; 25] = [
+        "s-roll-1",
+        "s-stop-5",
+        "s-stop-4",
+        "s-stop-3",
+        "s-roll-2",
+        "s-roll-3",
+        "s-roll-3",
+        "s-roll-4",
+        "s-roll-4",
+        "s-roll-5",
+        "s-roll-5",
+        "s-roll-6",
+        "s-roll-6",
+        "s-roll-7",
+        "s-roll-7",
+        "s-roll-8",
+        "s-roll-8",
+        "s-roll-9",
+        "s-roll-9",
+        "s-roll-10",
+        "s-roll-10",
+        "s-roll-11",
+        "s-roll-11",
+        "s-roll-12",
+        "s-roll-12",
+    ];
+
+    /// Checks the second character's roll list on frames `from` to
+    /// `to - 1`, with `from` on place `p`.
+    fn check_list(run: &Run, from: usize, to: usize, mut p: usize) {
+        for f in from..to {
+            assert_eq!(run.shown[f], Some(PLACES[p - 1]), "frame {f}");
+            p = if p == 25 { 6 } else { p + 1 };
+        }
+    }
+
+    #[test]
+    fn the_second_character_s_roll_and_its_stop() {
+        // player-frames.md, "A roll", second character: a 24-frame roll
+        // from place 2, then the stop.
+        let run = run(world(FLAT, 1), &roll(&[], 80));
+        let s = run.frames(Event::RollStart)[0];
+        let d = run.frames(Event::RollEnd)[0];
+        assert_eq!(d, s + 24);
+        let mut want = vec![
+            ("s-stop-5", 1),
+            ("s-stop-4", 1),
+            ("s-stop-3", 1),
+            ("s-roll-2", 1),
+        ];
+        for r in [
+            "s-roll-3",
+            "s-roll-4",
+            "s-roll-5",
+            "s-roll-6",
+            "s-roll-7",
+            "s-roll-8",
+            "s-roll-9",
+            "s-roll-10",
+            "s-roll-11",
+            "s-roll-12",
+        ] {
+            want.push((r, 2));
+        }
+        want.push(("s-stop-1", 5));
+        run.check(s, &want);
+    }
+
+    #[test]
+    fn the_second_character_s_roll_from_d_plus_17_starts_at_place_1() {
+        // The 25-frame roll on D + 17 of the stop starts at place 1, so
+        // `s-roll-12` still shows on its last two frames; on D + 18 a
+        // roll starts at place 2 again.
+        let first = run(world(FLAT, 1), &roll(&[], 120));
+        let d = first.frames(Event::RollEnd)[0];
+        for (k, p, length) in [(17, 1, 25), (18, 2, 24)] {
+            let mut keys = roll(&[], 120);
+            keys[d + k] = vec![Action::Action];
+            let run = run(world(FLAT, 1), &keys);
+            let s = run.frames(Event::RollStart)[1];
+            assert_eq!(s, d + k);
+            let d2 = run.frames(Event::RollEnd)[1];
+            assert_eq!(d2 - s, length, "the roll's length");
+            check_list(&run, s, d2, p);
+            run.check(d2 - 2, &[("s-roll-12", 2), ("s-stop-1", 1)]);
+        }
+    }
+
+    #[test]
+    fn the_second_character_s_roll_off_a_ledge_starts_over_on_l_and_g() {
+        let level = walk_off_ledge()
+            .replace("[1024, 480]", "[1024, 960]")
+            .replace("[120, 448, 904, 32]", "[120, 928, 904, 32]");
+        let keys: Vec<Vec<Action>> = (0..160)
+            .map(|f| match f {
+                10 => vec![Action::Right, Action::Action],
+                _ => vec![Action::Right],
+            })
+            .collect();
+        let run = run(world(&level, 1), &keys);
+        let s = run.frames(Event::RollStart)[0];
+        let l = (s..).find(|&f| !run.grounded[f]).unwrap();
+        let g = run.frames(Event::Land)[0];
+        let d = run.frames(Event::RollEnd)[0];
+        assert!(l > s && g > l + 26, "a long fall: S {s}, L {l}, G {g}");
+        assert_eq!(d, g + 25);
+        check_list(&run, s, l, 2);
+        check_list(&run, l, g, 1);
+        check_list(&run, g, d, 1);
+        run.check(d, &[("s-stop-1", 5)]);
+    }
+
+    #[test]
+    fn the_second_character_s_roll_holds_its_picture_through_a_defeat_s_pause() {
+        let level = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../content/test/bounce-walker.level"
+        ))
+        .unwrap();
+        let keys: Vec<Vec<Action>> = (0..100)
+            .map(|f| {
+                if f == 25 {
+                    vec![Action::Action]
+                } else {
+                    vec![]
+                }
+            })
+            .collect();
+        let run = run(world(&level, 1), &keys);
+        let s = run.frames(Event::RollStart)[0];
+        let k = (s..).find(|&f| run.frozen[f] > 0).unwrap();
+        assert!(k + 3 < s + 22, "mid-roll: S {s}, K {k}");
+        check_list(&run, s, k + 1, 2);
+        assert_eq!(run.shown[k + 1], run.shown[k]);
+        assert_eq!(run.shown[k + 2], run.shown[k]);
+        // The roll's own D, then the carrying on into running.
+        let d = run.frames(Event::RollEnd)[0] - 6;
+        assert_eq!(d, s + 26);
+        check_list(&run, k + 3, d, k + 3 - s);
+        run.check(d, &[("s-stop-1", 3), ("s-stop-2", 3), ("s-walk-1", 1)]);
+    }
+
+    #[test]
+    fn a_boost_starts_the_second_character_s_list_at_place_2() {
+        let level = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../content/test/bounce-walker.level"
+        ))
+        .unwrap();
+        let plain: Vec<Vec<Action>> = (0..100)
+            .map(|f| {
+                if f == 25 {
+                    vec![Action::Action]
+                } else {
+                    vec![]
+                }
+            })
+            .collect();
+        let k = {
+            let run = run(world(&level, 1), &plain);
+            let s = run.frames(Event::RollStart)[0];
+            (s..).find(|&f| run.frozen[f] > 0).unwrap()
+        };
+        // Action held again from K + 3, so P = K + 3.
+        let keys: Vec<Vec<Action>> = (0..120)
+            .map(|f| match f {
+                25 => vec![Action::Action],
+                f if f >= k + 3 => vec![Action::Action],
+                _ => vec![],
+            })
+            .collect();
+        let run = run(world(&level, 1), &keys);
+        let p = k + 3;
+        assert_eq!(run.frames(Event::RollEnd)[0], p + 30);
+        check_list(&run, p, p + 24, 2);
+    }
+
+    /// Flat floor to a ledge with a steep face at the top, its edge at
+    /// x = 1600, and floor 160 px lower after it; the player starts at
+    /// `x`.
+    fn faced_ledge(x: f64) -> String {
+        let mut points = vec![[0, 400], [1600, 400]];
+        for c in 1600..1604 {
+            let y = 402 + 4 * (c - 1600);
+            points.extend([[c, y], [c + 1, y]]);
+        }
+        points.extend([[1604, 560], [2048, 560], [2048, 599], [0, 599]]);
+        format!(
+            "format = 1\nsize = [2048, 600]\nstart = [{x}, 400]\n\
+             [[collision]]\nshape = \"polygon\"\npoints = {points:?}\n"
+        )
+    }
+
+    #[test]
+    fn a_stopped_roll_carrying_on_stands_from_d_plus_6() {
+        // Stopped at the top of the face with Action alone held: the
+        // roll list goes on, the carrying on shows its stop pictures,
+        // then standing from D + 6 with `s-stand-1` x 4.
+        let keys: Vec<Vec<Action>> = (0..80)
+            .map(|f| {
+                if f >= 10 {
+                    vec![Action::Action]
+                } else {
+                    vec![]
+                }
+            })
+            .collect();
+        let run = run(world(&faced_ledge(1590.0), 1), &keys);
+        let s = run.frames(Event::RollStart)[0];
+        let d = run.frames(Event::RollEnd)[0] - 6;
+        assert_eq!(d, s + 24);
+        check_list(&run, s, d, 2);
+        run.check(
+            d,
+            &[
+                ("s-stop-1", 3),
+                ("s-stop-2", 3),
+                ("s-stand-1", 4),
+                ("s-stand-2", 4),
+            ],
+        );
     }
 
     #[test]
