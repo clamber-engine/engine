@@ -1,9 +1,9 @@
 //! Which of its own pictures the player shows when it's held still: the
 //! stop after a roll, a jump and its landing, a bounce, the second
 //! character's fall from a steep face and its landing, the standing
-//! pictures after them, the roll, and walking, running and turning
+//! pictures after them, the roll, walking, running and turning
 //! pictures, on the ground and in the air after walking off a ledge
-//! without a face (`spec/behavior/player-frames.md`).
+//! without a face, and crouching (`spec/behavior/player-frames.md`).
 //!
 //! The pictures come from a character's sheet in a pack
 //! (`character-<slot>`, as the importer writes them), named by their
@@ -25,8 +25,10 @@
 //!   steep face, not only at the top of a ledge, and on its landing
 //!   frames after a fall from a face wherever it lands.
 //! - The first character walking or running in the air after walking
-//!   off a ledge with a face, and crouching or getting up, show the
-//!   engine's own art.
+//!   off a ledge with a face shows the engine's own art.
+//! - The crouching pictures, given on flat floor, show on any ground,
+//!   in a crouch started on a landing's frames too. A crouch that leaves
+//!   the ground shows the engine's own art.
 //! - The second character's roll list goes on on slopes as on flat
 //!   floor.
 //! - The second character's landing pictures are shown after a jump
@@ -60,6 +62,8 @@ pub enum Set {
     Roll,
     /// Walking, running and turning on the ground.
     Walking,
+    /// Crouching and getting up.
+    Crouch,
 }
 
 /// Each set's labels, for the first character (slot 0) and the second
@@ -105,6 +109,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
             ],
         ),
         (Set::Walking, &WALKING),
+        (Set::Crouch, &CROUCH),
     ],
     &[
         (
@@ -123,6 +128,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
         (Set::Bounce, &SECOND_BOUNCE),
         (Set::Roll, &SECOND_ROLL),
         (Set::Walking, &SECOND_WALKING),
+        (Set::Crouch, &SECOND_CROUCH),
     ],
 ];
 
@@ -188,6 +194,102 @@ const SECOND_STANDING: [&str; 39] = [
     "s-wait-6", "s-wait-7", "s-wait-8", "s-wait-9", "s-wait-10", "s-wait-11", "s-wait-12",
     "s-wait-13", "s-wait-14", "s-wait-15", "s-wait-16", "s-wait-17",
 ];
+
+/// The first character's crouching pictures.
+#[rustfmt::skip]
+const CROUCH: [&str; 22] = [
+    "crouch-1", "crouch-2", "crouch-3", "crouch-4", "crouch-5", "crouch-6", "crouch-7",
+    "crouch-8", "crouch-9", "crouch-10", "crouch-11", "crouch-12", "crouch-13", "crouch-14",
+    "crouch-15", "crouch-16", "crouch-17", "crouch-18", "crouch-19", "crouch-20", "crouch-21",
+    "crouch-22",
+];
+
+/// The second character's crouching pictures.
+#[rustfmt::skip]
+const SECOND_CROUCH: [&str; 13] = [
+    "s-crouch-1", "s-crouch-2", "s-crouch-3", "s-crouch-4", "s-crouch-5", "s-crouch-6",
+    "s-crouch-7", "s-crouch-8", "s-crouch-9", "s-crouch-10", "s-crouch-11", "s-crouch-12",
+    "s-crouch-13",
+];
+
+/// A character's crouch ("Crouching"): which picture, for how many
+/// frames, going down from D and getting up from U; the picture held
+/// after going down, for how many frames before the first sway and
+/// between sways; and the sway.
+struct CrouchList {
+    labels: &'static [&'static str],
+    down: &'static [(u8, u8)],
+    held: (u8, u32, u32),
+    sway: &'static [(u8, u8)],
+    up: &'static [(u8, u8)],
+}
+
+#[rustfmt::skip]
+const CROUCHING: [CrouchList; 2] = [
+    CrouchList {
+        labels: &CROUCH,
+        down: &[(1, 1), (2, 2), (3, 2), (4, 2), (5, 2), (7, 2), (8, 2)],
+        held: (9, 17, 144),
+        sway: &[
+            (10, 3), (11, 3), (12, 3), (13, 17),
+            (14, 3), (15, 3), (16, 17),
+            (17, 3), (18, 3), (19, 3), (20, 3), (21, 3), (22, 17),
+            (21, 3), (20, 3), (19, 3), (18, 3), (17, 3), (16, 17),
+            (15, 3), (14, 3), (13, 3), (12, 3), (11, 3), (10, 3),
+        ],
+        up: &[(9, 1), (8, 1), (7, 1), (6, 1), (5, 1), (4, 1), (3, 1), (2, 1), (1, 1)],
+    },
+    CrouchList {
+        labels: &SECOND_CROUCH,
+        down: &[(1, 1), (2, 2), (3, 2), (4, 2), (5, 2)],
+        held: (6, 15, 142),
+        sway: &[
+            (7, 5), (8, 5), (9, 17),
+            (10, 3), (11, 3), (12, 3), (13, 17),
+            (12, 3), (11, 3), (10, 3), (9, 17),
+            (8, 3), (7, 3),
+        ],
+        up: &[(6, 2), (5, 2), (4, 2), (3, 2), (2, 2), (1, 2)],
+    },
+];
+
+/// Frame `i` of `runs` of (picture, frames), if it's that long.
+fn in_runs(runs: &[(u8, u8)], mut i: u32) -> Option<u8> {
+    for &(n, count) in runs {
+        if i < u32::from(count) {
+            return Some(n);
+        }
+        i -= u32::from(count);
+    }
+    None
+}
+
+/// The frames `runs` lasts.
+fn runs_len(runs: &[(u8, u8)]) -> u32 {
+    runs.iter().map(|&(_, count)| u32::from(count)).sum()
+}
+
+/// On D + `d` of a crouch ("Crouching"), going down or held.
+fn crouching(first: bool, d: u32) -> Option<(Set, &'static str)> {
+    let list = &CROUCHING[usize::from(!first)];
+    let down = runs_len(list.down);
+    let (held, before, between) = list.held;
+    let n = match d.checked_sub(down) {
+        None => in_runs(list.down, d)?,
+        Some(h) => match h.checked_sub(before) {
+            None => held,
+            Some(i) => in_runs(list.sway, i % (runs_len(list.sway) + between)).unwrap_or(held),
+        },
+    };
+    Some((Set::Crouch, list.labels[usize::from(n) - 1]))
+}
+
+/// On U + `u` of getting up from a crouch ("Crouching").
+fn getting_up(first: bool, u: u32) -> Option<(Set, &'static str)> {
+    let list = &CROUCHING[usize::from(!first)];
+    let n = in_runs(list.up, u)?;
+    Some((Set::Crouch, list.labels[usize::from(n) - 1]))
+}
 
 /// The second character's back and forth between `s-wait-14` and
 /// `s-wait-17` ("Standing still"), 70 frames: which `s-wait-` picture,
@@ -267,6 +369,8 @@ pub struct PictureClock {
     standing: Option<u32>,
     /// Crouching or getting up on the frame before.
     crouched: bool,
+    /// Frames of the crouch from D, 0 on D.
+    crouch: Option<u32>,
     /// Walking, running or turning on the ground on the frame before.
     moved: bool,
     /// What the player shows on this frame.
@@ -366,6 +470,20 @@ impl PictureClock {
             _ => None,
         };
 
+        let held = player.crouch.held;
+        self.crouch = match (held, self.crouch) {
+            (0, _) => None,
+            (1, _) => Some(0),
+            (_, Some(d)) => Some(d.saturating_add(1)),
+            // Followed from a later frame.
+            (h, None) => Some(u32::from(h) - 1),
+        };
+        // Getting up: the frames left of it count down to 0 on its last.
+        let up = (held == 0 && player.crouch.rising > 0).then(|| {
+            let recovery = physics[Param::CrouchRecovery].floor();
+            u32::try_from(recovery - 1 - i64::from(player.crouch.rising)).unwrap_or(0)
+        });
+
         let playing = matches!(world.flow.outcome, Outcome::Playing)
             && player.hands.is_none()
             && !matches!(
@@ -390,6 +508,10 @@ impl PictureClock {
             Some((Set::Roll, roll(first, c)))
         } else if let Some(age) = jump_age {
             in_air(first, age, player.approach, &physics)
+        } else if let Some(d) = self.crouch.filter(|_| player.grounded()) {
+            crouching(first, d)
+        } else if let Some(u) = up.filter(|_| player.grounded()) {
+            getting_up(first, u)
         } else if let Some(landed) = self.landed {
             if first {
                 first_landing(landed, player.gait)
@@ -442,8 +564,7 @@ fn upright_fall(player: &clamber_sim::Player) -> bool {
 }
 
 /// The second character on a steep face, in the fall after it and on
-/// its landing frames ("A fall from a steep face"). A crouch's pictures
-/// aren't given.
+/// its landing frames ("A fall from a steep face"), but not crouching.
 fn face_fall(first: bool, world: &World) -> Option<(Set, &'static str)> {
     const LANDING: [&str; 7] = [
         "s-air-2", "s-air-3", "s-air-4", "s-air-5", "s-air-6", "s-land-1", "s-land-2",
@@ -2013,9 +2134,10 @@ mod tests {
         assert_eq!(run(world(FLAT, 0), &keys).shown, still.shown);
         keys[d + 400] = vec![Action::Down];
         let tapped = run(world(FLAT, 0), &keys);
-        let s = (d + 401..).find(|&f| tapped.shown[f].is_some()).unwrap();
-        assert!(s < d + 430, "standing again from {s}");
-        tapped.check(s, &standing_list(900 - s));
+        // The shortest crouch, D to D + 12, its getting up, then S.
+        let mut want = crouch_list(true, 13);
+        want.extend(standing_list(900 - (d + 422)));
+        tapped.check(d + 400, &want);
     }
 
     /// The second character's standing pictures from S, `frames` of
@@ -2087,9 +2209,164 @@ mod tests {
         assert_eq!(run(world(FLAT, 1), &keys).shown, still.shown);
         keys[d + 400] = vec![Action::Down];
         let tapped = run(world(FLAT, 1), &keys);
-        let s = (d + 401..).find(|&f| tapped.shown[f].is_some()).unwrap();
-        assert!(s < d + 430, "standing again from {s}");
-        tapped.check(s, &second_standing_list(700 - s));
+        // The shortest crouch, D to D + 8, its getting up, then S.
+        let mut want = crouch_list(false, 9);
+        want.extend(second_standing_list(700 - (d + 421)));
+        tapped.check(d + 400, &want);
+    }
+
+    /// A crouch's pictures ("Crouching") from D, for a crouch of `frames`
+    /// frames (D to U − 1), then its getting up to U + 8 or U + 11.
+    fn crouch_list(first: bool, frames: usize) -> Vec<(&'static str, usize)> {
+        let c = |n: usize| labels(usize::from(!first), Set::Crouch)[n - 1];
+        let three = |ns: Vec<usize>| ns.into_iter().map(move |n| (c(n), 3));
+        let (down, held, before, between, sway, up) = if first {
+            let mut sway: Vec<(&str, usize)> = three(vec![10, 11, 12]).collect();
+            sway.push((c(13), 17));
+            sway.extend(three(vec![14, 15]));
+            sway.push((c(16), 17));
+            sway.extend(three((17..=21).collect()));
+            sway.push((c(22), 17));
+            sway.extend(three((17..=21).rev().collect()));
+            sway.push((c(16), 17));
+            sway.extend(three((10..=15).rev().collect()));
+            let down = [1, 2, 3, 4, 5, 7, 8].map(|n| (c(n), if n == 1 { 1 } else { 2 }));
+            let up = (1..=9).rev().map(|n| (c(n), 1)).collect::<Vec<_>>();
+            (down.to_vec(), 9, 17, 144, sway, up)
+        } else {
+            let mut sway = vec![(c(7), 5), (c(8), 5), (c(9), 17)];
+            sway.extend(three(vec![10, 11, 12]));
+            sway.push((c(13), 17));
+            sway.extend(three(vec![12, 11, 10]));
+            sway.push((c(9), 17));
+            sway.extend(three(vec![8, 7]));
+            let down = [1, 2, 3, 4, 5].map(|n| (c(n), if n == 1 { 1 } else { 2 }));
+            let mut up = vec![(c(6), 2)];
+            up.extend((1..=5).rev().map(|n| (c(n), 2)));
+            (down.to_vec(), 6, 15, 142, sway, up)
+        };
+        assert_eq!(
+            sway.iter().map(|w| w.1).sum::<usize>(),
+            [85, 131][usize::from(first)]
+        );
+        let mut want = down;
+        want.push((c(held), before));
+        while want.iter().map(|w| w.1).sum::<usize>() < frames {
+            want.extend(sway.iter().copied());
+            want.push((c(held), between));
+        }
+        let mut left = frames;
+        let mut want: Vec<_> = want
+            .into_iter()
+            .map_while(|(label, count)| {
+                let n = count.min(left);
+                left -= n;
+                (n > 0).then_some((label, n))
+            })
+            .collect();
+        want.extend(up);
+        want
+    }
+
+    /// Nothing held, then Down held on frames 20 to `last` with `with`.
+    fn crouch(with: &[Action], last: usize, total: usize) -> Vec<Vec<Action>> {
+        (0..total)
+            .map(|f| {
+                let mut keys = with.to_vec();
+                if (20..=last).contains(&f) {
+                    keys.push(Action::Down);
+                }
+                keys
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_first_character_crouching_a_long_while() {
+        // player-frames.md's example: standing, Down held on frames 20 to
+        // 719.
+        let run = run(world(FLAT, 0), &crouch(&[], 719, 1200));
+        assert_eq!(run.shown[33], Some("crouch-9"));
+        assert_eq!(run.shown[50], Some("crouch-10"));
+        assert_eq!(run.shown[181], Some("crouch-9"));
+        assert_eq!(run.shown[325], Some("crouch-10"));
+        assert_eq!(run.shown[719], Some("crouch-13"));
+        assert_eq!(run.shown[720], Some("crouch-9"));
+        assert_eq!(run.shown[728], Some("crouch-1"));
+        let mut want = crouch_list(true, 700);
+        want.extend(standing_list(1200 - 729));
+        run.check(20, &want);
+    }
+
+    #[test]
+    fn the_second_character_crouching_a_long_while() {
+        // player-frames.md's example: standing, Down held on frames 20 to
+        // 519.
+        let run = run(world(FLAT, 1), &crouch(&[], 519, 900));
+        assert_eq!(run.shown[29], Some("s-crouch-6"));
+        assert_eq!(run.shown[44], Some("s-crouch-7"));
+        assert_eq!(run.shown[129], Some("s-crouch-6"));
+        assert_eq!(run.shown[271], Some("s-crouch-7"));
+        assert_eq!(run.shown[498], Some("s-crouch-7"));
+        assert_eq!(run.shown[519], Some("s-crouch-9"));
+        assert_eq!(run.shown[521], Some("s-crouch-6"));
+        assert_eq!(run.shown[531], Some("s-crouch-1"));
+        let mut want = crouch_list(false, 500);
+        want.extend(second_standing_list(900 - 532));
+        run.check(20, &want);
+    }
+
+    #[test]
+    fn the_second_character_s_short_press() {
+        // player-frames.md's example: Down held on frame 20 only.
+        let run = run(world(FLAT, 1), &crouch(&[], 20, 200));
+        assert_eq!(run.shown[28], Some("s-crouch-5"));
+        assert_eq!(run.shown[29], Some("s-crouch-6"));
+        assert_eq!(run.shown[40], Some("s-crouch-1"));
+        assert_eq!(run.shown[41], Some("s-stand-1"));
+        let mut want = crouch_list(false, 9);
+        want.extend(second_standing_list(200 - 41));
+        run.check(20, &want);
+    }
+
+    #[test]
+    fn a_crouch_while_walking_then_walking_from_u_plus_10_or_13() {
+        for slot in [0, 1] {
+            let first = slot == 0;
+            let run = run(world(FLAT, slot), &crouch(&[Action::Right], 59, 120));
+            let u = 60;
+            let mut want = crouch_list(first, 40);
+            let s = u + if first { 9 } else { 12 };
+            want.push((if first { "stand-1" } else { "s-stand-1" }, 1));
+            run.check(20, &want);
+            let walking = labels(slot, Set::Walking);
+            assert!(walking.contains(&run.shown[s + 1].unwrap()), "{slot}");
+        }
+    }
+
+    #[test]
+    fn down_again_while_getting_up_starts_the_list_over() {
+        for (slot, ups) in [(0, 1..=9), (1, 1..=12)] {
+            let first = slot == 0;
+            for k in ups {
+                let mut keys = crouch(&[], 39, 120);
+                keys[40 + k] = vec![Action::Down];
+                let run = run(world(FLAT, slot), &keys);
+                let mut want = crouch_list(first, 20);
+                want.truncate(want.len() - if first { 9 } else { 6 });
+                let mut up = crouch_list(first, 20).split_off(want.len());
+                let mut left = k;
+                up.retain_mut(|(_, n)| {
+                    let take = (*n).min(left);
+                    left -= take;
+                    *n = take;
+                    take > 0
+                });
+                want.extend(up);
+                want.extend(crouch_list(first, if first { 13 } else { 9 }));
+                run.check(20, &want);
+            }
+        }
     }
 
     #[test]
@@ -2105,6 +2382,7 @@ mod tests {
                     Set::Bounce => "bounce",
                     Set::Roll => "roll",
                     Set::Walking => "walking",
+                    Set::Crouch => "crouch",
                 };
                 let theirs = character.sets.iter().find(|s| s.name == name).unwrap();
                 let theirs: Vec<&str> = theirs.pictures.iter().map(|&(l, _)| l).collect();

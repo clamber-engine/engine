@@ -1779,10 +1779,11 @@ impl Player {
             Some(_) => self.short_turn,
             None => false,
         };
-        if !striding {
+        if !striding || (crouching && self.grounded()) {
             // In the air, rolling and in a roll's stop, the player isn't
             // walking or running; landings and the end of a roll set the
-            // gait below.
+            // gait below. Crouching, to the last frame whose target is 0,
+            // it's standing: walking or a turn starts on the frame after.
             self.gait = Gait::Standing;
         } else if self.stride(
             run_dir,

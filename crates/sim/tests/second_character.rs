@@ -218,6 +218,65 @@ fn crouching_recovers_over_thirteen_frames() {
     assert_eq!(vx[103], f(0.28125));
 }
 
+/// Walking left with Left held from frame 0 and Down also held on
+/// `down` frames: the speed after each frame, to frame 119.
+fn crouch_speeds(down: impl Fn(usize) -> bool) -> Vec<Fixed> {
+    let mut w = second();
+    (0..120)
+        .map(|frame| {
+            let keys: &[Action] = if down(frame) {
+                &[L, Action::Down]
+            } else {
+                &[L]
+            };
+            hold(&mut w, keys, 1);
+            w.world.player.vel.x.abs()
+        })
+        .collect()
+}
+
+/// The frames from `from` on where the speed starts to grow.
+fn grows(speeds: &[Fixed], from: usize) -> Vec<usize> {
+    let growing = |n: usize| speeds[n] > speeds[n - 1];
+    (from..speeds.len())
+        .filter(|&n| growing(n) && !growing(n - 1))
+        .collect()
+}
+
+#[test]
+fn the_shortest_crouch_is_nine_frames() {
+    // "Values", crouching, short press: Down also held on frame 40 only.
+    // The crouch is frames 40 to 48, U is 49, the target is 0 to 61 and
+    // the speed grows again from 62. Held for 3 or 8 frames, the same.
+    for held in [1, 3, 8] {
+        let speeds = crouch_speeds(|n| (40..40 + held).contains(&n));
+        assert_eq!(speeds[40], f(2.25), "{held}");
+        assert_eq!(grows(&speeds, 41), [62], "{held}");
+    }
+    // Held for 10, 12 or 14 frames, U is the frame Down is released.
+    for held in [10, 12, 14] {
+        let speeds = crouch_speeds(|n| (40..40 + held).contains(&n));
+        assert_eq!(grows(&speeds, 41), [40 + held + 13], "{held}");
+    }
+}
+
+#[test]
+fn down_again_on_u_plus_1_to_u_plus_12_starts_a_new_crouch() {
+    // Down held on 40 to 59, so U is 60, then again for a frame on U + k:
+    // a new 9-frame crouch whose D has the target 0 too, up to U + 12;
+    // on U + 13 its D has the normal target.
+    for k in 1..=13 {
+        let d = 60 + k;
+        let speeds = crouch_speeds(|n| (40..60).contains(&n) || n == d);
+        let want = if k <= 12 {
+            vec![d + 22]
+        } else {
+            vec![d, d + 22]
+        };
+        assert_eq!(grows(&speeds, 41), want, "U + {k}");
+    }
+}
+
 /// A jump pressed on step 0 with `before` held, Jump held for `held`
 /// steps and `air` held from step `air_from` (1 is the take-off step):
 /// `y` relative to the start, `vy` and `x` after each step, up to and

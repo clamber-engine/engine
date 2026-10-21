@@ -1110,8 +1110,9 @@ swim_left_edge = 18
 swim_leave_speed = 0.00390625
 
 # The second character (roster slot 1): spec/behavior/second-character.md.
-# It moves by the same rules with its own speeds, jump and crouch
-# recovery; `jump_release_speed` stays equal to `jump_speed`, as above.
+# It moves by the same rules with its own speeds, jump, shortest crouch
+# and crouch recovery; `jump_release_speed` stays equal to `jump_speed`,
+# as above.
 # Swapping with it as the player (swap.md) waits less, the first
 # character follows a frame behind, a jump press just before doesn't
 # shorten the wait, and the crouch windows differ.
@@ -1128,6 +1129,7 @@ top_speed = 3.375
 jump_speed = 8.3515625
 jump_release_speed = 8.3515625
 held_jump_gravity = 0.3515625
+crouch_min = 9
 crouch_recovery = 13
 swap_wait = 39
 swap_jump_wait = 0

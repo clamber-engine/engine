@@ -629,6 +629,39 @@ fn classic_crouch_again_while_getting_up() {
 }
 
 #[test]
+fn classic_walking_or_a_turn_starts_on_u_plus_10() {
+    // spec/behavior/player-frames.md, "Crouching": walking right, Down
+    // also held on frames 20 to 59, so U is 60. The player stands to
+    // U + 9 even with a direction held, facing doesn't change, and walking
+    // or a turn starts on U + 10.
+    for (way, turns) in [(Action::Right, false), (Action::Left, true)] {
+        let mut w = classic();
+        let mut rows = Vec::new();
+        for frame in 0..75 {
+            let held: &[Action] = match frame {
+                0..20 => &[Action::Right],
+                20..40 => &[Action::Right, Action::Down],
+                40..60 => &[way, Action::Down],
+                _ => &[way],
+            };
+            hold(&mut w, held, 1);
+            rows.push((w.player.gait, w.player.turn, w.player.facing));
+        }
+        for (frame, &(gait, turn, facing)) in rows.iter().enumerate().take(70).skip(21) {
+            assert_eq!(mode(gait), ("standing", 0), "{way:?} frame {frame}");
+            assert_eq!(turn, None, "{way:?} frame {frame}");
+            assert_eq!(facing, Facing::Right, "{way:?} frame {frame}");
+        }
+        let (gait, turn, _) = rows[70];
+        if turns {
+            assert!(turn.is_some());
+        } else {
+            assert_eq!(mode(gait), ("walking", 256));
+        }
+    }
+}
+
+#[test]
 fn classic_turns_take_eight_frames() {
     // spec/behavior/ground-speed.md, "Facing and turns": from standing, one
     // frame of Left is enough, and facing changes 4 frames in.
