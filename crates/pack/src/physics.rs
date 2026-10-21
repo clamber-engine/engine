@@ -192,6 +192,12 @@ params! {
     RunStride => "run_stride",
     /// Stride progress per frame is never less than this.
     StrideMin => "stride_min",
+    /// Above 0, stride progress per frame, once at least `stride_min`, is
+    /// multiplied by this before it counts toward a step. 0: by 1.
+    StrideScale => "stride_scale",
+    /// Above 0, running goes through a stride cycle of this many steps
+    /// instead of `stride_steps`. Whole steps, up to 31.
+    RunStrideSteps => "run_stride_steps",
     /// The steps whose end checks for a turn while walking: one starts if
     /// the other way is held. Otherwise, below `walk_stand_speed`, the
     /// player stands with no direction held, or starts the stride over
@@ -215,6 +221,10 @@ params! {
     /// Running with action let go and a direction held, the player walks
     /// below this speed, once the run's first step has ended.
     RunWalkSpeed => "run_walk_speed",
+    /// Above 0, running with action let go drops to walking (below
+    /// `run_walk_speed`) only on the frame the running cycle's last step
+    /// ends, and before that step's turn check, so no turn starts then.
+    RunWalkOnLastStep => "run_walk_on_last_step",
     /// Upward speed at the start of a jump.
     JumpSpeed => "jump_speed",
     /// Releasing jump cuts upward speed down to this.

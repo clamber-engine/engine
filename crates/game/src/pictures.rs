@@ -1,8 +1,8 @@
 //! Which of its own pictures the player shows when it's held still: the
 //! stop after a roll, a jump and its landing, a bounce, the standing
-//! pictures after them, and the first character's roll, walking,
-//! running and turning pictures, on the ground and in the air after
-//! walking off a ledge without a face
+//! pictures after them, the first character's roll, and walking,
+//! running and turning pictures, on the ground and, for the first
+//! character, in the air after walking off a ledge without a face
 //! (`spec/behavior/player-frames.md`).
 //!
 //! The pictures come from a character's sheet in a pack
@@ -15,10 +15,13 @@
 //!
 //! Engine choices where the spec says nothing:
 //!
-//! - The pictures after the ones given (the second character walking or
-//!   running, or bouncing after B + 4) are the engine's own art, as are
-//!   the second character's in the air from T + 16 until it lands, and
-//!   standing after its bounces.
+//! - The pictures after the ones given (the second character bouncing
+//!   after B + 4) are the engine's own art, as are the second
+//!   character's in the air from T + 16 until it lands, and standing
+//!   after its bounces.
+//! - The second character's walking, running and turning pictures,
+//!   given on flat ground, show on any ground too; in the air after a
+//!   walk-off they are the engine's own art.
 //! - Walking or running in the air after walking off a ledge with a
 //!   face, and crouching or getting up, show the engine's own art, as
 //!   does the second character's roll.
@@ -114,6 +117,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
             ],
         ),
         (Set::Bounce, &["s-bounce-1", "s-bounce-2"]),
+        (Set::Walking, &SECOND_WALKING),
     ],
 ];
 
@@ -126,6 +130,18 @@ const WALKING: [&str; 42] = [
     "walk-18", "walk-19", "walk-20", "run-1", "run-2", "run-3", "run-4", "run-5", "run-6", "run-7",
     "run-8", "run-9", "run-10", "run-11", "run-12", "run-13", "run-14", "run-15", "run-16",
     "run-17", "run-18", "run-19", "run-20", "turn-a", "turn-b",
+];
+
+/// The second character's walking, running and turning pictures: one
+/// per step of its walking and running cycles, then the two pictures
+/// its turns show.
+#[rustfmt::skip]
+const SECOND_WALKING: [&str; 31] = [
+    "s-walk-1", "s-walk-2", "s-walk-3", "s-walk-4", "s-walk-5", "s-walk-6", "s-walk-7",
+    "s-walk-8", "s-walk-9", "s-walk-10", "s-walk-11", "s-walk-12", "s-walk-13", "s-walk-14",
+    "s-walk-15", "s-walk-16", "s-run-1", "s-run-2", "s-run-3", "s-run-4", "s-run-5", "s-run-6",
+    "s-run-7", "s-run-8", "s-run-9", "s-run-10", "s-run-11", "s-run-12", "s-run-13",
+    "s-stand-5", "s-stand-7",
 ];
 
 /// The first character's standing pictures: `stand-1` to `stand-11`,
@@ -348,8 +364,9 @@ impl PictureClock {
             } else {
                 second_landing(landed, player.since_land, player.gait, player.state)
             }
-        } else if first && (player.grounded() || upright_fall(player)) {
-            walking(player)
+            .or_else(|| walking(first, player))
+        } else if player.grounded() || first && upright_fall(player) {
+            walking(first, player)
         } else {
             None
         };
@@ -535,9 +552,10 @@ fn wait(i: u32) -> &'static str {
     STANDING[10 + n as usize]
 }
 
-/// The first character walking, running or turning on the ground or in
-/// a walk-off's fall, on the step its frame ends in or turn frame T + n.
-fn walking(player: &clamber_sim::Player) -> Option<(Set, &'static str)> {
+/// Walking, running or turning on the ground or, for the first
+/// character, in a walk-off's fall, on the step its frame ends in or turn
+/// frame T + n.
+fn walking(first: bool, player: &clamber_sim::Player) -> Option<(Set, &'static str)> {
     if player.roll.is_some()
         || player.roll_stop > 0
         || player.crouch.held > 0
@@ -545,12 +563,18 @@ fn walking(player: &clamber_sim::Player) -> Option<(Set, &'static str)> {
     {
         return None;
     }
+    let (labels, walks, runs) = match first {
+        true => (&WALKING[..], 20, 20),
+        false => (&SECOND_WALKING[..], 16, 13),
+    };
     let label = match (player.turn, player.gait) {
-        (Some(2..=5), _) => "turn-b",
-        (Some(_), _) => "turn-a",
-        (None, Gait::Walking(stride)) => *WALKING[..20].get(stride.step.checked_sub(1)? as usize)?,
+        (Some(2..=5), _) => labels[walks + runs + 1],
+        (Some(_), _) => labels[walks + runs],
+        (None, Gait::Walking(stride)) => {
+            *labels[..walks].get(stride.step.checked_sub(1)? as usize)?
+        }
         (None, Gait::Running(stride)) => {
-            *WALKING[20..40].get(stride.step.checked_sub(1)? as usize)?
+            *labels[walks..walks + runs].get(stride.step.checked_sub(1)? as usize)?
         }
         _ => return None,
     };
@@ -692,9 +716,13 @@ mod tests {
         frozen: Vec<u8>,
     }
 
-    fn run(mut world: World, keys: &[Vec<Action>]) -> Run {
+    fn run(world: World, keys: &[Vec<Action>]) -> Run {
+        run_after(world, Actions::NONE, keys)
+    }
+
+    /// [`run`] with `held` held before the first frame.
+    fn run_after(mut world: World, mut held: Actions, keys: &[Vec<Action>]) -> Run {
         let mut clock = PictureClock::default();
-        let mut held = Actions::NONE;
         let mut out = Run {
             shown: Vec::new(),
             events: Vec::new(),
@@ -909,7 +937,7 @@ mod tests {
         let second = run(world(FLAT, 1), &roll(&held, 80));
         let end = second.frames(Event::RollEnd)[0];
         let d = (0..end).find(|&f| second.shown[f].is_some()).unwrap();
-        second.check(d, &[("s-stop-1", 3), ("s-stop-2", 3), ("", 1)]);
+        second.check(d, &[("s-stop-1", 3), ("s-stop-2", 3), ("s-walk-1", 1)]);
     }
 
     #[test]
@@ -1121,6 +1149,88 @@ mod tests {
             10,
             &[("turn-a", 2), ("turn-b", 4), ("turn-a", 2), ("stand-1", 3)],
         );
+    }
+
+    #[test]
+    fn the_second_character_walking_and_running() {
+        // player-frames.md's example: Right and Action held from frame 0
+        // (here 10), Action held from before, so not pressed.
+        let keys: Vec<Vec<Action>> = (0..40)
+            .map(|f| match f {
+                0..10 => vec![Action::Action],
+                _ => vec![Action::Action, Action::Right],
+            })
+            .collect();
+        let run = run_after(world(FLAT, 1), Action::Action.into(), &keys);
+        run.check(
+            10,
+            &[
+                ("s-walk-1", 2),
+                ("s-walk-2", 2),
+                ("s-run-1", 2),
+                ("s-run-2", 2),
+                ("s-run-3", 2),
+                ("s-run-4", 2),
+                ("s-run-5", 1),
+            ],
+        );
+    }
+
+    #[test]
+    fn the_second_character_s_walking_cycle_and_standing_after_it() {
+        let run = run(world(FLAT, 1), &hold(&[Action::Right], 60, 120));
+        let steps: Vec<usize> = run.shown[10..70]
+            .iter()
+            .map(|l| l.unwrap().strip_prefix("s-walk-").unwrap().parse().unwrap())
+            .collect();
+        assert!(
+            steps
+                .windows(2)
+                .all(|w| w[1] == w[0] || w[1] == w[0] % 16 + 1)
+        );
+        assert!(steps.contains(&16), "{steps:?}");
+        let stand = run.shown[70..]
+            .iter()
+            .position(|&l| l == Some("s-stand-1"))
+            .unwrap()
+            + 70;
+        assert!(
+            run.shown[70..stand]
+                .iter()
+                .all(|l| l.unwrap().starts_with("s-walk-"))
+        );
+        run.check(stand, &[("s-stand-1", 4), ("s-stand-2", 4)]);
+    }
+
+    #[test]
+    fn a_turn_of_the_second_character_from_standing_still() {
+        let run = run(world(FLAT, 1), &hold(&[Action::Left], 1, 30));
+        assert_eq!(run.frames(Event::Turn), [14], "facing changes on T + 4");
+        run.check(
+            10,
+            &[
+                ("s-stand-5", 2),
+                ("s-stand-7", 4),
+                ("s-stand-5", 2),
+                ("s-stand-1", 4),
+            ],
+        );
+    }
+
+    #[test]
+    fn the_second_character_walks_on_from_a_landing() {
+        // From L + 17 with Right held: walking pictures, from s-walk-1.
+        let keys: Vec<Vec<Action>> = (0..120)
+            .map(|f| match f {
+                10 => vec![Action::Jump],
+                f if f > 10 => vec![Action::Right],
+                _ => vec![],
+            })
+            .collect();
+        let run = run(world(FLAT, 1), &keys);
+        let l = run.frames(Event::Land)[0];
+        assert_eq!(run.shown[l + 16], Some("s-land-3"));
+        run.check(l + 17, &[("s-walk-1", 2), ("s-walk-2", 2)]);
     }
 
     #[test]
@@ -1529,9 +1639,19 @@ mod tests {
     fn the_second_character_standing_after_walking_or_a_turn() {
         for key in [Action::Right, Action::Left] {
             let run = run(world(FLAT, 1), &hold(&[key], 6, 400));
-            let s = run.shown.iter().position(Option::is_some).unwrap();
+            let s = run.shown[10..]
+                .iter()
+                .position(|&l| l == Some("s-stand-1"))
+                .unwrap()
+                + 10;
             assert!(s > 16, "{key:?}: standing from {s}");
-            assert!(run.shown[..s].iter().all(Option::is_none));
+            assert!(run.shown[..10].iter().all(Option::is_none));
+            assert!(
+                run.shown[10..s]
+                    .iter()
+                    .all(|l| SECOND_WALKING.contains(&l.unwrap())),
+                "{key:?}"
+            );
             run.check(s, &second_standing_list(400 - s));
         }
     }
@@ -1557,8 +1677,15 @@ mod tests {
         for (slot, sets) in SETS.iter().enumerate() {
             let decoder = clamber_import::CharacterDecoder::of("title-1").unwrap();
             let character = decoder.characters.iter().find(|c| c.slot == slot).unwrap();
-            let names = ["stop", "standing", "jump", "bounce", "roll", "walking"];
-            for ((set, labels), name) in sets.iter().zip(names) {
+            for (set, labels) in sets.iter() {
+                let name = match set {
+                    Set::Stop => "stop",
+                    Set::Standing => "standing",
+                    Set::Jump => "jump",
+                    Set::Bounce => "bounce",
+                    Set::Roll => "roll",
+                    Set::Walking => "walking",
+                };
                 let theirs = character.sets.iter().find(|s| s.name == name).unwrap();
                 let theirs: Vec<&str> = theirs.pictures.iter().map(|&(l, _)| l).collect();
                 assert_eq!(&theirs, labels, "{set:?}");

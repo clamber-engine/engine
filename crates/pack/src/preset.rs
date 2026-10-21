@@ -342,6 +342,8 @@ mod tests {
                     | Param::WalkStrideLess
                     | Param::RunStride
                     | Param::StrideMin
+                    | Param::StrideScale
+                    | Param::RunStrideSteps
                     | Param::WalkTurnSteps
                     | Param::WalkRunSteps
                     | Param::RunTurnSteps
@@ -349,6 +351,7 @@ mod tests {
                     | Param::RunStandSpeed
                     | Param::TurnRunSpeed
                     | Param::RunWalkSpeed
+                    | Param::RunWalkOnLastStep
                     | Param::JumpDelay
                     | Param::LandingLockout
                     | Param::FallLandingLockout

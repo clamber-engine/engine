@@ -1042,3 +1042,118 @@ fn a_roll_stopped_at_the_top_of_a_face_pushes_off_to_size_3() {
     assert_eq!(rows[1].vx, f(2.0));
     assert_eq!(w.world.player.roll.unwrap().speed, f(3.0));
 }
+
+/// Mode and step, or "turn", and the stride counter in 1/512 of a step,
+/// after each of `keys(frame)` held for a frame.
+fn gaits(play: &mut Play, n: usize, keys: impl Fn(usize) -> Vec<Action>) -> Vec<(String, i64)> {
+    (0..n)
+        .map(|i| {
+            hold(play, &keys(i), 1);
+            let p = &play.world.player;
+            let counter = |left: Fixed| (left.to_f64() * 512.0) as i64;
+            match (p.turn, p.gait) {
+                (Some(_), _) => ("turn".to_string(), 0),
+                (None, Gait::Walking(s)) => (format!("walk {}", s.step), counter(s.left)),
+                (None, Gait::Running(s)) => (format!("run {}", s.step), counter(s.left)),
+                (None, g) => (format!("{g:?}"), 0),
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn stride_cycle_example() {
+    // ground-speed.md, "The second character's stride cycle": Right and
+    // Action held from frame 0, standing still facing right.
+    let mut w = second();
+    let mut v = Vec::new();
+    let mut gait = Vec::new();
+    for _ in 0..14 {
+        gait.extend(gaits(&mut w, 1, |_| vec![R, A]));
+        v.push((w.world.player.vel.x.to_f64() * 256.0) as i64);
+    }
+    assert_eq!(
+        v,
+        [
+            108, 202, 284, 356, 419, 474, 522, 564, 601, 633, 661, 686, 708, 727
+        ]
+    );
+    let want = [
+        ("walk 1", 512),
+        ("walk 1", 256),
+        ("walk 2", 512),
+        ("walk 2", 256),
+        ("run 1", 512),
+        ("run 1", 256),
+        ("run 2", 512),
+        ("run 2", 256),
+        ("run 3", 512),
+        ("run 3", 256),
+        ("run 4", 512),
+        ("run 4", 256),
+        ("run 5", 503),
+        ("run 5", 232),
+    ];
+    let want: Vec<(String, i64)> = want.iter().map(|&(m, c)| (m.to_string(), c)).collect();
+    assert_eq!(gait, want);
+}
+
+#[test]
+fn stride_cycles_of_16_walking_and_13_running_steps() {
+    let mut w = second();
+    let walk = gaits(&mut w, 40, |_| vec![R]);
+    let mut w = second();
+    let run = gaits(&mut w, 120, |_| vec![R, A]);
+    for (rows, last, first) in [(walk, "walk 16", "walk 1"), (run, "run 13", "run 1")] {
+        let after: Vec<&str> = rows
+            .windows(2)
+            .filter(|p| p[0].0 == last && p[1].0 != last)
+            .map(|p| p[1].0.as_str())
+            .collect();
+        assert!(!after.is_empty(), "{rows:?}");
+        assert!(after.iter().all(|&m| m == first), "{after:?}");
+    }
+}
+
+/// Right and Action held for `run` frames, to full speed, then
+/// `then(i)` held on frame i after: the gaits, with v after each frame.
+fn let_go(run: usize, then: impl Fn(usize) -> Vec<Action>) -> Vec<(String, i64)> {
+    let mut w = second();
+    gaits(&mut w, run, |_| vec![R, A]);
+    (0..80)
+        .map(|i| {
+            let (mode, _) = gaits(&mut w, 1, |_| then(i)).remove(0);
+            (mode, (w.world.player.vel.x.abs().to_f64() * 256.0) as i64)
+        })
+        .collect()
+}
+
+#[test]
+fn running_with_action_let_go_walks_only_as_step_13_ends() {
+    // Action let go after running at full speed with Right held:
+    // running goes on at any speed until running step 13 ends with
+    // v < 640.
+    let mut slow_runs = 0;
+    for run in 60..90 {
+        let rows = let_go(run, |_| vec![R]);
+        let walk = rows.iter().position(|(m, _)| m == "walk 1").unwrap();
+        assert!(rows[..walk].iter().all(|(m, _)| m.starts_with("run ")));
+        assert_eq!(rows[walk - 1].0, "run 13", "{rows:?}");
+        assert!(rows[walk].1 < 640, "{rows:?}");
+        slow_runs += rows[..walk].iter().filter(|(_, v)| *v < 640).count();
+    }
+    assert!(slow_runs > 0, "always below 640 only as step 13 ends");
+}
+
+#[test]
+fn walking_at_the_end_of_step_13_comes_before_its_turn_check() {
+    // The same, with Left held on the frame walking starts: walking
+    // starts all the same, and no turn.
+    let walk = let_go(60, |_| vec![R])
+        .iter()
+        .position(|(m, _)| m == "walk 1")
+        .unwrap();
+    let rows = let_go(60, |i| if i == walk { vec![L] } else { vec![R] });
+    assert_eq!(rows[walk].0, "walk 1", "{rows:?}");
+    assert!(rows.iter().all(|(m, _)| m != "turn"), "{rows:?}");
+}

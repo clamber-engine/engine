@@ -57,6 +57,8 @@ walk_stride = 0
 walk_stride_less = 0
 run_stride = 0
 stride_min = 0
+stride_scale = 0
+run_stride_steps = 0
 walk_turn_steps = []
 walk_run_steps = []
 run_turn_steps = []
@@ -64,6 +66,7 @@ walk_stand_speed = 0
 run_stand_speed = 0
 turn_run_speed = 0
 run_walk_speed = 0
+run_walk_on_last_step = 0
 jump_speed = 7.5
 jump_release_speed = 3
 jump_buffer = 5
@@ -1157,6 +1160,22 @@ roll_attack_offset = 3
 # second character"). The spec covers landings on the third or a later
 # `s-air-6` frame; the engine lands earlier ones the same way.
 jump_landing_mode = 17
+# Its stride cycle (ground-speed.md, "The second character's stride
+# cycle") has 16 walking and 13 running steps of 512 rather than 256:
+# walking at v/2 and running at v/4 + v/8, both at least 256, so the
+# progress counts half. Running with Action let go drops to walking only
+# as running step 13 ends, before its turn check.
+stride_steps = 16
+run_stride_steps = 13
+walk_stride = 0.5
+walk_stride_less = 0
+run_stride = 0.375
+stride_min = 1
+stride_scale = 0.5
+walk_turn_steps = [1, 3, 5, 7, 9, 11, 13, 15]
+walk_run_steps = [2, 4, 6, 8, 10, 12, 14, 16]
+run_turn_steps = [3, 5, 7, 9, 11, 13]
+run_walk_on_last_step = 1
 # The second character follows by where the first is now.
 follow_lag = 0
 # The second character being hit isn't specified yet, so it's a hit with

@@ -3001,9 +3001,21 @@ impl Player {
         let forward = direction(self.facing);
         let opposite = turn_dir == -forward;
         let v = self.vel.x.abs();
-        let steps = physics[Param::StrideSteps]
-            .floor()
-            .clamp(1, MAX_STEP.into()) as u32;
+        let cycle = |param: Param| physics[param].floor().clamp(1, MAX_STEP.into()) as u32;
+        let steps = cycle(Param::StrideSteps);
+        let run_steps = if physics[Param::RunStrideSteps] >= Fixed::ONE {
+            cycle(Param::RunStrideSteps)
+        } else {
+            steps
+        };
+        let scale = |rate: Fixed| {
+            let rate = rate.max(physics[Param::StrideMin]);
+            match physics[Param::StrideScale] {
+                scale if scale > Fixed::ZERO => rate * scale,
+                _ => rate,
+            }
+        };
+        let walk_on_last = physics[Param::RunWalkOnLastStep] > Fixed::ZERO;
         let has =
             |set: Param, step: u32| clamber_pack::physics::steps(physics[set]).any(|n| n == step);
         let mut turn = false;
@@ -3013,7 +3025,7 @@ impl Player {
             Gait::Walking(mut stride) if !turn_ends => {
                 let rate =
                     stride_rate(v, physics[Param::WalkStride]) - physics[Param::WalkStrideLess];
-                let ended = stride.advance(rate.max(physics[Param::StrideMin]), steps);
+                let ended = stride.advance(scale(rate), steps);
                 let checked = ended.is_some_and(|n| has(Param::WalkTurnSteps, n));
                 if checked && opposite {
                     turn = true;
@@ -3030,18 +3042,17 @@ impl Player {
             }
             Gait::Running(mut stride) if !turn_ends => {
                 let rate = stride_rate(v, physics[Param::RunStride]);
-                let ended = stride.advance(rate.max(physics[Param::StrideMin]), steps);
+                let ended = stride.advance(scale(rate), run_steps);
                 let checked = ended.is_some_and(|n| has(Param::RunTurnSteps, n));
-                if checked && opposite {
+                let to_walk = !action && dir != 0 && v < physics[Param::RunWalkSpeed];
+                if walk_on_last && to_walk && ended == Some(run_steps) {
+                    Gait::Walking(Stride::START)
+                } else if checked && opposite {
                     turn = true;
                     Gait::Standing
                 } else if checked && v < physics[Param::RunStandSpeed] && dir == 0 {
                     Gait::Standing
-                } else if !action
-                    && dir != 0
-                    && v < physics[Param::RunWalkSpeed]
-                    && stride.first_done
-                {
+                } else if !walk_on_last && to_walk && stride.first_done {
                     Gait::Walking(Stride::START)
                 } else {
                     Gait::Running(stride)
