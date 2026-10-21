@@ -7,10 +7,15 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
 use clamber_level::{Entity, Vec2};
-use toml::Table;
+use toml::{Table, Value};
 
 /// The archetype of a single collectible, as in `content/base`.
 pub const SPARK: &str = "spark";
+
+/// The param naming how a [`SPARK`] is drawn, and its value for one that
+/// spins (`spec/behavior/collectibles.md`, "Pictures").
+const PICTURES: &str = "pictures";
+const SPIN: &str = "spin";
 
 /// Bytes in a group record.
 pub const GROUP_SIZE: usize = 4;
@@ -194,7 +199,8 @@ impl Collectibles {
                 kind: SPARK.to_string(),
                 id: None,
                 at: item.position(),
-                params: Table::new(),
+                // collectibles.md, "Pictures": it spins.
+                params: Table::from_iter([(PICTURES.to_string(), Value::from(SPIN))]),
             })
             .collect()
     }
@@ -361,6 +367,7 @@ mod tests {
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].kind, SPARK);
         assert_eq!(entities[0].at, Vec2::ints(16, 17));
+        assert_eq!(entities[0].params["pictures"].as_str(), Some("spin"));
 
         let mut bad = bytes.clone();
         bad[4..8].copy_from_slice(&group(0, 1));

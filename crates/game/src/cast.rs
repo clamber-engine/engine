@@ -14,7 +14,9 @@
 //! roster slot), the player shows them on the frames they're given for
 //! ([`crate::pictures`]) instead, and so do walkers
 //! ([`crate::walker_pictures`]), throwers and balls
-//! ([`crate::thrower_pictures`]) with sheets of theirs. Entities play their
+//! ([`crate::thrower_pictures`]) with sheets of theirs. Single
+//! collectibles that spin show their step's picture
+//! ([`crate::spin_pictures`]). Entities play their
 //! sheet's first animation, except a reached checkpoint, which plays
 //! `reached`, a defeated enemy, which plays `defeated`, a launcher
 //! that just fired, which plays `fire`, and a spring whose top is pressed
@@ -25,11 +27,12 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use clamber_sim::{
-    Behavior, CHECKPOINT, Event, Facing, Outcome, Phase, State, Thing, World, spring_top,
+    Behavior, CHECKPOINT, Event, Facing, FlowEvent, Outcome, Phase, State, Thing, World, spring_top,
 };
 use clamber_sprite::{Playback, SpriteSheet};
 
 use crate::pictures::{self, PictureClock};
+use crate::spin_pictures;
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
 use crate::surface::Surface;
 use crate::thrower_pictures::{self, Group};
@@ -238,6 +241,12 @@ impl Cast {
         (x, y): (f32, f32),
         opacity: u8,
     ) {
+        if let Some(step) = pose.spin {
+            if let Some(sprite) = self.spin_picture(thing, pose, step, x, y) {
+                self.bank.draw(canvas, &Sprite { opacity, ..sprite });
+            }
+            return;
+        }
         let facing = pose.walker.facing().unwrap_or(thing.facing);
         let shown = thrower_pictures::shown(thing);
         let sprite = match self.walker_picture(pose, x, y) {
@@ -284,6 +293,37 @@ impl Cast {
             flip_x: shown.flip_x,
             flip_y: shown.flip_y,
             ..Sprite::new(id, frame, x - 1.0, y)
+        })
+    }
+
+    /// A spinning collectible's picture on `step`: its own from
+    /// [`spin_pictures::SHEET`], mirrored left to right with its origin
+    /// at the collectible's position, if the step has one and the sheet
+    /// has them all; otherwise the frame of its kind's animation that
+    /// far through the turn.
+    fn spin_picture(&self, thing: &Thing, pose: &Pose, step: u8, x: f32, y: f32) -> Option<Sprite> {
+        let own = self.kinds.get(spin_pictures::SHEET).and_then(|&id| {
+            let sheet = self.bank.sheet(id);
+            let all = spin_pictures::LABELS
+                .iter()
+                .all(|l| sheet.animation(l).is_some());
+            let label = spin_pictures::label(step).filter(|_| all)?;
+            let frame = *sheet.animation(label)?.frames.first()?;
+            Some(Sprite {
+                flip_x: true,
+                ..Sprite::new(id, frame, x, y)
+            })
+        });
+        own.or_else(|| {
+            let &id = self.kinds.get(&thing.kind)?;
+            let frames = self
+                .bank
+                .sheet(id)
+                .animations
+                .get(pose.animation)
+                .map_or(&[][..], |a| &a.frames[..]);
+            let at = usize::from(step - 1) * frames.len() / spin_pictures::STEPS as usize;
+            Some(Sprite::new(id, frames.get(at).copied().unwrap_or(0), x, y))
         })
     }
 
@@ -358,6 +398,8 @@ pub struct Pose {
     pub playback: Playback,
     pub pictures: PictureClock,
     pub walker: WalkerClock,
+    /// A spinning collectible's step ([`crate::spin_pictures`]).
+    pub spin: Option<u8>,
 }
 
 /// Every actor's pose: the player's, the other character's, the lost
@@ -368,6 +410,9 @@ pub struct Poses {
     pub other: Pose,
     pub leaving: Pose,
     pub things: Vec<Pose>,
+    /// The latest frame's number plus one, with frames numbered from the
+    /// level's start or from play starting again after a lost life.
+    pub clock: u32,
 }
 
 impl Poses {
@@ -378,6 +423,7 @@ impl Poses {
             other: Pose::default(),
             leaving: Pose::default(),
             things: vec![Pose::default(); world.things.len()],
+            clock: 0,
         };
         poses.player.animation = cast.animation(cast.player, Some(player_animation(world, false)));
         poses.other.animation = cast.animation(cast.player, Some(other_animation(world)));
@@ -385,6 +431,7 @@ impl Poses {
         for (pose, thing) in poses.things.iter_mut().zip(&world.things) {
             let id = cast.kinds.get(&thing.kind).copied();
             pose.animation = cast.animation(id, thing_animation(world, thing));
+            pose.spin = spins(world, thing).then(|| spin_pictures::step(0, thing.pos));
         }
         poses
     }
@@ -392,6 +439,11 @@ impl Poses {
     /// Moves every pose on a logic frame, for `world` as it is now.
     /// `jump_next`: a jump starts on the player's next frame.
     pub fn update(&mut self, cast: &Cast, world: &World, jump_next: bool) {
+        self.clock = if world.flow.events.contains(&FlowEvent::Respawn) {
+            1
+        } else {
+            self.clock + 1
+        };
         self.player.pictures.update(world, jump_next);
         let id = cast.player;
         let landing = cast.playing(id, &self.player, LAND);
@@ -410,6 +462,7 @@ impl Poses {
                 Some(size) => pose.walker.update(thing, size),
                 None => pose.walker = WalkerClock::default(),
             }
+            pose.spin = spins(world, thing).then(|| spin_pictures::step(self.clock, thing.pos));
         }
     }
 }
@@ -457,12 +510,24 @@ fn leaving_animation(world: &World) -> &'static str {
 /// `pictures` param names it.
 fn walker_size(world: &World, thing: &Thing) -> Option<Size> {
     let entity = world.level.entities.get(thing.index)?;
-    Size::named(entity.params.get(WALKER_PICTURES)?.as_str()?)
+    Size::named(entity.params.get(PICTURES)?.as_str()?)
 }
 
-/// The entity param naming a walker's kind of pictures
-/// ([`crate::walker_pictures`]).
-pub const WALKER_PICTURES: &str = "pictures";
+/// Whether `thing` is a collectible that spins, as its entity's
+/// `pictures` param says ([`crate::spin_pictures`]).
+fn spins(world: &World, thing: &Thing) -> bool {
+    world
+        .level
+        .entities
+        .get(thing.index)
+        .and_then(|e| e.params.get(PICTURES)?.as_str())
+        == Some(spin_pictures::SPIN)
+}
+
+/// The entity param naming the pictures a walker
+/// ([`crate::walker_pictures`]) or a collectible
+/// ([`crate::spin_pictures`]) shows.
+pub const PICTURES: &str = "pictures";
 
 /// A thing's animation, if not its sheet's first.
 fn thing_animation(world: &World, thing: &Thing) -> Option<&'static str> {
@@ -1002,6 +1067,75 @@ mod tests {
             let origin = if want == G { 1 } else { 2 };
             assert_eq!(lit, [(origin - 1, 1)], "{want:?}");
             assert_eq!(canvas.get(origin - 1, 1).unwrap(), want);
+        }
+    }
+
+    /// A level with a spinning collectible at (112, 65), whose steps
+    /// begin at 5 (collectibles.md, "Example (synthetic)").
+    fn spinning() -> World {
+        let level = LEVEL.to_string()
+            + r#"
+            [[entities]]
+            type = "spark"
+            at = [112, 65]
+            params = { pictures = "spin" }
+        "#;
+        let level = Level::from_toml_str(&level, "test").unwrap();
+        World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()))
+    }
+
+    #[test]
+    fn a_spinning_collectible_counts_its_steps_from_the_latest_frame_0() {
+        let mut world = spinning();
+        let cast = Cast::new(vec![("spark".to_string(), sheet())]);
+        let index = world.things.iter().position(|t| t.kind == "spark").unwrap();
+        let mut poses = Poses::new(&cast, &world);
+        let mut steps = Vec::new();
+        for _ in 0..8 {
+            poses.update(&cast, &world, false);
+            steps.push(poses.things[index].spin.unwrap());
+        }
+        assert_eq!(poses.clock, 8);
+        assert_eq!(steps, [5, 5, 5, 6, 6, 6, 6, 7]);
+        // Play starting again is frame 0 once more.
+        world.flow.events.push(FlowEvent::Respawn);
+        poses.update(&cast, &world, false);
+        assert_eq!(poses.clock, 1);
+        assert_eq!(poses.things[index].spin, Some(5));
+        // Other things don't spin.
+        assert!(poses.things.iter().filter(|p| p.spin.is_some()).count() == 1);
+    }
+
+    #[test]
+    fn a_spinning_collectible_shows_its_own_pictures_mirrored_while_all_five_are_there() {
+        let world = spinning();
+        let thing = world.things.iter().find(|t| t.kind == "spark").unwrap();
+        let labels = &crate::spin_pictures::LABELS[..];
+        for (labels, step, want) in [
+            // Its own picture, mirrored about its origin.
+            (labels, 5, [B, Color::default()]),
+            // Step 6 has no picture of its own: the engine's art, as far
+            // through its animation as the step is through the turn.
+            (labels, 6, [Color::default(), G]),
+            // Without one of the five, none are shown.
+            (&labels[1..], 1, [Color::default(), R]),
+            (&labels[1..], 5, [Color::default(), G]),
+        ] {
+            let cast = Cast::new(vec![
+                ("spark".to_string(), sheet()),
+                (
+                    crate::spin_pictures::SHEET.to_string(),
+                    labelled_sheet(labels, 4),
+                ),
+            ]);
+            let pose = Pose {
+                spin: Some(step),
+                ..Pose::default()
+            };
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, thing, &pose, 2.0, 0.0);
+            let got = [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()];
+            assert_eq!(got, want, "{labels:?} on {step}");
         }
     }
 }

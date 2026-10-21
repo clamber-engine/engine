@@ -119,7 +119,9 @@ pub enum Behavior {
     /// after a lost life (with `resume_afresh`) or to the level.
     /// One that's `kept` is gone for good when it's taken: it stays gone
     /// when play comes back to the level from another area. One that's
-    /// `late` acts on the lives display as if taken a frame later.
+    /// `late` acts on the lives display as if taken a frame later. Its
+    /// `pictures` names how it's drawn, which doesn't change how it
+    /// behaves.
     Collect {
         worth: u8,
         release_every: u8,
@@ -1713,6 +1715,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "once",
             "kept",
             "late",
+            "pictures",
         ],
         _ => return Err(format!("{path}.behavior: unknown behavior `{behavior}`")),
     };
