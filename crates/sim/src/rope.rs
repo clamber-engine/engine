@@ -318,6 +318,7 @@ mod tests {
                 target: f(0.1875),
                 reach: false,
             },
+            still: false,
         };
         let mut rows = Vec::new();
         for _ in 1..=49 {

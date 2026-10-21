@@ -296,6 +296,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     for thing in world.things.iter_mut().filter(|t| t.active) {
         if let Some(Behavior::Critter(critter)) = thing.archetype.map(|a| a.behavior) {
             if !critters_held && let Some(entity) = world.level.entities.get(thing.index) {
+                thing.still = false;
                 critter::step(thing, entity.at, &critter, frame, view);
             }
             continue;
@@ -337,6 +338,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
             continue;
         }
         let moves = if catch_up && enemy { wait + 1 } else { 1 };
+        thing.still = false;
         for _ in 0..moves {
             if advance(&world.level, thing, &physics, picture, ending) {
                 freed.push(thing.pos);
@@ -757,6 +759,7 @@ fn fall(
             hold: hold - 1,
             glide,
         };
+        thing.still = true;
         return;
     }
     if let (Some(target), Behavior::Walker { response, .. }) = (glide, archetype.behavior) {

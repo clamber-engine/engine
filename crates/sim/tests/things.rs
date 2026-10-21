@@ -8,7 +8,7 @@ use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Presets};
 use clamber_sim::{
     Air, Boost, Event, Facing, Fixed, FlowEvent, Gait, InputFrame, LAUNCH_REST, Outcome, Phase,
-    ROLL, Roll, RollSize, START_LIVES, State, World, generic_feel, step,
+    ROLL, Roll, RollSize, START_LIVES, State, Thing, World, generic_feel, step,
 };
 
 /// Ground at y = 400 from x = 0 to 600, with a wall from x = 100 to 120
@@ -400,9 +400,19 @@ fn classic_nothing_else_moves_on_the_frozen_frames() {
     }
     // The walker bounced on, the other walker, the thrower and the
     // rising item.
+    // The walkers are held still then, which walker.md's pictures don't
+    // count.
     for (i, at_b) in rows[b].iter().enumerate() {
-        assert_eq!(&rows[b + 1][i], at_b, "thing {i} on B + 1");
-        assert_eq!(&rows[b + 2][i], at_b, "thing {i} on B + 2");
+        let walker = i < 2;
+        assert!(!walker || !at_b.still, "thing {i} on B");
+        for n in [b + 1, b + 2] {
+            assert!(!walker || rows[n][i].still, "thing {i} on {n}");
+            let held = Thing {
+                still: at_b.still,
+                ..rows[n][i].clone()
+            };
+            assert_eq!(&held, at_b, "thing {i} on {n}");
+        }
     }
     // And no ball is thrown.
     assert_eq!(rows[b + 2].len(), rows[b].len());

@@ -76,6 +76,7 @@ mod sprites;
 mod surface;
 mod text;
 mod title;
+mod walker_pictures;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

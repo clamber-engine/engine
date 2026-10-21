@@ -30,6 +30,7 @@ use clamber_sprite::{Playback, SpriteSheet};
 use crate::pictures::{self, PictureClock};
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
 use crate::surface::Surface;
+use crate::walker_pictures::{self, Size, WalkerClock};
 
 /// The sheet the player is drawn with.
 pub const PLAYER: &str = "player";
@@ -234,14 +235,37 @@ impl Cast {
         (x, y): (f32, f32),
         opacity: u8,
     ) {
-        if let Some(&id) = self.kinds.get(&thing.kind) {
+        let facing = pose.walker.facing().unwrap_or(thing.facing);
+        let sprite = match self.walker_picture(pose, x, y) {
+            Some(sprite) => Some(sprite),
+            None => self
+                .kinds
+                .get(&thing.kind)
+                .map(|&id| self.sprite(id, pose, x, y)),
+        };
+        if let Some(sprite) = sprite {
             let sprite = Sprite {
-                flip_x: thing.facing == Facing::Left,
+                flip_x: facing == Facing::Left,
                 opacity,
-                ..self.sprite(id, pose, x, y)
+                ..sprite
             };
             self.bank.draw(canvas, &sprite);
         }
+    }
+
+    /// A walker's own picture for `pose`, from its kind's sheet, if that
+    /// has the picture's whole group. Its origin is a px left of the
+    /// walker's position (`formats/sprites.md`, "Where the picture is
+    /// drawn").
+    fn walker_picture(&self, pose: &Pose, x: f32, y: f32) -> Option<Sprite> {
+        let (size, group, label) = pose.walker.shown()?;
+        let &id = self.kinds.get(size.name())?;
+        let sheet = self.bank.sheet(id);
+        let all = walker_pictures::labels(size, group)
+            .iter()
+            .all(|l| sheet.animation(l).is_some());
+        let frame = *sheet.animation(label).filter(|_| all)?.frames.first()?;
+        Some(Sprite::new(id, frame, x - 1.0, y))
     }
 
     fn sprite(&self, id: SheetId, pose: &Pose, x: f32, y: f32) -> Sprite {
@@ -277,7 +301,7 @@ impl Cast {
             *pose = Pose {
                 animation,
                 playback: Playback::new(),
-                pictures: pose.pictures,
+                ..*pose
             };
             return;
         }
@@ -292,13 +316,14 @@ impl Cast {
 }
 
 /// Which animation an actor is playing, and how far through it, and for
-/// the player which of its own pictures it shows.
+/// the player or a walker which of its own pictures it shows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Pose {
     /// Index into the sheet's animations.
     pub animation: usize,
     pub playback: Playback,
     pub pictures: PictureClock,
+    pub walker: WalkerClock,
 }
 
 /// Every actor's pose: the player's, the other character's, the lost
@@ -347,6 +372,10 @@ impl Poses {
             let id = cast.kinds.get(&thing.kind).copied();
             let animation = cast.animation(id, thing_animation(world, thing));
             cast.advance(pose, id, animation);
+            match walker_size(world, thing) {
+                Some(size) => pose.walker.update(thing, size),
+                None => pose.walker = WalkerClock::default(),
+            }
         }
     }
 }
@@ -389,6 +418,17 @@ fn leaving_animation(world: &World) -> &'static str {
         .leaving()
         .map_or(State::Idle.name(), |body| body.state.name())
 }
+
+/// The walker kind whose pictures `thing` shows, as its entity's
+/// `pictures` param names it.
+fn walker_size(world: &World, thing: &Thing) -> Option<Size> {
+    let entity = world.level.entities.get(thing.index)?;
+    Size::named(entity.params.get(WALKER_PICTURES)?.as_str()?)
+}
+
+/// The entity param naming a walker's kind of pictures
+/// ([`crate::walker_pictures`]).
+pub const WALKER_PICTURES: &str = "pictures";
 
 /// A thing's animation, if not its sheet's first.
 fn thing_animation(world: &World, thing: &Thing) -> Option<&'static str> {
@@ -765,6 +805,44 @@ mod tests {
             let mut canvas = Canvas::new(4, 1);
             cast.draw_player(&mut canvas, &world, &pose, 2.0, 0.0);
             let got = [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()];
+            assert_eq!(got, want, "{labels:?}");
+        }
+    }
+
+    #[test]
+    fn a_walker_shows_its_kinds_picture_a_px_left_when_the_whole_group_is_there() {
+        let level = LEVEL.to_string()
+            + r#"
+            [[entities]]
+            type = "crawler"
+            at = [30, 50]
+            params = { pictures = "small-walker" }
+        "#;
+        let level = Level::from_toml_str(&level, "test").unwrap();
+        let world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
+        let walking =
+            crate::walker_pictures::labels(Size::Small, crate::walker_pictures::Group::Walking);
+        for (labels, want) in [
+            (walking, [R, Color::default()]),
+            // Without its last picture the group isn't there: the
+            // engine's art.
+            (&walking[..walking.len() - 1], [Color::default(), R]),
+        ] {
+            let cast = Cast::new(vec![
+                (PLAYER.to_string(), sheet()),
+                ("crawler".to_string(), sheet()),
+                ("small-walker".to_string(), character_sheet(labels)),
+            ]);
+            let mut poses = Poses::new(&cast, &world);
+            poses.update(&cast, &world, false);
+            let thing = world.things.iter().find(|t| t.kind == "crawler").unwrap();
+            let pose = poses.things[thing.index];
+            assert_eq!(pose.walker.shown().unwrap().2, "small-walk-1");
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, thing, &pose, 2.0, 0.0);
+            // Facing left, as placed, the 2-px frame is mirrored about
+            // its origin, so its first pixel is left of it.
+            let got = [canvas.get(0, 0).unwrap(), canvas.get(1, 0).unwrap()];
             assert_eq!(got, want, "{labels:?}");
         }
     }

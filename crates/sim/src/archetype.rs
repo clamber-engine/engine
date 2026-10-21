@@ -47,7 +47,9 @@ pub enum Behavior {
     /// airborne pose lifts it, instead of the preset's `hurt_jump_lift`. A player riding an
     /// animal meets it as `rider` says instead (see [`ride`](crate::ride)).
     /// With a `drop`, it walks off ledges and drops onto the floor from a
-    /// start above it, as that says, instead of stopping at ledges.
+    /// start above it, as that says, instead of stopping at ledges. Its
+    /// `pictures` names the kind of pictures it's drawn with, which
+    /// doesn't change how it behaves.
     Walker {
         speed: Fixed,
         response: Response,
@@ -1521,6 +1523,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "hurt_jump_lift",
             "rider",
             "drop",
+            "pictures",
         ],
         "patrol" => &["path", "period"],
         "scenery" => &[],

@@ -116,6 +116,10 @@ pub struct Thing {
     /// `None` on the floor.
     pub air: Option<Fixed>,
     pub phase: Phase,
+    /// It held still on the last step: nothing moved it or counted it
+    /// on, as on a bounce's frozen frames or while the player is knocked
+    /// out. Not part of the trace.
+    pub still: bool,
 }
 
 impl Thing {
@@ -143,6 +147,7 @@ impl Thing {
             wait: 0,
             air: None,
             phase: Phase::Ready,
+            still: false,
         }
     }
 }
@@ -1275,6 +1280,10 @@ pub fn step(world: &mut World, input: &InputFrame) {
 /// One logic frame of [`step`].
 fn advance(world: &mut World, input: &InputFrame) {
     world.events.clear();
+    // Things that take a step this frame say so.
+    for thing in &mut world.things {
+        thing.still = true;
+    }
     world.hit_by = None;
     world.flow.events.clear();
     world.pause = 0;

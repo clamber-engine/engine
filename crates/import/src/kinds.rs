@@ -224,6 +224,9 @@ impl Kind {
                     _ => ([26, 38], 0.5),
                 };
                 set("rider", self.rider());
+                // walker.md, "Pictures": the kind's pictures, from the
+                // pack's sheet named after it.
+                set("pictures", Value::String(self.name().into()));
                 set("speed", Value::Integer(1));
                 set("response", Value::Float(0.125));
                 set("size", Value::Array(size.map(Value::Integer).into()));
