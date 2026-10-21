@@ -33,8 +33,8 @@ pub const FOLLOWING: &str = "following";
 /// Pictures that are shown together, by label and picture hash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PictureSet {
-    /// The set's name: `stop`, `standing`, `jump`, `bounce`, `roll` or
-    /// `walking`.
+    /// The set's name: `stop`, `standing`, `jump`, `bounce`, `roll`,
+    /// `walking` or `crouch`.
     pub name: &'static str,
     pub pictures: &'static [(&'static str, &'static str)],
 }
@@ -51,7 +51,7 @@ pub struct CharacterPictures {
 
 /// The first character's sets ("The stop after a roll", "Standing
 /// still", "A jump and its landing", "A bounce", "A roll",
-/// "Walking, running and turning").
+/// "Walking, running and turning", "Crouching").
 const FIRST: &[PictureSet] = &[
     PictureSet {
         name: "stop",
@@ -631,6 +631,99 @@ const FIRST: &[PictureSet] = &[
             ),
         ],
     },
+    PictureSet {
+        name: "crouch",
+        pictures: &[
+            (
+                "crouch-1",
+                "b463402516b70beec1ed9bac32bc635bbe5dfb59af596a8ee95a551d64e4a477",
+            ),
+            (
+                "crouch-2",
+                "dd9fc793823c9485409150278ba18cb45fbfca5ae5375ce20d6bc94668252c11",
+            ),
+            (
+                "crouch-3",
+                "305ed19c8006d4875b30caf5381cfaac9e5fd1775c2d8fc2d0d8239f6a38155c",
+            ),
+            (
+                "crouch-4",
+                "263d6caca9f1d52d6d721e6e8d1125bc5fb5586020f7b3923d73969d06b9b501",
+            ),
+            (
+                "crouch-5",
+                "f1a90c2fd870e2df22a68a9eadab38bc4f45b508421185e1ac87eb997b70785d",
+            ),
+            (
+                "crouch-6",
+                "9b81f129ce11f64c9f8bdf91faf18b07ae1fd31a6cb39a78be23e323fe47c32d",
+            ),
+            (
+                "crouch-7",
+                "9808295f722fd3e78a92be553ece24c47306cfadb29abbf9a741e423221ab659",
+            ),
+            (
+                "crouch-8",
+                "d56d6ab0d6e2c7ba4862ba0679422b7998ea6c7aa5fc6fba9bc78c78f76dab9b",
+            ),
+            (
+                "crouch-9",
+                "dc4ddf6f773ae8bc87ab64ce4c3fd534d1b8cb733d47a7841a149cdfebe0e698",
+            ),
+            (
+                "crouch-10",
+                "c11e24ae51bfec8191aacef63cc6480c8ea379469cd14392bc4ebb99413517ea",
+            ),
+            (
+                "crouch-11",
+                "6a737c37bed5006001b8e3d04363329836fea5cea3c5186b2112e367b2e55178",
+            ),
+            (
+                "crouch-12",
+                "edc3ea0d338ccb294e4bb8f6fcb7b4671243afbdc1834a2163b0cbcb4f1ef423",
+            ),
+            (
+                "crouch-13",
+                "bd8255b5b1b7ccc26e74fd9bf6c1cfc932b4cf0ac7c6abb1fbfe845ad8e56e62",
+            ),
+            (
+                "crouch-14",
+                "c34244765304407992061cf5e2e8e0ac7267be840919d600dd7e65fea10ffef5",
+            ),
+            (
+                "crouch-15",
+                "e619c72afce8eed5b72087c36f2eba7470d6dddb62605c3725478545df5ebe57",
+            ),
+            (
+                "crouch-16",
+                "03a6d3c2abea7edec903acff098570d6997f657e6845065fa97275e26c736721",
+            ),
+            (
+                "crouch-17",
+                "19c51ee14af6fa8590358a29c6e15a46d8bf034667274ee910a463e599540743",
+            ),
+            (
+                "crouch-18",
+                "e32079c0a52b8fdc34ae74f14cdc719ae12fc08a5ed2687f4fdc9bc753a14e26",
+            ),
+            (
+                "crouch-19",
+                "ff4032fc956cf073be57253fed3aa0b325d435869b8ce71ab3aa1175ed8e3ee4",
+            ),
+            (
+                "crouch-20",
+                "dec760a482539afb058b936ece72755321b0c23380684e6d4846e5f71b2a892a",
+            ),
+            (
+                "crouch-21",
+                "3b814f5a1805cec116cd678ea1fdf2142677c8e6101765866f055d846fe8ba12",
+            ),
+            (
+                "crouch-22",
+                "4790466d2a9262931a7444ad7bbcc04ca4035231e399c41cf4adbae63be71383",
+            ),
+        ],
+    },
 ];
 
 /// The second character's sets, as [`FIRST`].
@@ -1162,6 +1255,63 @@ const SECOND: &[PictureSet] = &[
             (
                 "s-stop-5",
                 "96d312d91fd5b4aabea2271d5ad6cf667142dbb37228ef558e72f8381d0af7ba",
+            ),
+        ],
+    },
+    PictureSet {
+        name: "crouch",
+        pictures: &[
+            (
+                "s-crouch-1",
+                "015cd44b0d26d2c593b09b89dc9389e9910e83f8739f250865ec4f7af3c06f90",
+            ),
+            (
+                "s-crouch-2",
+                "f0dc9d7c4e987f6290929d3d278ff656b5bb4514948b4deda634c676428996d7",
+            ),
+            (
+                "s-crouch-3",
+                "fe025be976d293a9eb2bfebf3ffb9bc886dffe91e053bdcb1570484168c8a7e9",
+            ),
+            (
+                "s-crouch-4",
+                "96d87ffc70a84e64b8e4c276d0bb1471ec1cf5f1c052589cb231634b20440a6b",
+            ),
+            (
+                "s-crouch-5",
+                "2fe8cad8b01a384ee72af2c9a625ee684a347c1d2ea305bdbb1cea2823b44084",
+            ),
+            (
+                "s-crouch-6",
+                "2ea0c9b8a6ada522d9b2075768385bf6a6ce3dc1034c2b40b90c0c2a4afe9516",
+            ),
+            (
+                "s-crouch-7",
+                "97116a40c5f856dbdc4341db86eaee740df1b8e61eb8bd7a26fec7f5a89d0000",
+            ),
+            (
+                "s-crouch-8",
+                "a1881316d4fe00b3f3edd84aa30b47826696797549c4a1c54553929930f46dae",
+            ),
+            (
+                "s-crouch-9",
+                "3464348957e5cf55aa68ac5049ab6ebf475bb1637971880f3711ebc4bf55f743",
+            ),
+            (
+                "s-crouch-10",
+                "183cadaecfc238b527c59b57023a41998493f540b71b32d923eea148db7d93b4",
+            ),
+            (
+                "s-crouch-11",
+                "5a2003778acbb5a8111f7705e062d940a8450351c24fff37d59a1d63d0441289",
+            ),
+            (
+                "s-crouch-12",
+                "ee75de33f4f61d734c86b2733e4532b253cb0611f40346e36f0f5db631f7d383",
+            ),
+            (
+                "s-crouch-13",
+                "a3b36705e81cc557c92fb22389203ff905864249fc4ce1794317b98c00719483",
             ),
         ],
     },
