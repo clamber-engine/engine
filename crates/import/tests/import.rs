@@ -228,13 +228,14 @@ fn a_blocked_replacement_keeps_the_earlier_import() {
 
 #[test]
 fn says_plainly_when_something_blocks_replacing() {
+    let folder = PathBuf::from("packs").join("title-9");
     let blocked = ImportError::Blocked {
-        folder: PathBuf::from("packs").join("title-9"),
+        folder: folder.clone(),
         detail: "made-up detail".into(),
     };
     let message = blocked.to_string();
     assert!(message.contains("replace the old copy"), "{message}");
-    assert!(message.contains(&format!("{}", Path::new("packs/title-9").display())));
+    assert!(message.contains(&folder.display().to_string()), "{message}");
     assert!(message.ends_with("Close it and try again."), "{message}");
     assert!(!message.contains("made-up detail"), "{message}");
     let report = clamber_import::import_report(&Err(blocked));
