@@ -78,6 +78,11 @@ jobs:
       - name: Build
         if: steps.game.outputs.exists == 'true'
         run: cargo build --release --locked -p clamber-game --all-features
+      # Windows-only file behaviour (folders and files held open, as File
+      # Explorer does) only shows up here; see #342 and #33.
+      - name: Import tests on Windows
+        if: steps.game.outputs.exists == 'true'
+        run: cargo test --release --locked -p clamber-import --test import
       # Code signing (Azure Trusted Signing) so Windows Smart App Control
       # accepts the build. Only on main, and only once the certificate
       # profile is configured in the repository variables.
