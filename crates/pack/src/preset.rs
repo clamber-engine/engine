@@ -338,6 +338,7 @@ mod tests {
                     | Param::TurnTime
                     | Param::ShortTurnSpeed
                     | Param::StrideSteps
+                    | Param::BlockedStands
                     | Param::WalkStride
                     | Param::WalkStrideLess
                     | Param::RunStride

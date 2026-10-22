@@ -1791,29 +1791,34 @@ impl Player {
             None => false,
         };
         let carrying = self.carrying_stride(physics);
+        let mut pre_stride = None;
         if !striding || (crouching && self.grounded()) {
             // In the air, rolling and in a roll's stop, the player isn't
             // walking or running; landings and the end of a roll set the
             // gait below. Crouching, to the last frame whose target is 0,
             // it's standing: walking or a turn starts on the frame after.
             self.gait = Gait::Standing;
-        } else if self.stride(
-            run_dir,
-            // Toward a rise, a turn starts by the way the target points.
-            if toward_rise && self.target.is_negative() {
-                -1
-            } else if toward_rise {
-                i32::from(self.target > Fixed::ZERO)
-            } else {
-                run_dir
-            },
-            held(Action::Action) && !carrying,
-            carrying,
-            turn_ends,
-            physics,
-        ) {
-            self.facing = facing_of(-direction(self.facing));
-            events.push(Event::Turn);
+        } else {
+            pre_stride = Some((self.gait, held(Action::Action) && !carrying, carrying));
+            let turned = self.stride(
+                run_dir,
+                // Toward a rise, a turn starts by the way the target points.
+                if toward_rise && self.target.is_negative() {
+                    -1
+                } else if toward_rise {
+                    i32::from(self.target > Fixed::ZERO)
+                } else {
+                    run_dir
+                },
+                held(Action::Action) && !carrying,
+                carrying,
+                turn_ends,
+                physics,
+            );
+            if turned {
+                self.facing = facing_of(-direction(self.facing));
+                events.push(Event::Turn);
+            }
         }
         let airborne = !self.grounded();
         let fall_step = std::mem::take(&mut self.fall_step);
@@ -1908,6 +1913,21 @@ impl Player {
         } else {
             self.move_horizontally(level, HALF_WIDTH, |_| true)
         };
+        // A frame that ends with no speed while the facing direction is
+        // held counts as holding none ("Blocked"): the stride goes on
+        // again from before the frame with the speed it ends with.
+        if let Some((gait, action, carrying)) = pre_stride
+            && physics[Param::BlockedStands] > Fixed::ZERO
+            && !carrying
+            && self.grounded()
+            && self.vel.x == Fixed::ZERO
+            && run_dir != 0
+            && run_dir == direction(self.facing)
+            && self.turn.is_none()
+        {
+            self.gait = gait;
+            self.stride(0, run_dir, action, false, turn_ends, physics);
+        }
         if self.roll_stop > 0 && self.roll_stop == slide {
             // The slide's last frame moves, but ends standing.
             self.vel.x = Fixed::ZERO;

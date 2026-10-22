@@ -5271,3 +5271,41 @@ fn classic_jumping_from_a_crouch() {
     let (_, rows) = classic_crouch_jump(&[&[j, d], &[]], 2);
     assert_eq!(frames_with(&rows, Event::JumpStart), [1]);
 }
+
+#[test]
+fn classic_a_stopped_roll_carried_on_stands_and_pushes_off() {
+    // spec/behavior/ground-speed.md, "After a roll": a first-character
+    // roll that had stopped (1590, 10 px from the end of the floor) and
+    // carried on (D = 29) stands on D + 3 with nothing held. Right first
+    // held on a frame from D to D + 3 pushes off at 2 on that frame and
+    // walks on D + 3; from D + 4 walking starts as from standing.
+    let run = |change: usize| {
+        let mut w = classic_raised(1590);
+        play(&mut w, 40, |f| {
+            let mut keys = vec![];
+            if f < 32 {
+                keys.push(Action::Action);
+            }
+            if f >= change {
+                keys.push(Action::Right);
+            }
+            keys
+        })
+    };
+    let rows = run(40);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [32]);
+    assert!(rows[28..].iter().all(|r| (r.x, r.vx) == (1590.0, 0.0)));
+    assert_eq!(rows[32].state, State::Idle);
+    for change in 29..=32 {
+        let rows = run(change);
+        assert_eq!((rows[change - 1].x, rows[change - 1].vx), (1590.0, 0.0));
+        assert_eq!((rows[change].x, rows[change].vx), (1592.0, 2.0), "{change}");
+        assert_eq!(rows[32].state, State::Walk, "{change}");
+    }
+    for change in [33, 34] {
+        let rows = run(change);
+        assert_eq!(rows[change - 1].vx, 0.0, "{change}");
+        assert_eq!(rows[change].state, State::Walk, "{change}");
+        assert_eq!(rows[change].vx, 0.25, "{change}");
+    }
+}

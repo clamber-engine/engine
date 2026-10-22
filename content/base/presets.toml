@@ -53,6 +53,7 @@ action_jump_press = 0
 turn_time = 0
 short_turn_speed = 0
 stride_steps = 0
+blocked_stands = 0
 walk_stride = 0
 walk_stride_less = 0
 run_stride = 0
@@ -592,6 +593,9 @@ crouch_jump_press = 1
 action_jump_press = 1
 turn_time = 8
 stride_steps = 20
+# Against a wall or a steep face a frame with no speed counts as holding
+# no direction (ground-speed.md, "Blocked"; the first character only).
+blocked_stands = 1
 walk_stride = 0.375
 walk_stride_less = 0.125
 run_stride = 0.21875
@@ -1142,6 +1146,7 @@ swim_leave_speed = 0.00390625
 # remembered one does; and facing turns at once all through the stop.
 # Down + Action rolls, as `ground_action_time` is 0.
 [presets.classic-1.roster.1]
+blocked_stands = 0
 walk_speed = 2.25
 top_speed = 3.375
 jump_speed = 8.3515625

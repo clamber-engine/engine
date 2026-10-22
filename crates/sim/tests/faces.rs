@@ -2356,3 +2356,28 @@ fn after_the_second_character_s_fall_from_a_face_rolls_jumps_and_crouches() {
         }
     }
 }
+
+#[test]
+fn walking_into_a_steep_face_ends_standing_and_stays_standing() {
+    // spec/behavior/ground-speed.md, "Blocked": a frame that ends with no
+    // speed while the facing direction is held counts as holding no
+    // direction, so the stride goes on to its next turn check and
+    // stands, and standing doesn't start walking again.
+    let mut world = ground(rise, 150.0);
+    let mut stood = None;
+    for f in 0..120 {
+        hold(&mut world, &[Action::Right]);
+        let p = &world.player;
+        match (stood, p.gait) {
+            (None, Gait::Standing) if p.pos.x == fx(199.0) => stood = Some(f),
+            (Some(_), gait) => assert_eq!(gait, Gait::Standing, "frame {f}"),
+            _ => {}
+        }
+        assert!(f < 60 || p.vel.x == Fixed::ZERO, "frame {f}");
+    }
+    assert!(stood.is_some());
+
+    // Turning away still works.
+    hold(&mut world, &[Action::Left]);
+    assert!(world.player.turn.is_some());
+}

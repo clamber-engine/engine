@@ -1549,6 +1549,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_stopped_roll_carrying_on_stands_from_d_plus_3_first_character() {
+        // spec/behavior/player-frames.md, "The roll carries on into
+        // running": `stop` x 3 from D, then `stand-1` x 3 from D + 3 and
+        // the standing pictures with D + 3 as S, 14 px from the end.
+        let keys: Vec<Vec<Action>> = (0..80)
+            .map(|f| {
+                if f >= 10 {
+                    vec![Action::Action]
+                } else {
+                    vec![]
+                }
+            })
+            .collect();
+        let run = run(world(&faced_ledge(1586.0), 0), &keys);
+        let d = run.frames(Event::RollEnd)[0] - 3;
+        run.check(d, &[("stop", 3)]);
+        run.check(d + 3, &standing_list(80 - d - 3));
+    }
+
     /// The second character walking right onto [`faced_ledge`]'s face
     /// from standing, with Right held to the frame that leaves it, then
     /// `then(n)` held on G + `n` (nothing before G): the run, F and G.

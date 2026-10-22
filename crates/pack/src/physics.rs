@@ -181,6 +181,11 @@ params! {
     /// at once. 0: a turn starts at once whenever the other way is held.
     /// Needs `turn_time`. Whole steps, up to 31.
     StrideSteps => "stride_steps",
+    /// Above 0, a grounded player's frame that ends with no speed while
+    /// the direction it faces is held counts as holding no direction for
+    /// the stride cycle: standing doesn't start walking, and a step that
+    /// reaches a turn check stands. Needs `stride_steps`.
+    BlockedStands => "blocked_stands",
     /// While walking, a step ends after this much stride progress per
     /// px/frame of speed, less `walk_stride_less`, adds up to one step.
     /// Each binary digit of the factor takes its share of the speed
