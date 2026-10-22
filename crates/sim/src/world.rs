@@ -527,6 +527,36 @@ impl World {
             .is_some()
     }
 
+    /// The player stands on flat floor that stops within `ahead` columns
+    /// at the end it faces, with a drop or a pit beyond and no steep
+    /// face or wall (`player-frames.md`, "Teetering at the end of a
+    /// floor": 12 for the outermost 12 columns), its position rounded
+    /// down to a pixel column.
+    pub fn player_at_floor_end(&self, ahead: i64) -> bool {
+        use crate::columns;
+        let player = &self.player;
+        if player.ground.is_none() {
+            return false;
+        }
+        let dir = match player.facing {
+            Facing::Left => -1,
+            Facing::Right => 1,
+        };
+        let slope = self.player_physics()[Param::FaceSlope];
+        let (here, feet) = (columns::column(player.pos.x), player.pos.y);
+        (1..=ahead)
+            .map(|k| here + dir * k)
+            .try_fold((), |(), c| {
+                match columns::floor(&self.level, c, feet) {
+                    Some(f) if f.y == feet => Ok(()),
+                    // A step, a wall or a slope.
+                    Some(_) => Err(false),
+                    None => Err(columns::face_below(&self.level, c, feet, slope).is_none()),
+                }
+            })
+            .is_err_and(|ends| ends)
+    }
+
     /// The things that aren't in the level but would appear at their
     /// start if the view reached them, as they'd be on appearing, at
     /// their start: those near a view `width` px wide with its left edge

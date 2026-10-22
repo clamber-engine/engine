@@ -62,6 +62,8 @@ pub enum Set {
     Stop,
     /// The standing pictures.
     Standing,
+    /// Teetering at the end of a floor.
+    Teeter,
     /// A jump and its landing.
     Jump,
     /// A bounce, until the landing.
@@ -92,6 +94,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
     &[
         (Set::Stop, &["roll-end", "stop", "stand-1"]),
         (Set::Standing, &STANDING),
+        (Set::Teeter, &TEETER),
         (
             Set::Jump,
             &[
@@ -143,6 +146,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
             &["s-stop-1", "s-stop-2", "s-stop-3", "s-stop-4", "s-stop-5"],
         ),
         (Set::Standing, &SECOND_STANDING),
+        (Set::Teeter, &SECOND_TEETER),
         (
             Set::Jump,
             &[
@@ -245,6 +249,24 @@ const SECOND_STANDING: [&str; 39] = [
     "s-stand-21", "s-stand-22", "s-wait-1", "s-wait-2", "s-wait-3", "s-wait-4", "s-wait-5",
     "s-wait-6", "s-wait-7", "s-wait-8", "s-wait-9", "s-wait-10", "s-wait-11", "s-wait-12",
     "s-wait-13", "s-wait-14", "s-wait-15", "s-wait-16", "s-wait-17",
+];
+
+/// The first character's teetering pictures: `teeter-1` to `teeter-22`.
+#[rustfmt::skip]
+const TEETER: [&str; 22] = [
+    "teeter-1", "teeter-2", "teeter-3", "teeter-4", "teeter-5", "teeter-6", "teeter-7",
+    "teeter-8", "teeter-9", "teeter-10", "teeter-11", "teeter-12", "teeter-13", "teeter-14",
+    "teeter-15", "teeter-16", "teeter-17", "teeter-18", "teeter-19", "teeter-20", "teeter-21",
+    "teeter-22",
+];
+
+/// The second character's teetering pictures: `s-teeter-1` to
+/// `s-teeter-18`.
+#[rustfmt::skip]
+const SECOND_TEETER: [&str; 18] = [
+    "s-teeter-1", "s-teeter-2", "s-teeter-3", "s-teeter-4", "s-teeter-5", "s-teeter-6",
+    "s-teeter-7", "s-teeter-8", "s-teeter-9", "s-teeter-10", "s-teeter-11", "s-teeter-12",
+    "s-teeter-13", "s-teeter-14", "s-teeter-15", "s-teeter-16", "s-teeter-17", "s-teeter-18",
 ];
 
 /// The first character's crouching pictures.
@@ -889,11 +911,15 @@ pub struct PictureClock {
     cycle: Option<(u8, u8)>,
     /// Frames standing after a stop or a landing, 0 on the first.
     standing: Option<u32>,
+    /// The standing teeters at the end of a floor, decided once, on
+    /// S + 3 (S + 4 for the second character).
+    teeters: bool,
     /// Crouching or getting up on the frame before.
     crouched: bool,
     /// Frames of the crouch from D, 0 on D.
     crouch: Option<u32>,
-    /// Walking, running or turning on the ground on the frame before.
+    /// Walking, running or turning on the ground, or in a walk-off's
+    /// fall, on the frame before.
     moved: bool,
     /// Frames standing with an object from S, 0 on S.
     holding: Option<u32>,
@@ -975,7 +1001,8 @@ impl PictureClock {
         );
         let moved = std::mem::replace(
             &mut self.moved,
-            player.grounded() && (player.turn.is_some() || !matches!(player.gait, Gait::Standing)),
+            (player.grounded() || upright_fall(player))
+                && (player.turn.is_some() || !matches!(player.gait, Gait::Standing)),
         );
         let events = &world.events;
         let physics = world.player_physics();
@@ -1201,8 +1228,21 @@ impl PictureClock {
             // second's S is Q + 10, the frame after its put-down.
             self.standing = Some(u32::from(first));
         }
-        if let Some(c) = self.standing {
-            self.shown = standing(first, c);
+        match self.standing {
+            Some(c) => {
+                let decided = if first { 3 } else { 4 };
+                if c < decided {
+                    self.teeters = false;
+                } else if c == decided {
+                    self.teeters = world.player_at_floor_end(12);
+                }
+                self.shown = if self.teeters {
+                    Some(teetering(first, c - decided))
+                } else {
+                    standing(first, c)
+                };
+            }
+            None => self.teeters = false,
         }
     }
 }
@@ -1514,6 +1554,80 @@ fn standing(first: bool, c: u32) -> Option<(Set, &'static str)> {
         false => second_standing(c),
     };
     Some((Set::Standing, label))
+}
+
+/// The teetering pictures `i` frames after they begin ("Teetering at
+/// the end of a floor"), S + 3 for the first character and S + 4 for the
+/// second.
+fn teetering(first: bool, i: u32) -> (Set, &'static str) {
+    if first {
+        let n = match i {
+            0..44 => 1 + i / 4,
+            _ => teeter_loop((i - 44) % 290),
+        };
+        (Set::Teeter, TEETER[n as usize - 1])
+    } else {
+        let n = match i {
+            0..36 => 1 + i / 6,
+            _ => second_teeter_loop((i - 36) % 210),
+        };
+        (Set::Teeter, SECOND_TEETER[n as usize - 1])
+    }
+}
+
+/// Frame `i` of the first character's teetering loop, 290 frames: the
+/// picture steps one number at a time between these turning points.
+fn teeter_loop(mut i: u32) -> u32 {
+    const TURNS: [u32; 11] = [12, 17, 12, 17, 12, 22, 12, 22, 17, 22, 13];
+    if i < 5 {
+        return 12;
+    }
+    i -= 5;
+    let mut n = 12;
+    let mut shown = (12, 5);
+    for turn in TURNS.windows(2) {
+        let up = turn[1] > turn[0];
+        while n != turn[1] {
+            let from = n;
+            n = if up { n + 1 } else { n - 1 };
+            shown = (
+                n,
+                if n > 17 || (n == 17 && from == 18) {
+                    3
+                } else {
+                    5
+                },
+            );
+            if i < shown.1 {
+                return shown.0;
+            }
+            i -= shown.1;
+        }
+    }
+    shown.0
+}
+
+/// Frame `i` of the second character's teetering loop, 210 frames.
+fn second_teeter_loop(mut i: u32) -> u32 {
+    // Stretches of (first picture, last picture, frames each); the
+    // pictures go up or down from the first to the last.
+    const STRETCHES: [&[(u32, u32, u32)]; 6] = [
+        &[(7, 8, 4), (9, 10, 3), (11, 17, 2), (18, 18, 1)],
+        &[(7, 7, 1), (8, 18, 2)],
+        &[(7, 9, 2), (10, 14, 3), (15, 18, 4)],
+        &[(6, 4, 4), (5, 6, 3)],
+        &[(18, 7, 2), (18, 7, 2)],
+        &[(18, 17, 2), (16, 16, 2), (15, 11, 3), (10, 4, 4), (5, 6, 3)],
+    ];
+    for &(a, b, each) in STRETCHES.iter().copied().flatten() {
+        let len = a.abs_diff(b) + 1;
+        if i < len * each {
+            let k = i / each;
+            return if a <= b { a + k } else { a - k };
+        }
+        i -= len * each;
+    }
+    18
 }
 
 /// The first character on S + `c` ("Standing still"): `stand-1` × 3,
@@ -2952,6 +3066,47 @@ mod tests {
         assert!(off.on_face.iter().all(|&on| !on));
     }
 
+    #[test]
+    fn the_second_character_s_pictures_in_a_walk_off_follow_the_ground_rules() {
+        // player-frames.md, "Second character": off a ledge without a
+        // face the turn, running and standing pictures are those of the
+        // ground, and the landing frame shows its step's picture.
+        for then in [vec![], vec![Action::Left]] {
+            let keys = off_the_ledge_then(&then);
+            let off = run(world(&walk_off_ledge(), 1), &keys);
+            let flat = run(world(FLAT, 1), &keys);
+            let l = off.grounded.iter().position(|g| !g).unwrap();
+            let g = off.frames(Event::Land)[0];
+            assert!(g > l + 10, "a fall: L {l}, G {g}");
+            assert_eq!(off.shown[..=g], flat.shown[..=g], "{then:?}");
+            assert!(
+                off.shown[l..=g]
+                    .iter()
+                    .all(|l| !l.unwrap().starts_with("s-air-") && !l.unwrap().starts_with("s-land"))
+            );
+        }
+    }
+
+    #[test]
+    fn the_second_character_runs_in_the_air_after_a_walk_off() {
+        // Action pressed in the air: on flat floor it would roll.
+        let keys = off_the_ledge_then(&[Action::Right, Action::Action]);
+        let run = run(world(&walk_off_ledge(), 1), &keys);
+        let l = run.grounded.iter().position(|g| !g).unwrap();
+        let g = run.frames(Event::Land)[0];
+        let r = run
+            .shown
+            .iter()
+            .position(|&l| l == Some("s-run-1"))
+            .unwrap();
+        assert!(
+            l < r && r < g,
+            "running starts in the air: L {l}, {r}, G {g}"
+        );
+        let gait = |l: &str| l.starts_with("s-walk-") || l.starts_with("s-run-");
+        assert!(run.shown[l..=g].iter().all(|l| gait(l.unwrap())));
+    }
+
     /// Right held from frame 10 until the fall's second frame, then
     /// `then` held.
     fn off_the_ledge_then(then: &[Action]) -> Vec<Vec<Action>> {
@@ -3243,6 +3398,107 @@ mod tests {
         run(world(&src, slot), &hold(&[Action::Right], walk, 1500))
     }
 
+    /// A platform ending at column 119 with a lower floor beyond it.
+    fn platform_end() -> String {
+        FLAT.replace(
+            "rect = [0, 400, 2048, 80]",
+            "rect = [0, 400, 120, 80]\n[[collision]]\nshape = \"rect\"\nrect = [120, 440, 1928, 40]",
+        )
+    }
+
+    /// The frame standing begins on (S) in a run of `slot`.
+    fn first_stand(run: &Run, slot: usize) -> usize {
+        let stand = ["stand-1", "s-stand-1"][slot];
+        run.shown.iter().position(|&l| l == Some(stand)).unwrap()
+    }
+
+    #[test]
+    fn the_teetering_loops_last_290_and_210_frames() {
+        let first: Vec<u32> = (0..290).map(teeter_loop).collect();
+        assert_eq!(first[0], 12);
+        assert_eq!(first[289], 13);
+        assert_eq!(first[5], 13);
+        // 12 to 17 up, 12 down, 17 up, 12 down, then up to 22.
+        let mut steps = first.clone();
+        steps.dedup();
+        assert_eq!(steps.len(), 70);
+        let from_18 = first.windows(2).position(|w| w == [18, 17]).unwrap();
+        assert!(first[from_18 + 1..].starts_with(&[17, 17, 17, 16]));
+        assert_eq!(
+            (0..210)
+                .map(second_teeter_loop)
+                .filter(|&n| n == 18)
+                .count(),
+            1 + 2 + 4 + 4 + 2
+        );
+        assert_eq!(second_teeter_loop(209), 6);
+        assert_eq!(second_teeter_loop(210 - 55), 18);
+    }
+
+    #[test]
+    fn standing_at_the_end_of_a_floor_teeters() {
+        // player-frames.md, "Teetering at the end of a floor", the example.
+        let level = platform_end();
+        let run = stand_after_walking(&level, 0, 104.0, 3);
+        let s = first_stand(&run, 0);
+        let mut want = vec![("stand-1", 3)];
+        want.extend((1..=11).map(|n| (TEETER[n - 1], 4)));
+        want.extend([("teeter-12", 5), ("teeter-13", 5), ("teeter-14", 5)]);
+        run.check(s, &want);
+        // Much later, still the teetering loop.
+        assert!(
+            run.shown[s + 500..]
+                .iter()
+                .all(|l| l.unwrap().starts_with("teeter-"))
+        );
+    }
+
+    #[test]
+    fn the_second_character_teeters_at_the_end_of_a_floor() {
+        let level = platform_end();
+        let run = stand_after_walking(&level, 1, 104.0, 3);
+        let s = first_stand(&run, 1);
+        let mut want = vec![("s-stand-1", 4)];
+        want.extend((1..=6).map(|n| (SECOND_TEETER[n - 1], 6)));
+        want.extend([("s-teeter-7", 4), ("s-teeter-8", 4), ("s-teeter-9", 3)]);
+        run.check(s, &want);
+        assert!(
+            run.shown[s + 500..]
+                .iter()
+                .all(|l| l.unwrap().starts_with("s-teeter-"))
+        );
+    }
+
+    #[test]
+    fn facing_away_from_the_end_does_not_teeter() {
+        let level = platform_end();
+        for slot in [0, 1] {
+            let src = level.replace("start = [64, 400]", "start = [112, 400]");
+            let run = run(world(&src, slot), &hold(&[Action::Left], 3, 800));
+            let s = first_stand(&run, slot);
+            assert!(
+                run.shown[s..]
+                    .iter()
+                    .all(|l| !l.unwrap().contains("teeter"))
+            );
+        }
+    }
+
+    #[test]
+    fn standing_more_than_twelve_columns_from_the_end_does_not_teeter() {
+        let level = platform_end();
+        for slot in [0, 1] {
+            // Column 119 is the last: 107 is the 13th from it.
+            let run = stand_after_walking(&level, slot, 70.0, 3);
+            let s = first_stand(&run, slot);
+            assert!(
+                run.shown[s..]
+                    .iter()
+                    .all(|l| !l.unwrap().contains("teeter"))
+            );
+        }
+    }
+
     #[test]
     fn standing_at_a_ledge_shows_the_same_pictures_as_on_flat_floor() {
         for slot in [0, 1] {
@@ -3255,7 +3511,8 @@ mod tests {
             "rect = [0, 400, 2048, 80]",
             "rect = [0, 400, 120, 80]\n[[collision]]\nshape = \"rect\"\nrect = [120, 440, 1928, 40]",
         );
-        for (x, walk) in [(100.0, 0), (112.0, 0), (100.0, 6), (110.0, 3)] {
+        // More than 12 columns from the end it faces: no teetering.
+        for (x, walk) in [(60.0, 0), (80.0, 0), (60.0, 6), (70.0, 3)] {
             let on_flat = stand_after_walking(FLAT, slot, x, walk);
             let at_ledge = stand_after_walking(&ledge, slot, x, walk);
             assert!(at_ledge.grounded.iter().all(|&g| g), "{slot} {x} {walk}");
@@ -3317,7 +3574,15 @@ mod tests {
                 );
                 let src = level.replace("start = [64, 400]", &format!("start = [{x}, 400]"));
                 let there = run(world(&src, slot), &keys);
-                assert_eq!(there.shown, on_flat.shown, "{slot} {x}");
+                // Standing again within 12 columns of a ledge's end
+                // teeters, from 3 or 4 frames after the crouch.
+                let teeter = there
+                    .shown
+                    .iter()
+                    .position(|l| l.is_some_and(|l| l.contains("teeter")));
+                assert_eq!(teeter.is_some(), x == 117.0, "{slot} {x}");
+                let until = teeter.unwrap_or(on_flat.shown.len());
+                assert_eq!(there.shown[..until], on_flat.shown[..until], "{slot} {x}");
                 assert!(there.shown[30].is_some_and(|l| l.contains("crouch")));
             }
         }
@@ -3836,6 +4101,7 @@ mod tests {
                     Set::Rope => "rope",
                     Set::Scene => "scene",
                     Set::Map => "map",
+                    Set::Teeter => "teeter",
                 };
                 let theirs = character.sets.iter().find(|s| s.name == name).unwrap();
                 let theirs: Vec<&str> = theirs.pictures.iter().map(|&(l, _)| l).collect();
