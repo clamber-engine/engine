@@ -40,6 +40,7 @@ use crate::pictures::{self, PictureClock};
 use crate::sparkles::Sparkles;
 use crate::spin_pictures;
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
+use crate::stinger_pictures;
 use crate::surface::Surface;
 use crate::thrower_pictures::{self, Group};
 use crate::thrown_pictures;
@@ -284,6 +285,12 @@ impl Cast {
             }
             return;
         }
+        if let Some(count) = pose.stinger {
+            if let Some(sprite) = self.stinger_picture(thing, pose, count, x, y) {
+                self.bank.draw(canvas, &Sprite { opacity, ..sprite });
+            }
+            return;
+        }
         if let Some(count) = pose.bunch {
             if let Some(sprite) = self.bunch_picture(thing, pose, count, x, y) {
                 self.bank.draw(canvas, &Sprite { opacity, ..sprite });
@@ -416,6 +423,49 @@ impl Cast {
                 .map_or(&[][..], |a| &a.frames[..]);
             let at = usize::from(step - 1) * frames.len() / spin_pictures::STEPS as usize;
             Some(Sprite::new(id, frames.get(at).copied().unwrap_or(0), x, y))
+        })
+    }
+
+    /// A stinger's picture with `count` counted frames since it
+    /// appeared: its own from [`stinger_pictures::SHEET`] if the sheet
+    /// has all four, otherwise the frame of its kind's animation for the
+    /// same wing position; mirrored left to right either way.
+    fn stinger_picture(
+        &self,
+        thing: &Thing,
+        pose: &Pose,
+        count: u32,
+        x: f32,
+        y: f32,
+    ) -> Option<Sprite> {
+        let at = stinger_pictures::picture(count);
+        let own = self.kinds.get(stinger_pictures::SHEET).and_then(|&id| {
+            let sheet = self.bank.sheet(id);
+            let all = stinger_pictures::LABELS
+                .iter()
+                .all(|l| sheet.animation(l).is_some());
+            let frame = *sheet
+                .animation(stinger_pictures::LABELS[at])?
+                .frames
+                .first()?;
+            all.then(|| Sprite {
+                flip_x: true,
+                ..Sprite::new(id, frame, x, y)
+            })
+        });
+        own.or_else(|| {
+            let &id = self.kinds.get(&thing.kind)?;
+            let frames = self
+                .bank
+                .sheet(id)
+                .animations
+                .get(pose.animation)
+                .map_or(&[][..], |a| &a.frames[..]);
+            let frame = frames.len() * at / stinger_pictures::LABELS.len();
+            Some(Sprite {
+                flip_x: true,
+                ..Sprite::new(id, frames.get(frame).copied().unwrap_or(0), x, y)
+            })
         })
     }
 
@@ -709,6 +759,9 @@ pub struct Pose {
     /// A bunch's counted frames since it appeared
     /// ([`crate::bunch_pictures`]).
     pub bunch: Option<u32>,
+    /// A stinger's counted frames since it appeared
+    /// ([`crate::stinger_pictures`]).
+    pub stinger: Option<u32>,
     /// Frames since a thrown object left the hands
     /// ([`crate::thrown_pictures`]).
     pub thrown: Option<u32>,
@@ -753,6 +806,7 @@ impl Poses {
             pose.animation = cast.animation(id, thing_animation(world, thing));
             pose.spin = spins(world, thing).then(|| spin_pictures::step(0, thing.pos));
             pose.bunch = (is_bunch(world, thing) && thing.active).then_some(0);
+            pose.stinger = (is_stinger(thing) && thing.active).then_some(0);
             pose.put_down = matches!(thing.phase, Phase::Placed).then_some(0);
             pose.thrown = thrown(thing).then_some(0);
         }
@@ -791,6 +845,13 @@ impl Poses {
             pose.bunch = match pose.bunch {
                 _ if !is_bunch(world, thing) || !thing.active => None,
                 Some(count) if !respawn => Some(count + u32::from(!world.still)),
+                _ => Some(0),
+            };
+            // A stinger's cycle starts afresh on the frame it appears and
+            // steps on every frame but those it holds still on.
+            pose.stinger = match pose.stinger {
+                _ if !is_stinger(thing) || !thing.active => None,
+                Some(count) if !respawn => Some(count + u32::from(!thing.still)),
                 _ => Some(0),
             };
             // A thrown object's frames count from the one it leaves the
@@ -867,6 +928,14 @@ fn walker_size(world: &World, thing: &Thing) -> Option<Size> {
 /// `pictures` param says ([`crate::spin_pictures`]).
 fn spins(world: &World, thing: &Thing) -> bool {
     pictures_param(world, thing) == Some(spin_pictures::SPIN)
+}
+
+/// Whether `thing` is a stinger.
+fn is_stinger(thing: &Thing) -> bool {
+    matches!(
+        thing.archetype.map(|a| a.behavior),
+        Some(Behavior::Stinger(_))
+    )
 }
 
 /// Whether `thing` is a collectible drawn as a bunch, as its entity's
@@ -1688,6 +1757,66 @@ mod tests {
             let mut canvas = Canvas::new(4, 1);
             cast.draw_thing(&mut canvas, thing, &pose, 1.0, 0.0);
             let got = [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()];
+            assert_eq!(got, want, "{labels:?} on {count}");
+        }
+    }
+
+    fn stinger_thing() -> Thing {
+        let mut thing = world().things[0].clone();
+        thing.kind = "stinger".to_string();
+        thing.archetype = clamber_sim::Archetypes::builtin().named("stinger");
+        thing.active = true;
+        thing
+    }
+
+    #[test]
+    fn a_stinger_counts_the_frames_it_moves_on_from_when_it_appears() {
+        let mut world = world();
+        world.things[0] = stinger_thing();
+        let cast = Cast::new(Vec::new());
+        let mut poses = Poses::new(&cast, &world);
+        assert_eq!(poses.things[0].stinger, Some(0));
+        let mut counts = Vec::new();
+        for still in [false, false, true, true, false] {
+            world.things[0].still = still;
+            poses.update(&cast, &world, 0);
+            counts.push(poses.things[0].stinger.unwrap());
+        }
+        assert_eq!(counts, [1, 2, 2, 2, 3]);
+        // Gone, it shows nothing; back, it starts afresh.
+        world.things[0].active = false;
+        poses.update(&cast, &world, 0);
+        assert_eq!(poses.things[0].stinger, None);
+        world.things[0].active = true;
+        poses.update(&cast, &world, 0);
+        assert_eq!(poses.things[0].stinger, Some(0));
+    }
+
+    #[test]
+    fn a_stinger_shows_its_own_pictures_mirrored_while_all_four_are_there() {
+        let thing = stinger_thing();
+        let labels = &crate::stinger_pictures::LABELS[..];
+        for (labels, count, want) in [
+            (labels, 0, [B, Color::default()]),
+            (labels, 5, [B, Color::default()]),
+            // Without one of the four, the engine's art, mirrored too, as
+            // far through its animation as the wing position says.
+            (&labels[1..], 0, [R, Color::default()]),
+        ] {
+            let cast = Cast::new(vec![
+                ("stinger".to_string(), sheet()),
+                (
+                    crate::stinger_pictures::SHEET.to_string(),
+                    labelled_sheet(labels, 4),
+                ),
+            ]);
+            let pose = Pose {
+                stinger: Some(count),
+                ..Pose::default()
+            };
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, &thing, &pose, 1.0, 0.0);
+            let got = [canvas.get(0, 0).unwrap(), canvas.get(1, 0).unwrap()];
             assert_eq!(got, want, "{labels:?} on {count}");
         }
     }
