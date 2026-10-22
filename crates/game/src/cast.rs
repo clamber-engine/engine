@@ -215,6 +215,14 @@ impl Cast {
     /// there is one.
     pub fn draw_other(&self, canvas: &mut dyn Surface, world: &World, pose: &Pose, x: f32, y: f32) {
         if let Some(other) = &world.other {
+            if let Some(sprite) = self.picture(other.character, pose, x, y) {
+                let sprite = Sprite {
+                    flip_x: other.facing == Facing::Left,
+                    ..sprite
+                };
+                self.bank.draw(canvas, &sprite);
+                return;
+            }
             self.draw_character(canvas, other.character, other.facing, pose, x, y);
         }
     }
@@ -1019,6 +1027,7 @@ impl Poses {
         self.clock = if respawn { 1 } else { self.clock + 1 };
         self.sparkles.update(world, self.clock - 1);
         self.player.pictures.update(world, jump_in);
+        self.other.pictures.update_other(world);
         let id = cast.player;
         let landing = cast.playing(id, &self.player, LAND);
         let animation = cast.animation(id, Some(player_animation(world, landing)));

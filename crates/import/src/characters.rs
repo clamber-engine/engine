@@ -34,7 +34,7 @@ pub const FOLLOWING: &str = "following";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PictureSet {
     /// The set's name: `stop`, `standing`, `jump`, `bounce`, `roll`,
-    /// `walking`, `crouch` or `carry`.
+    /// `walking`, `crouch`, `carry` or `scene`.
     pub name: &'static str,
     pub pictures: &'static [(&'static str, &'static str)],
 }
@@ -1144,6 +1144,63 @@ const FIRST: &[PictureSet] = &[
             ),
         ],
     },
+    PictureSet {
+        name: "scene",
+        pictures: &[
+            (
+                "scene-1",
+                "09ef39b8c01b7fe26d276f168402f4167cc9d38db2d473e35004ecf729206e6c",
+            ),
+            (
+                "scene-2",
+                "61324a3c3597f2c033b2f41be8ea4322e7334de361bf3156ed6c9d194d2a6714",
+            ),
+            (
+                "scene-3",
+                "9de7aa4fc0df89ca063f4b8ae1744d1b70c6be7098c34cba0dfa30ce781d7bf5",
+            ),
+            (
+                "scene-4",
+                "c3200e506b8cd41f10ef020a17cf1d9730046ef5f467c674f48234401311c875",
+            ),
+            (
+                "scene-5",
+                "c8aff6b3a5ec7727eddf266e3685f5fc79720ed8cf2ec0aaf36e7af9564b7be5",
+            ),
+            (
+                "scene-6",
+                "75b72d7f6857b7a546a5fa3168a1b676edc56713608520fc1f67bfe3c1eadc36",
+            ),
+            (
+                "scene-7",
+                "3001aefe4304aec30aa3c3603518be0012b7a1593c8131afe7c19548d83b18ad",
+            ),
+            (
+                "scene-8",
+                "251acf233ea18fc5c5be4e9c5b3bb0ce2693f40727b9cd037fe23a7411f17bc0",
+            ),
+            (
+                "scene-9",
+                "d617e9e7a23f21e47565568e4c910058aae349a7b3ce26910c4dad8cd016fbd8",
+            ),
+            (
+                "scene-10",
+                "77ea4b322124a10d212498db7bb0febe00147c417185aea1f08a84987d77cc72",
+            ),
+            (
+                "scene-11",
+                "dc5beb6737e0662f8c885247509935d4a5423981cc3eb61c5c4868453d4d3446",
+            ),
+            (
+                "scene-12",
+                "29ca7a808f7f46d3d4948256b1a1916cb0ddcd068faf2f42776425e0561edee5",
+            ),
+            (
+                "scene-13",
+                "c1b35d450fcfa8afa40be8f43cbc7af596ad0a5ba690a878bc92f5c1caed1285",
+            ),
+        ],
+    },
 ];
 
 /// The second character's sets, as [`FIRST`].
@@ -1925,6 +1982,79 @@ const SECOND: &[PictureSet] = &[
             ),
         ],
     },
+    PictureSet {
+        name: "scene",
+        pictures: &[
+            (
+                "s-scene-1",
+                "49bc050262c27962098bf9f20a8e202d9adb7feaec6a727376436fb61499ef5f",
+            ),
+            (
+                "s-scene-2",
+                "d30f00b2a403413af0c3fb335d6b5c19681bd45ea6cd8f38dc0d485ba23860b8",
+            ),
+            (
+                "s-scene-3",
+                "6aaaa3f1e08fb1d76affa2007adea12f62c65ec5e578cd6361995e0c7adc226b",
+            ),
+            (
+                "s-scene-4",
+                "69023e0cb6ce49e511e5ef182e76773501b4a6ac7f372729f020c9c5e1e01669",
+            ),
+            (
+                "s-scene-5",
+                "c617366fc1f4edc54c9f8d780d592c1fd0baa3ef2e1752da2e510b530385c166",
+            ),
+            (
+                "s-scene-6",
+                "a85a2454996ff759e0cade447e51188e4bdfa1cedc1a6509731ccc5d1c0311ff",
+            ),
+            (
+                "s-scene-7",
+                "80dde04726f742dbb9b0d2fe68af598590372318ad9723abe8c8236eaf100466",
+            ),
+            (
+                "s-scene-8",
+                "412e31d60ca329b3697518bb820c1ecda7227379eff1381950f9acc13439fcd1",
+            ),
+            (
+                "s-scene-9",
+                "039e43f1462c8f6827ecd3bead24f77108aca4392bfc0bae18029d8e597dde9c",
+            ),
+            (
+                "s-scene-10",
+                "14e89b4001c978a96b639dab2e2563e3dddff5edeac844384d79d6a7a2e26088",
+            ),
+            (
+                "s-scene-11",
+                "63d05cb4952fa76e26af9aad7b42aa113d3b7a1901d2571d209272a9cfb70d8c",
+            ),
+            (
+                "s-scene-12",
+                "47b02752138552e3245077ce6eac48505eb9870a07185229f2cb50681611ce1a",
+            ),
+            (
+                "s-scene-13",
+                "f109257406a02a93facd69a051b008850e7dec4d9570df16293ae14dc7f4121c",
+            ),
+            (
+                "s-scene-14",
+                "2877ae035ca8163ee1164c7d9043006b92bcc8d1aaef9e1a06ab2c207155a562",
+            ),
+            (
+                "s-scene-15",
+                "f2593b8d3a52ffb872bba3115c96825774aa6851fd6ab1964a46ef567ad793eb",
+            ),
+            (
+                "s-scene-16",
+                "825a3174a15be4d6c0fef323e5ce6467b1d3bcc93eff410dce76dfb7b9673edf",
+            ),
+            (
+                "s-scene-17",
+                "9a47bb5fc16f3417efcb07ff10560bf8929b48794dfc5b5554d47e8b04d9fe63",
+            ),
+        ],
+    },
 ];
 
 /// Files by path in the pack, with their contents.
@@ -2213,6 +2343,19 @@ mod tests {
         let mut tables = tables;
         tables[0].extend(hurt);
         tables[1].extend(second_hurt);
+        // The scene's pictures are in `exits.md`.
+        let exits = std::fs::read_to_string(format!(
+            "{}/../../spec/behavior/exits.md",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let (_, scene) = exits.split_once("### Pictures in the scene").unwrap();
+        let (scene, _) = scene.split_once("**When a hash").unwrap();
+        for l in scene.lines().filter(|l| l.starts_with("| `")) {
+            let cells: Vec<&str> = l.split('|').map(|c| c.trim().trim_matches('`')).collect();
+            let row = (cells[1].to_string(), cells[2].to_string());
+            tables[usize::from(row.0.starts_with("s-"))].push(row);
+        }
         for (sets, table) in [FIRST, SECOND].iter().zip(&tables) {
             let ours: BTreeMap<&str, &str> = sets
                 .iter()

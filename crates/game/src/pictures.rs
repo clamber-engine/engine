@@ -81,6 +81,8 @@ pub enum Set {
     Act,
     /// The first character on a rope.
     Rope,
+    /// The pictures the leading character waits with in a scene.
+    Scene,
 }
 
 /// Each set's labels, for the first character (slot 0) and the second
@@ -131,6 +133,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
         (Set::Hurt, &HURT),
         (Set::Act, &ACT),
         (Set::Rope, &ROPE),
+        (Set::Scene, &FIRST_SCENE),
     ],
     &[
         (
@@ -152,7 +155,23 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
         (Set::Crouch, &SECOND_CROUCH),
         (Set::Carry, &SECOND_CARRYING),
         (Set::Hurt, &SECOND_HURT),
+        (Set::Scene, &SECOND_SCENE),
     ],
+];
+
+/// The first character's pictures while it waits in the scene.
+#[rustfmt::skip]
+const FIRST_SCENE: [&str; 13] = [
+    "scene-1", "scene-2", "scene-3", "scene-4", "scene-5", "scene-6", "scene-7", "scene-8",
+    "scene-9", "scene-10", "scene-11", "scene-12", "scene-13",
+];
+
+/// The second character's pictures while it waits in the scene.
+#[rustfmt::skip]
+const SECOND_SCENE: [&str; 17] = [
+    "s-scene-1", "s-scene-2", "s-scene-3", "s-scene-4", "s-scene-5", "s-scene-6", "s-scene-7",
+    "s-scene-8", "s-scene-9", "s-scene-10", "s-scene-11", "s-scene-12", "s-scene-13",
+    "s-scene-14", "s-scene-15", "s-scene-16", "s-scene-17",
 ];
 
 /// The first character's walking, running and turning pictures: a
@@ -661,6 +680,160 @@ pub fn labels(slot: usize, set: Set) -> &'static [&'static str] {
         .map_or(&[], |&(_, labels)| labels)
 }
 
+/// The frame just shown in a scene, counting from 0, and the scene's
+/// last frame for the character leading; None outside a scene.
+fn scene_frame(world: &World) -> Option<(u32, u32)> {
+    let scene = world.level.scene.as_ref()?;
+    let cut = if world.player.character == 0 {
+        0
+    } else {
+        scene.shorter
+    };
+    Some((world.frame.checked_sub(1)?, scene.last - cut))
+}
+
+/// The first character's `run-n` picture.
+fn run(n: usize) -> (Set, &'static str) {
+    (Set::Walking, WALKING[19 + n])
+}
+
+/// The second character's `s-run-n` picture.
+fn second_run(n: usize) -> (Set, &'static str) {
+    (Set::Walking, SECOND_WALKING[15 + n])
+}
+
+/// The picture of the character in roster slot `slot` leading in a scene
+/// on its frame `frame`, counting from 0, when the scene's last frame is
+/// `last` (`spec/behavior/exits.md`, "Pictures in the scene"). None for
+/// the black frames, the last two, and the frames the spec didn't read
+/// before the walk ends.
+///
+/// Engine choices where the spec says nothing: the second character's
+/// frames 5 and 7, "not read", show the picture of the frame before, and
+/// its dark frames 363 and 364 go on with its last picture.
+pub fn scene_lead(slot: usize, frame: u32, last: u32) -> Option<(Set, &'static str)> {
+    if frame < 3 || frame + 1 >= last {
+        return None;
+    }
+    let f = frame as usize;
+    let scene = |n: usize| {
+        let labels = labels(slot, Set::Scene);
+        (Set::Scene, labels[n - 1])
+    };
+    if slot == 0 {
+        return Some(match f {
+            3 => run(2),
+            4 => run(3),
+            5..=27 => {
+                let (m, r) = ((f - 5) / 3, (f - 5) % 3);
+                run(if r < 2 { 4 + 2 * m } else { 5 + 2 * m })
+            }
+            28..=99 => {
+                // `scene-1` to `scene-7`, for how many frames each.
+                const COUNTS: [usize; 7] = [7, 6, 6, 21, 14, 9, 9];
+                let mut at = f - 28;
+                let n = COUNTS.iter().position(|&c| {
+                    let here = at < c;
+                    at = at.saturating_sub(c);
+                    here
+                })?;
+                scene(n + 1)
+            }
+            _ => {
+                // The 62-frame list: pictures 8 to 11, back down to 8,
+                // 6 frames each, then 12, 13, 12 on 6, 8 and 6.
+                const LIST: [(usize, usize); 10] = [
+                    (8, 6),
+                    (9, 6),
+                    (10, 6),
+                    (11, 6),
+                    (10, 6),
+                    (9, 6),
+                    (8, 6),
+                    (12, 6),
+                    (13, 8),
+                    (12, 6),
+                ];
+                let mut at = (f - 100) % 62;
+                let &(n, _) = LIST.iter().find(|&&(_, c)| {
+                    let here = at < c;
+                    at = at.saturating_sub(c);
+                    here
+                })?;
+                scene(n)
+            }
+        });
+    }
+    Some(match f {
+        3 => second_run(2),
+        4 | 5 => second_run(3),
+        6 | 7 => second_run(4),
+        8 => second_run(5),
+        9..=14 => second_run(6 + (f - 9) / 2),
+        15 => second_run(9),
+        16..=23 => second_run(10 + (f - 16) / 2),
+        24 => second_run(1),
+        25 | 26 => second_run(2),
+        27 => second_run(3),
+        28..=129 => {
+            // `s-scene-1` to `s-scene-14`, for how many frames each.
+            const COUNTS: [usize; 14] = [4, 19, 3, 3, 3, 3, 3, 3, 3, 3, 26, 3, 4, 22];
+            let mut at = f - 28;
+            let n = COUNTS.iter().position(|&c| {
+                let here = at < c;
+                at = at.saturating_sub(c);
+                here
+            })?;
+            scene(n + 1)
+        }
+        130..=336 => {
+            // Nine rounds of 27 − k frames, k = 0 to 8.
+            let mut at = f - 130;
+            let mut k = 0;
+            while at >= 27 - k {
+                at -= 27 - k;
+                k += 1;
+            }
+            const HEAD: [(usize, usize); 5] = [(15, 3), (16, 3), (17, 5), (16, 2), (15, 5)];
+            let n = HEAD
+                .iter()
+                .find(|&&(_, c)| {
+                    let here = at < c;
+                    at = at.saturating_sub(c);
+                    here
+                })
+                .map_or(14, |&(n, _)| n);
+            scene(n)
+        }
+        337..=339 => scene(15),
+        340..=342 => scene(16),
+        _ => scene(17),
+    })
+}
+
+/// The picture of the other character, `other` the roster slot of it
+/// and the one leading in front, on a scene's frame `frame`; the frames
+/// the spec read it on, and none otherwise.
+pub fn scene_other(other: usize, frame: u32, last: u32) -> Option<(Set, &'static str)> {
+    if frame + 1 >= last {
+        return None;
+    }
+    let f = frame as usize;
+    if other == 1 {
+        return match f {
+            27 => Some(second_run(1)),
+            28.. => Some((Set::Standing, SECOND_STANDING[0])),
+            _ => None,
+        };
+    }
+    match f {
+        15..=19 => Some(run(16 + f - 15)),
+        20..=28 => Some(run(f - 19)),
+        32.. => Some((Set::Standing, STANDING[0])),
+        _ => None,
+    }
+}
+
 /// The stage frames from the approach frame A (`jump-input.md`, "The
 /// switch frame M"): when A is T + 20, and when it's later.
 const STAGES: [u8; 7] = [0, 2, 4, 6, 8, 11, 15];
@@ -747,6 +920,15 @@ impl PictureClock {
         }
     }
 
+    /// Moves the other character's picture on to `world` as it is after a
+    /// logic frame: in a scene, those the spec read, and none elsewhere.
+    pub fn update_other(&mut self, world: &World) {
+        self.shown = world.other.as_ref().and_then(|other| {
+            let (frame, last) = scene_frame(world)?;
+            scene_other(other.character, frame, last)
+        });
+    }
+
     /// Moves on to `world` as it is after a logic frame. `jump_in`: a
     /// jump starts on the frame this many frames on (1 on its T − 1, 2
     /// on the frame before that, which only matters carrying), 0 if none
@@ -758,6 +940,10 @@ impl PictureClock {
                 slot: player.character,
                 ..PictureClock::default()
             };
+        }
+        if let Some((frame, last)) = scene_frame(world) {
+            self.shown = scene_lead(self.slot, frame, last);
+            return;
         }
         let before = std::mem::take(&mut self.shown);
         let crouched = std::mem::replace(
@@ -3373,6 +3559,7 @@ mod tests {
                     Set::Hurt => "hurt",
                     Set::Act => "act",
                     Set::Rope => "rope",
+                    Set::Scene => "scene",
                 };
                 let theirs = character.sets.iter().find(|s| s.name == name).unwrap();
                 let theirs: Vec<&str> = theirs.pictures.iter().map(|&(l, _)| l).collect();
@@ -3682,5 +3869,105 @@ mod stand_in_tests {
         assert_eq!(stand_in(1, State::Walk, second), Some("s-walk-1"));
         assert_eq!(stand_in(1, State::Roll, second), Some("s-stand-1"));
         assert_eq!(stand_in(0, State::Fall, only(&[])), None);
+    }
+
+    /// The labels of frames `from..=to` of the scene's lead.
+    fn scene_run(slot: usize, last: u32, from: u32, to: u32) -> Vec<&'static str> {
+        (from..=to)
+            .map(|f| scene_lead(slot, f, last).unwrap().1)
+            .collect()
+    }
+
+    /// Runs of the same label, with how long each is.
+    fn runs(labels: Vec<&'static str>) -> Vec<(&'static str, usize)> {
+        let mut out: Vec<(&str, usize)> = Vec::new();
+        for l in labels {
+            match out.last_mut() {
+                Some((p, n)) if *p == l => *n += 1,
+                _ => out.push((l, 1)),
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_first_character_leads_the_scene_with_the_specs_pictures() {
+        let at = |f| scene_lead(0, f, 396);
+        assert_eq!(at(2), None);
+        assert_eq!(at(3), Some((Set::Walking, "run-2")));
+        assert_eq!(at(4), Some((Set::Walking, "run-3")));
+        let walk = runs(scene_run(0, 396, 5, 27));
+        assert_eq!(
+            &walk[..4],
+            &[("run-4", 2), ("run-5", 1), ("run-6", 2), ("run-7", 1)]
+        );
+        assert_eq!(&walk[walk.len() - 2..], &[("run-17", 1), ("run-18", 2)]);
+        let wait = runs(scene_run(0, 396, 28, 99));
+        let counts: Vec<_> = wait.iter().map(|&(_, n)| n).collect();
+        assert_eq!(counts, [7, 6, 6, 21, 14, 9, 9]);
+        assert_eq!(wait[6].0, "scene-7");
+        assert_eq!(at(28), Some((Set::Scene, "scene-1")));
+        // The 62-frame list repeats from frame 100 and is cut off at 394.
+        let list = runs(scene_run(0, 396, 100, 161));
+        assert_eq!(list.iter().map(|&(_, n)| n).sum::<usize>(), 62);
+        assert_eq!(list[3], ("scene-11", 6));
+        assert_eq!(list[8], ("scene-13", 8));
+        assert_eq!(at(162), at(100));
+        assert_eq!(at(348 + 46), Some((Set::Scene, "scene-12")));
+        assert_eq!(at(394).unwrap().1, "scene-12");
+        assert_eq!(at(395), None);
+        assert_eq!(at(396), None);
+    }
+
+    #[test]
+    fn the_second_character_leads_the_scene_with_the_specs_pictures() {
+        let at = |f| scene_lead(1, f, 366);
+        assert_eq!(at(0), None);
+        assert_eq!(at(3), Some((Set::Walking, "s-run-2")));
+        let walk = runs(scene_run(1, 366, 3, 27));
+        assert_eq!(walk.iter().map(|&(_, n)| n).sum::<usize>(), 25);
+        assert_eq!(at(8).unwrap().1, "s-run-5");
+        assert_eq!(at(9).unwrap().1, "s-run-6");
+        assert_eq!(at(15).unwrap().1, "s-run-9");
+        assert_eq!(at(22).unwrap().1, "s-run-13");
+        assert_eq!(at(24).unwrap().1, "s-run-1");
+        assert_eq!(at(27).unwrap().1, "s-run-3");
+        let wait = runs(scene_run(1, 366, 28, 129));
+        let counts: Vec<_> = wait.iter().map(|&(_, n)| n).collect();
+        assert_eq!(counts, [4, 19, 3, 3, 3, 3, 3, 3, 3, 3, 26, 3, 4, 22]);
+        // Round k of 27 - k frames starts on frame 130 + the rounds before.
+        let round = |k: u32| 130 + (0..k).map(|j| 27 - j).sum::<u32>();
+        assert_eq!(round(8), 318);
+        for k in 0..9 {
+            let r = runs(scene_run(1, 366, round(k), round(k) + 26 - k));
+            let counts: Vec<_> = r.iter().map(|&(_, n)| n as u32).collect();
+            assert_eq!(counts, [3, 3, 5, 2, 5, 9 - k], "round {k}");
+            assert_eq!(r[5].0, "s-scene-14");
+        }
+        let end = runs(scene_run(1, 366, 337, 362));
+        assert_eq!(
+            end,
+            [("s-scene-15", 3), ("s-scene-16", 3), ("s-scene-17", 20)]
+        );
+        assert_eq!(at(365), None);
+        assert_eq!(at(366), None);
+    }
+
+    #[test]
+    fn the_other_character_is_shown_where_the_spec_read_it() {
+        assert_eq!(scene_other(1, 26, 396), None);
+        assert_eq!(scene_other(1, 27, 396), Some((Set::Walking, "s-run-1")));
+        assert_eq!(scene_other(1, 28, 396), Some((Set::Standing, "s-stand-1")));
+        assert_eq!(scene_other(1, 394, 396), Some((Set::Standing, "s-stand-1")));
+        assert_eq!(scene_other(1, 395, 396), None);
+        assert_eq!(scene_other(0, 14, 366), None);
+        assert_eq!(scene_other(0, 15, 366), Some((Set::Walking, "run-16")));
+        assert_eq!(scene_other(0, 19, 366), Some((Set::Walking, "run-20")));
+        assert_eq!(scene_other(0, 20, 366), Some((Set::Walking, "run-1")));
+        assert_eq!(scene_other(0, 28, 366), Some((Set::Walking, "run-9")));
+        assert_eq!(scene_other(0, 31, 366), None);
+        assert_eq!(scene_other(0, 32, 366), Some((Set::Standing, "stand-1")));
+        assert_eq!(scene_other(0, 364, 366), Some((Set::Standing, "stand-1")));
+        assert_eq!(scene_other(0, 365, 366), None);
     }
 }
