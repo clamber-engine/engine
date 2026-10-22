@@ -78,6 +78,7 @@ mod sprites;
 mod surface;
 mod text;
 mod thrower_pictures;
+mod thrown_pictures;
 mod title;
 mod walker_pictures;
 

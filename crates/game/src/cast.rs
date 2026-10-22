@@ -17,7 +17,8 @@
 //! ([`crate::thrower_pictures`]) with sheets of theirs. Single
 //! collectibles that spin show their step's picture
 //! ([`crate::spin_pictures`]), and bunches their entry's
-//! ([`crate::bunch_pictures`]). Entities play their
+//! ([`crate::bunch_pictures`]), and thrown objects in flight and lying
+//! theirs ([`crate::thrown_pictures`]). Entities play their
 //! sheet's first animation, except a reached checkpoint, which plays
 //! `reached`, a defeated enemy, which plays `defeated`, a launcher
 //! that just fired, which plays `fire`, and a spring whose top is pressed
@@ -38,6 +39,7 @@ use crate::spin_pictures;
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
 use crate::surface::Surface;
 use crate::thrower_pictures::{self, Group};
+use crate::thrown_pictures;
 use crate::walker_pictures::{self, Size, WalkerClock};
 
 /// The sheet the player is drawn with.
@@ -249,6 +251,10 @@ impl Cast {
             }
             return;
         }
+        if let Some(sprite) = self.carried_picture(thing, pose, x, y) {
+            self.bank.draw(canvas, &Sprite { opacity, ..sprite });
+            return;
+        }
         if let Some(count) = pose.bunch {
             if let Some(sprite) = self.bunch_picture(thing, pose, count, x, y) {
                 self.bank.draw(canvas, &Sprite { opacity, ..sprite });
@@ -371,6 +377,58 @@ impl Cast {
         })
     }
 
+    /// The picture of an object in flight or lying where it was put
+    /// down, if it shows one: its own from [`thrown_pictures::SHEET`]
+    /// at the object's position a px left, mirrored when it moves left;
+    /// in flight without all eight of its pictures, the frame of its
+    /// kind's animation that far through the cycle, mirrored the same.
+    fn carried_picture(&self, thing: &Thing, pose: &Pose, x: f32, y: f32) -> Option<Sprite> {
+        if let Some(count) = pose.thrown {
+            let left = matches!(thing.phase, Phase::Thrown(f) if f.vx.is_negative());
+            let entry = thrown_pictures::flight(count);
+            let own = self.kinds.get(thrown_pictures::SHEET).and_then(|&id| {
+                let sheet = self.bank.sheet(id);
+                let all = thrown_pictures::FLIGHT
+                    .iter()
+                    .all(|l| sheet.animation(l).is_some());
+                let frame = *sheet
+                    .animation(thrown_pictures::FLIGHT[entry])
+                    .filter(|_| all)?
+                    .frames
+                    .first()?;
+                Some(Sprite {
+                    flip_x: left,
+                    ..Sprite::new(id, frame, x - 1.0, y)
+                })
+            });
+            return own.or_else(|| {
+                let &id = self.kinds.get(&thing.kind)?;
+                let frames = self
+                    .bank
+                    .sheet(id)
+                    .animations
+                    .get(pose.animation)
+                    .map_or(&[][..], |a| &a.frames[..]);
+                let at = entry * frames.len() / thrown_pictures::FLIGHT.len();
+                Some(Sprite {
+                    flip_x: left,
+                    ..Sprite::new(id, frames.get(at).copied().unwrap_or(0), x, y)
+                })
+            });
+        }
+        let id = *self.kinds.get(thrown_pictures::SHEET)?;
+        if !pose.put_down.is_some_and(thrown_pictures::lying) {
+            return None;
+        }
+        let frame = *self
+            .bank
+            .sheet(id)
+            .animation(thrown_pictures::LYING)?
+            .frames
+            .first()?;
+        Some(Sprite::new(id, frame, x - 1.0, y))
+    }
+
     /// A walker's own picture for `pose`, from its kind's sheet, if that
     /// has the picture's whole group. Its origin is a px left of the
     /// walker's position (`formats/sprites.md`, "Where the picture is
@@ -447,6 +505,11 @@ pub struct Pose {
     /// A bunch's counted frames since it appeared
     /// ([`crate::bunch_pictures`]).
     pub bunch: Option<u32>,
+    /// Frames since a thrown object left the hands
+    /// ([`crate::thrown_pictures`]).
+    pub thrown: Option<u32>,
+    /// Frames since an object was put down.
+    pub put_down: Option<u32>,
 }
 
 /// Every actor's pose: the player's, the other character's, the lost
@@ -480,6 +543,8 @@ impl Poses {
             pose.animation = cast.animation(id, thing_animation(world, thing));
             pose.spin = spins(world, thing).then(|| spin_pictures::step(0, thing.pos));
             pose.bunch = (is_bunch(world, thing) && thing.active).then_some(0);
+            pose.put_down = matches!(thing.phase, Phase::Placed).then_some(0);
+            pose.thrown = thrown(thing).then_some(0);
         }
         poses
     }
@@ -516,6 +581,11 @@ impl Poses {
                 Some(count) if !respawn => Some(count + u32::from(!world.still)),
                 _ => Some(0),
             };
+            // A thrown object's frames count from the one it leaves the
+            // hands on, and a put-down one's from the one it is set down.
+            pose.thrown = thrown(thing).then(|| pose.thrown.map_or(0, |n| n + 1));
+            pose.put_down =
+                matches!(thing.phase, Phase::Placed).then(|| pose.put_down.map_or(0, |n| n + 1));
         }
     }
 }
@@ -575,6 +645,11 @@ fn spins(world: &World, thing: &Thing) -> bool {
 /// `pictures` param says ([`crate::bunch_pictures`]).
 fn is_bunch(world: &World, thing: &Thing) -> bool {
     pictures_param(world, thing) == Some(bunch_pictures::BUNCH)
+}
+
+/// Whether `thing` is an object thrown (not dropped) and in flight.
+fn thrown(thing: &Thing) -> bool {
+    thing.active && matches!(thing.phase, Phase::Thrown(f) if f.thrown)
 }
 
 /// `thing`'s entity's `pictures` param, if it has one.
@@ -1283,6 +1358,118 @@ mod tests {
             cast.draw_thing(&mut canvas, thing, &pose, 1.0, 0.0);
             let got = [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()];
             assert_eq!(got, want, "{labels:?} on {count}");
+        }
+    }
+
+    fn thrown_thing(vx: i32) -> Thing {
+        let mut thing = world().things[0].clone();
+        thing.phase = Phase::Thrown(clamber_sim::Flight {
+            vx: clamber_fixed::Fixed::from_int(vx),
+            vy: clamber_fixed::Fixed::ZERO,
+            target: clamber_fixed::Fixed::ZERO,
+            response: clamber_fixed::Fixed::ZERO,
+            gravity: clamber_fixed::Fixed::ZERO,
+            max_fall: clamber_fixed::Fixed::ZERO,
+            thrown: true,
+            margin: clamber_fixed::Fixed::ZERO,
+            bounce_min: clamber_fixed::Fixed::ZERO,
+            bounce: clamber_fixed::Fixed::ZERO,
+            rolling: false,
+            age: 0,
+        });
+        thing
+    }
+
+    #[test]
+    fn a_thrown_object_counts_its_flight_and_its_time_lying() {
+        let mut world = world();
+        let cast = Cast::new(vec![]);
+        let mut poses = Poses::new(&cast, &world);
+        let flight = thrown_thing(2).phase;
+        world.things[0].phase = flight;
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            poses.update(&cast, &world, 0);
+            seen.push(poses.things[0].thrown);
+        }
+        assert_eq!(seen, [Some(0), Some(1), Some(2)]);
+        // Picked up and thrown again, the cycle starts afresh.
+        world.things[0].phase = Phase::Held;
+        poses.update(&cast, &world, 0);
+        assert_eq!(poses.things[0].thrown, None);
+        world.things[0].phase = flight;
+        poses.update(&cast, &world, 0);
+        assert_eq!(poses.things[0].thrown, Some(0));
+        world.things[0].phase = Phase::Placed;
+        poses.update(&cast, &world, 0);
+        poses.update(&cast, &world, 0);
+        assert_eq!(poses.things[0].thrown, None);
+        assert_eq!(poses.things[0].put_down, Some(1));
+    }
+
+    #[test]
+    fn a_thrown_object_shows_its_own_pictures_mirrored_when_it_moves_left() {
+        let labels = &thrown_pictures::FLIGHT[..];
+        let kind = world().things[0].kind.clone();
+        let none = Color::default();
+        for (vx, labels, count, want) in [
+            // Its own picture a px left of its position; mirrored about
+            // that when it moves left.
+            (2, labels, 0, [none, B, none, none]),
+            (-2, labels, 0, [B, none, none, none]),
+            // Without one of the eight, the engine's art, as far
+            // through its animation as the entry is through the cycle.
+            (2, &labels[1..], 0, [none, none, R, none]),
+            (2, &labels[1..], 11, [none, none, G, none]),
+            (-2, &labels[1..], 11, [none, G, none, none]),
+        ] {
+            let cast = Cast::new(vec![
+                (kind.clone(), sheet()),
+                (
+                    thrown_pictures::SHEET.to_string(),
+                    labelled_sheet(labels, 4),
+                ),
+            ]);
+            let pose = Pose {
+                thrown: Some(count),
+                ..Pose::default()
+            };
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, &thrown_thing(vx), &pose, 2.0, 0.0);
+            let got = [0, 1, 2, 3].map(|x| canvas.get(x, 0).unwrap());
+            assert_eq!(got, want, "{vx} {count} {}", labels.len());
+        }
+    }
+
+    #[test]
+    fn an_object_put_down_shows_lying_from_the_frame_after_it_is_set_down() {
+        let kind = world().things[0].kind.clone();
+        let none = Color::default();
+        let cast = Cast::new(vec![
+            (kind.clone(), sheet()),
+            (
+                thrown_pictures::SHEET.to_string(),
+                labelled_sheet(&[thrown_pictures::LYING], 4),
+            ),
+        ]);
+        let mut thing = world().things[0].clone();
+        thing.phase = Phase::Placed;
+        thing.facing = Facing::Left;
+        for (count, want) in [(0, [none, none, R, none]), (1, [none, B, none, none])] {
+            let pose = Pose {
+                put_down: Some(count),
+                ..Pose::default()
+            };
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, &thing, &pose, 2.0, 0.0);
+            let got = [0, 1, 2, 3].map(|x| canvas.get(x, 0).unwrap());
+            // Not mirrored, whichever way it faces.
+            let want = if count == 0 {
+                [none, R, none, none]
+            } else {
+                want
+            };
+            assert_eq!(got, want, "{count}");
         }
     }
 }
