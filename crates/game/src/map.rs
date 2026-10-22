@@ -38,7 +38,7 @@ const LEAD: Color = rgb(0x40, 0xb0, 0xf0);
 #[derive(Clone, Debug, PartialEq)]
 pub enum MapPhase {
     /// The map is showing.
-    Shown(LegsScreen),
+    Shown(Box<LegsScreen>),
     /// A level entered from this node is being played.
     Playing(usize),
     /// The level at `node` was just finished: after `frames` more black
@@ -108,7 +108,7 @@ impl MapPlay {
             map,
             root: root.to_path_buf(),
             progress: Progress::default(),
-            phase: MapPhase::Shown(screen),
+            phase: MapPhase::Shown(Box::new(screen)),
             lead: LeadLook::default(),
         })
     }
@@ -125,7 +125,7 @@ impl MapPlay {
     pub fn new_game(&mut self) {
         let screen = LegsScreen::new_game(&self.map, self.legs()).expect("checked in new");
         self.progress = Progress::default();
-        self.phase = MapPhase::Shown(screen);
+        self.phase = MapPhase::Shown(Box::new(screen));
         self.lead = LeadLook::default();
     }
 
@@ -154,7 +154,7 @@ impl MapPlay {
             let (node, times) = (*node, times.clone());
             let given = self.map.nodes[node].onward;
             let lead = LegWalker::after_finish(&self.map, self.legs(), node, &times, given);
-            self.phase = MapPhase::Shown(LegsScreen::new(lead));
+            self.phase = MapPhase::Shown(Box::new(LegsScreen::new(lead)));
             self.lead = LeadLook::default();
         }
         let MapPhase::Shown(screen) = &self.phase else {
@@ -164,7 +164,7 @@ impl MapPlay {
         // walk doesn't turn into a new press of another
         let node = screen.lead.heading().unwrap_or(screen.lead.node);
         let buttons = buttons(held, self.enterable(node));
-        let mut screen = screen.clone();
+        let mut screen = (**screen).clone();
         let out = screen.step(&self.map, self.legs(), &self.progress, buttons);
         let page_width = i64::from(self.legs().page_width.max(1));
         let x = screen.lead.position().x.floor().rem_euclid(page_width);
@@ -185,7 +185,7 @@ impl MapPlay {
         }
         look.x = Some(x);
         look.about = about;
-        self.phase = MapPhase::Shown(screen);
+        self.phase = MapPhase::Shown(Box::new(screen));
         let Some(node) = out.left else {
             return MapStep::Stay;
         };

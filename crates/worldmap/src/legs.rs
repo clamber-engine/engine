@@ -20,6 +20,8 @@
 //! to another node of the same map fades out and shows the map again
 //! with the lead there; entering anything else leaves the map.
 
+use std::collections::VecDeque;
+
 use clamber_level::{Fixed, Vec2};
 
 use crate::map::{NodeKind, WorldMap};
@@ -241,6 +243,41 @@ pub struct LegWalker {
     entered: Option<u64>,
     /// On this frame a walk this way starts, whatever is held or pressed.
     forced: Option<(u64, Dir)>,
+    /// The other character, when there are two.
+    other: Option<Box<Other>>,
+}
+
+/// Counted frames the other character walks later than the lead.
+const OTHER_LATER: u64 = 11;
+/// How far across from the lead's end of a leg the other ends it.
+const OTHER_BEHIND: i32 = 24;
+/// How far to the left of the lead the other stands when the map appears.
+const OTHER_BESIDE: i32 = 16;
+
+/// A leg of the other character's walk, worked out when the lead starts
+/// the walk it follows.
+#[derive(Clone, Debug, PartialEq)]
+struct OtherLeg {
+    /// The other's own frame on which it moves first.
+    start: u64,
+    /// Its end across, in whole pixels.
+    end: Fixed,
+}
+
+/// The other character on a legs map: it walks the lead's legs a little
+/// later, with the lead's height from a little before
+/// (`level-map.md`, "The other character").
+#[derive(Clone, Debug, PartialEq)]
+struct Other {
+    position: Vec2,
+    /// The lead's height after each counted frame.
+    heights: Vec<Fixed>,
+    plan: VecDeque<OtherLeg>,
+    /// The leg under way: its end across and speed across.
+    leg: Option<(Fixed, Fixed)>,
+    /// Counted frames the other has fallen behind its schedule, from
+    /// not moving on a frame that changes the page to the right.
+    late: u64,
 }
 
 fn axis(v: Vec2, i: usize) -> Fixed {
@@ -252,6 +289,20 @@ fn set_axis(v: &mut Vec2, i: usize, n: Fixed) {
         v.x = n;
     } else {
         v.y = n;
+    }
+}
+
+/// One frame of a walker's movement along one axis, towards `end` at
+/// `speed`: the new position, and whether it has arrived.
+fn advance(position: Fixed, speed: Fixed, end: Fixed) -> (Fixed, bool) {
+    let n = position + speed;
+    let target = end.floor();
+    if speed > Fixed::ZERO {
+        (n, n.floor() >= target)
+    } else if n.floor() < target {
+        (n - whole(n) + whole(end), true)
+    } else {
+        (n, false)
     }
 }
 
@@ -282,7 +333,27 @@ impl LegWalker {
             given: None,
             entered: None,
             forced: None,
+            other: None,
         }
+    }
+
+    /// The lead with the other character beside it: 16 px to the left at
+    /// the same height, no fractions.
+    pub fn with_other(mut self) -> LegWalker {
+        let at = self.position;
+        self.other = Some(Box::new(Other {
+            position: Vec2::new(at.x - Fixed::from_int(OTHER_BESIDE), at.y),
+            heights: Vec::new(),
+            plan: VecDeque::new(),
+            leg: None,
+            late: 0,
+        }));
+        self
+    }
+
+    /// Where the other character stands, with fractions, if there is one.
+    pub fn other_position(&self) -> Option<Vec2> {
+        self.other.as_ref().map(|o| o.position)
     }
 
     /// The lead as the map appears for a new game, at `node` (the map's
@@ -375,10 +446,12 @@ impl LegWalker {
         let mut step = Step::default();
         let frame = self.frame;
         if self.entered.is_some() {
+            self.tick_other(frame, legs, false);
             self.frame += 1;
             return step;
         }
         if (self.still.0..self.still.1).contains(&frame) {
+            self.tick_other(frame, legs, false);
             self.frame += 1;
             step.still = true;
             return step;
@@ -433,6 +506,7 @@ impl LegWalker {
                 Self::begin_leg(&mut walk, start, legs);
                 self.walk = Some(walk);
                 step.started = Some(path);
+                self.plan_other(map, legs, p);
             }
         }
 
@@ -442,19 +516,9 @@ impl LegWalker {
                 if walk.arrived[i] {
                     continue;
                 }
-                let speed = axis(walk.speed, i);
-                let n = axis(self.position, i) + speed;
-                let target = axis(end, i).floor();
-                let n = if speed > Fixed::ZERO {
-                    walk.arrived[i] = n.floor() >= target;
-                    n
-                } else if n.floor() < target {
-                    walk.arrived[i] = true;
-                    n - whole(n) + whole(axis(end, i))
-                } else {
-                    n
-                };
-                set_axis(&mut self.position, i, n);
+                let n = advance(axis(self.position, i), axis(walk.speed, i), axis(end, i));
+                walk.arrived[i] = n.1;
+                set_axis(&mut self.position, i, n.0);
             }
             if walk.arrived == [true; 2] {
                 if walk.leg + 1 == walk.points.len() {
@@ -474,8 +538,93 @@ impl LegWalker {
             self.no_walk_before = self.no_walk_before.max(frame + u64::from(legs.page_wait));
             self.lag = true;
         }
+        self.tick_other(frame, legs, now > page);
         self.frame += 1;
         step
+    }
+
+    /// Works out the other character's legs for the walk the lead has
+    /// just started on the frame `self.frame`, before the lead moves on
+    /// it: by walking a copy of the lead to the end.
+    fn plan_other(&mut self, map: &WorldMap, legs: &Legs, p: &Progress) {
+        let Some(other) = self.other.take() else {
+            return;
+        };
+        let mut other = other;
+        let mut copy = self.clone();
+        let mut legs_seen = Vec::new();
+        let mut from = whole(copy.position.x);
+        let mut leg = 0;
+        // the lead's legs are ended by the walk: a leg ends on the frame
+        // its number goes up, or the walk ends
+        let mut first = copy.frame;
+        while copy.walk.is_some() {
+            let out = copy.step(map, legs, p, Buttons::NONE);
+            if out.lag {
+                continue;
+            }
+            let ended = out.arrived.is_some() || copy.walk.as_ref().is_some_and(|w| w.leg != leg);
+            if ended {
+                let end = whole(copy.position.x);
+                let end = if end > from {
+                    end - Fixed::from_int(OTHER_BEHIND)
+                } else if end < from {
+                    end + Fixed::from_int(OTHER_BEHIND)
+                } else {
+                    // not covered: the other ends where the lead does
+                    end
+                };
+                legs_seen.push(OtherLeg {
+                    start: first + OTHER_LATER,
+                    end,
+                });
+                from = whole(copy.position.x);
+                first = copy.frame;
+                leg += 1;
+            }
+        }
+        other.plan.extend(legs_seen);
+        self.other = Some(other);
+    }
+
+    /// Runs the other character's part of the counted frame `frame`;
+    /// `right` if the lead's position passed onto the next page to the
+    /// right on it.
+    fn tick_other(&mut self, frame: u64, legs: &Legs, right: bool) {
+        let walking = self.walk.is_some();
+        let height = self.position.y;
+        let Some(other) = &mut self.other else {
+            return;
+        };
+        other.heights.push(height);
+        if right {
+            other.late += 1;
+            return;
+        }
+        let own = frame - other.late;
+        if other.leg.is_none()
+            && let Some(next) = other.plan.front()
+            && next.start <= own
+        {
+            let end = next.end;
+            let start = whole(other.position.x);
+            let frames = i64::from(legs.leg_frames);
+            let speed = Fixed::from_bits((end - start).to_bits() / frames);
+            other.plan.pop_front();
+            other.leg = (speed != Fixed::ZERO).then_some((end, speed));
+        }
+        if let Some((end, speed)) = other.leg {
+            let (x, arrived) = advance(other.position.x, speed, end);
+            other.position.x = x;
+            if arrived {
+                other.leg = None;
+            }
+        }
+        let behind = own.saturating_sub(OTHER_LATER) as usize;
+        other.position.y = other.heights[behind.min(other.heights.len() - 1)];
+        if other.leg.is_none() && other.plan.is_empty() && !walking {
+            other.late = 0;
+        }
     }
 
     /// Sets the speeds of the walk's leg `walk.leg`, which starts at
@@ -569,7 +718,11 @@ impl LegsScreen {
                 out.left = Some(node);
                 return out;
             };
+            let two = self.lead.other.is_some();
             self.lead = LegWalker::appear(map, legs, to);
+            if two {
+                self.lead = self.lead.clone().with_other();
+            }
             out.appeared = Some(to);
         }
         out.step = self.lead.step(map, legs, p, held);

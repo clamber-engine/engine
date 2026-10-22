@@ -804,3 +804,39 @@ fn new_game_and_onward_are_checked() {
         .to_string();
     assert!(err.contains("only for maps with mode = \"legs\""), "{err}");
 }
+
+/// `level-map.md`, "The other character": it starts 16 px left of the lead,
+/// walks each leg 11 frames later, and ends 24 px behind the lead.
+#[test]
+fn the_other_walks_the_leg_later_and_ends_behind() {
+    let map = line();
+    let legs = legs(&map);
+    let p = Progress::default();
+    let mut lead = LegWalker::appear(&map, legs, 0).with_other();
+    let start = lead.position();
+    let beside = Vec2::new(start.x - Fixed::from_int(16), start.y);
+    assert_eq!(lead.other_position(), Some(beside));
+
+    let mut moved = None;
+    for frame in 0..130 {
+        let held = if frame == 0 {
+            Buttons::RIGHT
+        } else {
+            Buttons::NONE
+        };
+        lead.step(&map, legs, &p, held);
+        let other = lead.other_position().unwrap();
+        if frame < 11 {
+            assert_eq!(other, beside, "frame {frame}");
+        } else if moved.is_none() {
+            moved = Some(frame);
+            // 4 × (end − start) steps of 1/256 px a frame: 56 px over the leg
+            assert_eq!(other.x, beside.x + Fixed::from_ratio_pow2(224, 8));
+        }
+    }
+    assert_eq!(moved, Some(11));
+    let lead_at = lead.position().x.floor();
+    let other = lead.other_position().unwrap();
+    assert_eq!(other.x.floor(), lead_at - 24);
+    assert_eq!(other.y, lead.position().y);
+}
