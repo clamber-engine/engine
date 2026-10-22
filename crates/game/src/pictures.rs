@@ -3500,6 +3500,36 @@ mod tests {
     }
 
     #[test]
+    fn the_first_character_does_not_teeter_at_the_left_side_of_a_steep_face() {
+        // player-frames.md, "Teetering at the end of a floor": a top with
+        // a 64 px face (4 px per column) to its left and a lower floor at
+        // its foot, no drop: standing after a walk's stop shows the
+        // standing pictures.
+        let mut points = vec![[0, 599], [0, 464], [984, 464]];
+        points.extend((985..=1000).map(|c| [c, 464 - 4 * (c - 984)]));
+        points.extend([[2048, 400], [2048, 599]]);
+        let level = format!(
+            "format = 1\nsize = [2048, 600]\nstart = [1010, 400]\n\
+             [[collision]]\nshape = \"polygon\"\npoints = {points:?}\n"
+        );
+        for walk in [1, 5, 10] {
+            let run = run(world(&level, 0), &hold(&[Action::Left], walk, 200));
+            let s = run
+                .shown
+                .iter()
+                .position(|&l| l == Some("stand-1"))
+                .unwrap();
+            assert!(run.grounded[s], "{walk}");
+            assert!(
+                run.shown[s..]
+                    .iter()
+                    .all(|l| !l.unwrap().contains("teeter")),
+                "{walk}"
+            );
+        }
+    }
+
+    #[test]
     fn standing_more_than_twelve_columns_from_the_end_does_not_teeter() {
         let level = platform_end();
         for slot in [0, 1] {
