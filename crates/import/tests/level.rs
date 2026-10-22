@@ -191,6 +191,8 @@ fn parts() -> LevelParts {
             pictures: 5,
             sky: Some(SkyParts {
                 backdrop: Location::new(BANK, 0x7800),
+                night: Location::new(BANK, 0x7820),
+                night_entries: 1,
                 horizon: Location::new(BANK, 0x7840),
                 block: Location::new(BANK, 0x7900),
             }),
@@ -302,6 +304,9 @@ fn image_with_song(song: Vec<u8>) -> Image {
         (p.view_limits.unwrap(), view_limits()),
         // Two rows of red, then blue; colour 1 of the horizon green.
         (sky.backdrop, vec![2, 0, 0, 0x1F, 0, 1, 0, 0, 0, 0x7C, 0]),
+        // The first entry's night colour is dark blue; the second's is
+        // black as it's after the table.
+        (sky.night, vec![0x00, 0x10]),
         (sky.horizon, vec![100, 1, 1, 0xE0, 0x03, 0]),
         (sky.block, horizon_block()),
         (Location::new(BANK, SAMPLE), sample_record()),
@@ -383,6 +388,7 @@ fn writes_the_level_and_its_images() {
         "first-far.png",
         "first-tiles.png",
         "first-backdrop.png",
+        "first-backdrop-night.png",
         "first-horizon.png",
         "first-horizon-night.png",
         "first-music.ogg",
@@ -402,6 +408,15 @@ fn writes_the_level_and_its_images() {
     let column: Vec<_> = (0..4).map(|y| backdrop.get(0, y)).collect();
     let (red, blue) = ([255, 0, 0, 255], [0, 0, 255, 255]);
     assert_eq!(column, [red, red, red, blue]);
+    // The backdrop goes to dark blue, then black.
+    assert_eq!(
+        level.layers[0].dim,
+        Dim::Night("first-backdrop-night.png".into())
+    );
+    let night = image("first-backdrop-night.png");
+    let column: Vec<_> = (0..4).map(|y| night.get(0, y)).collect();
+    let (dark, black) = ([0, 0, 33, 255], [0, 0, 0, 255]);
+    assert_eq!(column, [dark, dark, dark, black]);
     let horizon = image("first-horizon.png");
     assert_eq!((horizon.width, horizon.height), (256, 48));
     assert_eq!(horizon.get(7, 0), [0; 4]);

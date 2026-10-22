@@ -21,8 +21,8 @@ use clamber_level::{
 
 use crate::{
     BANK_SIZE, Background, COLUMN_BANDS, Collectibles, Decoder, END, EXIT, GridPicture, Ground,
-    HorizonBlock, Image, KEG, KindRow, Known, LEVELS, Layout, LevelSong, Location, Optional,
-    PackWriter, PaletteSet, Pictures, Placements, ROOM_ENTRANCE, RowColours, ScreenMap,
+    HorizonBlock, Image, KEG, KindRow, Known, LEVELS, Layout, LevelSong, Location, NightColours,
+    Optional, PackWriter, PaletteSet, Pictures, Placements, ROOM_ENTRANCE, RowColours, ScreenMap,
     SettingsRow, Skipped, Sky, StartRecord, TileSet, VIEW_HEIGHT, VIEW_WIDTH, ViewLimits,
     WALL_EXIT, WALL_RETURN, object_of, unpack, unpack_nibbles,
 };
@@ -128,6 +128,9 @@ pub struct CollectibleParts {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SkyParts {
     pub backdrop: Location,
+    /// The backdrop's night colour table, and the entries it has.
+    pub night: Location,
+    pub night_entries: usize,
     pub horizon: Location,
     pub block: Location,
 }
@@ -484,6 +487,11 @@ impl LevelDecoder {
                         };
                         Some(Sky {
                             backdrop: list("backdrop row-colour list", parts.backdrop, 0)?,
+                            night: NightColours::read(
+                                at("backdrop night colour table", parts.night)?,
+                                parts.night_entries,
+                            )
+                            .map_err(|e| format!("the level's backdrop night colour table: {e}"))?,
                             horizon: list("horizon row-colour list", parts.horizon, 1)?,
                             block: HorizonBlock::read(at("horizon block", parts.block)?)?,
                         })

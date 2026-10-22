@@ -61,8 +61,8 @@ pub use characters::{
 };
 pub use collectibles::{Collectibles, GROUP_SIZE, Group, Item, SPARK, Shape};
 pub use graphics::{
-    Background, GridPicture, HorizonBlock, PaletteSet, Pictures, RowColours, ScreenMap, Sky, TILE,
-    TileEntry, TileSet, channels, far_colour, rgb, unpack,
+    Background, GridPicture, HorizonBlock, NightColours, PaletteSet, Pictures, RowColours,
+    ScreenMap, Sky, TILE, TileEntry, TileSet, channels, far_colour, rgb, unpack,
 };
 pub use ground::{Below, COLUMN_BANDS, Ground, Half, Layout, Surface, TITLE_2_ORIGIN};
 pub use image::{

@@ -22,6 +22,7 @@ pub enum Data {
     PaletteSet,
     PictureTable,
     BackdropColours,
+    BackdropNight,
     HorizonColours,
     HorizonBlock,
     FrameTable,
@@ -80,7 +81,7 @@ pub enum Data {
 }
 
 impl Data {
-    pub const ALL: [Data; 66] = [
+    pub const ALL: [Data; 67] = [
         Data::SampleTable,
         Data::SharedSampleList,
         Data::SampleSetTable,
@@ -92,6 +93,7 @@ impl Data {
         Data::PaletteSet,
         Data::PictureTable,
         Data::BackdropColours,
+        Data::BackdropNight,
         Data::HorizonColours,
         Data::HorizonBlock,
         Data::FrameTable,
@@ -163,6 +165,7 @@ impl Data {
             Data::PaletteSet => "Level graphics: the first level's palette set",
             Data::PictureTable => "Level graphics: the first level's picture table",
             Data::BackdropColours => "Level graphics: the first level's backdrop row-colour list",
+            Data::BackdropNight => "Level graphics: the first level's backdrop night colour table",
             Data::HorizonColours => "Level graphics: the first level's horizon row-colour list",
             Data::HorizonBlock => "Level graphics: the first level's horizon block",
             Data::FrameTable => "Sprite frames: the frame table",
@@ -258,6 +261,7 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
         ("title-1", Data::PaletteSet) => (0xF9, 0xA1DC),
         ("title-1", Data::PictureTable) => (0xD9, 0xA3C0),
         ("title-1", Data::BackdropColours) => (0xF9, 0x96E6),
+        ("title-1", Data::BackdropNight) => (0xF9, 0x9658),
         ("title-1", Data::HorizonColours) => (0xF9, 0x98EA),
         ("title-1", Data::HorizonBlock) => (0xCD, 0xF337),
         ("title-1", Data::FrameTable) => (0xFB, 0xCC9C),
@@ -342,6 +346,8 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
             pictures,
             sky: Some(SkyParts {
                 backdrop: at(Data::BackdropColours)?,
+                night: at(Data::BackdropNight)?,
+                night_entries: 71,
                 horizon: at(Data::HorizonColours)?,
                 block: at(Data::HorizonBlock)?,
             }),

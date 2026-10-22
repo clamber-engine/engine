@@ -441,14 +441,19 @@ impl RowColours {
 
     /// The colour of picture row `row`.
     pub fn colour(&self, row: usize) -> u16 {
+        self.entries[self.entry(row)].1
+    }
+
+    /// The index of the entry that covers picture row `row`.
+    pub fn entry(&self, row: usize) -> usize {
         let mut top = 0;
-        for &(n, colour) in &self.entries {
+        for (i, &(n, _)) in self.entries.iter().enumerate() {
             top += usize::from(n);
             if row < top {
-                return colour;
+                return i;
             }
         }
-        self.entries.last().map_or(0, |&(_, colour)| colour)
+        self.entries.len().saturating_sub(1)
     }
 }
 
@@ -515,11 +520,42 @@ impl HorizonBlock {
     }
 }
 
+/// A backdrop list's night colour table ("Night colour tables"): a
+/// colour for each of the list's first entries.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NightColours {
+    colours: Vec<u16>,
+}
+
+impl NightColours {
+    /// Reads the table of `entries` colours from the start of `bytes`.
+    pub fn read(bytes: &[u8], entries: usize) -> Result<NightColours, String> {
+        let bytes = bytes
+            .get(..2 * entries)
+            .ok_or_else(|| "a night colour table runs past its data".to_string())?;
+        let colours = bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&c| u16::from_le_bytes(c))
+            .collect();
+        Ok(NightColours { colours })
+    }
+
+    /// The night colour of list entry `entry`: black after the table's
+    /// last.
+    pub fn colour(&self, entry: usize) -> u16 {
+        self.colours.get(entry).copied().unwrap_or(0)
+    }
+}
+
 /// What's behind the first level's far layer: the backdrop's row-colour
-/// list, and the horizon layer's list and block ("The layers").
+/// list and night colour table, and the horizon layer's list and block
+/// ("The layers").
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sky {
     pub backdrop: RowColours,
+    pub night: NightColours,
     pub horizon: RowColours,
     pub block: HorizonBlock,
 }
@@ -652,6 +688,18 @@ impl Background {
         }
         let backdrop = format!("{prefix}backdrop.png");
         images.insert(backdrop.clone(), encode_png(&image));
+        // Each entry goes to its night colour ("The backdrop and the
+        // horizon layer"); the night image has the backdrop's rows.
+        let mut night = RgbaImage::new(width, BACKDROP_ROWS as u32 + 1);
+        for row in 0..=BACKDROP_ROWS {
+            let entry = sky.backdrop.entry(row.saturating_sub(1));
+            let [r, g, b] = rgb(sky.night.colour(entry));
+            for x in 0..width {
+                night.set(x, row as u32, [r, g, b, 255]);
+            }
+        }
+        let backdrop_night = format!("{prefix}backdrop-night.png");
+        images.insert(backdrop_night.clone(), encode_png(&night));
         let mut backdrop = layer(
             "backdrop",
             Vec2::default(),
@@ -664,10 +712,7 @@ impl Background {
             },
         );
         backdrop.alternate = Vec2::ints(0, 1);
-        // The backdrop's entries go to night colours of their own, but
-        // where they're stored isn't covered yet
-        // (`spec/behavior/dimming.md`, "Not covered"), so until then it
-        // dims as the palette rows do (#334).
+        backdrop.dim = Dim::Night(backdrop_night);
 
         let horizon = format!("{prefix}horizon.png");
         let image = sky.block.picture(palettes, &sky.horizon);
@@ -1352,11 +1397,21 @@ mod tests {
     }
 
     #[test]
+    fn night_colour_table_matches_the_spec_vector() {
+        // "Night colour tables": m = 3, later entries black.
+        let table = NightColours::read(&[0, 0x10, 0, 0x0C, 0, 0, 0xFF], 3).unwrap();
+        let got: Vec<u16> = (0..5).map(|i| table.colour(i)).collect();
+        assert_eq!(got, [0x1000, 0x0C00, 0, 0, 0]);
+        assert!(NightColours::read(&[0, 0x10, 0], 3).is_err());
+    }
+
+    #[test]
     fn row_colour_lists_match_the_spec_vectors() {
         let (backdrop, horizon) = row_lists();
         assert_eq!((backdrop.rows(), horizon.rows()), (134, 98));
         let sky = Sky {
             backdrop,
+            night: NightColours::read(&[], 0).unwrap(),
             horizon,
             block: HorizonBlock::read(&hex("horizon.hex")).unwrap(),
         };
@@ -1426,6 +1481,7 @@ mod tests {
 
         let sky = Sky {
             backdrop,
+            night: NightColours::read(&[], 0).unwrap(),
             horizon,
             block,
         };
