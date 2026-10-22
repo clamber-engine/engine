@@ -685,6 +685,18 @@ impl LevelDecoder {
         // Music is optional: a song that can't be converted leaves the
         // level to the game's own music.
         let (mut skipped, mut notes) = (Vec::new(), Vec::new());
+        // Objects no kind row names are only stand-ins.
+        let unknown = level
+            .entities
+            .iter()
+            .filter(|e| e.kind.starts_with("placed-"))
+            .count();
+        if unknown > 0 {
+            notes.push(format!(
+                "{unknown} of the level's {} placed objects have no known kind",
+                level.entities.len()
+            ));
+        }
         if let Some(song) = p.song {
             let read = |at| image.at(at);
             let converted = crate::optional(|| {

@@ -89,6 +89,7 @@ use crate::hidden;
 use crate::loss;
 use crate::player::{Crouch, Facing, Player, State, frames};
 use crate::ride::Riding;
+use crate::swap::Other;
 use crate::things;
 use crate::view::{self, Begin};
 use crate::world::{Event, Phase, Thing, World};
@@ -200,9 +201,12 @@ impl World {
         self.player.character = from.player.character;
         match &from.other {
             Some(old) => {
-                if let Some(other) = &mut self.other {
-                    other.character = old.character;
-                }
+                // Both were there; a holder here has nobody to free.
+                let (player, facing) = (self.player.pos, self.player.facing);
+                let other = self
+                    .other
+                    .get_or_insert_with(|| Other::new(old.character, player, facing, player));
+                other.character = old.character;
             }
             None => self.other = None,
         }

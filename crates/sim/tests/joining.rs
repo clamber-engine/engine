@@ -79,8 +79,12 @@ impl Play {
             abilities: BTreeMap::new(),
         });
         let level = Arc::new(Level::from_toml_str(src, "joining").unwrap());
+        let mut world = World::new(level, Arc::new(feel));
+        // A level with a holder begins without the second character.
+        let player = world.player.pos;
+        world.other = Some(Other::new(1, player, world.player.facing, player));
         let mut play = Play {
-            world: World::new(level, Arc::new(feel)),
+            world,
             held: Actions::NONE,
         };
         play.hold(&[], 2);
@@ -397,6 +401,20 @@ fn breaks_outside_the_picture() {
         assert!(inside(thing.pos, picture));
     }
     panic!("it never broke");
+}
+
+/// A level with an object holding the missing character begins with the
+/// lead alone, and breaking the object frees the second character.
+#[test]
+fn a_level_with_a_holder_begins_without_the_second_character() {
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: BTreeMap::new(),
+    });
+    let level = Arc::new(Level::from_toml_str(&level(FLAT), "joining").unwrap());
+    let world = World::new(level, Arc::new(feel));
+    assert!(world.other.is_none());
 }
 
 /// following.md, "Joining": with both characters there, it still breaks,

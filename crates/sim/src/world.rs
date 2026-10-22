@@ -384,7 +384,7 @@ impl World {
             player.facing = Facing::Right;
         }
         // Both characters start where play starts (following.md).
-        let other = (feel.roster.len() > 1 && feel.world[Param::SwapMoves] > Fixed::ZERO)
+        let mut other = (feel.roster.len() > 1 && feel.world[Param::SwapMoves] > Fixed::ZERO)
             .then(|| Other::new(1, player.pos, player.facing, player.pos));
         let archetypes = Archetypes::builtin();
         let physics = feel.roster[0].physics;
@@ -400,6 +400,16 @@ impl World {
                 Ok(thing)
             })
             .collect::<Result<_, _>>()?;
+        // A level with an object holding the missing character begins
+        // without it; breaking the object frees it (holder-breaking.md).
+        if things.iter().any(|t| {
+            t.archetype
+                .as_ref()
+                .and_then(crate::carry::holder)
+                .is_some()
+        }) {
+            other = None;
+        }
         // A level with an entrance begins as an area does (view.md, "When
         // an area begins"), and so does one walked into; the view starts
         // settled on the lead otherwise. Walking in, the entrance is gone.

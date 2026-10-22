@@ -20,8 +20,10 @@ use clamber_import::{
 };
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Dim, Fixed, Level, Vec2};
+use clamber_pack::{CharacterFeel, Presets};
 use clamber_sim::{Event, InputFrame, Outcome, World, generic_feel, step};
 use clamber_sprite::decode_png;
+use std::collections::BTreeMap;
 
 const COLUMNS: usize = 20;
 const BANK: u8 = 0xC1;
@@ -95,6 +97,7 @@ fn entries(words: &[[u16; 4]]) -> Vec<u8> {
 /// Where the placement references in [`kinds`] lead.
 const WALKER_REFERENCE: u16 = 0x7300;
 const END_REFERENCE: u16 = 0x7380;
+const HOLDER_REFERENCE: u16 = 0x7340;
 
 /// A placement list: an object at x 200, 40 above the bottom edge, a
 /// walker on the floor at x 260, a group at x 300 whose members are
@@ -102,6 +105,7 @@ const END_REFERENCE: u16 = 0x7380;
 /// end.
 fn placement_list() -> Vec<u8> {
     entries(&[
+        [1, 44, 31, HOLDER_REFERENCE],
         [1, 200, 40, 0x7100],
         [1, 260, 31, WALKER_REFERENCE],
         [5, 300, 0, 0x7200],
@@ -117,6 +121,7 @@ fn kinds(image: &Image) -> Vec<KindRow> {
     [
         (WALKER_REFERENCE, Kind::SmallWalker),
         (END_REFERENCE, Kind::EndMarker),
+        (HOLDER_REFERENCE, Kind::Holder),
     ]
     .into_iter()
     .map(|(reference, kind)| KindRow {
@@ -437,7 +442,13 @@ fn writes_the_level_s_music_with_its_loop() {
 fn the_report_says_how_the_song_loops() {
     let packs = scratch("loops").join("packs");
     let result = importer().import(&image(), &packs, false);
-    assert_eq!(result.as_ref().unwrap().notes, ["song 0: loops exactly"]);
+    assert_eq!(
+        result.as_ref().unwrap().notes,
+        [
+            "5 of the level's 7 placed objects have no known kind",
+            "song 0: loops exactly"
+        ]
+    );
     let report = import_report(&result);
     assert!(report.contains("\n  song 0: loops exactly\n"), "{report}");
     assert!(report.contains("Nothing was skipped."), "{report}");
@@ -493,6 +504,7 @@ fn places_the_objects_in_the_placement_list() {
     assert_eq!(
         placed,
         [
+            ("placed-7340", Vec2::ints(44, 481)),
             ("placed-7100", Vec2::ints(200, 472)),
             ("placed-7300", Vec2::ints(260, 481)),
             ("placed-7180", Vec2::ints(320, 448)),
@@ -501,8 +513,8 @@ fn places_the_objects_in_the_placement_list() {
             ("spark", Vec2::ints(120, 465)),
         ]
     );
-    let member = &level.entities[2].params;
-    assert_eq!(member["group"].as_integer(), Some(3));
+    let member = &level.entities[3].params;
+    assert_eq!(member["group"].as_integer(), Some(4));
 }
 
 /// The view-limit record gives the level-wide camera limits across, and
@@ -780,4 +792,51 @@ fn title_2_images_are_recognised_but_not_imported_yet() {
     assert!(matches!(err, ImportError::Unsupported(_)), "{err:?}");
     assert!(err.to_string().contains("title-2"), "{err}");
     assert!(err.to_string().contains("can't convert it yet"), "{err}");
+}
+
+/// An object placed by the holder kind's row is a holder in the loaded
+/// level: the level begins with the second character missing, and the
+/// lead picks the object up and throws it; when it breaks, the second
+/// character joins and Swap works (`spec/behavior/holder-breaking.md`,
+/// `following.md`).
+#[test]
+fn breaking_the_imported_holder_frees_the_second_character() {
+    let image = image();
+    let (level, _) = imported_level_by("holder", importer_for(&image, kinds(&image)));
+    let holders: Vec<_> = level
+        .entities
+        .iter()
+        .filter(|e| {
+            e.params
+                .get("holds_character")
+                .is_some_and(|v| v.as_bool() == Some(true))
+        })
+        .collect();
+    assert_eq!(holders.len(), 1);
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: BTreeMap::new(),
+    });
+    let mut world = World::new(Arc::new(level), Arc::new(feel));
+    assert!(world.other.is_none(), "the second character is missing");
+    let mut held = Actions::NONE;
+    let mut play = |world: &mut World, keys: &[Action], frames: usize| {
+        for _ in 0..frames {
+            let keys: Actions = keys.iter().copied().collect();
+            step(world, &InputFrame::single(Frame::after(held, keys)));
+            held = keys;
+        }
+    };
+    play(&mut world, &[], 2);
+    play(&mut world, &[Action::Action], 21);
+    assert!(world.player.hands.is_some(), "picked up");
+    play(&mut world, &[], 80);
+    assert!(world.other.is_some(), "the second character joined");
+    assert_eq!(world.other.as_ref().unwrap().character, 1);
+    play(&mut world, &[], 40);
+    assert_eq!(world.player.character, 0);
+    play(&mut world, &[Action::Swap], 1);
+    play(&mut world, &[], 100);
+    assert_eq!(world.player.character, 1, "Swap changed the lead");
 }
