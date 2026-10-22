@@ -38,6 +38,7 @@ mod locators;
 mod manifest;
 mod music;
 mod nibbles;
+mod object_hashes;
 mod objects;
 mod placements;
 mod replacements;
@@ -85,7 +86,7 @@ pub use locators::{Data, first_level, first_level_ground, first_room, first_scen
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable, Widescreen};
 pub use music::{Fit, LevelSong, Music, RATE, render};
 pub use nibbles::{NIBBLE_HEADER, unpack_nibbles};
-pub use objects::PENDING_SHEETS;
+pub use objects::{ObjectDecoder, PENDING_SHEETS, written_sheets};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements, RECORD_SIZE, Record};
 pub use replacements::{
     ART_FORMAT, ART_MANIFEST, ArtManifest, DUMP_INDEX, MAX_FACTOR, PICTURES, Replacements, art_dir,
@@ -102,7 +103,7 @@ pub use sound::{
 pub use sprites::{
     Form, Frame, FrameTable, HASHED_OPAQUE, Header, LAST_SHORT, Mirror, Picture, Piece, Runs,
     SheetFiles, Size, SpritePalette, TABLE_ENTRY_SIZE, TableEntry, find_pictures, read_frames,
-    sprite_sheet,
+    sprite_sheet, sprite_sheet_in,
 };
 
 pub use view_limits::{VIEW_HEIGHT, VIEW_WIDTH, VerticalLimit, ViewLimits};
@@ -441,6 +442,9 @@ impl Importer {
             }
             if let Some(characters) = CharacterDecoder::of(&known.title) {
                 decoders.push(Box::new(characters));
+            }
+            if let Some(objects) = ObjectDecoder::of(&known.title) {
+                decoders.push(Box::new(objects));
             }
             if Rules::of(&known.title).is_some() && locate(&known.title, Data::MapPoints).is_some()
             {

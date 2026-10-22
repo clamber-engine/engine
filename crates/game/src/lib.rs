@@ -269,10 +269,14 @@ mod import_coverage {
             walker_pictures::Size::Large.name(),
         ];
         let pending: Vec<&str> = clamber_import::PENDING_SHEETS.iter().map(|p| p.0).collect();
+        let written: Vec<&str> = clamber_import::written_sheets().collect();
         for sheet in read {
-            assert!(pending.contains(&sheet), "{sheet} isn't imported or listed");
+            assert!(
+                pending.contains(&sheet) != written.contains(&sheet),
+                "{sheet} is neither imported nor listed, or both"
+            );
         }
-        for sheet in &pending {
+        for sheet in pending.iter().chain(&written) {
             assert!(read.contains(sheet), "{sheet} is listed but not read");
         }
     }

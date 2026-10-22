@@ -505,6 +505,17 @@ pub fn sprite_sheet(
     others: &[(&str, &SpritePalette)],
     image: &str,
 ) -> Result<SheetFiles, String> {
+    sprite_sheet_in(pictures, &palette.palette(), others, image)
+}
+
+/// [`sprite_sheet`] with the image's whole palette given, for pictures
+/// that use colour numbers past 15.
+pub fn sprite_sheet_in(
+    pictures: &[(String, Picture)],
+    palette: &Palette,
+    others: &[(&str, &SpritePalette)],
+    image: &str,
+) -> Result<SheetFiles, String> {
     let sizes: Vec<(u32, u32)> = pictures
         .iter()
         .map(|(_, p)| (p.pixels.width, p.pixels.height))
@@ -585,7 +596,7 @@ pub fn sprite_sheet(
     let json = serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?;
     Ok(SheetFiles {
         json,
-        png: encode_indexed_png(&sheet, &palette.palette()),
+        png: encode_indexed_png(&sheet, palette),
     })
 }
 

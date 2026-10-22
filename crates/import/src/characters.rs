@@ -2083,9 +2083,6 @@ impl Decoder for CharacterDecoder {
                  art stands in"
             )),
         }
-        for note in crate::objects::notes() {
-            pack.note(note);
-        }
         Ok(())
     }
 }

@@ -29,6 +29,16 @@ pub enum Data {
     FirstFollowingPalette,
     SecondLeadingPalette,
     SecondFollowingPalette,
+    SharedPalette,
+    ThrownPalette,
+    CratePalette,
+    AnimalPalette,
+    SmallWalkerPalette,
+    MediumWalkerPalette,
+    LargeWalkerPalette,
+    ThrowerPalette,
+    CritterPalette,
+    StingerPalette,
     PlacementList,
     CollectibleGroups,
     CollectibleShapes,
@@ -69,7 +79,7 @@ pub enum Data {
 }
 
 impl Data {
-    pub const ALL: [Data; 55] = [
+    pub const ALL: [Data; 65] = [
         Data::SampleTable,
         Data::SharedSampleList,
         Data::SampleSetTable,
@@ -88,6 +98,16 @@ impl Data {
         Data::FirstFollowingPalette,
         Data::SecondLeadingPalette,
         Data::SecondFollowingPalette,
+        Data::SharedPalette,
+        Data::ThrownPalette,
+        Data::CratePalette,
+        Data::AnimalPalette,
+        Data::SmallWalkerPalette,
+        Data::MediumWalkerPalette,
+        Data::LargeWalkerPalette,
+        Data::ThrowerPalette,
+        Data::CritterPalette,
+        Data::StingerPalette,
         Data::PlacementList,
         Data::CollectibleGroups,
         Data::CollectibleShapes,
@@ -152,6 +172,18 @@ impl Data {
             Data::SecondFollowingPalette => {
                 "Sprite palettes: the second character's following palette"
             }
+            Data::SharedPalette => {
+                "Sprite palettes: the shared palette (letters, collectibles, bunches, flashes, smoke)"
+            }
+            Data::ThrownPalette => "Sprite palettes: the thrown objects' palette",
+            Data::CratePalette => "Sprite palettes: the crate's palette",
+            Data::AnimalPalette => "Sprite palettes: the animal's palette",
+            Data::SmallWalkerPalette => "Sprite palettes: the small walkers' palette",
+            Data::MediumWalkerPalette => "Sprite palettes: the medium walkers' palette",
+            Data::LargeWalkerPalette => "Sprite palettes: the large walkers' palette",
+            Data::ThrowerPalette => "Sprite palettes: the thrower's palette",
+            Data::CritterPalette => "Sprite palettes: the critters' palette",
+            Data::StingerPalette => "Sprite palettes: the stinger's palette",
             Data::PlacementList => "Placements: the first level's placement list",
             Data::CollectibleGroups => "Single collectibles: the first level's group list",
             Data::CollectibleShapes => "Single collectibles: shape table",
@@ -230,6 +262,16 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
         ("title-1", Data::FirstFollowingPalette) => (0xFC, 0x84B8),
         ("title-1", Data::SecondLeadingPalette) => (0xFC, 0x8422),
         ("title-1", Data::SecondFollowingPalette) => (0xFC, 0x8440),
+        ("title-1", Data::SharedPalette) => (0xFC, 0x86F2),
+        ("title-1", Data::ThrownPalette) => (0xFC, 0x872E),
+        ("title-1", Data::CratePalette) => (0xFC, 0x8710),
+        ("title-1", Data::AnimalPalette) => (0xFC, 0x8404),
+        ("title-1", Data::SmallWalkerPalette) => (0xFC, 0x8A1C),
+        ("title-1", Data::MediumWalkerPalette) => (0xFC, 0x8512),
+        ("title-1", Data::LargeWalkerPalette) => (0xFC, 0x85C6),
+        ("title-1", Data::ThrowerPalette) => (0xFC, 0x86D4),
+        ("title-1", Data::CritterPalette) => (0xFC, 0x894A),
+        ("title-1", Data::StingerPalette) => (0xFC, 0x8DBE),
         ("title-1", Data::PlacementList) => (0xFD, 0x95DC),
         ("title-1", Data::CollectibleGroups) => (0xF8, 0xC2ED),
         ("title-1", Data::CollectibleShapes) => (0xF8, 0xD75D),
