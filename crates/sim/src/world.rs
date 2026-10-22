@@ -528,11 +528,13 @@ impl World {
     }
 
     /// The player stands on flat floor that stops within `ahead` columns
-    /// at the end it faces, with a drop or a pit beyond and no steep
-    /// face or wall (`player-frames.md`, "Teetering at the end of a
-    /// floor": 12 for the outermost 12 columns), its position rounded
-    /// down to a pixel column.
-    pub fn player_at_floor_end(&self, ahead: i64) -> bool {
+    /// at the end it faces, with a drop or a pit beyond and no wall
+    /// (`player-frames.md`, "Teetering at the end of a floor": 12 for the
+    /// outermost 12 columns), its position rounded down to a pixel
+    /// column. With `through_faces` (the first character), steep faces
+    /// on the way are part of the floor and the count runs to the last
+    /// column of the face, if the floor ends after it.
+    pub fn player_at_floor_end(&self, ahead: i64, through_faces: bool) -> bool {
         use crate::columns;
         let player = &self.player;
         if player.ground.is_none() {
@@ -544,17 +546,24 @@ impl World {
         };
         let slope = self.player_physics()[Param::FaceSlope];
         let (here, feet) = (columns::column(player.pos.x), player.pos.y);
-        (1..=ahead)
-            .map(|k| here + dir * k)
-            .try_fold((), |(), c| {
-                match columns::floor(&self.level, c, feet) {
-                    Some(f) if f.y == feet => Ok(()),
-                    // A step, a wall or a slope.
-                    Some(_) => Err(false),
-                    None => Err(columns::face_below(&self.level, c, feet, slope).is_none()),
+        let mut in_face = false;
+        for c in (1..=ahead).map(|k| here + dir * k) {
+            let on_face = |top| columns::face(&self.level, c, top, slope).is_some();
+            match columns::floor(&self.level, c, feet) {
+                Some(f) if f.y == feet && !in_face => {}
+                Some(f) if through_faces && on_face(f.y) => in_face = true,
+                // A step, a wall or a slope.
+                Some(_) => return false,
+                None => {
+                    let below = columns::face_below(&self.level, c, feet, slope);
+                    if through_faces && in_face && below.is_some() {
+                        continue;
+                    }
+                    return below.is_none();
                 }
-            })
-            .is_err_and(|ends| ends)
+            }
+        }
+        false
     }
 
     /// The things that aren't in the level but would appear at their

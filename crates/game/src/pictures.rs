@@ -1234,7 +1234,7 @@ impl PictureClock {
                 if c < decided {
                     self.teeters = false;
                 } else if c == decided {
-                    self.teeters = world.player_at_floor_end(12);
+                    self.teeters = world.player_at_floor_end(12, first);
                 }
                 self.shown = if self.teeters {
                     Some(teetering(first, c - decided))
@@ -3481,6 +3481,21 @@ mod tests {
                     .iter()
                     .all(|l| !l.unwrap().contains("teeter"))
             );
+        }
+    }
+
+    #[test]
+    fn the_first_character_teeters_before_a_steep_face_with_a_drop_after_it() {
+        // player-frames.md, "Teetering at the end of a floor", steep faces:
+        // the count runs to the face's last column (1603) for the first
+        // character, so standing near 1595 teeters and near 1570 doesn't.
+        let level = faced_ledge(0.0);
+        for (x, teeters) in [(1590.0, true), (1570.0, false)] {
+            let src = level.replace("start = [0, 400]", &format!("start = [{x}, 400]"));
+            let run = run(world(&src, 0), &hold(&[Action::Right], 3, 400));
+            let s = first_stand(&run, 0);
+            let any = run.shown[s..].iter().any(|l| l.unwrap().contains("teeter"));
+            assert_eq!(any, teeters, "x = {x}");
         }
     }
 
