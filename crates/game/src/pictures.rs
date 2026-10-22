@@ -3470,6 +3470,30 @@ mod tests {
     }
 
     #[test]
+    fn standing_after_a_runs_stop_teeters_at_the_end_of_a_floor() {
+        // player-frames.md, "Teetering at the end of a floor": the 12-column
+        // rule also holds when the player stops from a run. Running 45
+        // frames from x, the stop comes 12 or fewer columns short of the
+        // floor's end (column 299) for exactly 12 starting columns.
+        let level = FLAT.replace(
+            "rect = [0, 400, 2048, 80]",
+            "rect = [0, 400, 300, 80]\n[[collision]]\nshape = \"rect\"\nrect = [300, 440, 1748, 40]",
+        );
+        for slot in [0, 1] {
+            let teeters = |x: u32| {
+                let src = level.replace("start = [64, 400]", &format!("start = [{x}, 400]"));
+                let keys = hold(&[Action::Right, Action::Action], 45, 600);
+                let run = run(world(&src, slot), &keys);
+                let s = first_stand(&run, slot);
+                run.shown[s..].iter().any(|l| l.unwrap().contains("teeter"))
+            };
+            let at: Vec<u32> = (100..168).filter(|&x| teeters(x)).collect();
+            assert_eq!(at.len(), 12, "slot {slot}: {at:?}");
+            assert_eq!(at[11] - at[0], 11, "slot {slot}: {at:?}");
+        }
+    }
+
+    #[test]
     fn facing_away_from_the_end_does_not_teeter() {
         let level = platform_end();
         for slot in [0, 1] {
