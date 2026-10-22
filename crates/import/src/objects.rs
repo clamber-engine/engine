@@ -75,6 +75,7 @@ impl ObjectPalette {
 pub const PENDING_SHEETS: &[(&str, &str)] = &[
     ("item-pictures", "the extra-life items"),
     ("sign-pictures", "the signs"),
+    ("hidden-patch", "the hidden barrels' patch"),
     ("barrel-pictures", "the launch barrels"),
     ("tyre-pictures", "the tyres"),
     ("stiff-tyre-pictures", "the stiff tyres"),

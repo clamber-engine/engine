@@ -1,0 +1,53 @@
+{
+  "frames": [
+    {
+      "filename": "hidden-patch patch 0",
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 268,
+        "h": 44
+      },
+      "rotated": false,
+      "trimmed": true,
+      "spriteSourceSize": {
+        "x": 26,
+        "y": 104,
+        "w": 268,
+        "h": 44
+      },
+      "sourceSize": {
+        "w": 320,
+        "h": 160
+      },
+      "duration": 100,
+      "ticks": 6
+    }
+  ],
+  "meta": {
+    "app": "clamber render-art",
+    "image": "hidden-patch.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 272,
+      "h": 48
+    },
+    "scale": "1",
+    "frameTags": [
+      {
+        "name": "patch",
+        "from": 0,
+        "to": 0,
+        "direction": "forward"
+      }
+    ],
+    "clamber": {
+      "origin": {
+        "x": 160,
+        "y": 130
+      },
+      "scale": 5,
+      "normals": "hidden-patch-normals.png"
+    }
+  }
+}

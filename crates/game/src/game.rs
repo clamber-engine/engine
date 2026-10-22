@@ -15,6 +15,7 @@ use crate::camera::{Camera, VIEW, point};
 use crate::canvas::{Canvas, Color, rgb};
 use crate::cast::{Cast, Poses};
 use crate::display::Look;
+use crate::hidden_pictures;
 use crate::hud::{draw_hud_with, picture_left};
 use crate::hutch_pictures;
 use crate::layers::{LayerArt, Viewing, nudge};
@@ -482,24 +483,26 @@ impl Game {
         let leaving = leaving.map(|(t, pose, left)| (t, point(t.pos), *pose, opacity(*left)));
         for (thing, at, pose, opacity) in drawn.chain(leaving) {
             // The end marker, exits, wall exits, the dimming's entity and hidden
-            // objects aren't drawn.
+            // objects (but for a hidden barrel's patch) aren't drawn.
             let is_scenery = thing
                 .archetype
                 .is_some_and(|a| matches!(a.behavior, Behavior::Scenery { .. }));
+            let patch = hidden_pictures::shown(thing).is_some();
             if is_scenery != scenery
                 || ([END, EXIT, WALL_EXIT, DIM, HIDDEN].contains(&thing.kind.as_str())
+                    && !patch
                     && !self.debug)
             {
                 continue;
             }
             let (x, y) = to_screen(at);
-            if self.cast.has_kind(&thing.kind) {
+            if patch || self.cast.has_kind(&thing.kind) {
                 let at = (x as f32, y as f32);
                 self.drawn_cast()
                     .draw_thing_faded(canvas, thing, &pose, at, opacity);
             }
             let (x, y) = (x.round() as i32, y.round() as i32);
-            if self.debug || !self.cast.has_kind(&thing.kind) {
+            if self.debug || (!patch && !self.cast.has_kind(&thing.kind)) {
                 let half = ENTITY_BOX / 2;
                 canvas.stroke_rect(x - half, y - half, ENTITY_BOX, ENTITY_BOX, ENTITY);
                 canvas.plot(x, y, ENTITY);

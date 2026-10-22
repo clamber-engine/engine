@@ -35,6 +35,7 @@ use clamber_sprite::{Playback, SpriteSheet};
 
 use crate::bunch_pictures;
 use crate::critter_pictures;
+use crate::hidden_pictures;
 use crate::hutch_pictures;
 use crate::item_pictures;
 use crate::letter_pictures;
@@ -330,6 +331,12 @@ impl Cast {
             }
             return;
         }
+        if let Some(mirrored) = hidden_pictures::shown(thing) {
+            if let Some(sprite) = self.patch_picture(mirrored, x, y) {
+                self.bank.draw(canvas, &Sprite { opacity, ..sprite });
+            }
+            return;
+        }
         if let Some(sprite) = self.tyre_picture(thing, x, y) {
             self.bank.draw(canvas, &Sprite { opacity, ..sprite });
             return;
@@ -535,6 +542,22 @@ impl Cast {
                 flip_x: true,
                 ..Sprite::new(id, frames.get(frame).copied().unwrap_or(0), x, y)
             })
+        })
+    }
+
+    /// The patch a hidden barrel is drawn as, with its origin at the
+    /// object's position: the pack's, or the engine's art of that name.
+    fn patch_picture(&self, mirrored: bool, x: f32, y: f32) -> Option<Sprite> {
+        let &id = self.kinds.get(hidden_pictures::SHEET)?;
+        let frame = *self
+            .bank
+            .sheet(id)
+            .animation(hidden_pictures::LABEL)?
+            .frames
+            .first()?;
+        Some(Sprite {
+            flip_x: mirrored,
+            ..Sprite::new(id, frame, x, y)
         })
     }
 
@@ -2241,6 +2264,64 @@ mod tests {
             counts.push(poses.things[0].sling);
         }
         assert_eq!(counts, [None, Some(0), Some(1), Some(2), None]);
+    }
+
+    /// A level with a hidden object at its start, with `params`.
+    fn hidden_thing(params: &str) -> Thing {
+        let src = format!(
+            r#"
+            format = 1
+            size = [200, 100]
+            start = [10, 10]
+
+            [[entities]]
+            type = "hidden"
+            at = [20, 20]
+            params = {params}
+            "#
+        );
+        let level = Level::from_toml_str(&src, "test").unwrap();
+        let world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
+        let mut thing = world.things[0].clone();
+        thing.active = true;
+        thing
+    }
+
+    #[test]
+    fn a_hidden_barrel_is_drawn_as_the_patch_mirrored_if_it_goes_left() {
+        let falling = |becomes: &str, across: i32| {
+            hidden_thing(&format!(
+                r#"{{ strike_frames = [], fall_height = 160, across = [[-28, 42], [-42, 28]], above = [-27, 20], becomes = "{becomes}", becomes_at = [0, 0], item_speed = [{across}, -6] }}"#
+            ))
+        };
+        let cast = Cast::new(vec![(
+            crate::hidden_pictures::SHEET.to_string(),
+            labelled_sheet(&[crate::hidden_pictures::LABEL], 4),
+        )]);
+        let drawn = |thing: &Thing| {
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, thing, &Pose::default(), 2.0, 0.0);
+            (0..4)
+                .map(|x| canvas.get(x, 0).unwrap())
+                .collect::<Vec<_>>()
+        };
+        let blank = vec![Color::default(); 4];
+        let (barrel, metal) = (falling("crate", -1), falling("canister", 1));
+        let (barrel, metal) = (drawn(&barrel), drawn(&metal));
+        assert_ne!(metal, blank);
+        assert_eq!(
+            barrel.iter().rev().collect::<Vec<_>>(),
+            metal.iter().collect::<Vec<_>>()
+        );
+        assert_ne!(barrel, metal);
+        // Set off, it's no longer the patch; a hidden bunch never is.
+        let mut set_off = falling("crate", -1);
+        set_off.phase = Phase::Gone;
+        assert_eq!(drawn(&set_off), blank);
+        let bunch = hidden_thing(
+            r#"{ strike_frames = [25], fall_height = 0, across = [[-53, 0], [0, 53]], above = [-52, 8], becomes = "cluster", becomes_at = [-1, 0], item_speed = [1, -6] }"#,
+        );
+        assert_eq!(drawn(&bunch), blank);
     }
 
     fn stinger_thing() -> Thing {
