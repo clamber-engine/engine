@@ -4,7 +4,8 @@
 //! pictures after them, the roll, walking, running and turning
 //! pictures, on the ground and in the air after walking off a ledge
 //! without a face, crouching, and picking up, carrying, throwing and
-//! putting down (`spec/behavior/player-frames.md`).
+//! putting down, and the first character's being hurt
+//! (`spec/behavior/player-frames.md`).
 //!
 //! The pictures come from a character's sheet in a pack
 //! (`character-<slot>`, as the importer writes them), named by their
@@ -41,6 +42,11 @@
 //! - The carrying pictures, given on flat floor, show
 //!   on any ground. A pick-up, throw or put-down that leaves the ground,
 //!   and carrying in a fall that isn't a jump, show the engine's own art.
+//! - Being hurt shows the first character's pictures only when it is
+//!   alone in the level and knocked out; the second character's, a hit
+//!   with another character present, and a knock-out with a hop show the
+//!   engine's own art. A flight whose first landing comes before the
+//!   thirtieth frame is timed by the same table.
 //! - Jumps that land before their approach frame, landings after falls
 //!   (but the second character's from a steep face), and anything
 //!   while swapping, hurt or losing a life show the engine's own art.
@@ -70,6 +76,8 @@ pub enum Set {
     Crouch,
     /// Picking up, carrying, throwing and putting down an object.
     Carry,
+    /// Being hurt, from the hit to the end of the level.
+    Hurt,
 }
 
 /// Each set's labels, for the first character (slot 0) and the second
@@ -117,6 +125,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
         (Set::Walking, &WALKING),
         (Set::Crouch, &CROUCH),
         (Set::Carry, &CARRYING),
+        (Set::Hurt, &HURT),
     ],
     &[
         (
@@ -211,6 +220,47 @@ const CROUCH: [&str; 22] = [
     "crouch-15", "crouch-16", "crouch-17", "crouch-18", "crouch-19", "crouch-20", "crouch-21",
     "crouch-22",
 ];
+
+/// The first character's being-hurt pictures: `hurt-1` to `hurt-14` and
+/// `lie-1` to `lie-4`.
+#[rustfmt::skip]
+const HURT: [&str; 18] = [
+    "hurt-1", "hurt-2", "hurt-3", "hurt-4", "hurt-5", "hurt-6", "hurt-7", "hurt-8", "hurt-9",
+    "hurt-10", "hurt-11", "hurt-12", "hurt-13", "hurt-14", "lie-1", "lie-2", "lie-3", "lie-4",
+];
+/// Where `lie-1` is in [`HURT`].
+const LIE_1: usize = 14;
+
+/// The index into [`HURT`] of the picture `k` frames after the hit H,
+/// given the frames after H of the first and second landing and of the
+/// third, F ("Being hurt").
+fn hurt(k: u16, landings: [Option<u16>; 3]) -> usize {
+    let since = |at: Option<u16>| at.and_then(|at| k.checked_sub(at));
+    if let Some(f) = since(landings[2]) {
+        return match f {
+            0..=27 => 10,
+            28..=33 => 11,
+            34..=39 => 12,
+            40..=45 => 13,
+            _ => LIE_1 + [0, 1, 2, 3, 2, 1][usize::from((f - 46) / 3 % 6)],
+        };
+    }
+    if since(landings[1]).is_some() {
+        return 9;
+    }
+    if let Some(l) = since(landings[0]) {
+        return match l {
+            0..=3 => 6,
+            4..=8 => 7,
+            _ => 8,
+        };
+    }
+    if k < 10 {
+        0
+    } else {
+        usize::from(k.min(30) / 5) - 1
+    }
+}
 
 /// The first character's carrying pictures: `pick-1` to `pick-7`,
 /// `carry-turn`, `carry-1` to `carry-10`, `throw-1` to `throw-19` and
@@ -476,6 +526,9 @@ pub struct PictureClock {
     /// Frames since a jump carrying an object landed, 0 on L, while it
     /// stays on the ground.
     carry_land: Option<u8>,
+    /// The frames after the hit on which a knock-out's three landings
+    /// came.
+    hurt_landings: [Option<u16>; 3],
     /// What the player shows on this frame.
     shown: Option<(Set, &'static str)>,
 }
@@ -598,6 +651,24 @@ impl PictureClock {
             let recovery = physics[Param::CrouchRecovery].floor();
             u32::try_from(recovery - 1 - i64::from(player.crouch.rising)).unwrap_or(0)
         });
+
+        let knocked = player
+            .knockout
+            .filter(|_| first && world.other.is_none())
+            .filter(|_| physics[Param::KnockoutHopAt].to_bits() <= 0);
+        if let Some(knockout) = knocked {
+            let k = knockout.frame;
+            for (n, at) in self.hurt_landings.iter_mut().enumerate() {
+                if at.is_none() && usize::from(knockout.landings) > n {
+                    *at = Some(k);
+                }
+            }
+            self.standing = None;
+            self.landed = None;
+            self.shown = Some((Set::Hurt, HURT[hurt(k, self.hurt_landings)]));
+            return;
+        }
+        self.hurt_landings = [None; 3];
 
         let hands = player.hands;
         let playing = matches!(world.flow.outcome, Outcome::Playing)
@@ -1256,6 +1327,61 @@ mod tests {
                 "hold {hold}"
             );
         }
+    }
+
+    /// The first character, hit on the ground on flat floor: what it
+    /// shows from H on, for `n` frames.
+    fn hurt_run(slot: usize, n: usize) -> Vec<Option<&'static str>> {
+        let mut world = world(FLAT, slot);
+        world.player.state = State::Hurt;
+        world.player.knockout = Some(clamber_sim::Knockout::new(None));
+        let mut clock = PictureClock::default();
+        clock.update(&world, 0);
+        let mut shown = vec![clock.shown().map(|(_, label)| label)];
+        for _ in 1..n {
+            let input = InputFrame::single(Frame::after(Actions::NONE, Actions::NONE));
+            step(&mut world, &input);
+            clock.update(&world, 0);
+            shown.push(clock.shown().map(|(_, label)| label));
+        }
+        shown
+    }
+
+    #[test]
+    fn the_first_character_s_being_hurt_pictures() {
+        // player-frames.md, "Being hurt": on flat floor the landings are
+        // on H + 46, H + 67 and F = H + 72 (knock-out.md, "Worked
+        // values"). The last frame, F + 153, is not on screen.
+        let shown = hurt_run(0, 225);
+        let mut want: Vec<&str> = Vec::new();
+        for (label, count) in [
+            ("hurt-1", 10),
+            ("hurt-2", 5),
+            ("hurt-3", 5),
+            ("hurt-4", 5),
+            ("hurt-5", 5),
+            ("hurt-6", 16),
+            ("hurt-7", 4),
+            ("hurt-8", 5),
+            ("hurt-9", 12),
+            ("hurt-10", 5),
+            ("hurt-11", 28),
+            ("hurt-12", 6),
+            ("hurt-13", 6),
+            ("hurt-14", 6),
+        ] {
+            want.extend(std::iter::repeat_n(label, count));
+        }
+        for i in 0..225 - want.len() {
+            want.push(["lie-1", "lie-2", "lie-3", "lie-4", "lie-3", "lie-2"][i / 3 % 6]);
+        }
+        let shown: Vec<_> = shown.into_iter().map(Option::unwrap).collect();
+        assert_eq!(shown, want);
+    }
+
+    #[test]
+    fn the_second_character_is_not_shown_being_hurt() {
+        assert!(hurt_run(1, 60).iter().all(Option::is_none));
     }
 
     /// Action pressed for a frame on frame 10, then `then` held.
@@ -2592,6 +2718,7 @@ mod tests {
                     Set::Walking => "walking",
                     Set::Crouch => "crouch",
                     Set::Carry => "carry",
+                    Set::Hurt => "hurt",
                 };
                 let theirs = character.sets.iter().find(|s| s.name == name).unwrap();
                 let theirs: Vec<&str> = theirs.pictures.iter().map(|&(l, _)| l).collect();

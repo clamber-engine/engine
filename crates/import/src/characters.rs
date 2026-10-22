@@ -889,6 +889,83 @@ const FIRST: &[PictureSet] = &[
             ),
         ],
     },
+    PictureSet {
+        name: "hurt",
+        pictures: &[
+            (
+                "hurt-1",
+                "f9c765babbbeadf91ee7c01124b36732dd8e34ed359655f94103e4827ae1b005",
+            ),
+            (
+                "hurt-2",
+                "3ae60c86090c5c24af663cafb59d951fbbf2e24ddcbd2c72eb0ba6ceb8b426df",
+            ),
+            (
+                "hurt-3",
+                "654c7e700b6978d64e0f822680b1432e8003ad9d205ec444983ec3d4f1a10d46",
+            ),
+            (
+                "hurt-4",
+                "1c5aa20cafd2c2313f6c65017f531009b2e5effffee31752e7a3db100636023d",
+            ),
+            (
+                "hurt-5",
+                "b2e475276312ecd4b7f3e27065379800efda8ec60e107f75554085347d907029",
+            ),
+            (
+                "hurt-6",
+                "623adc7b31ef8427fae1581f7a7f510d94bbabf69089492c790d5f6925f95c26",
+            ),
+            (
+                "hurt-7",
+                "244349b60a9af4c471a3dff43073e0d0c8daf3d0049102b73c563f5c2d8c6f76",
+            ),
+            (
+                "hurt-8",
+                "50d55398b60ee70096325834335fbb9ea084cbd7f55e3bc3fe588d42acdc6b77",
+            ),
+            (
+                "hurt-9",
+                "ef9f40cca69e3c3c8ea219855450d17e0cf5ef087a357ac519b84c73fcfac389",
+            ),
+            (
+                "hurt-10",
+                "0cfadd58e7e41582af05237392289c9d15d0b37234351807f89d962b54bba135",
+            ),
+            (
+                "hurt-11",
+                "77fc7aa9409369dcb77b6a898edb08641bfc8e761900595605d1eb94b1bbf8d9",
+            ),
+            (
+                "hurt-12",
+                "5fede1d92e38b24c8d1ed0f29d24deb5c9d33cdd270abbd205363ce1ea5d15dd",
+            ),
+            (
+                "hurt-13",
+                "8b93d93a5896a716e02612c0bda55d234b31ce30a8bbea4c3f385e603d8ccfae",
+            ),
+            (
+                "hurt-14",
+                "f9e863914357fcc098884a4b1a6f0d88697173842c7640ebd341a1b9cfa20d38",
+            ),
+            (
+                "lie-1",
+                "a43fd6517bb09992476aacd904bb5c078686b1d0672ca5cf12d73107dbad9b05",
+            ),
+            (
+                "lie-2",
+                "b6d0fec95941e8035ee23749dc0f7773848c659d8dcd74ab2f0bdb227dfa95cb",
+            ),
+            (
+                "lie-3",
+                "bddc8e378bec7650c1b3c175203d2decd9d90a7c960eb1dcdecdb8677cbb86a9",
+            ),
+            (
+                "lie-4",
+                "36094f217f2f4349af7d5bd9db27b6d097a42c8a94b397c8735b0f0fe4cf557f",
+            ),
+        ],
+    },
 ];
 
 /// The second character's sets, as [`FIRST`].
@@ -1855,6 +1932,18 @@ mod tests {
                     .collect()
             })
             .collect();
+        // The being-hurt pictures have a table of their own.
+        let (_, hurt) = spec.split_once("## Being hurt").unwrap();
+        let hurt = hurt.lines().skip_while(|l| !l.starts_with("| `hurt-1`"));
+        let hurt: Vec<(String, String)> = hurt
+            .take_while(|l| l.starts_with('|'))
+            .map(|l| {
+                let cells: Vec<&str> = l.split('|').map(|c| c.trim().trim_matches('`')).collect();
+                (cells[1].to_string(), cells[2].to_string())
+            })
+            .collect();
+        let mut tables = tables;
+        tables[0].extend(hurt);
         for (sets, table) in [FIRST, SECOND].iter().zip(&tables) {
             let ours: BTreeMap<&str, &str> = sets
                 .iter()
