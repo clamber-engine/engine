@@ -63,7 +63,7 @@ jobs:
     runs-on: windows-latest
     if: github.event_name != 'pull_request'
     permissions:
-      contents: read
+      contents: write # the rolling "latest" release below
       id-token: write # Azure login for code signing, without a stored secret
     steps:
       - uses: actions/checkout@v7
@@ -130,6 +130,23 @@ jobs:
           name: clamber-windows
           path: dist/clamber
           retention-days: 14
+      # A rolling "latest" release with a fixed download URL, so players
+      # (and the director's one-click updater) can fetch the newest build
+      # without signing in: .../releases/download/latest/clamber-windows.zip
+      - name: Publish the latest build
+        if: steps.game.outputs.exists == 'true' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd dist && 7z a -tzip ../clamber-windows.zip clamber >/dev/null)
+          notes="Newest successful build of main: ${GITHUB_SHA::7}, $(date -u +%Y-%m-%dT%H:%MZ)."
+          if ! gh release view latest >/dev/null 2>&1; then
+            gh release create latest --prerelease --title "Latest build" --notes "$notes" --target "$GITHUB_SHA"
+          else
+            gh release edit latest --notes "$notes"
+          fi
+          gh release upload latest clamber-windows.zip --clobber
 
   # Screenshots and a gameplay GIF of the newest main, published to the
   # `media` branch for the README, once tools/capture.sh exists.
