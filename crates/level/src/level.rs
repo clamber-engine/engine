@@ -279,6 +279,10 @@ pub enum Depth {
     Back,
     /// In front of entities.
     Front,
+    /// Behind the characters, except where they are drawn behind it:
+    /// in the walk-outs ([`World::behind_scenery`] in the sim), where
+    /// its opaque pixels hide them.
+    Raised,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1708,6 +1712,7 @@ impl Level {
             let depth = match l.depth {
                 Depth::Back => "back",
                 Depth::Front => "front",
+                Depth::Raised => "raised",
             };
             lt.insert("depth".into(), Value::String(depth.into()));
             lt.insert("parallax".into(), pair(l.parallax));

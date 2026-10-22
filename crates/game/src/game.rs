@@ -381,20 +381,13 @@ impl Game {
             let keep = |i: usize, l: &Layer| shows(Part::Layer(i)) && keep(l);
             self.drawn_art().draw_some(canvas, level, &viewing, keep);
         };
-        let back = |l: &Layer| l.depth == Depth::Back;
         let sprites = shows(Part::Sprites);
-        if behind {
-            // The characters go behind the scenery, the back layers that
-            // move with the world, but in front of backdrops.
-            let scenery = |l: &Layer| l.parallax == Vec2::ints(1, 1);
-            layers(canvas, &|l| back(l) && !scenery(l));
-            if sprites {
-                self.draw_characters(canvas, alpha, origin);
-            }
-            layers(canvas, &|l| back(l) && scenery(l));
-        } else {
-            layers(canvas, &back);
-        }
+        // Raised layers are behind the characters, except in the walk-outs.
+        layers(canvas, &|l| match l.depth {
+            Depth::Back => true,
+            Depth::Raised => !behind,
+            Depth::Front => false,
+        });
         if self.debug && only.is_none() {
             for region in &level.regions {
                 let points = match &region.area {
@@ -442,11 +435,10 @@ impl Game {
             self.draw_barrel_effects(canvas, &to_screen);
             self.draw_kegs(canvas, &to_screen);
             self.draw_sparkles(canvas, &to_screen);
-            if !behind {
-                self.draw_characters(canvas, alpha, origin);
-            }
+            self.draw_characters(canvas, alpha, origin);
             self.draw_things(canvas, &to_screen, alpha, true);
         }
+        layers(canvas, &|l| behind && l.depth == Depth::Raised);
         layers(canvas, &|l| l.depth == Depth::Front);
         if shows(Part::Hud) {
             let clock = self.poses.clock;
@@ -1022,6 +1014,7 @@ mod tests {
 
             [[layers]]
             name = "rock"
+            depth = "raised"
             image = "rock.png"
             offset = [490, 280]
         "#;
@@ -1050,6 +1043,22 @@ mod tests {
         assert_eq!(pixel(&game, 500.0, 285.0), Some(rgb(7, 8, 9)));
         assert_eq!(pixel(&game, 500.0, 275.0), Some(state_color(State::Idle)));
         assert_eq!(pixel(&game, 400.0, 250.0), Some(rgb(1, 2, 3)));
+
+        // An exit's walk-out hides them from its second frame.
+        game.world.ending = None;
+        let leaving = |frame| {
+            Some(clamber_sim::Leaving {
+                exit: 0,
+                way: clamber_sim::Facing::Left,
+                frame,
+                fade: None,
+            })
+        };
+        game.world.leaving = leaving(0);
+        assert_eq!(pixel(&game, 500.0, 285.0), Some(state_color(State::Idle)));
+        game.world.leaving = leaving(1);
+        assert_eq!(pixel(&game, 500.0, 285.0), Some(rgb(7, 8, 9)));
+        game.world.leaving = None;
 
         // Default's fade is a single frame, straight to black.
         game.world.ending = Some(clamber_sim::Ending {

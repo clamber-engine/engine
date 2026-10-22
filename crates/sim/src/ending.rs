@@ -11,7 +11,7 @@
 //! nothing held has any effect, and the lead walks right at that speed
 //! from the step after the first, rising `end_rise` px a step through
 //! whatever is in its way, turning to face right if it doesn't. The view
-//! holds still and the characters are drawn behind the scenery. Once the
+//! holds still and the characters are drawn behind the raised scenery. Once the
 //! lead ends a step `end_fade_at` px or more right of the view's left
 //! edge (at once, without a view), the picture fades to black over
 //! `end_fade_time` frames, a step of brightness every `end_fade_step`,
@@ -78,10 +78,12 @@ pub struct Ending {
 }
 
 impl World {
-    /// Whether the characters are drawn behind the level's scenery, as
-    /// during the walk-out.
+    /// Whether the characters are drawn behind the level's raised
+    /// scenery, as from the first frame of the level's walk-out and from
+    /// the second of an exit's (`spec/formats/graphics.md`, "Moving things
+    /// and raised tiles").
     pub fn behind_scenery(&self) -> bool {
-        self.ending.is_some()
+        self.ending.is_some() || self.leaving.is_some_and(|l| l.frame >= 1)
     }
 
     /// How bright the picture is, as a step of brightness out of the

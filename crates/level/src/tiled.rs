@@ -11,8 +11,9 @@
 //!   opacity.
 //! - Tile and image layers keep their opacity.
 //! - Tile and image layers are drawn as pixel art, one texel per world unit.
-//! - A layer property `depth` (`"back"` or `"front"`, default back) puts the
-//!   layer behind or in front of entities.
+//! - A layer property `depth` (`"back"`, `"front"` or `"raised"`, default
+//!   back) puts the layer behind or in front of entities, or behind the
+//!   characters except in walk-outs.
 //! - **Objects** are read by class (called type in older Tiled versions):
 //!   - `solid`: rectangles and polygons are solid areas, polylines are
 //!     segments. Properties `surface` (string), `one_way` (bool) and,
@@ -336,10 +337,10 @@ impl Out<'_> {
         let props = props(&l.properties);
         let depth = match props.get("depth") {
             None => "back",
-            Some(Value::String(d)) if d == "back" || d == "front" => d.as_str(),
+            Some(Value::String(d)) if d == "back" || d == "front" || d == "raised" => d.as_str(),
             Some(_) => {
                 return Err(self.err(format!(
-                    "layer `{}`: depth must be \"back\" or \"front\"",
+                    "layer `{}`: depth must be \"back\", \"front\" or \"raised\"",
                     l.name
                 )));
             }

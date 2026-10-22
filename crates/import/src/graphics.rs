@@ -880,7 +880,7 @@ impl Background {
                 "ground"
             };
             // Grid picture row r is at level y r - 1.
-            (if raised == 1 { &mut front } else { &mut back }).push(layer(
+            let mut tiled = layer(
                 name,
                 Vec2::ints(1, 1),
                 Vec2::ints(0, -1),
@@ -896,7 +896,15 @@ impl Background {
                     columns: grid.width() as u32,
                     tiles,
                 }),
-            ));
+            );
+            if raised == 1 {
+                // The characters are in front of it in play and behind
+                // it in the walk-outs (`spec/formats/graphics.md`).
+                tiled.depth = Depth::Raised;
+                front.push(tiled);
+            } else {
+                back.push(tiled);
+            }
         }
         back.append(&mut front);
         Ok(Background {
@@ -1473,7 +1481,14 @@ mod tests {
             .layers
             .iter()
             .map(|l| {
-                assert_eq!(l.depth, Depth::Back);
+                assert_eq!(
+                    l.depth,
+                    if l.name == "ground-raised" {
+                        Depth::Raised
+                    } else {
+                        Depth::Back
+                    }
+                );
                 assert_eq!((l.parallax, l.offset), (Vec2::ints(1, 1), Vec2::default()));
                 let LayerContent::Image {
                     path,
@@ -1603,7 +1618,14 @@ mod tests {
         );
         let half = Fixed::from_ratio_pow2(1, 1);
         for l in &background.layers {
-            assert_eq!(l.depth, Depth::Back);
+            assert_eq!(
+                l.depth,
+                if l.name == "ground-raised" {
+                    Depth::Raised
+                } else {
+                    Depth::Back
+                }
+            );
             let want = match l.name.as_str() {
                 "far" | "far-raised" => (Vec2::new(half, half), Vec2::ints(16_500, 15)),
                 "front" => (Vec2::default(), Vec2::ints(0, -1)),
