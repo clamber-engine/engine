@@ -3356,7 +3356,7 @@ mod tests {
         map.new_game(true);
         let (lead, other) = positions(&map);
         assert_eq!(
-            other.expect("the other character").x.floor() as i64,
+            other.expect("the other character").x.floor(),
             lead.x.floor() - 16
         );
         std::fs::remove_dir_all(dir).unwrap();
