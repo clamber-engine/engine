@@ -77,6 +77,7 @@ mod prompts;
 pub mod replay;
 pub mod report;
 mod session;
+mod sign_pictures;
 mod sound;
 mod sparkles;
 mod spin_pictures;
@@ -239,8 +240,8 @@ pub fn user_dir() -> Option<PathBuf> {
 mod import_coverage {
     use crate::{
         bunch_pictures, critter_pictures, hutch_pictures, item_pictures, letter_pictures,
-        spin_pictures, stinger_pictures, thrower_pictures, thrown_pictures, tyre_pictures,
-        walker_pictures,
+        sign_pictures, spin_pictures, stinger_pictures, thrower_pictures, thrown_pictures,
+        tyre_pictures, walker_pictures,
     };
 
     /// Every picture sheet the game reads is written by the importer or is
@@ -254,6 +255,7 @@ mod import_coverage {
             thrown_pictures::SHEET,
             hutch_pictures::SHEET,
             item_pictures::SHEET,
+            sign_pictures::SHEET,
             stinger_pictures::SHEET,
             critter_pictures::SHEET,
             tyre_pictures::TYRE,

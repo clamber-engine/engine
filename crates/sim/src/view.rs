@@ -1215,7 +1215,7 @@ fn walkers_by(world: &mut World, physics: &Physics, (left, top): (i64, i64), app
             | Behavior::Ball(_)
             | Behavior::Stinger(_)
             | Behavior::Critter(_)
-            | Behavior::Scenery
+            | Behavior::Scenery { .. }
             | Behavior::Collect { once: true, .. }
                 if appear && by_view && start_near =>
             {
@@ -1398,7 +1398,7 @@ fn leaves(thing: &Thing, in_spot: bool) -> Option<Leaves> {
         return in_spot.then_some(Leaves::Soon);
     }
     match thing.archetype?.behavior {
-        Behavior::Scenery => Some(Leaves::Far),
+        Behavior::Scenery { .. } => Some(Leaves::Far),
         _ if !in_spot => None,
         Behavior::Collect { once: true, .. } => None,
         Behavior::Collect { letter, relic, .. } if letter > 0 || relic => Some(Leaves::Soon),
@@ -1482,7 +1482,7 @@ pub(crate) fn at_start(things: &[Thing], level: &Level, left: i64, physics: &Phy
                 Behavior::Thrower { .. }
                 | Behavior::Stinger(_)
                 | Behavior::Critter(_)
-                | Behavior::Scenery
+                | Behavior::Scenery { .. }
                 | Behavior::Collect { once: true, .. },
             ) => near_start(t),
             Some(Behavior::Ball(_)) => false,

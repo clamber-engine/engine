@@ -1565,7 +1565,9 @@ mod tests {
                 (Kind::LeftLaunchBarrel | Kind::DownLaunchBarrel, _) => {
                     panic!("{kind} isn't a sling")
                 }
-                (Kind::Sign, behavior) => assert_eq!(behavior, Behavior::Scenery, "{kind}"),
+                (Kind::Sign, behavior) => {
+                    assert_eq!(behavior, Behavior::Scenery { picture: 0 }, "{kind}")
+                }
                 (Kind::HiddenBunch, Behavior::Hidden(h)) => {
                     assert_eq!((h.fall_height, h.becomes), (0, "cluster"))
                 }

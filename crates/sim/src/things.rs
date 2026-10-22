@@ -647,7 +647,7 @@ fn advance(
         | Behavior::Rope(_)
         | Behavior::Sling(_)
         | Behavior::Critter(_)
-        | Behavior::Scenery => {}
+        | Behavior::Scenery { .. } => {}
     }
     false
 }
@@ -1862,7 +1862,7 @@ fn interact(
             | Behavior::Spring(_)
             | Behavior::Rope(_)
             | Behavior::Sling(_)
-            | Behavior::Scenery => {}
+            | Behavior::Scenery { .. } => {}
             _ if riding => {}
             _ => {
                 let middle = Fixed::from_bits((area.1.to_bits() + area.3.to_bits()) / 2);

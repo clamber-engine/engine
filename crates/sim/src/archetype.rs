@@ -206,8 +206,10 @@ pub enum Behavior {
     Critter(Critter),
     /// Scenery: it stands where it's placed and nothing touches it. With
     /// a view, it appears and is removed as a thrower does, and comes
-    /// back each time its start is near the view again (signs.md).
-    Scenery,
+    /// back each time its start is near the view again (signs.md). Its
+    /// `picture` says which of a kind's pictures it is drawn with, which
+    /// doesn't change how it behaves.
+    Scenery { picture: u8 },
 }
 
 /// A spring (spec/behavior/tyre.md). It never moves. Offsets from it are
@@ -1568,7 +1570,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "pictures",
         ],
         "patrol" => &["path", "period"],
-        "scenery" => &[],
+        "scenery" => &["picture"],
         "launcher" => &["velocity"],
         "carry" => &[
             "reach",
@@ -2212,7 +2214,13 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         "rope" => Behavior::Rope(parse_rope(table, path)?),
         "sling" => Behavior::Sling(parse_sling(table, path)?),
         "critter" => Behavior::Critter(parse_critter(table, path)?),
-        "scenery" => Behavior::Scenery,
+        "scenery" => Behavior::Scenery {
+            picture: match table.get("picture") {
+                None => 0,
+                Some(Value::Integer(n)) if (0..=255).contains(n) => *n as u8,
+                Some(_) => return Err(format!("{path}.picture: expected a whole number 0 to 255")),
+            },
+        },
         _ => Behavior::Launcher {
             velocity: pair("velocity")?,
         },

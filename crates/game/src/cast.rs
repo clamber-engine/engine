@@ -39,6 +39,7 @@ use crate::hutch_pictures;
 use crate::item_pictures;
 use crate::letter_pictures;
 use crate::pictures::{self, PictureClock};
+use crate::sign_pictures;
 use crate::sparkles::Sparkles;
 use crate::spin_pictures;
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
@@ -292,6 +293,10 @@ impl Cast {
             self.bank.draw(canvas, &Sprite { opacity, ..sprite });
             return;
         }
+        if let Some(sprite) = self.sign_picture(thing, x, y) {
+            self.bank.draw(canvas, &Sprite { opacity, ..sprite });
+            return;
+        }
         if let Some(clock) = pose.critter {
             if let Some(sprite) = self.critter_picture(thing, pose, clock, x, y) {
                 self.bank.draw(canvas, &Sprite { opacity, ..sprite });
@@ -508,6 +513,26 @@ impl Cast {
             return None;
         }
         let label = tyre_pictures::LABELS[tyre_pictures::picture(thing.phase)];
+        let frame = *sheet.animation(label)?.frames.first()?;
+        Some(Sprite::new(id, frame, x - 1.0, y))
+    }
+
+    /// A sign's own picture, a px left, if the pack's
+    /// [`sign_pictures::SHEET`] has all three; otherwise none, and the
+    /// engine's art is drawn.
+    fn sign_picture(&self, thing: &Thing, x: f32, y: f32) -> Option<Sprite> {
+        let Behavior::Scenery { picture } = thing.archetype?.behavior else {
+            return None;
+        };
+        let &id = self.kinds.get(sign_pictures::SHEET)?;
+        let sheet = self.bank.sheet(id);
+        if !sign_pictures::LABELS
+            .iter()
+            .all(|l| sheet.animation(l).is_some())
+        {
+            return None;
+        }
+        let label = sign_pictures::LABELS.get(usize::from(picture))?;
         let frame = *sheet.animation(label)?.frames.first()?;
         Some(Sprite::new(id, frame, x - 1.0, y))
     }
@@ -2041,6 +2066,28 @@ mod tests {
             };
             let mut canvas = Canvas::new(4, 1);
             cast.draw_thing(&mut canvas, &thing, &pose, 1.0, 0.0);
+            let got = [canvas.get(0, 0).unwrap(), canvas.get(1, 0).unwrap()];
+            assert_eq!(got == [B, Color::default()], own, "{labels:?}");
+        }
+    }
+
+    #[test]
+    fn a_sign_shows_its_own_picture_a_px_left_only_with_all_three() {
+        let mut thing = world().things[0].clone();
+        thing.kind = "signpost".to_string();
+        thing.archetype = clamber_sim::Archetypes::builtin().named("signpost");
+        thing.active = true;
+        let labels = &crate::sign_pictures::LABELS[..];
+        for (labels, own) in [(labels, true), (&labels[1..], false)] {
+            let cast = Cast::new(vec![
+                ("signpost".to_string(), sheet()),
+                (
+                    crate::sign_pictures::SHEET.to_string(),
+                    labelled_sheet(labels, 4),
+                ),
+            ]);
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, &thing, &Pose::default(), 1.0, 0.0);
             let got = [canvas.get(0, 0).unwrap(), canvas.get(1, 0).unwrap()];
             assert_eq!(got == [B, Color::default()], own, "{labels:?}");
         }

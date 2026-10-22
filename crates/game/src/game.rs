@@ -478,7 +478,7 @@ impl Game {
             // objects aren't drawn.
             let is_scenery = thing
                 .archetype
-                .is_some_and(|a| a.behavior == Behavior::Scenery);
+                .is_some_and(|a| matches!(a.behavior, Behavior::Scenery { .. }));
             if is_scenery != scenery
                 || ([END, EXIT, WALL_EXIT, DIM, HIDDEN].contains(&thing.kind.as_str())
                     && !self.debug)
