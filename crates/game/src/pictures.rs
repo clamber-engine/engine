@@ -4,7 +4,7 @@
 //! pictures after them, the roll, walking, running and turning
 //! pictures, on the ground and in the air after walking off a ledge
 //! without a face, crouching, and picking up, carrying, throwing and
-//! putting down, and the first character's being hurt
+//! putting down, and being hurt
 //! (`spec/behavior/player-frames.md`).
 //!
 //! The pictures come from a character's sheet in a pack
@@ -42,10 +42,9 @@
 //! - The carrying pictures, given on flat floor, show
 //!   on any ground. A pick-up, throw or put-down that leaves the ground,
 //!   and carrying in a fall that isn't a jump, show the engine's own art.
-//! - Being hurt shows the first character's pictures only when it is
-//!   alone in the level and knocked out; the second character's, a hit
-//!   with another character present, and a knock-out with a hop show the
-//!   engine's own art. A flight whose first landing comes before the
+//! - Being hurt shows a character's pictures only when it is alone in
+//!   the level and knocked out; a hit with another character present
+//!   and a knock-out with a hop show the engine's own art. A flight whose first landing comes before the
 //!   thirtieth frame is timed by the same table.
 //! - Jumps that land before their approach frame, landings after falls
 //!   (but the second character's from a steep face), and anything
@@ -146,6 +145,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
         (Set::Walking, &SECOND_WALKING),
         (Set::Crouch, &SECOND_CROUCH),
         (Set::Carry, &SECOND_CARRYING),
+        (Set::Hurt, &SECOND_HURT),
     ],
 ];
 
@@ -230,6 +230,67 @@ const HURT: [&str; 18] = [
 ];
 /// Where `lie-1` is in [`HURT`].
 const LIE_1: usize = 14;
+
+/// The second character's being-hurt pictures: `s-hurt-1` to
+/// `s-hurt-14` and `s-lie-1` to `s-lie-3`.
+#[rustfmt::skip]
+const SECOND_HURT: [&str; 17] = [
+    "s-hurt-1", "s-hurt-2", "s-hurt-3", "s-hurt-4", "s-hurt-5", "s-hurt-6", "s-hurt-7",
+    "s-hurt-8", "s-hurt-9", "s-hurt-10", "s-hurt-11", "s-hurt-12", "s-hurt-13", "s-hurt-14",
+    "s-lie-1", "s-lie-2", "s-lie-3",
+];
+
+/// The index into [`SECOND_HURT`] of the picture `k` frames after the
+/// hit H, as [`hurt`] ("Being hurt", "Second character").
+fn second_hurt(k: u16, landings: [Option<u16>; 3]) -> usize {
+    let since = |at: Option<u16>| at.and_then(|at| k.checked_sub(at));
+    if let Some(f) = since(landings[2]) {
+        // The last frame of each stretch of the lying pictures, and the
+        // picture; after the table, the last one goes on.
+        const LYING: [(u16, usize); 11] = [
+            (29, 13),
+            (35, 14),
+            (41, 15),
+            (52, 16),
+            (57, 15),
+            (67, 14),
+            (72, 15),
+            (81, 16),
+            (85, 15),
+            (93, 14),
+            (97, 15),
+        ];
+        return match f {
+            0..=11 => 10,
+            12..=17 => 11,
+            18..=23 => 12,
+            _ => LYING
+                .iter()
+                .find(|&&(end, _)| f <= end)
+                .map_or(16, |&(_, i)| i),
+        };
+    }
+    if since(landings[1]).is_some() {
+        return 9;
+    }
+    if let Some(l) = since(landings[0]) {
+        // A flight whose first landing is H + 38 shows each of the next
+        // two pictures for 5 frames.
+        let long = landings[0] == Some(38);
+        return match l {
+            0..=3 => 6,
+            4 if long => 6,
+            4..=8 => 7,
+            9 if long => 7,
+            _ => 8,
+        };
+    }
+    if k < 13 {
+        0
+    } else {
+        usize::from((k - 13) / 5 + 1).min(5)
+    }
+}
 
 /// The index into [`HURT`] of the picture `k` frames after the hit H,
 /// given the frames after H of the first and second landing and of the
@@ -654,7 +715,7 @@ impl PictureClock {
 
         let knocked = player
             .knockout
-            .filter(|_| first && world.other.is_none())
+            .filter(|_| world.other.is_none())
             .filter(|_| physics[Param::KnockoutHopAt].to_bits() <= 0);
         if let Some(knockout) = knocked {
             let k = knockout.frame;
@@ -665,7 +726,11 @@ impl PictureClock {
             }
             self.standing = None;
             self.landed = None;
-            self.shown = Some((Set::Hurt, HURT[hurt(k, self.hurt_landings)]));
+            self.shown = Some(if first {
+                (Set::Hurt, HURT[hurt(k, self.hurt_landings)])
+            } else {
+                (Set::Hurt, SECOND_HURT[second_hurt(k, self.hurt_landings)])
+            });
             return;
         }
         self.hurt_landings = [None; 3];
@@ -1380,8 +1445,42 @@ mod tests {
     }
 
     #[test]
-    fn the_second_character_is_not_shown_being_hurt() {
-        assert!(hurt_run(1, 60).iter().all(Option::is_none));
+    fn the_second_character_s_being_hurt_pictures() {
+        // player-frames.md, "Being hurt", "Second character": the pause
+        // comes between H + 10 and H + 11, and the last logic frame, F +
+        // 101, is not on screen.
+        let shown: Vec<_> = hurt_run(1, 173).into_iter().map(Option::unwrap).collect();
+        let mut want: Vec<&str> = Vec::new();
+        for (label, count) in [
+            ("s-hurt-1", 13),
+            ("s-hurt-2", 5),
+            ("s-hurt-3", 5),
+            ("s-hurt-4", 5),
+            ("s-hurt-5", 5),
+            ("s-hurt-6", 13),
+            ("s-hurt-7", 4),
+            ("s-hurt-8", 5),
+            ("s-hurt-9", 12),
+            ("s-hurt-10", 5),
+            ("s-hurt-11", 12),
+            ("s-hurt-12", 6),
+            ("s-hurt-13", 6),
+            ("s-hurt-14", 6),
+            ("s-lie-1", 6),
+            ("s-lie-2", 6),
+            ("s-lie-3", 11),
+            ("s-lie-2", 5),
+            ("s-lie-1", 10),
+            ("s-lie-2", 5),
+            ("s-lie-3", 9),
+            ("s-lie-2", 4),
+            ("s-lie-1", 8),
+            ("s-lie-2", 4),
+            ("s-lie-3", 3),
+        ] {
+            want.extend(std::iter::repeat_n(label, count));
+        }
+        assert_eq!(shown, want);
     }
 
     /// Action pressed for a frame on frame 10, then `then` held.

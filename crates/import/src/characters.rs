@@ -1674,6 +1674,79 @@ const SECOND: &[PictureSet] = &[
             ),
         ],
     },
+    PictureSet {
+        name: "hurt",
+        pictures: &[
+            (
+                "s-hurt-1",
+                "02768e5122d8334ce66a9336f489e63f7a1b7f17fd55e3a34a35838b75979fba",
+            ),
+            (
+                "s-hurt-2",
+                "f98af65913f01832d72b1e6605a376ebbcf061e4e0c19ed31ac26e1e16dfe81b",
+            ),
+            (
+                "s-hurt-3",
+                "149edf52239dc253865760f3589cc66622e2f2de92830a0875baf15b5a9f8f21",
+            ),
+            (
+                "s-hurt-4",
+                "1a36049f91fe73a48a9061a51887be39c2d86b26df30193466cc22a8b0d77958",
+            ),
+            (
+                "s-hurt-5",
+                "b57966f119a06fcd5ebdb15f93291a443ac6134f15faec91f55f599c4d0cae4c",
+            ),
+            (
+                "s-hurt-6",
+                "7c8947659c11aeec64ef7cc034bc2cfaab6cdb4bce532c15678edd68e857ff97",
+            ),
+            (
+                "s-hurt-7",
+                "a878b4cb6d4088d77f101078d618f8666998f60b0ac56a6e2ff528a14f1d4187",
+            ),
+            (
+                "s-hurt-8",
+                "5e68049d22f8722f8cbb52a3bc1f0977b10316d0d2f36750ef9b41ddf3c84a63",
+            ),
+            (
+                "s-hurt-9",
+                "d26b52afb6a80c736cb4dd94f58286cd8886a43264e97e8e169217085d57240f",
+            ),
+            (
+                "s-hurt-10",
+                "4dcf9fc1a61567982945ca4b8a9bd3510513e058703e39c6a161b18611de54d4",
+            ),
+            (
+                "s-hurt-11",
+                "03fa0c32d6e3199b313226284ae1049e96fea60468372fa5cb2189bd6013e3e3",
+            ),
+            (
+                "s-hurt-12",
+                "3c000f013be921c729690ef9a9bc238b69f5d64ec170c9f3f905b0a2c1fb7118",
+            ),
+            (
+                "s-hurt-13",
+                "23620782d47a66ff45f65784d7366bbeb4d805a518bdf47b9387b60e9f47fe88",
+            ),
+            (
+                "s-hurt-14",
+                "87b42ceafd2a9302c6618b003273cd4997f754c211d22580d3e29c5f1cc21c5f",
+            ),
+            (
+                "s-lie-1",
+                "bd832dd5ccbcea92f8ae7406ae56156adfb8342ffbdfea21cbdcb526519d0ee8",
+            ),
+            (
+                "s-lie-2",
+                "c4b01efbfd6dce4dcde953441d1c053c1eae4b97a25a97cac9244caaf5741eac",
+            ),
+            (
+                "s-lie-3",
+                "60c1c19928c11ffa024bba5871026bb5581dcb5169fdd058fbce68fc36850bfa",
+            ),
+        ],
+    },
 ];
 
 /// Files by path in the pack, with their contents.
@@ -1933,7 +2006,8 @@ mod tests {
             })
             .collect();
         // The being-hurt pictures have a table of their own.
-        let (_, hurt) = spec.split_once("## Being hurt").unwrap();
+        let (_, hurt_all) = spec.split_once("## Being hurt").unwrap();
+        let hurt = hurt_all;
         let hurt = hurt.lines().skip_while(|l| !l.starts_with("| `hurt-1`"));
         let hurt: Vec<(String, String)> = hurt
             .take_while(|l| l.starts_with('|'))
@@ -1942,8 +2016,19 @@ mod tests {
                 (cells[1].to_string(), cells[2].to_string())
             })
             .collect();
+        let second_hurt = hurt_all
+            .lines()
+            .skip_while(|l| !l.starts_with("| `s-hurt-1`"));
+        let second_hurt: Vec<(String, String)> = second_hurt
+            .take_while(|l| l.starts_with('|'))
+            .map(|l| {
+                let cells: Vec<&str> = l.split('|').map(|c| c.trim().trim_matches('`')).collect();
+                (cells[1].to_string(), cells[2].to_string())
+            })
+            .collect();
         let mut tables = tables;
         tables[0].extend(hurt);
+        tables[1].extend(second_hurt);
         for (sets, table) in [FIRST, SECOND].iter().zip(&tables) {
             let ours: BTreeMap<&str, &str> = sets
                 .iter()
