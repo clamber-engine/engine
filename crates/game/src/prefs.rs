@@ -123,14 +123,16 @@ pub struct Volume {
 impl Default for Volume {
     fn default() -> Volume {
         Volume {
-            music: 100,
-            effects: 100,
+            music: Volume::DEFAULT,
+            effects: Volume::DEFAULT,
         }
     }
 }
 
 impl Volume {
     pub const STEP: u8 = 10;
+    /// What both start at, until a saved setting says otherwise.
+    pub const DEFAULT: u8 = 80;
 
     /// The linear gain for a percentage. Gain goes with its square, so
     /// that each step sounds about as big as the last.
@@ -254,10 +256,17 @@ mod tests {
     }
 
     #[test]
-    fn volumes_are_full_unless_turned_down() {
+    fn volumes_start_at_80_unless_set() {
         assert_eq!(Prefs::default().volume, Volume::default());
         let prefs = Prefs::from_toml_str("[volume]\nmusic = 40").unwrap();
-        assert_eq!((prefs.volume.music, prefs.volume.effects), (40, 100));
+        assert_eq!((prefs.volume.music, prefs.volume.effects), (40, 80));
+        assert_eq!(
+            Volume::default(),
+            Volume {
+                music: 80,
+                effects: 80
+            }
+        );
         assert_eq!(Volume::gain(100), 1.0);
         assert_eq!(Volume::gain(50), 0.25);
         assert_eq!(Volume::gain(0), 0.0);

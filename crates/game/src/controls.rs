@@ -122,6 +122,33 @@ impl Controls {
         }
     }
 
+    /// Selects the row under `pos` (view units), and on an action row
+    /// the column, as the pointer moves. Returns whether it's on a row.
+    pub fn point(&mut self, pos: (f32, f32)) -> bool {
+        let [left, _, right, _] = PANEL;
+        if !(left..=right).contains(&pos.0) {
+            return false;
+        }
+        let first = TOP + 2 * LINE;
+        let hit = (0..ROWS.len()).find(|&i| {
+            // The player row is followed by the column headings.
+            let y = first + if i == 0 { 0 } else { (i as i32 + 1) * PITCH };
+            (y as f32 - 1.0..(y + PITCH) as f32 - 1.0).contains(&pos.1)
+        });
+        let Some(i) = hit else {
+            return false;
+        };
+        self.row = i;
+        if matches!(ROWS[i], Row::Action(_)) {
+            self.device = if pos.0 >= (PAD_X - 2 * ADVANCE) as f32 {
+                Device::Pad
+            } else {
+                Device::Keyboard
+            };
+        }
+        true
+    }
+
     pub fn row(&self) -> Row {
         ROWS[self.row]
     }

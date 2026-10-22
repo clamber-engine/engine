@@ -35,6 +35,12 @@ const ITEM_WIDTH: i32 = WIDTH - 4 * ADVANCE;
 
 /// Folder entries shown at once.
 const PICKER_ROWS: usize = 11;
+/// Where the picker's list starts, and how many rows show at once.
+pub(crate) const PICKER_TOP: i32 = 12 + 4 * LINE;
+pub(crate) const PICKER_SHOWN: usize = PICKER_ROWS;
+/// The same for the games list.
+pub(crate) const GAMES_TOP: i32 = 20 + 2 * LINE;
+pub(crate) const GAMES_ROWS: usize = 8;
 
 /// The report on the last import, written in the packs folder for the
 /// player to share when something went wrong.
@@ -371,7 +377,7 @@ impl Picker {
         };
         let tail = fit_end(&shown, WIDTH);
         draw_text_centred(canvas, centre, 12 + 2 * LINE + 6, &tail, color);
-        let top = 12 + 4 * LINE;
+        let top = PICKER_TOP;
         if let Some(problem) = &self.problem {
             paragraph(
                 canvas,
@@ -765,8 +771,8 @@ impl Games {
 
     pub fn draw(&self, canvas: &mut dyn Surface, centre: i32) {
         draw_text_centred(canvas, centre, 20, "GAMES", HEADING);
-        let top = 20 + 2 * LINE;
-        let rows = 8;
+        let top = GAMES_TOP;
+        let rows = GAMES_ROWS;
         self.menu.draw_rows(canvas, centre, top, rows);
         let rows = rows.min(self.menu.items.len());
         let mut y = top + Menu::<Pick>::rows_height(rows) + 2 * LINE;

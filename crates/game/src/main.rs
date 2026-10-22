@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 
 use clamber_game::{
     Canvas, Clock, Credits, DEFAULT_CREDITS, DrawList, Edit, Feels, Fit, FrameTimes, GIF_DELAY,
-    Game, Gpu, Pace, Prefs, Presenting, SPRITES, Screen, Session, Surface, VIEW, content_dir,
-    display, encode_gif, encode_png, keys, load_game, present, report, rgb,
+    Game, Gpu, Mouse, Pace, Prefs, Presenting, SPRITES, Screen, Session, Surface, VIEW,
+    content_dir, display, encode_gif, encode_png, keys, load_game, present, report, rgb,
 };
 use clamber_input::{Event, Key, Settings};
 use clamber_level::Level;
@@ -24,7 +24,7 @@ use clamber_sim::Script;
 use clamber_trace::Scenario;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
-use winit::event::{ElementState, KeyEvent, Modifiers, WindowEvent};
+use winit::event::{ElementState, KeyEvent, Modifiers, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key as Logical, KeyCode, NamedKey, PhysicalKey};
 use winit::window::{Fullscreen, Window, WindowId};
@@ -227,6 +227,8 @@ fn play(options: Options) -> Result<(), String> {
         drawn: Instant::now(),
         window: None,
         dialog: None,
+        mouse_moved: Instant::now(),
+        cursor_shown: true,
         error: None,
     };
     event_loop.run_app(&mut app).map_err(|e| e.to_string())?;
@@ -542,7 +544,13 @@ struct App {
     /// The file dialog, while it's open.
     dialog: Option<Dialog>,
     error: Option<String>,
+    /// When the mouse last moved, and whether the cursor is showing.
+    mouse_moved: Instant,
+    cursor_shown: bool,
 }
+
+/// How long the cursor stays still in play before it's hidden.
+const CURSOR_HIDE: std::time::Duration = std::time::Duration::from_secs(2);
 
 impl App {
     fn fail(&mut self, event_loop: &ActiveEventLoop, error: impl ToString) {
@@ -666,6 +674,33 @@ impl App {
         };
         self.session.edit(edit);
         true
+    }
+
+    /// Where the window's pixel `at` is in the view, in view units.
+    fn view_point(&self, at: (f64, f64)) -> Option<(f32, f32)> {
+        let shown = self.window.as_ref()?;
+        let size = shown.window.inner_size();
+        let look = self.session.look();
+        let fit = match look.pixel_art {
+            true => display::pixel_fit,
+            false => display::letterbox,
+        };
+        let (x, y, w, h) = fit(look.view, (size.width, size.height));
+        let (vw, vh) = (look.view.0 as f32, look.view.1 as f32);
+        Some(((at.0 as f32 - x) / w * vw, (at.1 as f32 - y) / h * vh))
+    }
+
+    /// Shows the cursor in menus and while the mouse moves, and hides it
+    /// after a couple of seconds still in play.
+    fn update_cursor(&mut self) {
+        let playing = matches!(self.session.screen, Screen::Playing | Screen::Map);
+        let show = !playing || self.mouse_moved.elapsed() < CURSOR_HIDE;
+        if show != self.cursor_shown
+            && let Some(shown) = &self.window
+        {
+            shown.window.set_cursor_visible(show);
+            self.cursor_shown = show;
+        }
     }
 
     fn toggle_fullscreen(&mut self) {
@@ -844,6 +879,7 @@ impl App {
             _ => None,
         };
         self.update();
+        self.update_cursor();
         if self.session.quit {
             return Ok(());
         }
@@ -931,6 +967,27 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::KeyboardInput { event, .. } => self.key(event),
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers,
+            WindowEvent::CursorMoved { position, .. } => {
+                self.mouse_moved = Instant::now();
+                if let Some((x, y)) = self.view_point((position.x, position.y)) {
+                    self.session.mouse(Mouse::Moved(x, y));
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                let down = state == ElementState::Pressed;
+                match button {
+                    MouseButton::Left => self.session.mouse(Mouse::Left { down }),
+                    MouseButton::Right => self.session.mouse(Mouse::Right { down }),
+                    _ => {}
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let dy = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y,
+                    MouseScrollDelta::PixelDelta(p) => p.y as f32,
+                };
+                self.session.mouse(Mouse::Wheel(dy));
+            }
             WindowEvent::Focused(focused) => {
                 self.focused = focused;
                 if !focused {

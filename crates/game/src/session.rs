@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use clamber_import::{Importer, Installed, Replacements, Widescreen};
 
-use clamber_input::{Action, Device, Event, Frame, Input, Settings};
+use clamber_input::{Action, Actions, Device, Event, Frame, Input, Settings};
 use clamber_level::Arrival;
 use clamber_sim::{InputFrame, Outcome, World};
 
@@ -49,6 +49,14 @@ pub(crate) const SUBTITLE: Color = rgb(0xa8, 0xb0, 0xbc);
 pub(crate) const FAILED: Color = rgb(0xe8, 0x50, 0x60);
 /// Laid over the level behind a menu.
 const DIM: Color = rgb(0x08, 0x0a, 0x10);
+
+/// Where the menus' first items are, down the view.
+pub(crate) const TITLE_MENU: i32 = 44 + 5 * LINE;
+pub(crate) const PAUSED_MENU: i32 = 100;
+pub(crate) const COMPLETE_MENU: i32 = 130;
+pub(crate) const GAME_OVER_MENU: i32 = 100;
+pub(crate) const MOVEMENT_MENU: i32 = 30 + 4 * LINE;
+pub(crate) const OPTIONS_MENU: i32 = 80;
 
 /// Logic frames per second, for showing a level's time.
 const FPS: u32 = 60;
@@ -249,6 +257,12 @@ pub struct Session {
     /// Frames the title screen has shown for, all told: its logo comes
     /// in the first time only.
     pub title_frames: u32,
+    /// The mouse pointer's place in the view, once it has moved over it.
+    pub pointer: Option<(f32, f32)>,
+    /// Presses the mouse adds to the next menu step.
+    pub(crate) clicks: Actions,
+    /// The volume being dragged with the mouse, if one is.
+    pub(crate) dragging: Option<Setting>,
 }
 
 impl Session {
@@ -278,6 +292,9 @@ impl Session {
             file_request: None,
             device: Device::Keyboard,
             title_frames: 0,
+            pointer: None,
+            clicks: Actions::NONE,
+            dragging: None,
         }
     }
 
@@ -303,7 +320,10 @@ impl Session {
         if matches!(self.screen, Screen::Playing | Screen::Map) {
             self.step(&InputFrame { players });
         } else {
-            self.step(&InputFrame::single(self.input.menu()));
+            let mut menu = self.input.menu();
+            let clicks = std::mem::replace(&mut self.clicks, Actions::NONE);
+            menu.pressed = menu.pressed | clicks;
+            self.step(&InputFrame::single(menu));
         }
     }
 
@@ -1211,8 +1231,8 @@ impl Session {
             }
             Screen::Options(menu, _) => {
                 draw_text_centred(canvas, centre, 50, "OPTIONS", HEADING);
-                menu.draw(canvas, centre, 80);
-                let y = 80 + menu.height() + 2 * LINE;
+                menu.draw(canvas, centre, OPTIONS_MENU);
+                let y = OPTIONS_MENU + menu.height() + 2 * LINE;
                 let about = match menu.current() {
                     Setting::Vsync => Some(about_vsync(&self.prefs.display)),
                     Setting::Vrr => Some(about_vrr(self.prefs.display.vrr)),
@@ -1257,20 +1277,20 @@ impl Session {
                 if self.pack.is_some() {
                     draw_text_centred(canvas, centre, top + 3 * LINE, PERSONAL, FAILED);
                 }
-                (menu, top + 5 * LINE)
+                (menu, TITLE_MENU)
             }
             Screen::Paused(menu) => {
                 draw_text_centred(canvas, centre, 70, "PAUSED", HEADING);
-                (menu, 100)
+                (menu, PAUSED_MENU)
             }
             Screen::Complete(menu) => {
                 draw_text_centred(canvas, centre, 50, "LEVEL COMPLETE", HEADING);
                 self.draw_results(canvas, centre, 50 + 3 * LINE);
-                (menu, 130)
+                (menu, COMPLETE_MENU)
             }
             Screen::GameOver(menu) => {
                 draw_text_centred(canvas, centre, 70, "GAME OVER", FAILED);
-                (menu, 100)
+                (menu, GAME_OVER_MENU)
             }
         };
         menu.draw(canvas, centre, top);
@@ -1290,7 +1310,7 @@ impl Session {
             &format!("NOW: {label}"),
             SUBTITLE,
         );
-        let top = 30 + 4 * LINE;
+        let top = MOVEMENT_MENU;
         menu.draw(canvas, centre, top);
         let about = match presets.iter().nth(menu.current()) {
             Some(p) if p.placeholder => "Not available yet",
@@ -1362,7 +1382,7 @@ fn draw_choosing(canvas: &mut dyn Surface, centre: i32) {
 /// The options screen's items, showing the settings in `prefs`, the
 /// game's widescreen mode, `widescreen`, and its rendering mode,
 /// `rendering`, if it has one.
-fn options_items(
+pub(crate) fn options_items(
     prefs: &Prefs,
     widescreen: Widescreen,
     rendering: Option<Rendering>,
@@ -1475,6 +1495,7 @@ mod tests {
     use crate::camera::VIEW;
     use crate::canvas::Canvas;
     use crate::map::{LEVEL_MAP, MapPhase};
+    use crate::mouse::Mouse;
 
     use super::*;
 
@@ -1823,6 +1844,129 @@ mod tests {
         assert_eq!(movement_menu(&s).current(), 1);
     }
 
+    /// The middle of row `i` of a menu that starts at `top`.
+    fn row_at(top: i32, i: usize) -> (f32, f32) {
+        (
+            VIEW.0 as f32 / 2.0,
+            (top + i as i32 * (LINE + 3) + LINE / 2) as f32,
+        )
+    }
+
+    fn point(s: &mut Session, (x, y): (f32, f32)) {
+        s.mouse(Mouse::Moved(x, y));
+    }
+
+    fn click(s: &mut Session) {
+        s.mouse(Mouse::Left { down: true });
+        s.tick();
+        s.mouse(Mouse::Left { down: false });
+        s.tick();
+    }
+
+    fn selected(s: &Session) -> usize {
+        match &s.screen {
+            Screen::Title(m) | Screen::Paused(m) => m.selected,
+            Screen::Options(m, _) => m.selected,
+            _ => panic!("not a menu"),
+        }
+    }
+
+    fn open_options(s: &mut Session) {
+        pick(s, Item::Options);
+        assert!(matches!(s.screen, Screen::Options(..)));
+    }
+
+    #[test]
+    fn hovering_selects_until_a_key_is_pressed() {
+        let mut s = session(LEVEL);
+        point(&mut s, row_at(TITLE_MENU, 2));
+        assert_eq!(selected(&s), 2);
+        tap(&mut s, Key::ArrowDown);
+        assert_eq!(selected(&s), 3, "keys go on from the hovered item");
+        s.tick();
+        assert_eq!(selected(&s), 3, "the pointer standing still doesn't fight");
+        point(&mut s, row_at(TITLE_MENU, 0));
+        assert_eq!(selected(&s), 0);
+        point(&mut s, (2.0, 2.0));
+        assert_eq!(selected(&s), 0, "off the items nothing changes");
+    }
+
+    #[test]
+    fn clicking_picks_and_a_right_click_goes_back() {
+        let mut s = session(LEVEL);
+        let Screen::Title(menu) = &s.screen else {
+            panic!()
+        };
+        let options = menu
+            .items
+            .iter()
+            .position(|i| i.1 == Item::Options)
+            .unwrap();
+        point(&mut s, row_at(TITLE_MENU, options));
+        click(&mut s);
+        assert!(matches!(s.screen, Screen::Options(..)));
+        s.mouse(Mouse::Right { down: true });
+        s.tick();
+        assert!(matches!(s.screen, Screen::Title(_)));
+        point(&mut s, row_at(TITLE_MENU, 0));
+        click(&mut s);
+        assert_eq!(s.screen, Screen::Playing);
+    }
+
+    #[test]
+    fn the_wheel_moves_the_selection() {
+        let mut s = session(LEVEL);
+        s.mouse(Mouse::Wheel(-1.0));
+        s.tick();
+        assert_eq!(selected(&s), 1);
+        s.mouse(Mouse::Wheel(1.0));
+        s.tick();
+        assert_eq!(selected(&s), 0);
+    }
+
+    #[test]
+    fn a_volume_is_clicked_and_dragged_and_toggles_change_on_click() {
+        let dir = std::env::temp_dir().join(format!("clamber-mouse-{}", std::process::id()));
+        let path = dir.join("prefs.toml");
+        let mut s = session(LEVEL);
+        s.prefs_path = Some(path.clone());
+        open_options(&mut s);
+        let music = 3;
+        let (centre, y) = row_at(OPTIONS_MENU, music);
+        point(&mut s, (centre, y));
+        s.mouse(Mouse::Left { down: true });
+        assert_eq!(s.prefs.volume.music, 50, "the middle is half");
+        assert_eq!(selected(&s), music);
+        point(&mut s, (centre + 1000.0, y));
+        assert_eq!(s.prefs.volume.music, 100);
+        point(&mut s, (-1000.0, y + 40.0));
+        assert_eq!(s.prefs.volume.music, 0, "dragging goes on off the row");
+        assert!(!path.exists(), "saved when let go");
+        s.mouse(Mouse::Left { down: false });
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert!(saved.contains("music = 0"), "{saved}");
+        let Screen::Options(menu, _) = &s.screen else {
+            panic!()
+        };
+        assert_eq!(menu.items[music].0, "Music: < 0% >");
+
+        point(&mut s, row_at(OPTIONS_MENU, 0));
+        click(&mut s);
+        assert!(s.prefs.display.fullscreen);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_mouse_does_nothing_in_play() {
+        let mut s = session(LEVEL);
+        s.step(&press(Action::Jump));
+        assert_eq!(s.screen, Screen::Playing);
+        s.mouse(Mouse::Right { down: true });
+        s.mouse(Mouse::Wheel(1.0));
+        s.tick();
+        assert_eq!(s.screen, Screen::Playing);
+    }
+
     #[test]
     fn options_toggle_the_display_settings_and_remember_them() {
         let dir = std::env::temp_dir().join(format!("clamber-options-{}", std::process::id()));
@@ -1847,8 +1991,8 @@ mod tests {
                 "Fullscreen: Off",
                 "VSync: On",
                 "VRR: Off",
-                "Music: < 100% >",
-                "Effects: < 100% >",
+                "Music: < 80% >",
+                "Effects: < 80% >",
                 "Widescreen: < Wide activation >",
                 "Back"
             ]
@@ -1871,6 +2015,10 @@ mod tests {
 
         // Left turns a volume down, Right up to full, and Jump up,
         // wrapping around to silent.
+        s.prefs.volume = Volume {
+            music: 100,
+            effects: 100,
+        };
         s.step(&press(Action::Down));
         s.step(&press(Action::Left));
         assert_eq!(s.prefs.volume.music, 90);

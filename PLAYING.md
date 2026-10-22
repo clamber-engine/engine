@@ -105,10 +105,19 @@ Snappy (quicker and heavier), Floaty (light, long jumps) or Classic 1
 with it. Classic 2 and Classic 3 are listed but can't be picked yet. Your choice is saved to `prefs.toml` in the same folder
 as `input.toml`, and the game starts with it next time.
 
+**The mouse** works in every menu. Moving it over an item selects the
+item, and a click picks it; toggles and choices change on a click. On the
+music and effects volumes, click or drag along the item to set the
+volume. The wheel moves the selection, or scrolls the credits, and a right
+click goes back, like Escape. A key or gamepad button moves the selection
+from where it is, and the mouse's place is ignored until it moves again.
+In play the cursor hides after a couple of seconds without moving, and
+shows again in menus.
+
 **Options** on the title or pause screen turns fullscreen on and off,
 sets how frames are synced to the display (VSync and VRR), and sets the music and
 effects volumes. On a volume, Left turns it down and Right or Pick turns
-it up, in steps of 10%; Pick at 100% goes back to silent. All of these,
+it up, in steps of 10%, and both start at 80%; Pick at 100% goes back to silent. All of these,
 and the window's size, are saved to `prefs.toml` too. The game pauses when its
 window loses focus.
 

@@ -215,6 +215,48 @@ impl<T: Copy> Menu<T> {
     }
 }
 
+/// What the mouse needs of a menu, whatever its items are.
+pub trait Pointable {
+    /// The item under `pos` (view units) in the menu drawn with
+    /// [`Menu::draw_rows`] at `centre_x`, `top` and `rows`, if any.
+    fn at(&self, centre_x: i32, top: i32, rows: usize, pos: (f32, f32)) -> Option<usize>;
+    /// The left and right ends of the highlight when drawn like that.
+    fn span(&self, centre_x: i32, rows: usize) -> (f32, f32);
+    /// Moves the selection to `index`, sliding the highlight there.
+    fn select(&mut self, index: usize);
+}
+
+impl<T: Copy> Pointable for Menu<T> {
+    fn at(&self, centre_x: i32, top: i32, rows: usize, pos: (f32, f32)) -> Option<usize> {
+        let (left, right) = self.span(centre_x, rows);
+        let shown = self.items.len().min(rows.max(1));
+        let pitch = (LINE + SPACING) as f32;
+        let row = ((pos.1 - top as f32 + SPACING as f32 / 2.0) / pitch).floor();
+        let inside = (left..=right).contains(&pos.0) && row >= 0.0 && (row as usize) < shown;
+        inside.then(|| self.first_shown(rows) + row as usize)
+    }
+
+    fn span(&self, centre_x: i32, rows: usize) -> (f32, f32) {
+        let first = self.first_shown(rows);
+        let widest = self
+            .items
+            .iter()
+            .skip(first)
+            .take(rows.max(1))
+            .map(|(label, _)| text_size(label).0 as f32)
+            .fold(MIN_WIDTH, f32::max);
+        let half = widest / 2.0 + REACH;
+        (centre_x as f32 - half, centre_x as f32 + half)
+    }
+
+    fn select(&mut self, index: usize) {
+        if index < self.items.len() && index != self.selected {
+            self.moved = Some((self.selected, self.age));
+            self.selected = index;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use clamber_input::Actions;
@@ -228,6 +270,24 @@ mod tests {
 
     fn menu() -> Menu<u8> {
         Menu::new([("One", 1), ("Two", 2), ("Three", 3)])
+    }
+
+    #[test]
+    fn the_pointer_finds_the_item_under_it() {
+        let mut m = menu();
+        let pitch = (LINE + SPACING) as f32;
+        let (left, right) = m.span(192, 3);
+        assert_eq!(m.at(192, 50, 3, (192.0, 51.0)), Some(0));
+        assert_eq!(m.at(192, 50, 3, (192.0, 50.0 + pitch + 2.0)), Some(1));
+        assert_eq!(
+            m.at(192, 50, 3, (right - 1.0, 50.0 + 2.0 * pitch + 3.0)),
+            Some(2)
+        );
+        assert_eq!(m.at(192, 50, 3, (left - 1.0, 51.0)), None);
+        assert_eq!(m.at(192, 50, 3, (192.0, 49.0 - SPACING as f32)), None);
+        assert_eq!(m.at(192, 50, 3, (192.0, 50.0 + 3.0 * pitch)), None);
+        m.select(2);
+        assert_eq!(m.current(), 3);
     }
 
     #[test]

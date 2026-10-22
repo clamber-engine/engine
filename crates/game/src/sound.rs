@@ -390,12 +390,19 @@ mod tests {
         dir
     }
 
+    /// A session with the volumes at full, so that gains are the
+    /// tracks' own.
     fn session() -> Session {
         let level = Level::from_toml_str(LEVEL, "test").unwrap();
-        Session::new(Game::new(World::new(
+        let mut s = Session::new(Game::new(World::new(
             Arc::new(level),
             Arc::new(generic_feel("default").unwrap()),
-        )))
+        )));
+        s.prefs.volume = Volume {
+            music: 100,
+            effects: 100,
+        };
+        s
     }
 
     fn press(action: Action) -> InputFrame {
