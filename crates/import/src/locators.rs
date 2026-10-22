@@ -568,6 +568,7 @@ mod tests {
                 "First level's room",
                 "First level's scene",
                 "Characters' pictures",
+                "Objects' pictures",
                 "Level map"
             ]
         );
