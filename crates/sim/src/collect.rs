@@ -94,6 +94,22 @@ pub struct Release {
     pub thing: usize,
 }
 
+/// A copy of a collectible's image flying to the picture's top left
+/// corner, as a released part makes its way to the count
+/// (collectibles.md, "The flying copy").
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct FlyingCopy {
+    /// The step it was released on.
+    pub at: u32,
+    /// The first step after `at` it's drawn on.
+    pub from: u8,
+    /// The last step after `at` it's drawn on, where it is at the corner.
+    pub len: u32,
+    /// The top-left corner of the image's square, px from the picture's
+    /// top-left corner, on the release step.
+    pub start: (i32, i32),
+}
+
 /// A taken collectible the count display waits on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Pickup {
@@ -768,6 +784,30 @@ fn ending_path(from: Fixed, to: Fixed, approach: u32, least: Fixed) -> impl Iter
 }
 
 impl World {
+    /// The top-left corners of the squares of the copies drawn in the
+    /// picture made from the last step, px from its top-left corner: a
+    /// copy of a collectible's image that moves in a straight line to
+    /// the corner, positions rounded down.
+    pub fn flying_copies(&self) -> Vec<(i32, i32)> {
+        let Some(n) = self.frame.checked_sub(1) else {
+            return Vec::new();
+        };
+        let along = |from: i32, j: i64, len: i64| {
+            i32::try_from((i64::from(from) * (len - j)).div_euclid(len)).unwrap_or(0)
+        };
+        self.flow
+            .copies
+            .iter()
+            .filter_map(|c| {
+                let j = i64::from(n.checked_sub(c.at)?);
+                let len = i64::from(c.len);
+                (i64::from(c.from)..=len)
+                    .contains(&j)
+                    .then(|| (along(c.start.0, j, len), along(c.start.1, j, len)))
+            })
+            .collect()
+    }
+
     /// The image of the relic taken last in the picture made from the
     /// last step, if it's drawn in it: from the step after it's taken,
     /// flying to (`relic_x`, `relic_y`); resting there for `relic_rest`
@@ -879,11 +919,13 @@ pub(crate) fn update(world: &mut World, can_take: bool, start: Option<View>) {
         }
     }
     world.flow.releases.retain(|r| r.left > 0);
+    world.flow.copies.retain(|c| frame <= c.at + c.len + 1);
     for i in released {
         let thing = &world.things[i];
         let Some(Behavior::Collect {
             count_delay,
             arrive,
+            copy,
             ..
         }) = thing.archetype.map(|a| a.behavior)
         else {
@@ -897,6 +939,20 @@ pub(crate) fn update(world: &mut World, can_take: bool, start: Option<View>) {
             }
             None => Some(count_delay),
         };
+        if let (Some(v), Some(copy), Some(delay @ 2..)) = (view, copy, delay) {
+            let at = |p: Fixed, edge: i64, corner: i32| {
+                i32::try_from(p.floor() - edge - i64::from(corner)).unwrap_or(0)
+            };
+            world.flow.copies.push(FlyingCopy {
+                at: frame,
+                from: copy.from,
+                len: u32::from(delay) - 1,
+                start: (
+                    at(thing.pos.x, v.x(), copy.corner.0),
+                    at(thing.pos.y, v.y(), copy.corner.1),
+                ),
+            });
+        }
         match delay {
             Some(delay) => world.flow.due.push(frame + u32::from(delay)),
             None => forgive(&mut world.flow, i),

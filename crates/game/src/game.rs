@@ -447,6 +447,7 @@ impl Game {
                 cast.draw_count_image(canvas, clock, at)
             });
             self.draw_relic_image(canvas);
+            self.draw_flying_copies(canvas);
         }
     }
 
@@ -514,6 +515,18 @@ impl Game {
             return to;
         }
         between(from, thing.pos, alpha, (0.0, 0.0))
+    }
+
+    /// The copies of collectibles' images flying to the count: the
+    /// spinning collectible's first picture, unmirrored, with each
+    /// square's corner in the world's picture (collectibles.md, "The
+    /// flying copy"). Without that picture there's nothing to draw.
+    fn draw_flying_copies(&self, canvas: &mut dyn Surface) {
+        let left = picture_left(canvas, &self.world);
+        let cast = self.drawn_cast();
+        for (x, y) in self.world.flying_copies() {
+            cast.draw_count_image(canvas, 0, (left + x, y));
+        }
     }
 
     /// The image of a taken relic, while the world shows it: its sprite

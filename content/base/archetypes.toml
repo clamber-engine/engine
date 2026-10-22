@@ -332,7 +332,15 @@
 #   level from another area (an exit's `arrival`); otherwise it's there
 #   again then, as at the level's start. With `late = true`, taken, it
 #   acts on the lives display as if taken a frame later: the display
-#   comes in, holds its steps and counts its lives from then.
+#   comes in, holds its steps and counts its lives from then. With
+#   `copy = { from, corner }`, each part released that reaches the count
+#   after more than a frame has a copy of the collectible's image drawn
+#   flying from its place to the picture's top left corner, on the
+#   frames from `from` (0 or 1) after the release to one before the
+#   count goes up (collectibles.md, "The flying copy"; bunches.md, "The
+#   flying copy of an item"). It starts at the collectible's position
+#   less the view's, by `arrive_view`'s view, less `corner`: how far left
+#   of and above the position the image's corner is.
 # - `hutch`: a crate holding an animal. It stands on its position and
 #   never moves; walking, running or rolling through it does nothing.
 #   Offsets from it are whole px, ends included: `across`, the player's
@@ -1075,6 +1083,7 @@ release_every = 0
 count_delay = 33
 pickup_start = 1
 window = [-39, 263]
+copy = { from = 1, corner = [8, 9] }
 arrive = [
     { x_from = 8, x_to = 255, delay = 33 },
     { x_from = 256, x_to = 263, delay = 1 },
@@ -1111,6 +1120,7 @@ worth = 10
 release_every = 6
 count_delay = 17
 arrive_view = "start"
+copy = { from = 0, corner = [9, 11] }
 arrive = [{ x_from = 9, y_from = 11, delay = 17 }]
 arrive_else = 0
 kept = true

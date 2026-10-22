@@ -893,6 +893,14 @@ impl World {
         for &d in &f.due {
             out.extend(d.to_le_bytes());
         }
+        count(&mut out, f.copies.len());
+        for c in &f.copies {
+            out.extend(c.at.to_le_bytes());
+            out.extend([c.from]);
+            out.extend(c.len.to_le_bytes());
+            out.extend(c.start.0.to_le_bytes());
+            out.extend(c.start.1.to_le_bytes());
+        }
         count(&mut out, f.releases.len());
         for r in &f.releases {
             out.extend([r.left, r.wait, r.every]);

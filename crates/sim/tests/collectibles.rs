@@ -613,3 +613,60 @@ fn a_bunch_leaving_the_view_flies_its_first_items_and_counts_the_rest_at_once() 
     let ups = bunch_in_view(|n| (if n < 30 { 100 } else { 8 }, 100));
     assert_eq!(ups, [17, 23, 29, 30, 35, 36, 41, 42, 48, 54]);
 }
+
+/// The copies drawn after each of 40 steps with a standing player on a
+/// spark whose `xc - V` is 100 (the view held still), and the corner
+/// the first copy starts from.
+fn single_copies() -> (Vec<Vec<(i32, i32)>>, (i32, i32)) {
+    let mut play = Play::new(world("spark", &[(X, F)], false));
+    let mut drawn = Vec::new();
+    let mut top = 0;
+    for _ in 0..40 {
+        play.step_viewed(X - 100, None);
+        top = play.world.view.unwrap().top.floor() as i32;
+        drawn.push(play.world.flying_copies());
+    }
+    (drawn, (100 - 8, F - 9 - top))
+}
+
+#[test]
+fn a_single_taken_in_the_view_has_a_copy_fly_to_the_corner_on_the_next_32_steps() {
+    // collectibles.md, "The flying copy".
+    let (drawn, (sx, sy)) = single_copies();
+    assert!(drawn[0].is_empty(), "not on the step it is taken");
+    for j in 1..=32 {
+        let at = (sx * (32 - j) / 32, sy * (32 - j) / 32);
+        assert_eq!(drawn[j as usize], [at], "step P + {j}");
+    }
+    assert_eq!(drawn[32], [(0, 0)]);
+    assert!(drawn[33..].iter().all(Vec::is_empty));
+}
+
+#[test]
+fn a_single_that_counts_at_once_has_no_copy() {
+    let mut play = Play::new(world("spark", &[(X, F)], false));
+    for _ in 0..40 {
+        play.step_viewed(X - 256, None);
+        assert!(play.world.flying_copies().is_empty());
+    }
+}
+
+#[test]
+fn a_bunch_item_has_a_copy_fly_to_the_corner_on_its_release_step_and_the_16_after() {
+    // bunches.md, "The flying copy of an item": `xb - V` 75, `yb - W` 46.
+    let mut play = Play::new(world("cluster", &[(X, F)], false));
+    let drawn: Vec<Vec<(i32, i32)>> = (0..30)
+        .map(|_| {
+            play.step_viewed(X - 75, Some(F - 46));
+            play.world.flying_copies()
+        })
+        .collect();
+    assert_eq!(drawn[0], [(66, 35)]);
+    assert_eq!(drawn[1], [(61, 32)]);
+    assert_eq!(drawn[2], [(57, 30)]);
+    // The items released on steps 6 and 12 are on the same path.
+    assert_eq!(drawn[8], [(33, 17), (57, 30)]);
+    assert_eq!(drawn[15], [(4, 2), (28, 15), (53, 28)]);
+    assert_eq!(drawn[16], [(0, 0), (24, 13), (49, 26)]);
+    assert_eq!(drawn[17].len(), 2, "the first item's copy is gone");
+}

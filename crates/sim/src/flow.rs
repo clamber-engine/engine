@@ -43,7 +43,8 @@ use clamber_pack::Param;
 
 use crate::archetype::Behavior;
 use crate::collect::{
-    self, LetterEnd, LetterShow, LivesGain, LivesStart, LostLife, Pickup, Release, RelicFlight,
+    self, FlyingCopy, LetterEnd, LetterShow, LivesGain, LivesStart, LostLife, Pickup, Release,
+    RelicFlight,
 };
 use crate::hits;
 use crate::keg;
@@ -146,6 +147,9 @@ pub struct Flow {
     /// Steps on which one more reaches the collectible count, one entry
     /// each.
     pub due: Vec<u32>,
+    /// Copies of images flying to the count
+    /// ([`World::flying_copies`](crate::World::flying_copies)).
+    pub copies: Vec<FlyingCopy>,
     /// Taken collectibles still releasing what they're worth.
     pub releases: Vec<Release>,
     /// The letters taken, as bits: bit `k - 1` for letter `k`. A letter

@@ -101,17 +101,18 @@ mod world;
 
 pub use archetype::{
     AIR_KINDS, Archetype, ArchetypeError, Archetypes, Arrive, ArriveRule, Ball, Behavior, Contact,
-    Critter, Entrance, Fall, Grab, HIDDEN_ITEMS, HandsPath, Hidden, Hit, Holder, Hutch, InHands,
-    KEG_PIECES, Keg, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_FLUTTER, MAX_HOP_STEPS, MAX_IN_HANDS,
-    MAX_LETTERS, MAX_RESPONSE_PARTS, MAX_SHAKE_STAGES, MAX_SPRING_RUNS, MAX_STRIKE_FRAMES,
-    MAX_THROWS, MAX_TURN_PARTS, Meets, Offsets, Opens, Poses, Reach, Response, Ride, RiderReach,
-    Rope, Sling, Span, Spring, Stinger, Throw, ThrowerContact, WalkerContact, WalkerDrop,
+    CopyFlight, Critter, Entrance, Fall, Grab, HIDDEN_ITEMS, HandsPath, Hidden, Hit, Holder, Hutch,
+    InHands, KEG_PIECES, Keg, MAX_AIR_STEPS, MAX_ARRIVE_RULES, MAX_FLUTTER, MAX_HOP_STEPS,
+    MAX_IN_HANDS, MAX_LETTERS, MAX_RESPONSE_PARTS, MAX_SHAKE_STAGES, MAX_SPRING_RUNS,
+    MAX_STRIKE_FRAMES, MAX_THROWS, MAX_TURN_PARTS, Meets, Offsets, Opens, Poses, Reach, Response,
+    Ride, RiderReach, Rope, Sling, Span, Spring, Stinger, Throw, ThrowerContact, WalkerContact,
+    WalkerDrop,
 };
 pub use carry::Flight;
 pub use clamber_fixed::Fixed;
 pub use collect::{
-    CountDisplay, LetterEnd, LetterRow, LetterShow, LivesDisplay, LivesGain, LivesStart, LostLife,
-    Pickup, Release, RelicFlight, RelicImage,
+    CountDisplay, FlyingCopy, LetterEnd, LetterRow, LetterShow, LivesDisplay, LivesGain,
+    LivesStart, LostLife, Pickup, Release, RelicFlight, RelicImage,
 };
 pub use critter::CRITTER;
 pub use dimming::{DIM, Dimming};

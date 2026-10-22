@@ -146,6 +146,10 @@ pub enum Behavior {
         once: bool,
         kept: bool,
         late: bool,
+        /// With a view, each part released that flies to the count (its
+        /// arrival delay above 1) has a copy of its image drawn flying
+        /// along the way (see [`FlyingCopy`](crate::FlyingCopy)).
+        copy: Option<CopyFlight>,
     },
     /// Sits where it's placed and throws a [`BALL`](crate::BALL) on each
     /// of its first `throw_count` `throws`, `from` its position, on that
@@ -941,6 +945,42 @@ pub struct ArriveRule {
     pub delay: Option<u8>,
 }
 
+/// How a collectible's released parts show a copy of its image flying
+/// to the count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct CopyFlight {
+    /// The first step after the release it's drawn on: 0 or 1.
+    pub from: u8,
+    /// How far left of and above the collectible's position the image's
+    /// top-left corner is.
+    pub corner: (i32, i32),
+}
+
+fn parse_copy(table: &Table, path: &str) -> Result<CopyFlight, String> {
+    if let Some(key) = table
+        .keys()
+        .find(|k| !matches!(k.as_str(), "from" | "corner"))
+    {
+        return Err(format!("{path}.{key}: no such value"));
+    }
+    let from = match table.get("from") {
+        Some(Value::Integer(n @ (0 | 1))) => *n as u8,
+        _ => return Err(format!("{path}.from: expected 0 or 1")),
+    };
+    let corner = match table.get("corner") {
+        Some(Value::Array(v)) => match v.as_slice() {
+            [Value::Integer(x), Value::Integer(y)]
+                if i32::try_from(*x).is_ok() && i32::try_from(*y).is_ok() =>
+            {
+                (*x as i32, *y as i32)
+            }
+            _ => return Err(format!("{path}.corner: expected [x, y] in whole px")),
+        },
+        _ => return Err(format!("{path}.corner: expected [x, y] in whole px")),
+    };
+    Ok(CopyFlight { from, corner })
+}
+
 /// The most letters a level's word can have.
 pub const MAX_LETTERS: u8 = 8;
 
@@ -1715,6 +1755,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "once",
             "kept",
             "late",
+            "copy",
             "pictures",
         ],
         _ => return Err(format!("{path}.behavior: unknown behavior `{behavior}`")),
@@ -2027,6 +2068,11 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 Some(Value::Boolean(true)) => true,
                 Some(_) => return Err(format!("{path}.late: expected true or false")),
             };
+            let copy = match table.get("copy") {
+                None => None,
+                Some(Value::Table(t)) => Some(parse_copy(t, &format!("{path}.copy"))?),
+                Some(_) => return Err(format!("{path}.copy: expected a table")),
+            };
             let left_shift = match table.get("left_shift") {
                 None => 0,
                 Some(Value::Integer(n)) if i32::try_from(*n).is_ok() => *n as i32,
@@ -2049,6 +2095,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 once,
                 kept,
                 late,
+                copy,
             }
         }
         "thrower" => {
