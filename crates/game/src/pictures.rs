@@ -1,6 +1,6 @@
 //! Which of its own pictures the player shows when it's held still: the
-//! stop after a roll, a jump and its landing, a bounce, the second
-//! character's fall from a steep face and its landing, the standing
+//! stop after a roll, a jump and its landing, a bounce, both
+//! characters' falls from a steep face and their landings, the standing
 //! pictures after them, the roll, walking, running and turning
 //! pictures, on the ground and in the air after walking off a ledge
 //! without a face, crouching, and picking up, carrying, throwing and
@@ -23,9 +23,10 @@
 //!   given on flat ground, show on any ground too, and go on in the air
 //!   after a walk-off from a ledge without a face as when it passes over
 //!   a face without a frame on it.
-//! - The second character shows `s-air-1` on every frame that ends on a
-//!   steep face, not only at the top of a ledge, and on its landing
-//!   frames after a fall from a face wherever it lands.
+//! - Either character shows its fall pictures (`s-air-1`, first
+//!   character `air-0`) on every frame that ends on a steep face, not
+//!   only at the top of a ledge, and its landing frames after a fall
+//!   from a face wherever it lands.
 //! - The first character walking or running in the air after walking
 //!   off a ledge with a face shows the engine's own art.
 //! - The crouching pictures, given on flat floor, show on any ground,
@@ -47,7 +48,7 @@
 //!   and a knock-out with a hop show the engine's own art. A flight whose first landing comes before the
 //!   thirtieth frame is timed by the same table.
 //! - Jumps that land before their approach frame, landings after falls
-//!   (but the second character's from a steep face), and anything
+//!   (but those from a steep face), and anything
 //!   while swapping, hurt or losing a life show the engine's own art.
 //! - The standing list goes on on a slope or at a ledge as on flat
 //!   floor, for either character.
@@ -1403,14 +1404,18 @@ fn upright_fall(player: &clamber_sim::Player) -> bool {
     !player.grounded() && player.walked_off && !player.walked_off_face && player.roll.is_none()
 }
 
-/// The second character on a steep face, in the fall after it and on
-/// its landing frames ("A fall from a steep face"), but not crouching.
+/// A character on a steep face, in the fall after it and on its
+/// landing frames ("A fall from a steep face"), but not crouching.
 fn face_fall(first: bool, world: &World) -> Option<(Set, &'static str)> {
     const LANDING: [&str; 7] = [
         "s-air-2", "s-air-3", "s-air-4", "s-air-5", "s-air-6", "s-land-1", "s-land-2",
     ];
+    const FIRST_LANDING: [&str; 11] = [
+        "air-1", "air-2", "air-3", "air-4", "air-5", "air-6", "land-1", "land-2", "land-2",
+        "land-3", "land-3",
+    ];
     let player = &world.player;
-    if first || player.crouch.held > 0 || player.crouch.rising > 0 {
+    if player.crouch.held > 0 || player.crouch.rising > 0 {
         return None;
     }
     let fell = !player.grounded()
@@ -1420,9 +1425,20 @@ fn face_fall(first: bool, world: &World) -> Option<(Set, &'static str)> {
         && player.roll.is_none();
     let label = match player.gait {
         Gait::Landing(l) if player.grounded() && l.fixed && !l.bounce => {
-            *LANDING.get(usize::from(l.frame))?
+            let list = if first {
+                &FIRST_LANDING[..]
+            } else {
+                &LANDING[..]
+            };
+            *list.get(usize::from(l.frame))?
         }
-        _ if fell || world.player_on_face() => "s-air-1",
+        _ if fell || world.player_on_face() => {
+            if first {
+                "air-0"
+            } else {
+                "s-air-1"
+            }
+        }
         _ => return None,
     };
     Some((Set::Jump, label))
@@ -2314,9 +2330,13 @@ mod tests {
     /// from standing, with Right held to the frame that leaves it, then
     /// `then(n)` held on G + `n` (nothing before G): the run, F and G.
     fn second_face_fall(then: impl Fn(usize) -> Vec<Action>) -> (Run, usize, usize) {
+        face_fall_run(1, then)
+    }
+
+    fn face_fall_run(slot: usize, then: impl Fn(usize) -> Vec<Action>) -> (Run, usize, usize) {
         let keys = |g: Option<usize>| -> Vec<Vec<Action>> {
             let probe = run(
-                world(&faced_ledge(1580.0), 1),
+                world(&faced_ledge(1580.0), slot),
                 &vec![vec![Action::Right]; 60],
             );
             let leave = probe.grounded.iter().position(|g| !g).unwrap();
@@ -2328,9 +2348,9 @@ mod tests {
                 })
                 .collect()
         };
-        let probe = run(world(&faced_ledge(1580.0), 1), &keys(None));
+        let probe = run(world(&faced_ledge(1580.0), slot), &keys(None));
         let g = probe.frames(Event::Land)[0];
-        let run = run(world(&faced_ledge(1580.0), 1), &keys(Some(g)));
+        let run = run(world(&faced_ledge(1580.0), slot), &keys(Some(g)));
         assert_eq!(run.frames(Event::Land)[0], g);
         let f = run.on_face.iter().position(|&on| on).unwrap();
         assert!(run.grounded[f] && !run.grounded[f + 1..g].iter().all(|&g| g));
@@ -2365,6 +2385,31 @@ mod tests {
         let (run, f, g) = second_face_fall(|_| vec![Action::Left]);
         let mut want = face_fall_list(f, g, 7);
         want.extend([("s-stand-5", 2), ("s-stand-7", 4), ("s-stand-5", 2)]);
+        run.check(f, &want);
+    }
+
+    #[test]
+    fn the_first_character_s_fall_from_a_face_and_its_landing() {
+        // player-frames.md, "A fall from a steep face", "First
+        // character", the example: `air-0` from F to G − 1, the table on
+        // G to G + 10, then the mode that starts on G + 11.
+        let table = [
+            "air-1", "air-2", "air-3", "air-4", "air-5", "air-6", "land-1", "land-2", "land-2",
+            "land-3", "land-3",
+        ];
+        let list = |f: usize, g: usize| {
+            let mut want = vec![("air-0", g - f)];
+            want.extend(table.iter().map(|&l| (l, 1)));
+            want
+        };
+        let (run, f, g) = face_fall_run(0, |_| vec![Action::Right]);
+        let mut want = list(f, g);
+        want.push(("walk-1", 1));
+        run.check(f, &want);
+        // Nothing held: standing from G + 11, with G + 11 as S.
+        let (run, f, g) = face_fall_run(0, |_| vec![]);
+        let mut want = list(f, g);
+        want.extend([("stand-1", 3), ("stand-2", 3)]);
         run.check(f, &want);
     }
 
