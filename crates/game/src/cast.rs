@@ -231,6 +231,28 @@ impl Cast {
         flip_x: bool,
         at: (i32, i32),
     ) -> bool {
+        self.draw_map_picture(canvas, n % 10, flip_x, at)
+    }
+
+    /// Draws the other character's picture on the level map, `n` of 0 to
+    /// 7 (`map-other-1` to `map-other-8`), as [`Cast::draw_map_lead`].
+    pub fn draw_map_other(
+        &self,
+        canvas: &mut dyn Surface,
+        n: usize,
+        flip_x: bool,
+        at: (i32, i32),
+    ) -> bool {
+        self.draw_map_picture(canvas, 10 + n % 8, flip_x, at)
+    }
+
+    fn draw_map_picture(
+        &self,
+        canvas: &mut dyn Surface,
+        which: usize,
+        flip_x: bool,
+        at: (i32, i32),
+    ) -> bool {
         let Some(&id) = self.characters.get(&0) else {
             return false;
         };
@@ -239,7 +261,7 @@ impl Cast {
             return false;
         }
         let Some(&frame) = sheet
-            .animation(pictures::MAP[n % 10])
+            .animation(pictures::MAP[which])
             .and_then(|a| a.frames.first())
         else {
             return false;

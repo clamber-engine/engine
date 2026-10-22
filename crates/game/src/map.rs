@@ -33,6 +33,7 @@ const PATH: Color = rgb(0xc8, 0xa0, 0x60);
 const LEVEL: Color = rgb(0xe8, 0x50, 0x40);
 const STOP: Color = rgb(0xf0, 0xe0, 0xb0);
 const LEAD: Color = rgb(0x40, 0xb0, 0xf0);
+const OTHER: Color = rgb(0xf0, 0xa0, 0x40);
 
 /// Where the game is with respect to the map.
 #[derive(Clone, Debug, PartialEq)]
@@ -69,6 +70,10 @@ pub struct MapPlay {
     pub progress: Progress,
     pub phase: MapPhase,
     lead: LeadLook,
+    /// The same for the other character.
+    other: LeadLook,
+    /// Whether there are two characters on the map.
+    two: bool,
 }
 
 /// What the lead's picture on the map depends on besides where it is
@@ -110,6 +115,8 @@ impl MapPlay {
             progress: Progress::default(),
             phase: MapPhase::Shown(Box::new(screen)),
             lead: LeadLook::default(),
+            other: LeadLook::default(),
+            two: false,
         })
     }
 
@@ -121,12 +128,17 @@ impl MapPlay {
     }
 
     /// Begins a new game: no progress, and the map with the lead at its
-    /// start.
-    pub fn new_game(&mut self) {
-        let screen = LegsScreen::new_game(&self.map, self.legs()).expect("checked in new");
+    /// start, and the other character beside it if `two`.
+    pub fn new_game(&mut self, two: bool) {
+        let mut screen = LegsScreen::new_game(&self.map, self.legs()).expect("checked in new");
+        if two {
+            screen.lead = screen.lead.with_other();
+        }
         self.progress = Progress::default();
+        self.two = two;
         self.phase = MapPhase::Shown(Box::new(screen));
         self.lead = LeadLook::default();
+        self.other = LeadLook::default();
     }
 
     /// Whether a press at `node` enters it: a level, or a warp to another
@@ -153,9 +165,13 @@ impl MapPlay {
             }
             let (node, times) = (*node, times.clone());
             let given = self.map.nodes[node].onward;
-            let lead = LegWalker::after_finish(&self.map, self.legs(), node, &times, given);
+            let mut lead = LegWalker::after_finish(&self.map, self.legs(), node, &times, given);
+            if self.two {
+                lead = lead.with_other();
+            }
             self.phase = MapPhase::Shown(Box::new(LegsScreen::new(lead)));
             self.lead = LeadLook::default();
+            self.other = LeadLook::default();
         }
         let MapPhase::Shown(screen) = &self.phase else {
             return MapStep::Stay;
@@ -185,6 +201,17 @@ impl MapPlay {
         }
         look.x = Some(x);
         look.about = about;
+        if let Some(other) = screen.lead.other_position() {
+            let x = other.x.floor().rem_euclid(page_width);
+            let look = &mut self.other;
+            if let Some(before) = look.x
+                && x != before
+                && (x - before).abs() < page_width / 2
+            {
+                look.left = x < before;
+            }
+            look.x = Some(x);
+        }
         self.phase = MapPhase::Shown(Box::new(screen));
         let Some(node) = out.left else {
             return MapStep::Stay;
@@ -207,10 +234,11 @@ impl MapPlay {
     /// The level entered from the map was finished: records it, and
     /// shows the map after the black frames. Does nothing unless a level
     /// entered from the map is being played.
-    pub fn finished(&mut self) {
+    pub fn finished(&mut self, two: bool) {
         let MapPhase::Playing(node) = self.phase else {
             return;
         };
+        self.two = two;
         let place = self.map.place(node);
         let again = self.progress.is_cleared(&place);
         let exit = match &self.map.nodes[node].kind {
@@ -249,6 +277,42 @@ impl MapPlay {
         let covered = self.lead.about || self.lead.changed.is_some_and(|p| frame <= p + 1);
         let n = (frame.saturating_sub(1) / 4 % 10) as usize;
         (!covered).then_some((n, self.lead.left))
+    }
+
+    /// Draws the other character at `at` if it is on the lead's page;
+    /// `view` is the page's left edge, the scale and the map's height.
+    fn draw_other(
+        &self,
+        canvas: &mut dyn Surface,
+        cast: &Cast,
+        screen: &LegsScreen,
+        at: clamber_level::Vec2,
+        view: (f64, f64, f64),
+    ) {
+        let legs = self.legs();
+        let (left_edge, scale, height) = view;
+        let (_, h) = canvas.view();
+        let (px, py) = (at.x.floor() as f64 - left_edge, at.y.floor() as f64);
+        if px < 0.0 || px >= f64::from(legs.page_width) {
+            return;
+        }
+        let py = if legs.y_up { height - py } else { py };
+        let origin = (
+            (px * scale - 1.0).floor() as i32,
+            (py * scale + (f64::from(h) - height * scale) / 2.0).floor() as i32,
+        );
+        let n = (screen.lead.frame().saturating_sub(1) / 4 % 8) as usize;
+        if cast.draw_map_other(canvas, n, self.other.left, origin) {
+            return;
+        }
+        let (bw, bh) = ((6.0 * scale) as i32, (10.0 * scale) as i32);
+        canvas.fill_rect(
+            origin.0 + 1 - bw / 2,
+            origin.1 - bh,
+            bw,
+            bh,
+            dim(OTHER, screen.brightness(legs)),
+        );
     }
 
     /// Draws the map as it is after the frame last run.
@@ -303,6 +367,9 @@ impl MapPlay {
             let r = (2.0 * scale).max(1.0);
             let (x, y, r) = (x.round() as i32, y.round() as i32, r.round() as i32);
             canvas.fill_rect(x - r, y - r, 2 * r, 2 * r, shade(color));
+        }
+        if let Some(at) = screen.lead.other_position() {
+            self.draw_other(canvas, cast, screen, at, (left_edge, scale, height));
         }
         let position = screen.lead.position();
         let Some((n, left)) = self.lead_picture() else {

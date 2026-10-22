@@ -512,7 +512,7 @@ impl Session {
             Item::Resume => self.screen = Screen::Playing,
             Item::Start if self.map.is_some() => {
                 if let Some(map) = &mut self.map {
-                    map.new_game();
+                    map.new_game(self.game.world.other.is_some());
                 }
                 self.screen = Screen::Map;
             }
@@ -1136,7 +1136,7 @@ impl Session {
         match self.game.world.flow.outcome {
             Outcome::Complete => match &mut self.map {
                 Some(map) if map.playing() => {
-                    map.finished();
+                    map.finished(self.game.world.other.is_some());
                     self.screen = Screen::Map;
                 }
                 _ => self.screen = Screen::complete(),
@@ -3295,7 +3295,7 @@ mod tests {
 
         // the map at full brightness
         let map = s.map.as_mut().unwrap();
-        map.new_game();
+        map.new_game(false);
         for _ in 0..40 {
             map.step(Actions::NONE);
         }
