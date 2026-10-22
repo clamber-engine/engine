@@ -167,7 +167,27 @@ impl Cast {
             self.bank.draw(canvas, &sprite);
             return;
         }
+        if let Some(sprite) = self.stand_in(player.character, player.state, x, y) {
+            let sprite = Sprite {
+                flip_x: player.facing == Facing::Left,
+                ..sprite
+            };
+            self.bank.draw(canvas, &sprite);
+            return;
+        }
         self.draw_character(canvas, player.character, player.facing, pose, x, y);
+    }
+
+    /// The nearest picture of the character in roster slot `slot` to what
+    /// it does in `state`, from its own sheet, when it has none for this
+    /// frame ([`pictures::stand_in`]). None if the pack has no pictures
+    /// of that character at all.
+    fn stand_in(&self, slot: usize, state: State, x: f32, y: f32) -> Option<Sprite> {
+        let &id = self.characters.get(&slot)?;
+        let sheet = self.bank.sheet(id);
+        let label = pictures::stand_in(slot, state, |l| sheet.animation(l).is_some())?;
+        let frame = *sheet.animation(label)?.frames.first()?;
+        Some(Sprite::new(id, frame, x - 1.0, y))
     }
 
     /// The player's own picture for `pose`, from the sheet of the
@@ -1245,8 +1265,11 @@ mod tests {
         let set = crate::pictures::labels(0, crate::pictures::Set::Bounce);
         for (labels, want) in [
             (set, [R, Color::default()]),
-            // Without its last picture the set isn't there: the engine's art.
-            (&set[..set.len() - 1], [Color::default(), R]),
+            // Without its last picture the set isn't there: the nearest
+            // picture the character has stands in, here the same one.
+            (&set[..set.len() - 1], [R, Color::default()]),
+            // With no picture of the character at all: the engine's art.
+            (&[][..], [Color::default(), R]),
         ] {
             let cast = Cast::new(vec![
                 (PLAYER.to_string(), sheet()),

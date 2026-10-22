@@ -1893,6 +1893,12 @@ impl Decoder for CharacterDecoder {
                 for note in notes {
                     pack.note(note);
                 }
+                pack.note(
+                    "the characters' pictures for poses the spec doesn't cover (such as a fall \
+                     off a ledge with a face, or teetering at a floor's edge): the nearest \
+                     converted picture of the same character stands in"
+                        .to_string(),
+                );
             }
             Err(reason) => pack.note(format!(
                 "the characters' pictures couldn't be converted: {reason}; the engine's own \

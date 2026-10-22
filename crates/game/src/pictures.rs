@@ -521,6 +521,55 @@ const SWAY: [(u8, u8); 39] = [
     (5, 3), (4, 3), (3, 3), (2, 3),
 ];
 
+/// The label of the picture nearest to what a character in roster slot
+/// `slot` does in `state`, for when it has none for this frame: the
+/// first of the state's own list that `has` says the character's sheet
+/// has, else its first standing picture, else any picture it has.
+pub fn stand_in(slot: usize, state: State, has: impl Fn(&str) -> bool) -> Option<&'static str> {
+    let first = slot == 0;
+    let near: &[Set] = match state {
+        State::Walk => &[Set::Walking],
+        State::Run => &[Set::Walking],
+        State::Roll => &[Set::Roll],
+        State::Jump | State::Fall => &[Set::Jump],
+        State::Bounce => &[Set::Bounce, Set::Jump],
+        State::Hurt => &[Set::Hurt],
+        State::GroundAction => &[Set::Crouch],
+        _ => &[],
+    };
+    let air = |labels: &[&'static str]| match state {
+        State::Fall => labels.iter().copied().find(|l| l.contains("air-")),
+        _ => None,
+    };
+    let own = near.iter().find_map(|&set| {
+        let labels = labels(slot, set);
+        let by_run = |prefix: &str| {
+            let prefix = format!("{}{prefix}", if first { "" } else { "s-" });
+            labels
+                .iter()
+                .copied()
+                .find(|l| l.starts_with(&prefix) && has(l))
+        };
+        match state {
+            State::Run => by_run("run-"),
+            State::Walk => by_run("walk-"),
+            State::Jump => by_run("rise-"),
+            _ => None,
+        }
+        .or_else(|| air(labels).filter(|l| has(l)))
+        .or_else(|| labels.iter().copied().find(|l| has(l)))
+    });
+    own.or_else(|| {
+        let sets = SETS.get(slot)?;
+        let standing = sets.iter().find(|(s, _)| *s == Set::Standing);
+        standing
+            .into_iter()
+            .chain(sets.iter())
+            .flat_map(|(_, labels)| labels.iter().copied())
+            .find(|l| has(l))
+    })
+}
+
 /// The labels of `set` for the character in roster slot `slot`.
 pub fn labels(slot: usize, set: Set) -> &'static [&'static str] {
     SETS.get(slot)
@@ -3156,5 +3205,25 @@ mod tests {
         let l = jumped.frames(Event::Land)[0];
         jumped.check(t - 2, &[("s-carry-2", l + 2 - (t - 2))]);
         assert_eq!(jumped.shown[l + 2], Some("s-hold"));
+    }
+}
+
+#[cfg(test)]
+mod stand_in_tests {
+    use super::*;
+
+    #[test]
+    fn nearest_picture_is_of_the_same_character() {
+        let only = |names: &'static [&'static str]| move |l: &str| names.contains(&l);
+        let sheet = only(&["stand-1", "air-0", "air-1", "rise-1"]);
+        assert_eq!(stand_in(0, State::Fall, &sheet), Some("air-0"));
+        assert_eq!(stand_in(0, State::Jump, &sheet), Some("rise-1"));
+        assert_eq!(stand_in(0, State::Walk, &sheet), Some("stand-1"));
+        assert_eq!(stand_in(0, State::Idle, &sheet), Some("stand-1"));
+        let second = only(&["s-air-1", "s-stand-1", "s-walk-1"]);
+        assert_eq!(stand_in(1, State::Fall, &second), Some("s-air-1"));
+        assert_eq!(stand_in(1, State::Walk, &second), Some("s-walk-1"));
+        assert_eq!(stand_in(1, State::Roll, &second), Some("s-stand-1"));
+        assert_eq!(stand_in(0, State::Fall, only(&[])), None);
     }
 }
