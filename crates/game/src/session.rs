@@ -1136,7 +1136,10 @@ impl Session {
         match self.game.world.flow.outcome {
             Outcome::Complete => match &mut self.map {
                 Some(map) if map.playing() => {
-                    map.finished(self.game.world.other.is_some());
+                    map.finished(
+                        self.game.world.other.is_some(),
+                        self.game.world.player.character == 1,
+                    );
                     self.screen = Screen::Map;
                 }
                 _ => self.screen = Screen::complete(),
@@ -3359,6 +3362,31 @@ mod tests {
             other.expect("the other character").x.floor(),
             lead.x.floor() - 16
         );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// spec/behavior/level-map.md, "When the second character leads": the
+    /// pictures follow the character, so the second as the lead cycles
+    /// through 8 and the first as the other through 10.
+    #[test]
+    fn the_second_character_leading_the_map_has_its_own_cycle() {
+        let dir = map_pack("map-second-leads");
+        let mut map = MapPlay::load(&dir).unwrap().unwrap();
+        map.new_game(true);
+        for _ in 0..40 {
+            map.step(Actions::NONE);
+        }
+        let first = map.lead_picture().unwrap().0;
+        map.second_leads = true;
+        let second = map.lead_picture().unwrap().0;
+        let MapPhase::Shown(screen) = &map.phase else {
+            panic!("shown");
+        };
+        let counted = (screen.lead.frame() - 1) / 4;
+        assert_eq!(first as u64, counted % 10);
+        assert_eq!(second as u64, counted % 8);
+        map.new_game(true);
+        assert!(!map.second_leads, "a new game starts with the first");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

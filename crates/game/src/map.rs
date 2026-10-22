@@ -74,6 +74,9 @@ pub struct MapPlay {
     other: LeadLook,
     /// Whether there are two characters on the map.
     two: bool,
+    /// Whether the second character is the lead: the pictures follow the
+    /// characters, not the places (`level-map.md`, "Pictures").
+    pub(crate) second_leads: bool,
 }
 
 /// What the lead's picture on the map depends on besides where it is
@@ -117,6 +120,7 @@ impl MapPlay {
             lead: LeadLook::default(),
             other: LeadLook::default(),
             two: false,
+            second_leads: false,
         })
     }
 
@@ -136,6 +140,7 @@ impl MapPlay {
         }
         self.progress = Progress::default();
         self.two = two;
+        self.second_leads = false;
         self.phase = MapPhase::Shown(Box::new(screen));
         self.lead = LeadLook::default();
         self.other = LeadLook::default();
@@ -234,11 +239,12 @@ impl MapPlay {
     /// The level entered from the map was finished: records it, and
     /// shows the map after the black frames. Does nothing unless a level
     /// entered from the map is being played.
-    pub fn finished(&mut self, two: bool) {
+    pub fn finished(&mut self, two: bool, second_leads: bool) {
         let MapPhase::Playing(node) = self.phase else {
             return;
         };
         self.two = two;
+        self.second_leads = second_leads;
         let place = self.map.place(node);
         let again = self.progress.is_cleared(&place);
         let exit = match &self.map.nodes[node].kind {
@@ -266,7 +272,8 @@ impl MapPlay {
     }
 
     /// The lead's map picture on the frame last run, 0 to 9 for
-    /// `map-lead-1` to `map-lead-10`, and whether it is mirrored; None
+    /// `map-lead-1` to `map-lead-10` (0 to 7 for `map-other-1` to
+    /// `map-other-8` when the second character leads), and whether it is mirrored; None
     /// when the map isn't shown or the lead isn't drawn, on the frames
     /// around a page change (`level-map.md`, "Pictures").
     pub fn lead_picture(&self) -> Option<(usize, bool)> {
@@ -275,7 +282,8 @@ impl MapPlay {
         };
         let frame = screen.lead.frame();
         let covered = self.lead.about || self.lead.changed.is_some_and(|p| frame <= p + 1);
-        let n = (frame.saturating_sub(1) / 4 % 10) as usize;
+        let cycle = if self.second_leads { 8 } else { 10 };
+        let n = (frame.saturating_sub(1) / 4 % cycle) as usize;
         (!covered).then_some((n, self.lead.left))
     }
 
@@ -301,8 +309,13 @@ impl MapPlay {
             (px * scale - 1.0).floor() as i32,
             (py * scale + (f64::from(h) - height * scale) / 2.0).floor() as i32,
         );
-        let n = (screen.lead.frame().saturating_sub(1) / 4 % 8) as usize;
-        if cast.draw_map_other(canvas, n, self.other.left, origin) {
+        let n = |cycle| (screen.lead.frame().saturating_sub(1) / 4 % cycle) as usize;
+        let drawn = if self.second_leads {
+            cast.draw_map_lead(canvas, n(10), self.other.left, origin)
+        } else {
+            cast.draw_map_other(canvas, n(8), self.other.left, origin)
+        };
+        if drawn {
             return;
         }
         let (bw, bh) = ((6.0 * scale) as i32, (10.0 * scale) as i32);
@@ -382,7 +395,12 @@ impl MapPlay {
             py * scale + (f64::from(h) - height * scale) / 2.0,
         );
         let origin = (origin.0.floor() as i32, origin.1.floor() as i32);
-        if cast.draw_map_lead(canvas, n, left, origin) {
+        let drawn = if self.second_leads {
+            cast.draw_map_other(canvas, n, left, origin)
+        } else {
+            cast.draw_map_lead(canvas, n, left, origin)
+        };
+        if drawn {
             return;
         }
         let (x, y) = at(position);
