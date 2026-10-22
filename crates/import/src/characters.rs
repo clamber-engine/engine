@@ -1091,6 +1091,59 @@ const FIRST: &[PictureSet] = &[
             ),
         ],
     },
+    PictureSet {
+        name: "rope",
+        pictures: &[
+            (
+                "rope-hang-1",
+                "e457b7014286f0d3f1c31d240636cf54a53ff1e6d42e1a2c9f453da9f09d4616",
+            ),
+            (
+                "rope-hang-2",
+                "33992e6fdb8a542f7240a0a4bac26204723c4b2a7193c813d98ecb38bcca1f13",
+            ),
+            (
+                "rope-hang-3",
+                "23b55e719fde7d9b1e20d28165455d16b6335d523622e2e510f000d4c3b8ae0a",
+            ),
+            (
+                "rope-hang-4",
+                "64fbcdc96f2654a1e2761e765f9150ec2253f861bde8d1f59ee81844c99ff6c0",
+            ),
+            (
+                "rope-turn-1",
+                "d5717ff11b38aa1ed7eef6fb4cc3eb15b13b7f67ce6a924f62ade0145c78135a",
+            ),
+            (
+                "rope-turn-2",
+                "b955311812452b4847963507e303711464dc15ef697208f629c46bf08efdd7ed",
+            ),
+            (
+                "rope-climb-1",
+                "d5aff97c81fdb87aeb09a946b7a4cd7b16c929427599ec278fdeca71040f79eb",
+            ),
+            (
+                "rope-climb-2",
+                "248f0bf0e34abd243ba5033fb20842f9d40fa1259fb3ad678a90ff0ece05d5df",
+            ),
+            (
+                "rope-climb-3",
+                "4b91728e6a111955aa0c85aeccc7bf4236dfb900b0394aff495839850d9e3a1f",
+            ),
+            (
+                "rope-climb-4",
+                "852e32b33b3fbd4545d1f2f2c3ba52bff717ed4e1ca27dd71e0ae81809d794ed",
+            ),
+            (
+                "rope-climb-5",
+                "4b029f2b1dd49e52c9e98e2af7db63af41e602416fa4b877976a92e8cd7dfdfe",
+            ),
+            (
+                "rope-climb-6",
+                "fd60685a4f8e2e9cc5fe66699b137f67ac963bc41e4440f1ffaf271702d5a730",
+            ),
+        ],
+    },
 ];
 
 /// The second character's sets, as [`FIRST`].

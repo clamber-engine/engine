@@ -79,6 +79,8 @@ pub enum Set {
     Hurt,
     /// The first character's ground action.
     Act,
+    /// The first character on a rope.
+    Rope,
 }
 
 /// Each set's labels, for the first character (slot 0) and the second
@@ -128,6 +130,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
         (Set::Carry, &CARRYING),
         (Set::Hurt, &HURT),
         (Set::Act, &ACT),
+        (Set::Rope, &ROPE),
     ],
     &[
         (
@@ -231,6 +234,74 @@ const ACT: [&str; 30] = [
     "act-11", "act-12", "act-13", "act-14", "act-15", "act-16", "act-17", "act-18", "act-19",
     "act-20", "act-21", "act-22", "act-23", "act-24", "act-25", "act-26", "act-27", "act-28",
     "act-29", "act-30",
+];
+
+/// The first character's rope pictures.
+const ROPE: [&str; 12] = [
+    "rope-hang-1",
+    "rope-hang-2",
+    "rope-hang-3",
+    "rope-hang-4",
+    "rope-turn-1",
+    "rope-turn-2",
+    "rope-climb-1",
+    "rope-climb-2",
+    "rope-climb-3",
+    "rope-climb-4",
+    "rope-climb-5",
+    "rope-climb-6",
+];
+
+/// The hanging cycle, 9 frames each ("On a rope", "Hanging").
+const HANG: [&str; 6] = [
+    "rope-hang-1",
+    "rope-hang-2",
+    "rope-hang-3",
+    "rope-hang-4",
+    "rope-hang-3",
+    "rope-hang-2",
+];
+
+/// The climbing cycle ("Climbing").
+const CLIMB: [&str; 10] = [
+    "rope-climb-1",
+    "rope-climb-2",
+    "rope-climb-3",
+    "rope-climb-4",
+    "rope-climb-5",
+    "rope-climb-6",
+    "rope-climb-5",
+    "rope-climb-4",
+    "rope-climb-3",
+    "rope-climb-2",
+];
+
+/// What the first character does on a rope, as the pictures follow it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OnRope {
+    /// Turning round the rope.
+    Turn,
+    /// Hanging, this many frames since the cycle started.
+    Hang(u32),
+    /// Climbing: the picture in the cycle, the climb counter, and the
+    /// direction (1 up, -1 down) that started the cycle.
+    Climb { at: u8, counter: i32, dir: i8 },
+}
+
+/// The first character leaving a rope.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OffRope {
+    /// Jumping off, this many frames after P, and the frames since `vy`
+    /// first was above 0.
+    Jump { age: u8, falling: Option<u8> },
+    /// Sliding off the end, this many frames after the let-go frame.
+    Slide(u8),
+}
+
+/// The first character's rope pictures after a slide off the end, from F
+/// (`land-2`) by pairs of frames.
+const SLIDE: [&str; 7] = [
+    "land-1", "air-6", "air-5", "air-4", "air-3", "air-4", "air-5",
 ];
 
 /// The first character's being-hurt pictures: `hurt-1` to `hurt-14` and
@@ -547,6 +618,7 @@ pub fn stand_in(slot: usize, state: State, has: impl Fn(&str) -> bool) -> Option
         State::Bounce => &[Set::Bounce, Set::Jump],
         State::Hurt => &[Set::Hurt],
         State::GroundAction => &[Set::Act, Set::Crouch],
+        State::Hold => &[Set::Rope],
         _ => &[],
     };
     let air = |labels: &[&'static str]| match state {
@@ -651,6 +723,10 @@ pub struct PictureClock {
     /// The frames after the hit on which a knock-out's three landings
     /// came.
     hurt_landings: [Option<u16>; 3],
+    /// What the first character does on a rope, on the frame before.
+    rope: Option<OnRope>,
+    /// Leaving a rope.
+    off_rope: Option<OffRope>,
     /// What the player shows on this frame.
     shown: Option<(Set, &'static str)>,
 }
@@ -813,6 +889,13 @@ impl PictureClock {
             return;
         }
 
+        if first && let Some(shown) = self.on_rope(world) {
+            self.standing = None;
+            self.landed = None;
+            self.shown = Some(shown);
+            return;
+        }
+
         let hands = player.hands;
         let playing = matches!(world.flow.outcome, Outcome::Playing)
             && !matches!(
@@ -825,7 +908,16 @@ impl PictureClock {
             return;
         }
 
-        self.shown = if let Some(hands) = hands {
+        let from_rope = before.is_some_and(|(set, _)| set == Set::Rope);
+        let after_rope = if first {
+            self.after_rope(world, from_rope)
+        } else {
+            None
+        };
+        self.shown = if let Some(shown) = after_rope {
+            self.landed = None;
+            Some(shown)
+        } else if let Some(hands) = hands {
             self.landed = None;
             self.put_down_end = hands.act == Act::PutDown
                 && i64::from(hands.frame) + 1 == physics[Param::PutDownTime].floor()
@@ -907,6 +999,140 @@ impl PictureClock {
 }
 
 impl PictureClock {
+    /// The first character's picture on a frame that ends holding a
+    /// rope ("On a rope").
+    fn on_rope(&mut self, world: &World) -> Option<(Set, &'static str)> {
+        let player = &world.player;
+        let Some(on) = player.rope else {
+            self.rope = None;
+            return None;
+        };
+        self.off_rope = None;
+        let caught = world.events.contains(&Event::RopeCatch);
+        let before = std::mem::take(&mut self.rope).filter(|_| !caught);
+        let dir = on.climbing;
+        let start = |dir: i8| OnRope::Climb {
+            at: 0,
+            counter: 512,
+            dir,
+        };
+        if let Some(n) = on.turn {
+            self.rope = Some(OnRope::Turn);
+            let label = if (3..=6).contains(&n) {
+                "rope-turn-2"
+            } else {
+                "rope-turn-1"
+            };
+            return Some((Set::Rope, label));
+        }
+        let now = match before {
+            _ if caught => OnRope::Hang(0),
+            None | Some(OnRope::Turn) if dir != 0 => start(dir),
+            None | Some(OnRope::Turn) => OnRope::Hang(0),
+            Some(OnRope::Hang(_)) if dir != 0 => start(dir),
+            Some(OnRope::Hang(n)) => OnRope::Hang(n + 1),
+            Some(OnRope::Climb {
+                at,
+                counter,
+                dir: from,
+            }) => {
+                // The climbing speed, in 1/256 px a frame.
+                let vy = player.vel.y.to_bits() >> 24;
+                let u = vy.unsigned_abs() as i32;
+                let rate = if vy < 0 { u / 2 + u / 4 } else { u / 4 + u / 8 }.max(112);
+                let counter = counter - rate;
+                if counter > 0 {
+                    OnRope::Climb {
+                        at,
+                        counter,
+                        dir: from,
+                    }
+                } else if at + 1 < 10 {
+                    OnRope::Climb {
+                        at: at + 1,
+                        counter: counter + 512,
+                        dir: from,
+                    }
+                } else if dir == 0 {
+                    // The check: no direction held, so it hangs.
+                    OnRope::Hang(0)
+                } else {
+                    OnRope::Climb {
+                        at: 0,
+                        counter: if dir == from { counter + 512 } else { 512 },
+                        dir,
+                    }
+                }
+            }
+        };
+        self.rope = Some(now);
+        Some((
+            Set::Rope,
+            match now {
+                OnRope::Turn => unreachable!("a turn returns above"),
+                OnRope::Hang(n) => HANG[(n / 9) as usize % HANG.len()],
+                OnRope::Climb { at, .. } => CLIMB[usize::from(at)],
+            },
+        ))
+    }
+
+    /// The first character's picture on the frames after it has left a
+    /// rope ("After the rope"), where covered.
+    fn after_rope(&mut self, world: &World, from_rope: bool) -> Option<(Set, &'static str)> {
+        let player = &world.player;
+        let events = &world.events;
+        if player.grounded() || events.contains(&Event::Land) || player.rope.is_some() {
+            self.off_rope = None;
+        }
+        if events.contains(&Event::RopeSlideOff) {
+            // The let-go frame itself isn't covered.
+            self.off_rope = Some(OffRope::Slide(0));
+            return None;
+        }
+        if events.contains(&Event::JumpStart) && from_rope {
+            self.off_rope = Some(OffRope::Jump {
+                age: 0,
+                falling: None,
+            });
+        } else {
+            self.off_rope = match self.off_rope {
+                Some(OffRope::Slide(n)) if n < 15 => Some(OffRope::Slide(n + 1)),
+                Some(OffRope::Slide(_)) => None,
+                Some(OffRope::Jump { age, falling }) => {
+                    let falling = match falling {
+                        Some(m) => Some(m.saturating_add(1)),
+                        None => (player.vel.y.to_bits() > 0).then_some(0),
+                    };
+                    Some(OffRope::Jump {
+                        age: age.saturating_add(1),
+                        falling,
+                    })
+                }
+                None => None,
+            };
+        }
+        let label = match self.off_rope? {
+            OffRope::Slide(0) => return None,
+            OffRope::Slide(1) => "land-2",
+            OffRope::Slide(n) => SLIDE[usize::from(n - 2) / 2],
+            OffRope::Jump { age: 0, .. } => "land-1",
+            OffRope::Jump {
+                falling: Some(m), ..
+            } => match m {
+                0 => "air-4",
+                1..=3 => "air-5",
+                _ => "air-6",
+            },
+            OffRope::Jump { age, .. } => match age {
+                1..=2 => "air-6",
+                3..=4 => "air-5",
+                5..=6 => "air-4",
+                _ => "air-3",
+            },
+        };
+        Some((Set::Jump, label))
+    }
+
     /// A character with an object in its hands ("Carrying"). `hold`:
     /// frames standing with it before this one.
     fn handling(
@@ -1272,7 +1498,7 @@ mod tests {
     use clamber_input::{Action, Actions, Frame};
     use clamber_level::Level;
     use clamber_pack::{CharacterFeel, Presets};
-    use clamber_sim::{InputFrame, ROLL, generic_feel, step};
+    use clamber_sim::{Event, InputFrame, ROLL, generic_feel, step};
 
     use super::*;
     use crate::game::jump_in;
@@ -2977,6 +3203,158 @@ mod tests {
         );
     }
 
+    /// A rope at 500 ending at 110 beside a platform at 160, with a floor
+    /// far below, and the first character standing under it.
+    const ROPE_LEVEL: &str = r#"
+        format = 1
+        size = [2000, 800]
+        start = [490, 160]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 160, 495, 20]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 700, 2000, 100]
+
+        [[entities]]
+        type = "rope"
+        at = [500, 110]
+    "#;
+
+    /// Keys holding Jump up to and on the catch frame, then `after(k)`
+    /// for each frame k after it; and the catch frame.
+    fn rope_keys(after: impl Fn(usize) -> Vec<Action>, total: usize) -> (Vec<Vec<Action>>, usize) {
+        let mut probe = world(ROPE_LEVEL, 0);
+        let mut catch = None;
+        let mut held = Actions::NONE;
+        for k in 0..200 {
+            let now: Actions = [Action::Jump].into_iter().collect();
+            step(&mut probe, &InputFrame::single(Frame::after(held, now)));
+            held = now;
+            if probe.events.contains(&Event::RopeCatch) {
+                catch = Some(k);
+                break;
+            }
+        }
+        let c = catch.expect("caught");
+        let keys = (0..total)
+            .map(|k| {
+                if k <= c {
+                    vec![Action::Jump]
+                } else {
+                    after(k - c)
+                }
+            })
+            .collect();
+        (keys, c)
+    }
+
+    #[test]
+    fn the_first_character_climbs_a_rope_by_the_specs_example() {
+        // player-frames.md, "On a rope": a catch on C, Up on C + 1 to C + 45.
+        let (keys, c) = rope_keys(|k| if k <= 45 { vec![Action::Up] } else { vec![] }, 80);
+        let run = run(world(ROPE_LEVEL, 0), &keys);
+        assert_eq!(run.shown[c], Some("rope-hang-1"));
+        let expect = [
+            ("rope-climb-1", 1, 5),
+            ("rope-climb-2", 6, 8),
+            ("rope-climb-3", 9, 10),
+            ("rope-climb-4", 11, 12),
+            ("rope-climb-5", 13, 14),
+            ("rope-climb-6", 15, 16),
+            ("rope-climb-5", 17, 18),
+            ("rope-climb-4", 19, 20),
+            ("rope-climb-3", 21, 22),
+            ("rope-climb-2", 23, 24),
+            ("rope-climb-1", 25, 25),
+        ];
+        for (label, from, to) in expect {
+            for k in from..=to {
+                assert_eq!(run.shown[c + k], Some(label), "C + {k}");
+            }
+        }
+    }
+
+    #[test]
+    fn turning_round_a_rope_shows_the_turn_pictures() {
+        // Holding the way faced on C + 1 starts a turn there (T).
+        let (keys, c) = rope_keys(|k| if k == 1 { vec![Action::Right] } else { vec![] }, 30);
+        let run = run(world(ROPE_LEVEL, 0), &keys);
+        let t = c + 1;
+        assert_eq!(run.shown[c], Some("rope-hang-1"));
+        let expect = [1, 1, 2, 2, 2, 2, 1, 1];
+        for (k, n) in expect.into_iter().enumerate() {
+            assert_eq!(run.shown[t + k], Some(ROPE[3 + n]), "T + {k}");
+        }
+        assert_eq!(run.shown[t + 8], Some("rope-hang-1"));
+    }
+
+    #[test]
+    fn hanging_cycles_nine_frames_a_picture() {
+        let (keys, c) = rope_keys(|_| vec![], 90);
+        let run = run(world(ROPE_LEVEL, 0), &keys);
+        let cycle = [1, 2, 3, 4, 3, 2, 1, 2];
+        for (n, picture) in cycle.into_iter().enumerate() {
+            for k in 0..9 {
+                assert_eq!(run.shown[c + 9 * n + k], Some(HANG[picture - 1]), "{n} {k}");
+            }
+        }
+    }
+
+    #[test]
+    fn jumping_off_a_rope_shows_the_air_pictures_in_order() {
+        // Jump released on C + 1, pressed with Right on C + 2 = P.
+        let (keys, c) = rope_keys(
+            |k| match k {
+                1 => vec![],
+                _ => vec![Action::Jump, Action::Right],
+            },
+            30,
+        );
+        let run = run(world(ROPE_LEVEL, 0), &keys);
+        let p = c + 2;
+        assert_eq!(run.shown[p - 1], Some("rope-hang-1"));
+        let expect = [
+            "land-1", "air-6", "air-6", "air-5", "air-5", "air-4", "air-4", "air-3",
+        ];
+        for (k, label) in expect.into_iter().enumerate() {
+            assert_eq!(run.shown[p + k], Some(label), "P + {k}");
+        }
+    }
+
+    #[test]
+    fn sliding_off_the_end_of_a_rope() {
+        let (keys, c) = rope_keys(|_| vec![Action::Down], 40);
+        let run = run(world(ROPE_LEVEL, 0), &keys);
+        let l = (c..keys.len())
+            .find(|&k| run.events[k].contains(&Event::RopeSlideOff))
+            .expect("slid off");
+        let f = l + 1;
+        assert_eq!(run.shown[f], Some("land-2"));
+        for (n, label) in [
+            "land-1", "air-6", "air-5", "air-4", "air-3", "air-4", "air-5",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(run.shown[f + 1 + 2 * n], Some(label), "F + {}", 1 + 2 * n);
+            assert_eq!(run.shown[f + 2 + 2 * n], Some(label), "F + {}", 2 + 2 * n);
+        }
+    }
+
+    #[test]
+    fn the_second_character_keeps_the_engine_s_art_on_a_rope() {
+        let (keys, c) = rope_keys(|_| vec![], 20);
+        let run = run(world(ROPE_LEVEL, 1), &keys);
+        assert!(
+            run.shown[c..]
+                .iter()
+                .all(|l| !l.is_some_and(|l| l.starts_with("rope-")))
+        );
+    }
+
     #[test]
     fn the_sets_are_the_importer_s() {
         for (slot, sets) in SETS.iter().enumerate() {
@@ -2994,6 +3372,7 @@ mod tests {
                     Set::Carry => "carry",
                     Set::Hurt => "hurt",
                     Set::Act => "act",
+                    Set::Rope => "rope",
                 };
                 let theirs = character.sets.iter().find(|s| s.name == name).unwrap();
                 let theirs: Vec<&str> = theirs.pictures.iter().map(|&(l, _)| l).collect();

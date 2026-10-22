@@ -58,6 +58,10 @@ pub struct OnRope {
     /// Which frame of a turn round the rope the last one was, counting
     /// from 1, while one goes on.
     pub turn: Option<u8>,
+    /// The climbing direction held on the last frame: 1 up, -1 down, 0
+    /// none. Up doesn't count where the top of the view moved the player
+    /// down; Down wins over Up. Only the pictures read it.
+    pub climbing: i8,
 }
 
 /// The rope values of `thing`, if it is one.
@@ -126,6 +130,7 @@ pub(crate) fn catch(world: &mut World) {
             thing,
             values,
             turn: None,
+            climbing: 0,
         });
         // The catch frame is a `rope` row: of the frame's move in the air
         // only a turn is kept ("In a trace").
@@ -210,9 +215,15 @@ pub(crate) fn hold(world: &mut World, input: &Frame) -> bool {
         let u = ease(-p.vel.y, target, rope.climb_response);
         p.vel.y = -u;
         // 6.
+        let pushed = !target.is_negative() && ceil(p.pos.y) < view_top;
         if !target.is_negative() {
             below_view(p);
         }
+        on.climbing = if down {
+            -1
+        } else {
+            i8::from(target.to_bits() > 0 && !pushed)
+        };
         // 7.
         p.pos.y += p.vel.y;
         if slides {
