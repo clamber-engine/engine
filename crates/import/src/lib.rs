@@ -86,7 +86,7 @@ pub use locators::{Data, first_level, first_level_ground, first_room, first_scen
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable, Widescreen};
 pub use music::{Fit, LevelSong, Music, RATE, render};
 pub use nibbles::{NIBBLE_HEADER, unpack_nibbles};
-pub use objects::{ObjectDecoder, PENDING_SHEETS, written_sheets};
+pub use objects::{ObjectDecoder, ObjectPalette, ObjectSheet, PENDING_SHEETS, written_sheets};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements, RECORD_SIZE, Record};
 pub use replacements::{
     ART_FORMAT, ART_MANIFEST, ArtManifest, DUMP_INDEX, MAX_FACTOR, PICTURES, Replacements, art_dir,

@@ -30,7 +30,7 @@ use crate::{
 
 /// The sprite palettes that colour objects' pictures.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ObjectPalette {
+pub enum ObjectPalette {
     Shared,
     Thrown,
     Crate,
@@ -46,7 +46,8 @@ pub(crate) enum ObjectPalette {
 }
 
 /// One sheet: its name and its pictures by label, picture hash and palette.
-pub(crate) struct ObjectSheet {
+#[derive(Debug, PartialEq, Eq)]
+pub struct ObjectSheet {
     pub name: &'static str,
     pub pictures: &'static [(&'static str, &'static str, ObjectPalette)],
 }
@@ -92,9 +93,30 @@ pub struct ObjectDecoder {
     /// Entries in the frame table.
     entries: usize,
     palettes: Vec<(ObjectPalette, Location)>,
+    /// The sheets to write.
+    sheets: &'static [ObjectSheet],
 }
 
 impl ObjectDecoder {
+    /// A decoder for `title` with its frame table (of `entries`),
+    /// palettes and sheets given, for images the spec doesn't describe
+    /// (made-up ones in tests).
+    pub fn custom(
+        title: &str,
+        table: Location,
+        entries: usize,
+        palettes: Vec<(ObjectPalette, Location)>,
+        sheets: &'static [ObjectSheet],
+    ) -> ObjectDecoder {
+        ObjectDecoder {
+            title: title.to_string(),
+            table,
+            entries,
+            palettes,
+            sheets,
+        }
+    }
+
     /// The objects' pictures of `title`, where the spec says where their
     /// frames and palettes are.
     pub fn of(title: &str) -> Option<ObjectDecoder> {
@@ -125,13 +147,14 @@ impl ObjectDecoder {
             table: at(Data::FrameTable)?,
             entries,
             palettes,
+            sheets: crate::object_hashes::SHEETS,
         })
     }
 
     /// The sheets' files, by path in the pack, and notes for the import
     /// report.
     pub fn sheets(&self, image: &Image) -> Result<(Files, Vec<String>), String> {
-        self.sheets_of(image, crate::object_hashes::SHEETS)
+        self.sheets_of(image, self.sheets)
     }
 
     fn sheets_of(
@@ -330,6 +353,7 @@ mod tests {
             table: at(TABLE),
             entries: TABLE_FRAMES,
             palettes: vec![(Shared, at(SHARED_AT)), (Thrown, at(THROWN_AT))],
+            sheets: &[],
         }
     }
 
