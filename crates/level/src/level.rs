@@ -173,6 +173,10 @@ pub struct Scene {
     /// How many frames each step of the fade-out lasts, at least 1: the
     /// picture is black once the steps from `fade` reach `last`.
     pub fade_step: u32,
+    /// How many frames shorter the scene is when a character other than
+    /// the first leads: `fade` and `last` both come that many frames
+    /// earlier. 0 if the lead makes no difference.
+    pub shorter: u32,
     /// The other area of the pack play goes on in after the last frame,
     /// the file name of its level without `.level`; this level without
     /// one.
@@ -561,6 +565,8 @@ struct SceneFile {
     last: u32,
     fade: u32,
     fade_step: u32,
+    #[serde(default)]
+    shorter: u32,
     area: Option<String>,
     arrival: Option<String>,
 }
@@ -1020,6 +1026,9 @@ impl Reader<'_> {
                 "must leave a step of the fade before `last`",
             ));
         }
+        if s.shorter > s.fade {
+            return Err(self.err(&format!("{at}.shorter"), "must not be more than `fade`"));
+        }
         for (key, name) in [("area", &s.area), ("arrival", &s.arrival)] {
             if let Some(name) = name
                 && !is_name(name)
@@ -1034,6 +1043,7 @@ impl Reader<'_> {
             last: s.last,
             fade: s.fade,
             fade_step: s.fade_step,
+            shorter: s.shorter,
             area: s.area,
             arrival: s.arrival,
         })
@@ -1635,8 +1645,11 @@ impl Level {
                 ("last", s.last),
                 ("fade", s.fade),
                 ("fade_step", s.fade_step),
+                ("shorter", s.shorter),
             ] {
-                st.insert(key.into(), Value::Integer(n.into()));
+                if key != "shorter" || n > 0 {
+                    st.insert(key.into(), Value::Integer(n.into()));
+                }
             }
             for (key, name) in [("area", &s.area), ("arrival", &s.arrival)] {
                 if let Some(name) = name {

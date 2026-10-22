@@ -285,12 +285,14 @@ struct Leads {
 /// The scene of a level, as `exits.md` has the first level's ("The
 /// scene"): frame 396 is its last, and the brightness is 15 − `j` on
 /// frames 365 + 2`j` and 366 + 2`j`, so 15 to frame 366 and 0 on 395 and
-/// 396. Then play goes on in `level` at its [`SCENE_RETURN`] arrival.
+/// 396, all 30 frames earlier with the second character leading. Then
+/// play goes on in `level` at its [`SCENE_RETURN`] arrival.
 fn scene_of(level: &str) -> Scene {
     Scene {
         last: 396,
         fade: 365,
         fade_step: 2,
+        shorter: 30,
         area: Some(level.into()),
         arrival: Some(SCENE_RETURN.into()),
     }

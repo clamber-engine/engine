@@ -360,3 +360,35 @@ fn the_scene_plays_by_itself_and_goes_back_to_the_level() {
     assert_eq!(brightness[396], (0, 15));
     assert_eq!(world.flow.outcome, Outcome::Ended);
 }
+
+/// exits.md, "The scene": with the second character leading the scene is
+/// 30 frames shorter, the picture fades out from frame 336 and frame 366
+/// is the last.
+#[test]
+fn the_scene_is_shorter_with_the_second_character_leading() {
+    let (level, _) = imported_scene("shorter");
+    let arrival = level.arrival(FROM_LEVEL).unwrap().clone();
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: Default::default(),
+    });
+    let mut world = World::arriving(Arc::new(level), Arc::new(feel), &arrival);
+    world.player.character = 1;
+    let mut brightness = Vec::new();
+    for k in 0..=366u32 {
+        assert!(!world.flow.outcome.is_over(), "over before frame {k}");
+        step(
+            &mut world,
+            &InputFrame::single(Frame::after(Actions::NONE, Actions::NONE)),
+        );
+        brightness.push(world.brightness());
+    }
+    assert_eq!(brightness[334], (15, 15));
+    assert_eq!(brightness[335], (15, 15));
+    assert_eq!(brightness[336], (15, 15));
+    assert_eq!(brightness[337], (14, 15));
+    assert_eq!(brightness[365], (0, 15));
+    assert_eq!(brightness[366], (0, 15));
+    assert_eq!(world.flow.outcome, Outcome::Ended);
+}

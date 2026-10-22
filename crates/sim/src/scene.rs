@@ -7,7 +7,8 @@
 //! where it is; nothing held or pressed has any effect, and everything
 //! else waits. The picture fades out a step every `fade_step` frames
 //! from the scene's `fade` frame, at full brightness, and is black on
-//! its `last` frame ([`World::brightness`]). At the end of the last frame
+//! its `last` frame ([`World::brightness`]); both come `shorter` frames
+//! earlier with a character other than the first leading. At the end of the last frame
 //! the area is over ([`Outcome::Ended`]), whatever was pressed.
 //!
 //! Engine choice where the spec says nothing: play that comes in without
@@ -30,10 +31,20 @@ impl World {
         let scene = self.level.scene.as_ref()?;
         // The frame just shown.
         let shown = self.frame.checked_sub(1)?;
-        let since = shown.checked_sub(scene.fade)?;
+        let cut = self.scene_cut();
+        let since = shown.checked_sub(scene.fade - cut)?;
         let step = scene.fade_step.max(1);
         let full = (scene.last.saturating_sub(scene.fade) / step).max(1);
         Some((full - (since / step).min(full), full))
+    }
+
+    /// How many frames earlier the scene's fade and last frame are, by
+    /// who leads.
+    fn scene_cut(&self) -> u32 {
+        match (&self.level.scene, self.player.character) {
+            (Some(scene), 1..) => scene.shorter,
+            _ => 0,
+        }
     }
 }
 
@@ -45,6 +56,7 @@ pub(crate) fn hold(world: &mut World, walking: bool) -> bool {
     let Some(last) = world.level.scene.as_ref().map(|s| s.last) else {
         return false;
     };
+    let last = last - world.scene_cut();
     if !walking {
         let player = &mut world.player;
         player.vel.x = Fixed::ZERO;
