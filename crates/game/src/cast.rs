@@ -166,6 +166,14 @@ impl Cast {
         y: f32,
     ) {
         let player = &world.player;
+        // Inside a launch barrel nothing of the character is drawn
+        // (player-frames.md, "In a launch barrel").
+        if player
+            .sling
+            .is_some_and(|s| (1..=u16::from(s.values.hold)).contains(&s.since))
+        {
+            return;
+        }
         if let Some(sprite) = self.picture(player.character, pose, x, y) {
             let sprite = Sprite {
                 flip_x: player.facing == Facing::Left,

@@ -956,6 +956,19 @@ impl PictureClock {
             self.shown = scene_lead(self.slot, frame, last);
             return;
         }
+        // In a launch barrel ("In a launch barrel"): the bounce pictures
+        // one to a frame from the shot of a barrel that shoots left. The
+        // shot of one that shoots down isn't covered and goes on as usual.
+        if let Some(slung) = player.sling
+            && slung.since > u16::from(slung.values.hold)
+            && !crate::sling_pictures::shoots_down(&slung.values)
+        {
+            let n = usize::from(slung.since - u16::from(slung.values.hold) - 1);
+            self.shown = Some((Set::Bounce, labels(self.slot, Set::Bounce)[n % 16]));
+            self.standing = None;
+            self.landed = None;
+            return;
+        }
         let before = std::mem::take(&mut self.shown);
         let crouched = std::mem::replace(
             &mut self.crouched,
@@ -2497,6 +2510,57 @@ mod tests {
             i += 1;
         }
         want
+    }
+
+    /// A player standing on a barrel that shoots left, on flat floor.
+    fn barrel_world(slot: usize) -> World {
+        let src = r#"
+            format = 1
+            name = "barrel"
+            size = [4000, 800]
+            start = [600, 337]
+
+            [[collision]]
+            shape = "rect"
+            rect = [0, 337, 4000, 200]
+
+            [[entities]]
+            type = "sling"
+            at = [600, 337]
+            "#;
+        world(src, slot)
+    }
+
+    /// Each character's pictures from the shot of a barrel until the
+    /// landing: one bounce picture to a frame, round and round
+    /// ("In a launch barrel").
+    #[test]
+    fn the_bounce_pictures_one_to_a_frame_after_a_barrel_shoots() {
+        for slot in 0..2 {
+            let mut world = barrel_world(slot);
+            let mut clock = PictureClock::default();
+            let mut flight = Vec::new();
+            for _ in 0..80 {
+                let input = InputFrame::single(Frame::after(Actions::NONE, Actions::NONE));
+                step(&mut world, &input);
+                clock.update(&world, jump_in(&world, &input));
+                if let Some(slung) = world.player.sling {
+                    let shot = u16::from(slung.values.hold) + 1;
+                    if slung.since >= shot {
+                        flight.push((slung.since - shot, clock.shown().map(|(_, l)| l)));
+                    }
+                }
+            }
+            let labels = labels(slot, Set::Bounce);
+            assert!(flight.len() > 20, "{}", flight.len());
+            for (n, shown) in flight {
+                assert_eq!(
+                    shown,
+                    Some(labels[usize::from(n) % 16]),
+                    "slot {slot}, frame {n}"
+                );
+            }
+        }
     }
 
     #[test]
