@@ -198,6 +198,14 @@ impl World {
         self.flow.shown = flow.shown;
         self.flow.relics = flow.relics;
         self.flow.letters = flow.letters;
+        self.with_characters_of(from)
+    }
+
+    /// This level as play begins it after `from`, which was left or
+    /// finished: the characters that were there are there, and the one
+    /// that led leads (`following.md`, "When a level begins again").
+    /// A holder here has nobody to free when both were there.
+    pub fn with_characters_of(mut self, from: &World) -> World {
         self.player.character = from.player.character;
         match &from.other {
             Some(old) => {

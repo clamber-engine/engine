@@ -851,7 +851,13 @@ impl Session {
             return;
         };
         match self.load(&path, self.pack.as_ref()) {
-            Ok(game) => {
+            Ok(mut game) => {
+                // Finishing a level carries its characters into the next
+                // one (following.md, "When a level begins again").
+                if self.game.world.flow.outcome == Outcome::Complete {
+                    let world = game.world.clone().with_characters_of(&self.game.world);
+                    game.replace_world(world);
+                }
                 self.game = game;
                 self.level_path = path;
                 self.left.clear();
@@ -3362,6 +3368,45 @@ mod tests {
         assert!(!walking(&s));
         s.step(&idle());
         assert!(walking(&s), "the gate is 64 when finished before");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// spec/behavior/following.md, "When a level begins again", first
+    /// row: finishing a level with both characters, the next one begins
+    /// with both, the same one leading.
+    #[test]
+    fn the_next_level_from_the_map_begins_with_both_characters() {
+        let dir = map_pack("map-both");
+        let mut s = session(LEVEL);
+        s.map = MapPlay::load(&dir).unwrap();
+        s.step(&press(Action::Jump));
+        let jump = Actions::from(Action::Jump);
+        hold(&mut s, Actions::NONE, 273, |f| match f {
+            140 | 240 => jump,
+            _ => Actions::NONE,
+        });
+        assert_eq!(s.screen, Screen::Playing);
+        // Both characters, the second leading.
+        let mut feel = generic_feel("classic-1").unwrap();
+        feel.roster.push(feel.roster[0].clone());
+        let mut world = World::new(s.game.world.level.clone(), Arc::new(feel));
+        world.player.character = 1;
+        world.other.as_mut().expect("both start").character = 0;
+        s.game.replace_world(world);
+
+        finish_level(&mut s);
+        until_shown(&mut s);
+        hold(&mut s, Actions::NONE, 242, |_| Actions::NONE);
+        hold(&mut s, Actions::NONE, 80, |_| Actions::NONE);
+        let up = Actions::from(Action::Up);
+        let before = hold(&mut s, Actions::NONE, 1, |_| up);
+        let before = hold(&mut s, before, 80, |_| Actions::NONE);
+        hold(&mut s, before, 1, |_| jump);
+        hold(&mut s, jump, 32, |_| Actions::NONE);
+        assert_eq!(s.screen, Screen::Playing);
+        assert_eq!(s.game.world.frame, 0, "a new level");
+        assert_eq!(s.game.world.player.character, 1);
+        assert_eq!(s.game.world.other.as_ref().map(|o| o.character), Some(0));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
