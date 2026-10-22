@@ -34,6 +34,7 @@ use clamber_sim::{
 use clamber_sprite::{Playback, SpriteSheet};
 
 use crate::bunch_pictures;
+use crate::letter_pictures;
 use crate::pictures::{self, PictureClock};
 use crate::spin_pictures;
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
@@ -261,6 +262,10 @@ impl Cast {
             }
             return;
         }
+        if let Some(sprite) = self.letter_picture(thing, x, y) {
+            self.bank.draw(canvas, &Sprite { opacity, ..sprite });
+            return;
+        }
         let facing = pose.walker.facing().unwrap_or(thing.facing);
         let shown = thrower_pictures::shown(thing);
         let sprite = match self.walker_picture(pose, x, y) {
@@ -308,6 +313,22 @@ impl Cast {
             flip_y: shown.flip_y,
             ..Sprite::new(id, frame, x - 1.0, y)
         })
+    }
+
+    /// A letter's own picture, from [`letter_pictures::SHEET`], if that
+    /// has all four. Its origin is a px left of the letter's position.
+    fn letter_picture(&self, thing: &Thing, x: f32, y: f32) -> Option<Sprite> {
+        let label = letter_pictures::shown(thing)?;
+        let &id = self.kinds.get(letter_pictures::SHEET)?;
+        let sheet = self.bank.sheet(id);
+        if !letter_pictures::LABELS
+            .iter()
+            .all(|l| sheet.animation(l).is_some())
+        {
+            return None;
+        }
+        let frame = *sheet.animation(label)?.frames.first()?;
+        Some(Sprite::new(id, frame, x - 1.0, y))
     }
 
     /// A spinning collectible's picture on `step`: its own from
@@ -1206,6 +1227,31 @@ mod tests {
             let origin = if want == G { 1 } else { 2 };
             assert_eq!(lit, [(origin - 1, 1)], "{want:?}");
             assert_eq!(canvas.get(origin - 1, 1).unwrap(), want);
+        }
+    }
+
+    #[test]
+    fn a_letter_shows_its_own_picture_when_the_sheet_has_all_four() {
+        let archetypes = clamber_sim::Archetypes::builtin();
+        let mut thing = world().things[0].clone();
+        thing.kind = "letter".to_string();
+        thing.archetype = archetypes.named("letter");
+        assert_eq!(letter_pictures::shown(&thing), Some("letter-pic-1"));
+        let labels = &letter_pictures::LABELS[..];
+        for (labels, lit) in [(labels, true), (&labels[1..], false)] {
+            let cast = Cast::new(vec![(
+                letter_pictures::SHEET.to_string(),
+                labelled_sheet(labels, 2),
+            )]);
+            let mut canvas = Canvas::new(4, 4);
+            cast.draw_thing(&mut canvas, &thing, &Pose::default(), 2.0, 2.0);
+            // Unmirrored, a px left of the letter's position.
+            assert_eq!(
+                canvas.get(1, 2).unwrap() == G,
+                lit,
+                "{} pictures",
+                labels.len()
+            );
         }
     }
 

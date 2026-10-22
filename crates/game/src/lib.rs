@@ -61,6 +61,7 @@ mod icons;
 mod import;
 pub mod keys;
 mod layers;
+mod letter_pictures;
 mod map;
 mod menu;
 mod music;
