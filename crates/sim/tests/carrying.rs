@@ -485,3 +485,39 @@ fn falling_out_of_the_level_drops_the_object() {
     assert_eq!(object.phase, Phase::Ready);
     assert_eq!(object.pos, play.world.level.entities[0].at);
 }
+
+/// player-frames.md, "Carrying", "Moving with the object": a turn starts
+/// on the frame the other way is held, on any step, and the carrier
+/// never runs.
+#[test]
+fn a_carrier_turns_at_once_and_never_runs() {
+    let mut play = Play::carrying();
+    for n in 0..25 {
+        play.step(&[A, Right]);
+        assert!(
+            matches!(play.world.player.gait, clamber_sim::Gait::Walking(_)),
+            "frame {n}"
+        );
+    }
+    for _ in 0..12 {
+        // Whatever step it's on, Left held starts the turn on that frame.
+        play.step(&[A, Right]);
+        let mut next = Play {
+            world: play.world.clone(),
+            held: play.held,
+        };
+        assert_eq!(next.step(&[A, Left]).turn, Some(0));
+    }
+}
+
+/// carrying.md, "Putting down": Down held on Q put the object down; it
+/// starts a crouch from Q + 14 only.
+#[test]
+fn a_put_down_starts_no_crouch_before_q_plus_14() {
+    let mut play = Play::carrying();
+    let rows = play.hold(&[Down], 14);
+    assert!(rows.iter().all(|r| r.act == Some(Act::PutDown)));
+    assert_eq!(play.world.player.crouch.held, 0);
+    play.step(&[Down]);
+    assert_eq!(play.world.player.crouch.held, 1);
+}

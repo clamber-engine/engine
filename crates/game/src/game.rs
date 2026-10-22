@@ -312,8 +312,12 @@ impl Game {
             }
             _ => self.look_beyond(),
         }
-        let jump_next = self.cast.has_pictures() && jump_next(&self.world, input);
-        self.poses.update(&self.cast, &self.world, jump_next);
+        let jump_in = if self.cast.has_pictures() {
+            jump_in(&self.world, input)
+        } else {
+            0
+        };
+        self.poses.update(&self.cast, &self.world, jump_in);
         true
     }
 
@@ -703,21 +707,32 @@ fn lighting(level: &clamber_level::Level, origin: (f64, f64), view: (u32, u32)) 
     Lighting::new(&level.lighting, lights)
 }
 
-/// Whether a jump starts on the player's next frame, with what's held
-/// now still held and nothing new pressed: so this frame is the one
-/// before it, T − 1, which has a picture of its own
-/// ([`crate::pictures`]). Only a buffered Jump press starts one.
-pub(crate) fn jump_next(world: &World, input: &InputFrame) -> bool {
+/// How many frames on a jump starts, with what's held now still held
+/// and nothing new pressed: 1 if this frame is the one before it, T − 1,
+/// which has a picture of its own ([`crate::pictures`]), and 2 for the
+/// one before that, if the player is carrying something, whose jump
+/// shows its picture from there. 0 if none does. Only a buffered Jump
+/// press starts one.
+pub(crate) fn jump_in(world: &World, input: &InputFrame) -> u8 {
     if !world.player.jump_buffer.is_buffered() {
-        return false;
+        return 0;
     }
     let mut next = world.clone();
     let mut held = InputFrame::default();
     for (to, from) in held.players.iter_mut().zip(&input.players) {
         *to = clamber_input::Frame::after(from.held, from.held);
     }
-    step(&mut next, &held);
-    next.events.contains(&clamber_sim::Event::JumpStart)
+    let carrying = world
+        .player
+        .hands
+        .is_some_and(|h| h.act == clamber_sim::Act::Carry);
+    for ahead in 1..=if carrying { 2 } else { 1 } {
+        step(&mut next, &held);
+        if next.events.contains(&clamber_sim::Event::JumpStart) {
+            return ahead;
+        }
+    }
+    0
 }
 
 #[cfg(test)]

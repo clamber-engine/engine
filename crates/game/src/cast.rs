@@ -485,11 +485,11 @@ impl Poses {
     }
 
     /// Moves every pose on a logic frame, for `world` as it is now.
-    /// `jump_next`: a jump starts on the player's next frame.
-    pub fn update(&mut self, cast: &Cast, world: &World, jump_next: bool) {
+    /// `jump_in`: frames until a jump starts (`PictureClock::update`).
+    pub fn update(&mut self, cast: &Cast, world: &World, jump_in: u8) {
         let respawn = world.flow.events.contains(&FlowEvent::Respawn);
         self.clock = if respawn { 1 } else { self.clock + 1 };
-        self.player.pictures.update(world, jump_next);
+        self.player.pictures.update(world, jump_in);
         let id = cast.player;
         let landing = cast.playing(id, &self.player, LAND);
         let animation = cast.animation(id, Some(player_animation(world, landing)));
@@ -735,16 +735,16 @@ mod tests {
         let mut shown = Vec::new();
         for _ in 0..5 {
             shown.push(player_pixels(&cast, &world, &poses.player)[0]);
-            poses.update(&cast, &world, false);
+            poses.update(&cast, &world, 0);
         }
         assert_eq!(shown, [R, R, G, G, R]);
         world.player.state = State::Walk;
-        poses.update(&cast, &world, false);
+        poses.update(&cast, &world, 0);
         assert_eq!(poses.player.playback, Playback::new(), "starts over");
         assert_eq!(player_pixels(&cast, &world, &poses.player)[0], B);
         // No `jump` animation: the sheet's first plays instead.
         world.player.state = State::Jump;
-        poses.update(&cast, &world, false);
+        poses.update(&cast, &world, 0);
         assert_eq!(player_pixels(&cast, &world, &poses.player)[0], R);
     }
 
@@ -781,7 +781,7 @@ mod tests {
         renamed.sheet.animations[1].name = "reached".into();
         let cast = Cast::new(vec![(CHECKPOINT.to_string(), renamed)]);
         world.flow.checkpoints.push(0);
-        poses.update(&cast, &world, false);
+        poses.update(&cast, &world, 0);
         assert_eq!(poses.things[0].animation, 1);
         let mut canvas = Canvas::new(2, 1);
         let thing = world.things[0].clone();
@@ -801,7 +801,7 @@ mod tests {
         let mut world = world();
         let mut poses = Poses::new(&cast, &world);
         world.flow.outcome = Outcome::Dying(10);
-        poses.update(&cast, &world, false);
+        poses.update(&cast, &world, 0);
         assert_eq!(player_pixels(&cast, &world, &poses.player)[0], B);
     }
 
@@ -818,14 +818,14 @@ mod tests {
         let mut world = world();
         let mut poses = Poses::new(&recovering, &world);
         world.player.roll_stop = 1;
-        poses.update(&recovering, &world, false);
+        poses.update(&recovering, &world, 0);
         assert_eq!(player_pixels(&recovering, &world, &poses.player)[0], B);
         // Sliding in the stop too.
         world.player.state = State::Walk;
-        poses.update(&recovering, &world, false);
+        poses.update(&recovering, &world, 0);
         assert_eq!(player_pixels(&recovering, &world, &poses.player)[0], B);
         world.player.roll_stop = 0;
-        poses.update(&recovering, &world, false);
+        poses.update(&recovering, &world, 0);
         assert_eq!(player_pixels(&recovering, &world, &poses.player)[0], R);
         // Not in the air, nor without the art.
         world.player.roll_stop = 1;
@@ -833,7 +833,7 @@ mod tests {
         assert_eq!(player_animation(&world, false), "fall");
         world.player.state = State::Idle;
         let mut poses = Poses::new(&cast(), &world);
-        poses.update(&cast(), &world, false);
+        poses.update(&cast(), &world, 0);
         assert_eq!(poses.player.animation, 0, "the first animation");
     }
 
@@ -846,12 +846,12 @@ mod tests {
         let mut world = world();
         let mut poses = Poses::new(&cast, &world);
         world.events.push(Event::Land);
-        poses.update(&cast, &world, false);
+        poses.update(&cast, &world, 0);
         world.events.clear();
         let mut shown = Vec::new();
         for _ in 0..4 {
             shown.push(player_pixels(&cast, &world, &poses.player)[0]);
-            poses.update(&cast, &world, false);
+            poses.update(&cast, &world, 0);
         }
         assert_eq!(
             shown,
@@ -860,10 +860,10 @@ mod tests {
         );
         // Walking off cuts it short.
         world.events.push(Event::Land);
-        poses.update(&cast, &world, false);
+        poses.update(&cast, &world, 0);
         world.events.clear();
         world.player.state = State::Walk;
-        poses.update(&cast, &world, false);
+        poses.update(&cast, &world, 0);
         assert_eq!(player_animation(&world, true), "walk");
     }
 
@@ -1003,7 +1003,7 @@ mod tests {
                 ("small-walker".to_string(), character_sheet(labels)),
             ]);
             let mut poses = Poses::new(&cast, &world);
-            poses.update(&cast, &world, false);
+            poses.update(&cast, &world, 0);
             let thing = world.things.iter().find(|t| t.kind == "crawler").unwrap();
             let pose = poses.things[thing.index];
             assert_eq!(pose.walker.shown().unwrap().2, "small-walk-1");
@@ -1156,14 +1156,14 @@ mod tests {
         let mut poses = Poses::new(&cast, &world);
         let mut steps = Vec::new();
         for _ in 0..8 {
-            poses.update(&cast, &world, false);
+            poses.update(&cast, &world, 0);
             steps.push(poses.things[index].spin.unwrap());
         }
         assert_eq!(poses.clock, 8);
         assert_eq!(steps, [5, 5, 5, 6, 6, 6, 6, 7]);
         // Play starting again is frame 0 once more.
         world.flow.events.push(FlowEvent::Respawn);
-        poses.update(&cast, &world, false);
+        poses.update(&cast, &world, 0);
         assert_eq!(poses.clock, 1);
         assert_eq!(poses.things[index].spin, Some(5));
         // Other things don't spin.
@@ -1230,24 +1230,24 @@ mod tests {
         let mut counts = Vec::new();
         for still in [false, false, true, true, false] {
             world.still = still;
-            poses.update(&cast, &world, false);
+            poses.update(&cast, &world, 0);
             counts.push(poses.things[index].bunch.unwrap());
         }
         assert_eq!(counts, [1, 2, 2, 2, 3]);
         // Play starting again starts its cycle afresh.
         world.still = false;
         world.flow.events.push(FlowEvent::Respawn);
-        poses.update(&cast, &world, false);
+        poses.update(&cast, &world, 0);
         assert_eq!(poses.things[index].bunch, Some(0));
         world.flow.events.clear();
-        poses.update(&cast, &world, false);
+        poses.update(&cast, &world, 0);
         assert_eq!(poses.things[index].bunch, Some(1));
         // Gone, it shows nothing; appearing again, it starts afresh.
         world.things[index].active = false;
-        poses.update(&cast, &world, false);
+        poses.update(&cast, &world, 0);
         assert_eq!(poses.things[index].bunch, None);
         world.things[index].active = true;
-        poses.update(&cast, &world, false);
+        poses.update(&cast, &world, 0);
         assert_eq!(poses.things[index].bunch, Some(0));
         // Other things aren't bunches.
         assert_eq!(poses.things.iter().filter(|p| p.bunch.is_some()).count(), 1);

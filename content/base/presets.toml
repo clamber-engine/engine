@@ -255,6 +255,12 @@ join_sag = 0
 pick_up_time = 0
 pick_up_still = 0
 carry_jump_delay = 0
+carry_stride_steps = 0
+carry_stride = 0
+carry_stride_min = 0
+carry_stride_scale = 0
+carry_stand_steps = []
+carry_stand_speed = 0
 throw_time = 0
 throw_still = 0
 throw_release = 0
@@ -814,6 +820,16 @@ join_sag = 0.1875
 pick_up_time = 15
 pick_up_still = 10
 carry_jump_delay = 1
+# Carrying has its own stride cycle (player-frames.md, "Carrying"): 10
+# steps of 512, at v/4 + v/8 and at least 96, so half of that counts. A
+# moving carrier stands where step 4 or 7 ends below 0.1875 with no
+# direction held; no turn checks, and it never runs.
+carry_stride_steps = 10
+carry_stride = 0.375
+carry_stride_min = 0.375
+carry_stride_scale = 0.5
+carry_stand_steps = [4, 7]
+carry_stand_speed = 0.1875
 throw_time = 43
 throw_still = 22
 throw_release = 21

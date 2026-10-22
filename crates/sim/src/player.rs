@@ -1779,6 +1779,7 @@ impl Player {
             Some(_) => self.short_turn,
             None => false,
         };
+        let carrying = self.carrying_stride(physics);
         if !striding || (crouching && self.grounded()) {
             // In the air, rolling and in a roll's stop, the player isn't
             // walking or running; landings and the end of a roll set the
@@ -1795,7 +1796,8 @@ impl Player {
             } else {
                 run_dir
             },
-            held(Action::Action),
+            held(Action::Action) && !carrying,
+            carrying,
             turn_ends,
             physics,
         ) {
@@ -2218,7 +2220,16 @@ impl Player {
             {
                 // After a jump the player is in no gait until its switch
                 // frame or `settle`; one running on landing runs at once.
-                self.gait = if switch == 0 && held(Action::Action) && held_dir != 0 {
+                self.gait = if self.carrying_stride(physics) {
+                    // Carrying, it's L + 2 that starts a gait.
+                    Gait::Landing(Landing {
+                        frame: 0,
+                        switch: u8::MAX,
+                        settle: 2,
+                        fixed: true,
+                        bounce: false,
+                    })
+                } else if switch == 0 && held(Action::Action) && held_dir != 0 {
                     Gait::Running(Stride::START)
                 } else {
                     Gait::Landing(Landing {
@@ -2598,11 +2609,14 @@ impl Player {
                 }
                 // Jumps and rolls during a put-down aren't in the spec;
                 // there are none.
+                // Down held on Q is what put it down: a crouch starts
+                // from Q + 14 at the earliest.
                 Busy {
                     still: true,
                     keep_facing: true,
                     no_jump: true,
                     no_roll: true,
+                    no_crouch: true,
                     ..Busy::default()
                 }
             }
@@ -3009,11 +3023,15 @@ impl Player {
         dir: i32,
         turn_dir: i32,
         action: bool,
+        carrying: bool,
         turn_ends: bool,
         physics: &Physics,
     ) -> bool {
         if self.turn.is_some() {
             return false;
+        }
+        if carrying {
+            return self.stride_carrying(dir, turn_dir, turn_ends, physics);
         }
         let forward = direction(self.facing);
         let opposite = turn_dir == -forward;
@@ -3127,6 +3145,66 @@ impl Player {
         }
         self.turn = Some(0);
         frames(physics[Param::TurnTime]) / 2 == 0
+    }
+
+    /// Whether the player is carrying an object with its own stride
+    /// (`carry_stride_steps`): no running, and turns start at once.
+    fn carrying_stride(&self, physics: &Physics) -> bool {
+        physics[Param::CarryStrideSteps] >= Fixed::ONE
+            && self.grounded()
+            && self.hands.is_some_and(|h| h.act == Act::Carry)
+    }
+
+    /// [`Player::stride`] while carrying (`player-frames.md`,
+    /// "Carrying"). A turn starts on any frame the other way is held,
+    /// standing or moving; standing, forward held starts moving; moving,
+    /// the stride goes on until a step in `carry_stand_steps` ends with
+    /// no direction held below `carry_stand_speed`.
+    fn stride_carrying(
+        &mut self,
+        dir: i32,
+        turn_dir: i32,
+        turn_ends: bool,
+        physics: &Physics,
+    ) -> bool {
+        let forward = direction(self.facing);
+        let steps = physics[Param::CarryStrideSteps]
+            .floor()
+            .clamp(1, MAX_STEP.into()) as u32;
+        let mut turn = turn_dir == -forward;
+        self.gait = match self.gait {
+            // The two frames after a jump's landing start nothing.
+            Gait::Landing(mut landing) if landing.frame + 1 < landing.settle => {
+                turn = false;
+                landing.frame += 1;
+                Gait::Landing(landing)
+            }
+            _ if turn => Gait::Standing,
+            Gait::Walking(mut stride) if !turn_ends => {
+                let rate = stride_rate(self.vel.x.abs(), physics[Param::CarryStride])
+                    .max(physics[Param::CarryStrideMin]);
+                let rate = match physics[Param::CarryStrideScale] {
+                    scale if scale > Fixed::ZERO => rate * scale,
+                    _ => rate,
+                };
+                let stand = stride.advance(rate, steps).is_some_and(|n| {
+                    clamber_pack::physics::steps(physics[Param::CarryStandSteps]).any(|s| s == n)
+                });
+                if stand && self.vel.x.abs() < physics[Param::CarryStandSpeed] && dir == 0 {
+                    Gait::Standing
+                } else {
+                    Gait::Walking(stride)
+                }
+            }
+            _ if dir == 0 => Gait::Standing,
+            _ => Gait::Walking(Stride::START),
+        };
+        // A turn of under 2 frames changes facing now.
+        if turn {
+            self.turn = Some(0);
+            turn = frames(physics[Param::TurnTime]) / 2 == 0;
+        }
+        turn
     }
 
     /// Whether there's floor within reach below the player for its

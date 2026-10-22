@@ -538,6 +538,12 @@ mod tests {
                     | Param::PickUpTime
                     | Param::PickUpStill
                     | Param::CarryJumpDelay
+                    | Param::CarryStrideSteps
+                    | Param::CarryStride
+                    | Param::CarryStrideMin
+                    | Param::CarryStrideScale
+                    | Param::CarryStandSteps
+                    | Param::CarryStandSpeed
                     | Param::ThrowTime
                     | Param::ThrowStill
                     | Param::ThrowRelease

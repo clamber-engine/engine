@@ -1036,6 +1036,26 @@ params! {
     /// Frames later a jump takes off while carrying than without an
     /// object. Whole frames.
     CarryJumpDelay => "carry_jump_delay",
+    /// Above 0, a player carrying an object on the ground has no turn
+    /// checks and no running: standing, it turns at once when the other
+    /// way is held, or moves when forward is held; moving, it goes
+    /// through a stride cycle of this many steps and turns at once.
+    /// Needs `stride_steps`. Whole steps, up to 31.
+    CarryStrideSteps => "carry_stride_steps",
+    /// The carrying stride's progress per px/frame of speed; each binary
+    /// digit takes its share rounded down, as for `walk_stride`.
+    CarryStride => "carry_stride",
+    /// Carrying stride progress per frame is never less than this.
+    CarryStrideMin => "carry_stride_min",
+    /// Above 0, carrying stride progress per frame, once at least
+    /// `carry_stride_min`, is multiplied by this. 0: by 1.
+    CarryStrideScale => "carry_stride_scale",
+    /// The steps whose end makes a moving carrier stand when it is
+    /// slower than `carry_stand_speed` with no direction held. A step
+    /// set.
+    CarryStandSteps => "carry_stand_steps",
+    /// See `carry_stand_steps`.
+    CarryStandSpeed => "carry_stand_speed",
     /// Frames a throw lasts, counting the frame action is let go. Facing
     /// doesn't change during them. Whole frames.
     ThrowTime => "throw_time",
@@ -1800,6 +1820,7 @@ impl Param {
             Param::WalkTurnSteps
                 | Param::WalkRunSteps
                 | Param::RunTurnSteps
+                | Param::CarryStandSteps
                 | Param::GroundAttackFrames
                 | Param::SwitchSteps
                 | Param::SwitchLateSteps
