@@ -34,7 +34,9 @@ fn world(letters: &[(i32, i32, u8)]) -> World {
         );
     }
     let level = Arc::new(Level::from_toml_str(&src, "letters").unwrap());
-    let world = World::new(level, Arc::new(generic_feel("classic-1").unwrap()));
+    let mut world = World::new(level, Arc::new(generic_feel("classic-1").unwrap()));
+    // Without the lives display shown when play starts.
+    world.flow.play_from = u32::MAX;
     assert!(world.player.grounded());
     world
 }
@@ -488,6 +490,8 @@ fn knocked_out_ending(
     );
     let level = Arc::new(Level::from_toml_str(&src, "letters").unwrap());
     let mut w = World::new(level, Arc::new(generic_feel("classic-1").unwrap()));
+    // Without the lives display shown when play starts.
+    w.flow.play_from = u32::MAX;
     w.flow.letters = held;
     w.flow.lives = lives;
     // The letter joins on frame 30.

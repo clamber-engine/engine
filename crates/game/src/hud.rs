@@ -31,16 +31,27 @@ const IMAGE: i32 = 16;
 const LETTER_BACK: Color = rgb(0xf0, 0xb0, 0x50);
 const LETTER_TEXT: Color = rgb(0x30, 0x20, 0x10);
 
+/// Draws the count display's image given the canvas and its top-left
+/// corner on it, and says whether it did.
+pub type CountImage<'a> = dyn Fn(&mut dyn Surface, (i32, i32)) -> bool + 'a;
+
 /// Draws the HUD along the top left of the canvas: lives, gems, hit
 /// points when a life has more than one, and relics out of the level's
 /// total when it has any. With a count
 /// display, the count display and the lives display instead, when the
 /// world shows them. Then the letter row, if the world shows it.
 pub fn draw_hud(canvas: &mut dyn Surface, world: &World) {
+    draw_hud_with(canvas, world, &|_, _| false);
+}
+
+/// [`draw_hud`], with the count display's image drawn by `image` when
+/// it can, given the canvas and the image's top-left corner on it, and
+/// says whether it did; otherwise it's the engine's icon.
+pub fn draw_hud_with(canvas: &mut dyn Surface, world: &World, image: &CountImage) {
     if world.feel.world[Param::CountShowFor].floor() > 0 {
         let left = picture_left(canvas, world);
         if let Some(count) = world.count_display() {
-            draw_count(canvas, left, &count);
+            draw_count(canvas, left, &count, image);
         }
         if let Some(lives) = world.lives_display() {
             draw_lives(canvas, left, &lives);
@@ -119,9 +130,11 @@ pub(crate) fn picture_left(canvas: &dyn Surface, world: &World) -> i32 {
 /// the image and digits are drawn isn't in the spec: the image is the
 /// gem icon filling its 16 px square, and each digit is drawn from its
 /// place.
-fn draw_count(canvas: &mut dyn Surface, left: i32, count: &CountDisplay) {
+fn draw_count(canvas: &mut dyn Surface, left: i32, count: &CountDisplay, image: &CountImage) {
     let (x, y) = (count.image.0 + left, count.image.1);
-    draw_icon(canvas, Icon::Gem, (x as f32, y as f32), IMAGE as f32);
+    if !image(canvas, (x, y)) {
+        draw_icon(canvas, Icon::Gem, (x as f32, y as f32), IMAGE as f32);
+    }
     let (x, y) = count.digits;
     for (k, digit) in count.number.to_string().chars().enumerate() {
         let x = left + x + count.gap * k as i32;
@@ -301,7 +314,12 @@ mod tests {
         draw_hud(&mut canvas, &world);
         assert!(world.lives_display().is_none(), "no lives display");
         let mut expected = Canvas::new(256, 64);
-        draw_count(&mut expected, 0, &world.count_display().unwrap());
+        draw_count(
+            &mut expected,
+            0,
+            &world.count_display().unwrap(),
+            &|_, _| false,
+        );
         assert_eq!(canvas, expected);
     }
 

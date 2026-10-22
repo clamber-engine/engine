@@ -1250,6 +1250,13 @@ params! {
     /// right of the one before, the digits centred on where a single one
     /// would be. Whole px.
     LivesDigitGap => "lives_digit_gap",
+    /// The lives display shown each time play starts is first drawn this
+    /// many frames after the level's first frame or the first after a
+    /// restart (count-display.md, "When play starts"). Whole frames.
+    PlayLivesIn => "play_lives_in",
+    /// It slides back out from this many frames after, and 0 shows none
+    /// at the start. Whole frames.
+    PlayLivesOut => "play_lives_out",
     /// After a collectible giving `lives` is taken, the lives display is
     /// first drawn this many frames after, sliding in for `lives_slide`
     /// frames. The number shown going from `count_life` less one to 0

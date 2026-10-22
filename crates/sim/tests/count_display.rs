@@ -96,7 +96,28 @@ fn number(rows: &[Shown], frame: u32) -> Option<u32> {
 fn not_shown_when_a_level_begins() {
     let mut w = world(&[]);
     let rows = play(&mut w, 900);
-    assert!(rows.iter().all(|r| r.count.is_none() && r.lives.is_none()));
+    assert!(rows.iter().all(|r| r.count.is_none()));
+}
+
+/// count-display.md, "When play starts": the lives display slides in
+/// from frame 8, rests at y 10 from 14 and slides out from 136.
+#[test]
+fn the_lives_display_is_shown_when_play_starts() {
+    let mut w = world(&[]);
+    let lives = w.flow.lives;
+    let rows = play(&mut w, 200);
+    let ys: Vec<Option<i32>> = rows.iter().map(|r| r.lives.map(|l| l.y)).collect();
+    let mut expected = vec![None; 8];
+    expected.extend([-12, -8, -4, 0, 4, 8].map(Some));
+    expected.extend(std::iter::repeat_n(Some(10), 122));
+    expected.extend([6, 2, -2, -6, -10, -14].map(Some));
+    expected.resize(200, None);
+    assert_eq!(ys, expected);
+    assert!(
+        rows[8..142]
+            .iter()
+            .all(|r| r.lives.unwrap().number == lives)
+    );
 }
 
 #[test]
@@ -186,6 +207,8 @@ fn reaching_100_slides_the_lives_number_in_and_out() {
     w.flow.gems = 99;
     w.flow.shown = 99;
     let before = w.flow.lives;
+    // Past the display shown when play starts.
+    w.frame = 200;
     let rows = play(&mut w, 300);
     let [p] = taken(&rows)[..] else {
         panic!("one pickup");

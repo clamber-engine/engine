@@ -15,7 +15,7 @@ use crate::camera::{Camera, VIEW, point};
 use crate::canvas::{Canvas, Color, rgb};
 use crate::cast::{Cast, Poses};
 use crate::display::Look;
-use crate::hud::{draw_hud, picture_left};
+use crate::hud::{draw_hud_with, picture_left};
 use crate::hutch_pictures;
 use crate::layers::{LayerArt, Viewing, nudge};
 use crate::surface::{Lighting, PointLight, Surface};
@@ -441,7 +441,11 @@ impl Game {
         }
         layers(canvas, &|l| l.depth == Depth::Front);
         if shows(Part::Hud) {
-            draw_hud(canvas, &self.world);
+            let clock = self.poses.clock;
+            let cast = self.drawn_cast();
+            draw_hud_with(canvas, &self.world, &|canvas, at| {
+                cast.draw_count_image(canvas, clock, at)
+            });
             self.draw_relic_image(canvas);
         }
     }

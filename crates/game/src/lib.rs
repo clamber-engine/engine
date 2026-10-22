@@ -104,7 +104,7 @@ pub use display::{Look, Presenting, Rendering};
 pub use feels::Feels;
 pub use game::{Game, Part};
 pub use gpu::Gpu;
-pub use hud::draw_hud;
+pub use hud::{CountImage, draw_hud, draw_hud_with};
 pub use import::{Edit, Games, Importing, Picker};
 pub use layers::LayerArt;
 pub use map::{LEVEL_MAP, MapPhase, MapPlay, MapStep};

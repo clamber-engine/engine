@@ -339,6 +339,35 @@ impl Cast {
         Some(Sprite::new(id, frame, x - 1.0, y))
     }
 
+    /// Draws the count display's image with its top-left corner at `at`
+    /// (count-display.md, "Pictures"): the spinning collectible's
+    /// picture on the frame with count `clock`, unmirrored, with its
+    /// origin 8 px right of the corner and 9 below. Returns false,
+    /// drawing nothing, when the step has no picture of its own or the
+    /// sheet doesn't have all five.
+    pub fn draw_count_image(&self, canvas: &mut dyn Surface, clock: u32, at: (i32, i32)) -> bool {
+        let step = ((clock / 4) % spin_pictures::STEPS + 1) as u8;
+        let Some(&id) = self.kinds.get(spin_pictures::SHEET) else {
+            return false;
+        };
+        let sheet = self.bank.sheet(id);
+        if !spin_pictures::LABELS
+            .iter()
+            .all(|l| sheet.animation(l).is_some())
+        {
+            return false;
+        }
+        let Some(frame) = spin_pictures::label(step)
+            .and_then(|l| sheet.animation(l))
+            .and_then(|a| a.frames.first().copied())
+        else {
+            return false;
+        };
+        let (x, y) = (at.0 as f32 + 8.0, at.1 as f32 + 9.0);
+        self.bank.draw(canvas, &Sprite::new(id, frame, x, y));
+        true
+    }
+
     /// A spinning collectible's picture on `step`: its own from
     /// [`spin_pictures::SHEET`], mirrored left to right with its origin
     /// at the collectible's position, if the step has one and the sheet
@@ -1526,6 +1555,34 @@ mod tests {
             cast.draw_thing(&mut canvas, thing, &pose, 2.0, 0.0);
             let got = [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()];
             assert_eq!(got, want, "{labels:?} on {step}");
+        }
+    }
+
+    #[test]
+    fn the_count_image_is_the_spin_picture_unmirrored_and_only_with_all_five() {
+        let labels = &crate::spin_pictures::LABELS[..];
+        for (labels, clock, drawn) in [
+            // Step 5 from frame count 16, with the origin 8 px right of
+            // and 9 below the corner.
+            (labels, 16, true),
+            (labels, 19, true),
+            // Steps 6 to 8 have no pictures of their own.
+            (labels, 20, false),
+            (&labels[1..], 16, false),
+        ] {
+            let cast = Cast::new(vec![(
+                crate::spin_pictures::SHEET.to_string(),
+                labelled_sheet(labels, 4),
+            )]);
+            let mut canvas = Canvas::new(4, 1);
+            let did = cast.draw_count_image(&mut canvas, clock, (-7, -9));
+            assert_eq!(did, drawn, "{labels:?} on {clock}");
+            assert_eq!(
+                canvas.get(1, 0).unwrap() == B,
+                drawn,
+                "{labels:?} on {clock}"
+            );
+            assert_eq!(canvas.get(2, 0).unwrap(), Color::default());
         }
     }
 

@@ -45,7 +45,9 @@ fn world_with(at: &[(i32, i32)], params: &str, more: &str) -> World {
     }
     src += more;
     let level = Arc::new(Level::from_toml_str(&src, "hearts").unwrap());
-    let world = World::new(level, Arc::new(generic_feel("classic-1").unwrap()));
+    let mut world = World::new(level, Arc::new(generic_feel("classic-1").unwrap()));
+    // Without the lives display shown when play starts.
+    world.flow.play_from = u32::MAX;
     assert!(world.player.grounded());
     world
 }

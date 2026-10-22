@@ -132,6 +132,9 @@ pub enum FlowEvent {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Flow {
     pub outcome: Outcome,
+    /// The frame play last started on: the level's first, or the one
+    /// play comes back on after a lost life.
+    pub play_from: u32,
     pub lives: u8,
     /// The collectible count: gems, and what collectibles add.
     pub gems: u32,

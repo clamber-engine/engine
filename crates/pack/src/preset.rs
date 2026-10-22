@@ -594,6 +594,8 @@ mod tests {
                     | Param::CountDigitX
                     | Param::CountDigitGap
                     | Param::LivesSlide
+                    | Param::PlayLivesIn
+                    | Param::PlayLivesOut
                     | Param::LivesY
                     | Param::LivesRise
                     | Param::LivesGone

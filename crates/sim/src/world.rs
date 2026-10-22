@@ -1336,6 +1336,7 @@ fn advance(world: &mut World, input: &InputFrame) {
     let start_view = world.view;
     if flow::dying(world) {
         if world.flow.events.contains(&FlowEvent::Respawn) {
+            world.flow.play_from = world.frame;
             view::restart(world);
             keg::begin(world);
             flow::afresh(world);

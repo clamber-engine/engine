@@ -317,6 +317,8 @@ lives_gone = 0
 lives_speed = 0
 lives_x = 0
 lives_digit_gap = 0
+play_lives_in = 0
+play_lives_out = 0
 life_item_lives_in = 0
 life_item_lives_arrive = 0
 life_item_lives_step = 0
@@ -928,6 +930,10 @@ lives_digit_gap = 10
 # ending on the 131st. The spec measured A from 31 to 37 frames after
 # (S = A + 10 from 41 to 47), by where the item was in the picture, and
 # doesn't cover how; Clamber takes 34.
+# The lives display is also shown from frame 0 of a level and of every
+# restart: in at 8, out from 136 (count-display.md, "When play starts").
+play_lives_in = 8
+play_lives_out = 136
 life_item_lives_in = 7
 life_item_lives_arrive = 34
 life_item_lives_step = 10

@@ -332,8 +332,33 @@ impl World {
         let n = self.frame.checked_sub(1)?;
         match self.flow.lost.filter(|l| l.at <= n) {
             Some(lost) => self.lost_lives(lost, n),
-            None => self.gained_lives(n),
+            None => self.gained_lives(n).or_else(|| self.play_lives(n)),
         }
+    }
+
+    /// The lives display shown each time play starts, in the picture
+    /// made on frame `n` (count-display.md, "When play starts"): the
+    /// lives now. Engine choice where the spec says nothing: any other
+    /// display shown takes its place.
+    fn play_lives(&self, n: u32) -> Option<LivesDisplay> {
+        let physics = &self.feel.world;
+        let int = |p: Param| i64::from(i32::try_from(physics[p].floor()).unwrap_or(0));
+        let out = int(Param::PlayLivesOut);
+        if out == 0 {
+            return None;
+        }
+        let since = i64::from(n.checked_sub(self.flow.play_from)?);
+        let y = slide_y(
+            since,
+            (int(Param::PlayLivesIn), int(Param::LivesSlide), out),
+            (
+                int(Param::LivesY),
+                int(Param::LivesRise),
+                int(Param::LivesGone),
+                int(Param::LivesSpeed),
+            ),
+        )?;
+        Some(self.lives_at(self.flow.lives, y, true))
     }
 
     /// The lives display after a lost life, in the picture made on frame
