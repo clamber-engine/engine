@@ -43,6 +43,7 @@
 //! trace and the picture of each frame, part by part.
 
 mod beyond;
+mod bunch_pictures;
 mod camera;
 mod canvas;
 mod capture;

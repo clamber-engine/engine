@@ -301,7 +301,11 @@ impl Kind {
                 );
                 "ball"
             }
-            Kind::Bunch => "cluster",
+            Kind::Bunch => {
+                // bunches.md, "Pictures": it spins up and back down.
+                set("pictures", Value::String("bunch".into()));
+                "cluster"
+            }
             Kind::Letter(n) => {
                 set("letter", Value::Integer(n.into()));
                 "letter"

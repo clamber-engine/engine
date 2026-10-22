@@ -402,10 +402,14 @@ fn classic_nothing_else_moves_on_the_frozen_frames() {
     let (_, b) = classic_bounce();
     let mut w = world_on("classic-1", [300, 300], &entities);
     let mut rows = Vec::new();
+    let mut still = Vec::new();
     for _ in 0..=b + 3 {
         step(&mut w, &InputFrame::single(Frame::default()));
         rows.push(w.things.clone());
+        still.push(w.still);
     }
+    // The world says so too, for bunches.md's pictures.
+    assert_eq!(still[b - 1..], [false, false, true, true, false]);
     // The walker bounced on, the other walker, the thrower and the
     // rising item.
     // The walkers are held still then, which walker.md's pictures don't

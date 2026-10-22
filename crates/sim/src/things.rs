@@ -272,6 +272,9 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         hutch::update(world, &physics, frozen, true);
         return None;
     }
+    // Walkers hold still on these, the one that hurt the player aside.
+    world.still =
+        held_by_bounce_all || held_by_bounce || held_by_roll || paused || held.is_some() || waiting;
     // Throwers and balls stop then too, the one that hurt it as well,
     // and none is thrown.
     let thrower_held = held.is_some() || held_by_bounce_all;

@@ -750,6 +750,16 @@ mod tests {
         }
     }
 
+    /// bunches.md, "Pictures": a bunch is drawn spinning up and down.
+    #[test]
+    fn bunches_are_drawn_as_bunches() {
+        let entities = read(&fragment()).unwrap().entities(BOTTOM, |r| {
+            (r == 0x2000).then(|| (Kind::Bunch, KindSettings::default()))
+        });
+        let bunch = entities.iter().find(|e| e.kind == "cluster").unwrap();
+        assert_eq!(bunch.params["pictures"].as_str(), Some("bunch"));
+    }
+
     /// The spot keeps its entry's position, which decides when the
     /// object appears.
     #[test]

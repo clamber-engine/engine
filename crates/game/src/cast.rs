@@ -16,7 +16,8 @@
 //! ([`crate::walker_pictures`]), throwers and balls
 //! ([`crate::thrower_pictures`]) with sheets of theirs. Single
 //! collectibles that spin show their step's picture
-//! ([`crate::spin_pictures`]). Entities play their
+//! ([`crate::spin_pictures`]), and bunches their entry's
+//! ([`crate::bunch_pictures`]). Entities play their
 //! sheet's first animation, except a reached checkpoint, which plays
 //! `reached`, a defeated enemy, which plays `defeated`, a launcher
 //! that just fired, which plays `fire`, and a spring whose top is pressed
@@ -31,6 +32,7 @@ use clamber_sim::{
 };
 use clamber_sprite::{Playback, SpriteSheet};
 
+use crate::bunch_pictures;
 use crate::pictures::{self, PictureClock};
 use crate::spin_pictures;
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
@@ -247,6 +249,12 @@ impl Cast {
             }
             return;
         }
+        if let Some(count) = pose.bunch {
+            if let Some(sprite) = self.bunch_picture(thing, pose, count, x, y) {
+                self.bank.draw(canvas, &Sprite { opacity, ..sprite });
+            }
+            return;
+        }
         let facing = pose.walker.facing().unwrap_or(thing.facing);
         let shown = thrower_pictures::shown(thing);
         let sprite = match self.walker_picture(pose, x, y) {
@@ -327,6 +335,42 @@ impl Cast {
         })
     }
 
+    /// A bunch's picture with `count` counted frames since it appeared:
+    /// its own from [`bunch_pictures::SHEET`], unmirrored with its
+    /// origin at the bunch's position, if the sheet has all six;
+    /// otherwise the frame of its kind's animation that far through the
+    /// cycle.
+    fn bunch_picture(
+        &self,
+        thing: &Thing,
+        pose: &Pose,
+        count: u32,
+        x: f32,
+        y: f32,
+    ) -> Option<Sprite> {
+        let entry = bunch_pictures::entry(count);
+        let own = self.kinds.get(bunch_pictures::SHEET).and_then(|&id| {
+            let sheet = self.bank.sheet(id);
+            let all = bunch_pictures::LABELS
+                .iter()
+                .all(|l| sheet.animation(l).is_some());
+            let label = all.then_some(bunch_pictures::label(entry))?;
+            let frame = *sheet.animation(label)?.frames.first()?;
+            Some(Sprite::new(id, frame, x, y))
+        });
+        own.or_else(|| {
+            let &id = self.kinds.get(&thing.kind)?;
+            let frames = self
+                .bank
+                .sheet(id)
+                .animations
+                .get(pose.animation)
+                .map_or(&[][..], |a| &a.frames[..]);
+            let at = entry as usize * frames.len() / bunch_pictures::CYCLE as usize;
+            Some(Sprite::new(id, frames.get(at).copied().unwrap_or(0), x, y))
+        })
+    }
+
     /// A walker's own picture for `pose`, from its kind's sheet, if that
     /// has the picture's whole group. Its origin is a px left of the
     /// walker's position (`formats/sprites.md`, "Where the picture is
@@ -400,6 +444,9 @@ pub struct Pose {
     pub walker: WalkerClock,
     /// A spinning collectible's step ([`crate::spin_pictures`]).
     pub spin: Option<u8>,
+    /// A bunch's counted frames since it appeared
+    /// ([`crate::bunch_pictures`]).
+    pub bunch: Option<u32>,
 }
 
 /// Every actor's pose: the player's, the other character's, the lost
@@ -432,6 +479,7 @@ impl Poses {
             let id = cast.kinds.get(&thing.kind).copied();
             pose.animation = cast.animation(id, thing_animation(world, thing));
             pose.spin = spins(world, thing).then(|| spin_pictures::step(0, thing.pos));
+            pose.bunch = (is_bunch(world, thing) && thing.active).then_some(0);
         }
         poses
     }
@@ -439,11 +487,8 @@ impl Poses {
     /// Moves every pose on a logic frame, for `world` as it is now.
     /// `jump_next`: a jump starts on the player's next frame.
     pub fn update(&mut self, cast: &Cast, world: &World, jump_next: bool) {
-        self.clock = if world.flow.events.contains(&FlowEvent::Respawn) {
-            1
-        } else {
-            self.clock + 1
-        };
+        let respawn = world.flow.events.contains(&FlowEvent::Respawn);
+        self.clock = if respawn { 1 } else { self.clock + 1 };
         self.player.pictures.update(world, jump_next);
         let id = cast.player;
         let landing = cast.playing(id, &self.player, LAND);
@@ -463,6 +508,14 @@ impl Poses {
                 None => pose.walker = WalkerClock::default(),
             }
             pose.spin = spins(world, thing).then(|| spin_pictures::step(self.clock, thing.pos));
+            // A bunch's cycle starts afresh on the frame it appears and
+            // when play starts again, and steps on the frames walkers
+            // move on.
+            pose.bunch = match pose.bunch {
+                _ if !is_bunch(world, thing) || !thing.active => None,
+                Some(count) if !respawn => Some(count + u32::from(!world.still)),
+                _ => Some(0),
+            };
         }
     }
 }
@@ -509,24 +562,35 @@ fn leaving_animation(world: &World) -> &'static str {
 /// The walker kind whose pictures `thing` shows, as its entity's
 /// `pictures` param names it.
 fn walker_size(world: &World, thing: &Thing) -> Option<Size> {
-    let entity = world.level.entities.get(thing.index)?;
-    Size::named(entity.params.get(PICTURES)?.as_str()?)
+    Size::named(pictures_param(world, thing)?)
 }
 
 /// Whether `thing` is a collectible that spins, as its entity's
 /// `pictures` param says ([`crate::spin_pictures`]).
 fn spins(world: &World, thing: &Thing) -> bool {
+    pictures_param(world, thing) == Some(spin_pictures::SPIN)
+}
+
+/// Whether `thing` is a collectible drawn as a bunch, as its entity's
+/// `pictures` param says ([`crate::bunch_pictures`]).
+fn is_bunch(world: &World, thing: &Thing) -> bool {
+    pictures_param(world, thing) == Some(bunch_pictures::BUNCH)
+}
+
+/// `thing`'s entity's `pictures` param, if it has one.
+fn pictures_param<'w>(world: &'w World, thing: &Thing) -> Option<&'w str> {
     world
         .level
         .entities
-        .get(thing.index)
-        .and_then(|e| e.params.get(PICTURES)?.as_str())
-        == Some(spin_pictures::SPIN)
+        .get(thing.index)?
+        .params
+        .get(PICTURES)?
+        .as_str()
 }
 
 /// The entity param naming the pictures a walker
 /// ([`crate::walker_pictures`]) or a collectible
-/// ([`crate::spin_pictures`]) shows.
+/// ([`crate::spin_pictures`], [`crate::bunch_pictures`]) shows.
 pub const PICTURES: &str = "pictures";
 
 /// A thing's animation, if not its sheet's first.
@@ -1136,6 +1200,89 @@ mod tests {
             cast.draw_thing(&mut canvas, thing, &pose, 2.0, 0.0);
             let got = [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()];
             assert_eq!(got, want, "{labels:?} on {step}");
+        }
+    }
+
+    /// A level with a bunch at (30, 40).
+    fn bunched() -> World {
+        let level = LEVEL.to_string()
+            + r#"
+            [[entities]]
+            type = "cluster"
+            at = [30, 40]
+            params = { pictures = "bunch" }
+        "#;
+        let level = Level::from_toml_str(&level, "test").unwrap();
+        World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()))
+    }
+
+    #[test]
+    fn a_bunch_counts_the_frames_walkers_move_on_from_when_it_appears() {
+        let mut world = bunched();
+        let cast = Cast::new(vec![("cluster".to_string(), sheet())]);
+        let index = world
+            .things
+            .iter()
+            .position(|t| t.kind == "cluster")
+            .unwrap();
+        let mut poses = Poses::new(&cast, &world);
+        assert_eq!(poses.things[index].bunch, Some(0));
+        let mut counts = Vec::new();
+        for still in [false, false, true, true, false] {
+            world.still = still;
+            poses.update(&cast, &world, false);
+            counts.push(poses.things[index].bunch.unwrap());
+        }
+        assert_eq!(counts, [1, 2, 2, 2, 3]);
+        // Play starting again starts its cycle afresh.
+        world.still = false;
+        world.flow.events.push(FlowEvent::Respawn);
+        poses.update(&cast, &world, false);
+        assert_eq!(poses.things[index].bunch, Some(0));
+        world.flow.events.clear();
+        poses.update(&cast, &world, false);
+        assert_eq!(poses.things[index].bunch, Some(1));
+        // Gone, it shows nothing; appearing again, it starts afresh.
+        world.things[index].active = false;
+        poses.update(&cast, &world, false);
+        assert_eq!(poses.things[index].bunch, None);
+        world.things[index].active = true;
+        poses.update(&cast, &world, false);
+        assert_eq!(poses.things[index].bunch, Some(0));
+        // Other things aren't bunches.
+        assert_eq!(poses.things.iter().filter(|p| p.bunch.is_some()).count(), 1);
+    }
+
+    #[test]
+    fn a_bunch_shows_its_own_pictures_unmirrored_while_all_six_are_there() {
+        let world = bunched();
+        let thing = world.things.iter().find(|t| t.kind == "cluster").unwrap();
+        let labels = &crate::bunch_pictures::LABELS[..];
+        for (labels, count, want) in [
+            // Its own picture, at its origin.
+            (labels, 0, [B, Color::default()]),
+            (labels, 29, [B, Color::default()]),
+            // Without one of the six, the engine's art, as far through
+            // its animation as the entry is through the cycle.
+            (&labels[1..], 0, [R, Color::default()]),
+            (&labels[1..], 28, [R, Color::default()]),
+            (&labels[1..], 29, [G, Color::default()]),
+        ] {
+            let cast = Cast::new(vec![
+                ("cluster".to_string(), sheet()),
+                (
+                    crate::bunch_pictures::SHEET.to_string(),
+                    labelled_sheet(labels, 4),
+                ),
+            ]);
+            let pose = Pose {
+                bunch: Some(count),
+                ..Pose::default()
+            };
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, thing, &pose, 1.0, 0.0);
+            let got = [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()];
+            assert_eq!(got, want, "{labels:?} on {count}");
         }
     }
 }

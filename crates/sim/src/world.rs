@@ -313,6 +313,11 @@ pub struct World {
     /// real time holds the screen for them; they aren't steps, and a
     /// trace has no rows for them.
     pub pause: u8,
+    /// Walkers held still on the last step, as on a bounce's frozen
+    /// frames, a defeat's pause or while the player is knocked out, or
+    /// on a step on which nothing moved: the frames walker.md's
+    /// "Counted frames" leaves out. Not part of the trace.
+    pub still: bool,
 }
 
 impl World {
@@ -475,6 +480,7 @@ impl World {
             dropping_in: drop,
             waiting: Vec::new(),
             pause: 0,
+            still: false,
         })
     }
 
@@ -1301,6 +1307,7 @@ fn advance(world: &mut World, input: &InputFrame) {
     for thing in &mut world.things {
         thing.still = true;
     }
+    world.still = true;
     world.hit_by = None;
     world.flow.events.clear();
     world.pause = 0;
