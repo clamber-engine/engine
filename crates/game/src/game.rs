@@ -429,6 +429,7 @@ impl Game {
         if sprites {
             self.draw_things(canvas, &to_screen, alpha, false);
             self.draw_kegs(canvas, &to_screen);
+            self.draw_sparkles(canvas, &to_screen);
             if !behind {
                 self.draw_characters(canvas, alpha, origin);
             }
@@ -577,6 +578,22 @@ impl Game {
                 }
             }
             canvas.fill_rect(x.round() as i32 - 3, y.round() as i32 - 3, 6, 6, FLASH);
+        }
+    }
+
+    /// The sparkles around letters: the engine's own art, a cross that
+    /// grows and shrinks, centred on each sparkle's point.
+    fn draw_sparkles(
+        &self,
+        canvas: &mut dyn Surface,
+        to_screen: &dyn Fn((f64, f64)) -> (f64, f64),
+    ) {
+        for sparkle in &self.poses.sparkles.list {
+            let (x, y) = to_screen((f64::from(sparkle.x), f64::from(sparkle.y)));
+            let (x, y, r) = (x.round() as i32, y.round() as i32, sparkle.reach());
+            canvas.fill_rect(x - r, y, 2 * r + 1, 1, FLASH);
+            canvas.fill_rect(x, y - r, 1, 2 * r + 1, FLASH);
+            canvas.fill_rect(x - 1, y - 1, 3, 3, FLASH);
         }
     }
 

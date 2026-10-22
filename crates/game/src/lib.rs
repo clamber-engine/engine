@@ -74,6 +74,7 @@ pub mod replay;
 pub mod report;
 mod session;
 mod sound;
+mod sparkles;
 mod spin_pictures;
 mod sprites;
 mod surface;

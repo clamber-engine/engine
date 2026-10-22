@@ -36,6 +36,7 @@ use clamber_sprite::{Playback, SpriteSheet};
 use crate::bunch_pictures;
 use crate::letter_pictures;
 use crate::pictures::{self, PictureClock};
+use crate::sparkles::Sparkles;
 use crate::spin_pictures;
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
 use crate::surface::Surface;
@@ -574,6 +575,8 @@ pub struct Poses {
     /// The latest frame's number plus one, with frames numbered from the
     /// level's start or from play starting again after a lost life.
     pub clock: u32,
+    /// The sparkles around letters.
+    pub sparkles: Sparkles,
 }
 
 impl Poses {
@@ -585,6 +588,7 @@ impl Poses {
             leaving: Pose::default(),
             things: vec![Pose::default(); world.things.len()],
             clock: 0,
+            sparkles: Sparkles::default(),
         };
         poses.player.animation = cast.animation(cast.player, Some(player_animation(world, false)));
         poses.other.animation = cast.animation(cast.player, Some(other_animation(world)));
@@ -605,6 +609,7 @@ impl Poses {
     pub fn update(&mut self, cast: &Cast, world: &World, jump_in: u8) {
         let respawn = world.flow.events.contains(&FlowEvent::Respawn);
         self.clock = if respawn { 1 } else { self.clock + 1 };
+        self.sparkles.update(world, self.clock - 1);
         self.player.pictures.update(world, jump_in);
         let id = cast.player;
         let landing = cast.playing(id, &self.player, LAND);
@@ -1258,6 +1263,53 @@ mod tests {
             assert_eq!(lit, [(origin - 1, 1)], "{want:?}");
             assert_eq!(canvas.get(origin - 1, 1).unwrap(), want);
         }
+    }
+
+    #[test]
+    fn a_letter_gets_a_sparkle_on_frames_14_mod_16_that_lasts_forty_counted_frames() {
+        let archetypes = clamber_sim::Archetypes::builtin();
+        let mut world = world();
+        let thing = &mut world.things[0];
+        thing.kind = "letter".to_string();
+        thing.archetype = archetypes.named("letter");
+        thing.active = true;
+        let cast = Cast::new(Vec::new());
+        let mut poses = Poses::new(&cast, &world);
+        let mut seen = Vec::new();
+        for m in 0..60u32 {
+            // Frames 20 and 21 are ones on which nothing moves.
+            world.still = m == 20 || m == 21;
+            poses.update(&cast, &world, 0);
+            seen.push(
+                poses
+                    .sparkles
+                    .list
+                    .iter()
+                    .map(|s| s.step())
+                    .collect::<Vec<_>>(),
+            );
+        }
+        assert!(seen[13].is_empty());
+        assert_eq!(seen[14], [1]);
+        // Frames 20 and 21 don't count: the step stays.
+        assert_eq!(seen[19], [2]);
+        assert_eq!(seen[20], [2]);
+        assert_eq!(seen[21], [2]);
+        assert_eq!(seen[22], [2]);
+        // Frame 30 is a sparkle frame again, 16 on.
+        assert_eq!(seen[30], [3, 1]);
+        // The one from frame 14 shows step 8 through its 39th counted
+        // frame after it, and is gone on the 40th.
+        assert_eq!(seen[55], [8, 6, 2]);
+        assert_eq!(seen[56], [6, 3]);
+        // A letter that's gone gets no sparkle, and those there go on.
+        world.still = false;
+        world.things[0].active = false;
+        for _ in 60..63 {
+            poses.update(&cast, &world, 0);
+        }
+        assert!(poses.sparkles.list.iter().all(|s| s.step() > 1));
+        assert!(!poses.sparkles.list.is_empty());
     }
 
     #[test]
