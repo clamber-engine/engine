@@ -18,6 +18,7 @@ use crate::display::Look;
 use crate::hud::{draw_hud_with, picture_left};
 use crate::hutch_pictures;
 use crate::layers::{LayerArt, Viewing, nudge};
+use crate::sling_pictures;
 use crate::surface::{Lighting, PointLight, Surface};
 use crate::thrown_pictures;
 
@@ -432,6 +433,7 @@ impl Game {
             self.draw_crates(canvas, &to_screen, false);
             self.draw_things(canvas, &to_screen, alpha, false);
             self.draw_crates(canvas, &to_screen, true);
+            self.draw_barrel_effects(canvas, &to_screen);
             self.draw_kegs(canvas, &to_screen);
             self.draw_sparkles(canvas, &to_screen);
             if !behind {
@@ -650,6 +652,58 @@ impl Game {
             if !cast.draw_smoke(canvas, pose, smoke) && hutch_pictures::smoke(clock.c).is_some() {
                 let (px, py) = (smoke.0.round() as i32, smoke.1.round() as i32);
                 canvas.fill_rect(px - 4, py - 4, 8, 8, SMOKE);
+            }
+        }
+    }
+
+    /// The smoke at a launch barrel's catch and the flash at its shot
+    /// (launch-barrel.md, "Pictures"), drawn while they last, also after
+    /// a barrel that breaks is gone. A group the sheet doesn't have is the
+    /// engine's own: squares, as for a crate.
+    fn draw_barrel_effects(
+        &self,
+        canvas: &mut dyn Surface,
+        to_screen: &dyn Fn((f64, f64)) -> (f64, f64),
+    ) {
+        let cast = self.drawn_cast();
+        for thing in &self.world.things {
+            let Some(Behavior::Sling(sling)) = thing.archetype.map(|a| a.behavior) else {
+                continue;
+            };
+            let Some(n) = self.poses.things.get(thing.index).and_then(|p| p.sling) else {
+                continue;
+            };
+            let (x, y) = point(thing.pos);
+            let at = |dx: f64, dy: f64| {
+                let (x, y) = to_screen((x + dx, y + dy));
+                (x as f32, y as f32)
+            };
+            if let Some(entry) = sling_pictures::smoke(n) {
+                let (sx, sy) = at(-15.0, -18.5);
+                if !cast.draw_smoke_entry(canvas, entry, (sx, sy)) {
+                    let (px, py) = (sx.round() as i32, sy.round() as i32);
+                    canvas.fill_rect(px - 4, py - 4, 8, 8, SMOKE);
+                }
+            }
+            let shot = u32::from(sling.hold) + 1;
+            let Some(k) = n.checked_sub(shot) else {
+                continue;
+            };
+            let Some(entry) = sling_pictures::flash(k) else {
+                continue;
+            };
+            let moved = sling_pictures::flash_moved(k);
+            let down = sling_pictures::shoots_down(&sling);
+            let (dx, dy) = if down {
+                (0.0, -16.0 + moved)
+            } else {
+                (-moved, -16.0)
+            };
+            let (fx, fy) = at(dx, dy);
+            let group = &thrown_pictures::FLASH;
+            if !cast.draw_broken(canvas, group, entry, false, (fx, fy)) {
+                let (px, py) = (fx.round() as i32, fy.round() as i32);
+                canvas.fill_rect(px - 3, py - 3, 6, 6, FLASH);
             }
         }
     }

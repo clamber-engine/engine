@@ -1,7 +1,7 @@
 //! The objects' picture sheets, which the importer can't write yet.
 //!
 //! The spec names the pictures of the letters, sparkles, collectibles,
-//! bunches, thrown objects, animal crate, walkers, stingers, critters, tyres, extra-life items, signs and thrower by hash, but
+//! bunches, thrown objects, animal crate, walkers, stingers, critters, tyres, extra-life items, signs, launch barrels and thrower by hash, but
 //! not which sprite palette colours each group or where it is
 //! (`formats/sprites.md`, "Sprite palettes"; spec#58). Until it does, a
 //! real import has no such sheets and the game draws its own art for
@@ -25,6 +25,7 @@ pub const PENDING_SHEETS: &[(&str, &str)] = &[
     ("critter-pictures", "the critters"),
     ("item-pictures", "the extra-life items"),
     ("sign-pictures", "the signs"),
+    ("barrel-pictures", "the launch barrels"),
     ("tyre-pictures", "the tyres"),
     ("stiff-tyre-pictures", "the stiff tyres"),
     ("thrower-pictures", "the thrower"),

@@ -40,6 +40,7 @@ use crate::item_pictures;
 use crate::letter_pictures;
 use crate::pictures::{self, PictureClock};
 use crate::sign_pictures;
+use crate::sling_pictures;
 use crate::sparkles::Sparkles;
 use crate::spin_pictures;
 use crate::sprites::{PaletteId, SheetId, Sprite, SpriteBank, SpriteBankBuilder};
@@ -297,6 +298,10 @@ impl Cast {
             self.bank.draw(canvas, &Sprite { opacity, ..sprite });
             return;
         }
+        if let Some(sprite) = self.barrel_picture(thing, pose, x, y) {
+            self.bank.draw(canvas, &Sprite { opacity, ..sprite });
+            return;
+        }
         if let Some(clock) = pose.critter {
             if let Some(sprite) = self.critter_picture(thing, pose, clock, x, y) {
                 self.bank.draw(canvas, &Sprite { opacity, ..sprite });
@@ -535,6 +540,30 @@ impl Cast {
         let label = sign_pictures::LABELS.get(usize::from(picture))?;
         let frame = *sheet.animation(label)?.frames.first()?;
         Some(Sprite::new(id, frame, x - 1.0, y))
+    }
+
+    /// A launch barrel's own picture, a px left, if the pack's
+    /// [`sling_pictures::SHEET`] has all those of its kind; otherwise
+    /// none, and the engine's art is drawn on every frame.
+    fn barrel_picture(&self, thing: &Thing, pose: &Pose, x: f32, y: f32) -> Option<Sprite> {
+        let Behavior::Sling(sling) = thing.archetype?.behavior else {
+            return None;
+        };
+        let down = sling_pictures::shoots_down(&sling);
+        let needs: &[&str] = if down {
+            &sling_pictures::DOWN
+        } else {
+            &sling_pictures::LEFT
+        };
+        let label = sling_pictures::picture(down, pose.sling);
+        let at = (x, y);
+        self.group_sprite(
+            sling_pictures::SHEET,
+            needs,
+            needs.iter().position(|&l| l == label)?,
+            false,
+            at,
+        )
     }
 
     /// A critter's picture at `clock`: its own from
@@ -832,6 +861,14 @@ impl Cast {
         true
     }
 
+    /// Draws entry `entry` of the smoke's six pictures with its origin at
+    /// `at`. Returns false, drawing nothing, when the sheet doesn't have
+    /// all six.
+    pub fn draw_smoke_entry(&self, canvas: &mut dyn Surface, entry: usize, at: (f32, f32)) -> bool {
+        let group = &hutch_pictures::SMOKE;
+        self.draw_group(canvas, hutch_pictures::SHEET, group, entry, false, at)
+    }
+
     /// A walker's own picture for `pose`, from its kind's sheet, if that
     /// has the picture's whole group. Its origin is a px left of the
     /// walker's position (`formats/sprites.md`, "Where the picture is
@@ -925,6 +962,9 @@ pub struct Pose {
     /// An animal crate's frames since it broke
     /// ([`crate::hutch_pictures`]).
     pub hutch: hutch_pictures::Clock,
+    /// A launch barrel's frames since it caught the player
+    /// ([`crate::sling_pictures`]).
+    pub sling: Option<u32>,
 }
 
 /// Every actor's pose: the player's, the other character's, the lost
@@ -1033,6 +1073,14 @@ impl Poses {
             pose.thrown = thrown(thing).then(|| pose.thrown.map_or(0, |n| n + 1));
             pose.put_down =
                 matches!(thing.phase, Phase::Placed).then(|| pose.put_down.map_or(0, |n| n + 1));
+            if matches!(
+                thing.archetype.map(|a| a.behavior),
+                Some(Behavior::Sling(_))
+            ) {
+                let caught = matches!(thing.phase, Phase::Caught(_));
+                let reset = respawn || thing.phase == Phase::Ready;
+                pose.sling = sling_pictures::next(pose.sling, caught, reset);
+            }
             if is_hutch(thing) {
                 let seed = self.clock.wrapping_add(thing.index as u32);
                 let broken = thing.phase != Phase::Ready;
@@ -2091,6 +2139,50 @@ mod tests {
             let got = [canvas.get(0, 0).unwrap(), canvas.get(1, 0).unwrap()];
             assert_eq!(got == [B, Color::default()], own, "{labels:?}");
         }
+    }
+
+    #[test]
+    fn a_barrel_shows_its_own_picture_only_with_all_of_its_kind() {
+        let mut thing = world().things[0].clone();
+        thing.kind = "sling".to_string();
+        thing.archetype = clamber_sim::Archetypes::builtin().named("sling");
+        thing.active = true;
+        let labels = &crate::sling_pictures::LEFT[..];
+        for (labels, own) in [(labels, true), (&labels[1..], false)] {
+            let cast = Cast::new(vec![
+                ("sling".to_string(), sheet()),
+                (
+                    crate::sling_pictures::SHEET.to_string(),
+                    labelled_sheet(labels, 4),
+                ),
+            ]);
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, &thing, &Pose::default(), 1.0, 0.0);
+            let got = [canvas.get(0, 0).unwrap(), canvas.get(1, 0).unwrap()];
+            assert_eq!(got == [B, Color::default()], own, "{labels:?}");
+        }
+    }
+
+    #[test]
+    fn a_barrel_counts_the_frames_from_its_catch_until_it_is_ready_again() {
+        let mut world = world();
+        world.things[0].kind = "sling".to_string();
+        world.things[0].archetype = clamber_sim::Archetypes::builtin().named("sling");
+        let cast = Cast::new(Vec::new());
+        let mut poses = Poses::new(&cast, &world);
+        let mut counts = Vec::new();
+        for phase in [
+            Phase::Ready,
+            Phase::Caught(0),
+            Phase::Caught(1),
+            Phase::Broken,
+            Phase::Ready,
+        ] {
+            world.things[0].phase = phase;
+            poses.update(&cast, &world, 0);
+            counts.push(poses.things[0].sling);
+        }
+        assert_eq!(counts, [None, Some(0), Some(1), Some(2), None]);
     }
 
     fn stinger_thing() -> Thing {
