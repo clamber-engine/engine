@@ -2668,6 +2668,53 @@ mod tests {
         );
     }
 
+    /// Right (and Action) held from just after a standing jump's take-off
+    /// through the landing, jump held a few frames: the run and its L.
+    fn jump_then_hold(slot: usize, then: &[Action]) -> (Run, usize) {
+        let keys: Vec<Vec<Action>> = (0..90)
+            .map(|f| match f {
+                10 => vec![Action::Jump],
+                11..=14 => then.iter().copied().chain([Action::Jump]).collect(),
+                f if f > 14 => then.to_vec(),
+                _ => vec![],
+            })
+            .collect();
+        let played = run(world(FLAT, slot), &keys);
+        let l = played.frames(Event::Land)[0];
+        (played, l)
+    }
+
+    #[test]
+    fn the_first_character_runs_from_m_and_walks_from_k_after_a_landing() {
+        // player-frames.md, "A jump and its landing": run-1 on M = L + 1,
+        // walk-1 on K = L + 7.
+        let (run, l) = jump_then_hold(0, &[Action::Right, Action::Action]);
+        run.check(
+            l + 1,
+            &[("run-1", 2), ("run-2", 2), ("run-3", 1), ("run-4", 2)],
+        );
+        let (run, l) = jump_then_hold(0, &[Action::Right]);
+        run.check(l + 1, &[("land-1", 1), ("land-2", 2), ("land-3", 3)]);
+        run.check(
+            l + 7,
+            &[("walk-1", 2), ("walk-2", 2), ("walk-3", 1), ("walk-4", 2)],
+        );
+    }
+
+    #[test]
+    fn the_second_character_runs_from_l_after_a_landing() {
+        let (held, l) = jump_then_hold(1, &[Action::Right, Action::Action]);
+        held.check(
+            l,
+            &[
+                ("s-run-1", 2),
+                ("s-run-2", 2),
+                ("s-run-3", 1),
+                ("s-run-4", 2),
+            ],
+        );
+    }
+
     #[test]
     fn the_second_character_walks_on_from_a_landing() {
         // From L + 17 with Right held: walking pictures, from s-walk-1.
