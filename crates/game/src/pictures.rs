@@ -2549,6 +2549,43 @@ mod tests {
         run.check(d + 17, &standing_list(2900 - d - 17));
     }
 
+    /// `FLAT` with the player at `x`, or a platform ending at 120 with
+    /// a lower floor beyond it, or the first slope and the flat bottom
+    /// of `slope-dip.level`.
+    fn stand_after_walking(level: &str, x: f64, walk: usize) -> Run {
+        let src = level.replace("start = [64, 400]", &format!("start = [{x}, 400]"));
+        run(world(&src, 0), &hold(&[Action::Right], walk, 1500))
+    }
+
+    #[test]
+    fn standing_at_a_ledge_shows_the_same_pictures_as_on_flat_floor() {
+        let ledge = FLAT.replace(
+            "rect = [0, 400, 2048, 80]",
+            "rect = [0, 400, 120, 80]\n[[collision]]\nshape = \"rect\"\nrect = [120, 440, 1928, 40]",
+        );
+        for (x, walk) in [(100.0, 0), (112.0, 0), (100.0, 6), (110.0, 3)] {
+            let on_flat = stand_after_walking(FLAT, x, walk);
+            let at_ledge = stand_after_walking(&ledge, x, walk);
+            assert!(at_ledge.grounded.iter().all(|&g| g), "{x} {walk}");
+            assert_eq!(at_ledge.shown, on_flat.shown, "{x} {walk}");
+        }
+    }
+
+    #[test]
+    fn standing_on_a_slope_shows_the_same_pictures_as_on_flat_floor() {
+        let dip = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../content/test/slope-dip.level"
+        ))
+        .unwrap();
+        let dip = dip.replace("start = [64.26953125, 400]", "start = [64, 400]");
+        for (x, walk) in [(480.0, 40), (500.0, 5), (520.0, 0), (570.0, 10)] {
+            let on_flat = stand_after_walking(FLAT, x, walk);
+            let on_slope = stand_after_walking(&dip, x, walk);
+            assert_eq!(on_slope.shown, on_flat.shown, "{x} {walk}");
+        }
+    }
+
     #[test]
     fn standing_still_after_a_landing() {
         let run = run(world(FLAT, 0), &jump(10, 1, 1500));
