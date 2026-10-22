@@ -66,8 +66,10 @@ pub enum Kind {
     /// A tyre that throws the player up and never squashes (`tyre.md`,
     /// "The stiff tyre").
     StiffTyre,
-    /// A sign: scenery that nothing touches (`signs.md`).
-    Sign,
+    /// A sign: scenery that nothing touches (`signs.md`), with the
+    /// index of its picture (0 the arrow, 1 the word, 2 the scene's
+    /// board) that its kind fingerprint gives.
+    Sign(u8),
     /// A small flying creature: scenery that nothing touches
     /// (`critter.md`).
     Critter,
@@ -114,7 +116,7 @@ impl Kind {
         Kind::Stinger,
         Kind::Tyre,
         Kind::StiffTyre,
-        Kind::Sign,
+        Kind::Sign(0),
         Kind::Critter,
         Kind::ExtraLife(1),
         Kind::ExtraLife(3),
@@ -155,7 +157,7 @@ impl Kind {
             Kind::Stinger => "stinger",
             Kind::Tyre => "tyre",
             Kind::StiffTyre => "stiff-tyre",
-            Kind::Sign => "sign",
+            Kind::Sign(_) => "sign",
             Kind::Critter => "critter",
             Kind::ExtraLife(1) => "extra-life-1",
             Kind::ExtraLife(_) => "extra-life-3",
@@ -398,9 +400,12 @@ impl Kind {
                 set("throw_up", ints(&[-51, 18]));
                 "spring"
             }
-            // signs.md: it has no values of its own. How it's drawn isn't
-            // covered, so both of the first level's signs look the same.
-            Kind::Sign => "signpost",
+            // signs.md: it has no values of its own; which of the three
+            // pictures it's drawn with depends on its fingerprint.
+            Kind::Sign(picture) => {
+                set("picture", Value::Integer(picture.into()));
+                "signpost"
+            }
             // critter.md: the values are the archetype's own.
             Kind::Critter => CRITTER,
             // extra-lives.md: the ranges are the archetype's own. The
@@ -620,7 +625,7 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             ),
             (
                 "47a9fc70cf6be73792670830d89523401fe75b8ad5ade692f5fe8d534962429c",
-                Kind::Sign,
+                Kind::Sign(2),
             ),
             (
                 "4c90ae328510dac24fa35424acdaa6b793fcbebfa288220cce41179f518d9978",
@@ -772,7 +777,7 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             ),
             (
                 "e332f1969a9e6ec35546e8ef037006fd8d1d4bbc9933646879072cc1f3a10009",
-                Kind::Sign,
+                Kind::Sign(1),
             ),
             (
                 "ef9f527e7d99c063327beb2e5ab910b66859e3251df85554202bade9aa887b16",
@@ -792,7 +797,7 @@ pub fn kind_rows(title: &str) -> Vec<KindRow> {
             ),
             (
                 "fc06b850598f866e68da84373087bd70260e200cd74a79edd39e9ee7612b91e3",
-                Kind::Sign,
+                Kind::Sign(0),
             ),
         ],
         _ => &[],
@@ -1164,8 +1169,52 @@ mod tests {
             })
             .collect();
         assert_eq!(want.len(), 67);
-        assert_eq!(kind_rows("title-1"), want);
+        // The signs' pictures are checked against signs.md.
+        let plain = |kind| match kind {
+            Kind::Sign(_) => Kind::Sign(0),
+            kind => kind,
+        };
+        let got: Vec<KindRow> = kind_rows("title-1")
+            .into_iter()
+            .map(|r| KindRow {
+                kind: plain(r.kind),
+                ..r
+            })
+            .collect();
+        assert_eq!(got, want);
         assert!(kind_rows("title-2").is_empty());
+    }
+
+    #[test]
+    fn each_sign_fingerprint_has_its_picture_in_the_spec() {
+        let path = format!(
+            "{}/../../spec/behavior/signs.md",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let spec = std::fs::read_to_string(&path).unwrap();
+        let (_, table) = spec.split_once("\n## Pictures").unwrap();
+        let labels = ["sign-arrow", "sign-word", "sign-scene"];
+        let mut seen = 0;
+        for line in table.lines() {
+            let cells: Vec<&str> = line
+                .split('|')
+                .map(|c| c.trim().trim_matches('`'))
+                .collect();
+            let (Some(hash), Some(label)) = (cells.get(2), cells.get(3)) else {
+                continue;
+            };
+            let Some(fingerprint) = Sha256Hash::from_hex(hash) else {
+                continue;
+            };
+            let picture = labels.iter().position(|l| l == label).unwrap();
+            let row = kind_rows("title-1")
+                .into_iter()
+                .find(|r| r.fingerprint == fingerprint)
+                .unwrap();
+            assert_eq!(row.kind, Kind::Sign(picture as u8), "{label}");
+            seen += 1;
+        }
+        assert_eq!(seen, 3);
     }
 
     /// A vector settings row's fingerprint and kind.
@@ -1565,8 +1614,8 @@ mod tests {
                 (Kind::LeftLaunchBarrel | Kind::DownLaunchBarrel, _) => {
                     panic!("{kind} isn't a sling")
                 }
-                (Kind::Sign, behavior) => {
-                    assert_eq!(behavior, Behavior::Scenery { picture: 0 }, "{kind}")
+                (Kind::Sign(picture), behavior) => {
+                    assert_eq!(behavior, Behavior::Scenery { picture }, "{kind}")
                 }
                 (Kind::HiddenBunch, Behavior::Hidden(h)) => {
                     assert_eq!((h.fall_height, h.becomes), (0, "cluster"))
