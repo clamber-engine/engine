@@ -110,6 +110,7 @@ fn a_bursts_pieces_and_flash_take_pictures() {
         gravity: Fixed::ZERO,
         rise: Fixed::ZERO,
         time: 3,
+        object: None,
     });
     assert!(!step_at(&mut w, 812)[6]);
     assert!(!step_at(&mut w, 812)[6]);

@@ -467,8 +467,8 @@ fn bounce_and_roll(
         return true;
     }
     if wall {
-        // Its pieces aren't in the spec.
         thing.active = false;
+        thing.phase = Phase::Broken;
         return false;
     }
     if flight.rolling {

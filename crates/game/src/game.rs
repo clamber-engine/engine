@@ -18,6 +18,7 @@ use crate::display::Look;
 use crate::hud::{draw_hud, picture_left};
 use crate::layers::{LayerArt, Viewing, nudge};
 use crate::surface::{Lighting, PointLight, Surface};
+use crate::thrown_pictures;
 
 const SKY: Color = rgb(0x2a, 0x34, 0x4a);
 const SOLID: Color = rgb(0x6b, 0x74, 0x80);
@@ -544,11 +545,37 @@ impl Game {
             }
         }
         for burst in &self.world.bursts {
-            for &piece in &burst.pieces {
+            let count = u32::from(burst.frame);
+            for (i, &piece) in burst.pieces.iter().enumerate() {
                 let (x, y) = to_screen(point(piece));
+                if burst.object.is_some() {
+                    let group = &thrown_pictures::PIECES[i / 2];
+                    let entry = thrown_pictures::piece(count);
+                    let at = (x as f32, y as f32);
+                    if self
+                        .drawn_cast()
+                        .draw_broken(canvas, group, entry, false, at)
+                    {
+                        continue;
+                    }
+                }
                 canvas.fill_rect(x.round() as i32 - 2, y.round() as i32 - 2, 4, 4, PIECE);
             }
             let (x, y) = to_screen(point(burst.flash));
+            if let Some(right) = burst.object {
+                // Its eight pictures last 19 frames, as long as the burst.
+                let Some(entry) = thrown_pictures::flash(count) else {
+                    continue;
+                };
+                let at = (x as f32, y as f32);
+                let group = &thrown_pictures::FLASH;
+                if self
+                    .drawn_cast()
+                    .draw_broken(canvas, group, entry, right, at)
+                {
+                    continue;
+                }
+            }
             canvas.fill_rect(x.round() as i32 - 3, y.round() as i32 - 3, 6, 6, FLASH);
         }
     }

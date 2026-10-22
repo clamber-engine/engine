@@ -107,6 +107,7 @@ use crate::flow::{FlowEvent, overlap};
 use crate::hidden;
 use crate::hutch;
 use crate::join;
+use crate::keg::Burst;
 use crate::player::{Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, frames, is_wall};
 use crate::pose::{self, Stance};
 use crate::ride;
@@ -296,6 +297,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     let critters_held =
         held.is_some() || waiting || held_by_bounce || held_by_roll || held_by_bounce_all;
     let mut freed = Vec::new();
+    let mut broken = Vec::new();
     for thing in world.things.iter_mut().filter(|t| t.active) {
         if let Some(Behavior::Critter(critter)) = thing.archetype.map(|a| a.behavior) {
             if !critters_held && let Some(entity) = world.level.entities.get(thing.index) {
@@ -343,11 +345,21 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         let moves = if catch_up && enemy { wait + 1 } else { 1 };
         thing.still = false;
         for _ in 0..moves {
+            let flying = match thing.phase {
+                Phase::Thrown(f) if f.thrown && thing.active => Some(f.right()),
+                _ => None,
+            };
             if advance(&world.level, thing, &physics, picture, ending) {
                 freed.push(thing.pos);
+            } else if let Some(right) = flying
+                && !thing.active
+                && matches!(thing.phase, Phase::Broken)
+            {
+                broken.push(Burst::of_object(thing.index, thing.pos, right));
             }
         }
     }
+    world.bursts.extend(broken);
     freed.extend(throw_hits(world));
     let (held_freed, carried_into) = hands_hits(world, &physics);
     freed.extend(held_freed);

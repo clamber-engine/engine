@@ -862,6 +862,7 @@ impl World {
                 vec2(&mut out, *v);
             }
             vec2(&mut out, b.flash);
+            out.push(b.object.map_or(0, |right| 1 + u8::from(right)));
         }
         match self.entering {
             Some(e) => {

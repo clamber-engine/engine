@@ -167,8 +167,22 @@ fn bounces_rolls_and_breaks_against_a_face() {
         }
     }
     // The move would take it into a face column higher than it.
+    assert!(play.world.bursts.is_empty());
     play.step(&[]);
     assert!(!play.world.things[0].active);
+    // A flash and four pieces are left where it was, the flash mirrored
+    // as it was moving right, and last as long as the flash does.
+    let [burst] = play.world.bursts[..] else {
+        panic!("{:?}", play.world.bursts);
+    };
+    assert_eq!((burst.thing, burst.object, burst.frame), (0, Some(true), 0));
+    assert_eq!(burst.flash, play.world.things[0].pos);
+    for _ in 0..18 {
+        play.step(&[]);
+    }
+    assert_eq!(play.world.bursts[0].frame, 18);
+    play.step(&[]);
+    assert!(play.world.bursts.is_empty());
 }
 
 /// A wall breaks it too, though the spec only covers faces.

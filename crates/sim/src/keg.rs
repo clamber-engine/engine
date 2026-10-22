@@ -72,6 +72,8 @@ pub struct Burst {
     pub rise: Fixed,
     /// How many frames it lasts.
     pub time: u8,
+    /// Set when a thrown object broke: whether it was moving right.
+    pub object: Option<bool>,
 }
 
 /// Play resuming at a keg's restart point, from the step the player comes
@@ -126,9 +128,36 @@ impl Burst {
             gravity,
             rise,
             time,
+            object: None,
+        }
+    }
+
+    /// The flash and pieces of a thrown object that broke at `at` moving
+    /// right or not. How the pieces move isn't in the spec; they fly as
+    /// a keg's do, and last as long as the flash.
+    pub(crate) fn of_object(thing: usize, at: Vec2, right: bool) -> Burst {
+        let quarter = |n: i32| Fixed::from_ratio_pow2(n, 2);
+        let pieces = [
+            Vec2::new(quarter(8), quarter(19)),
+            Vec2::new(quarter(-4), quarter(23)),
+            Vec2::new(quarter(-8), quarter(19)),
+            Vec2::new(quarter(4), quarter(25)),
+        ];
+        Burst {
+            object: Some(right),
+            ..Burst::of(
+                thing,
+                at,
+                pieces,
+                (quarter(1), Fixed::from_ratio_pow2(1, 1), OBJECT_BURST_TIME),
+            )
         }
     }
 }
+
+/// How many frames a broken thrown object's flash lasts
+/// (`thrown-objects.md`, "Breaking").
+pub const OBJECT_BURST_TIME: u8 = 19;
 
 impl World {
     /// Where play comes back after a lost life with the checkpoint or keg

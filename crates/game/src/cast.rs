@@ -450,6 +450,36 @@ impl Cast {
         Some(Sprite::new(id, frame, x - 1.0, y))
     }
 
+    /// Draws entry `entry` of a group of eight pictures of
+    /// [`thrown_pictures::SHEET`] (a broken object's flash or pieces) a px
+    /// left of `(x, y)`, mirrored if `flip`. Returns false, drawing
+    /// nothing, when the sheet doesn't have all eight.
+    pub fn draw_broken(
+        &self,
+        canvas: &mut dyn Surface,
+        group: &[&str; 8],
+        entry: usize,
+        flip: bool,
+        (x, y): (f32, f32),
+    ) -> bool {
+        let Some(&id) = self.kinds.get(thrown_pictures::SHEET) else {
+            return false;
+        };
+        let sheet = self.bank.sheet(id);
+        if !group.iter().all(|l| sheet.animation(l).is_some()) {
+            return false;
+        }
+        let Some(&frame) = sheet.animation(group[entry]).and_then(|a| a.frames.first()) else {
+            return false;
+        };
+        let sprite = Sprite {
+            flip_x: flip,
+            ..Sprite::new(id, frame, x - 1.0, y)
+        };
+        self.bank.draw(canvas, &sprite);
+        true
+    }
+
     /// A walker's own picture for `pose`, from its kind's sheet, if that
     /// has the picture's whole group. Its origin is a px left of the
     /// walker's position (`formats/sprites.md`, "Where the picture is
@@ -1404,6 +1434,26 @@ mod tests {
             cast.draw_thing(&mut canvas, thing, &pose, 1.0, 0.0);
             let got = [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()];
             assert_eq!(got, want, "{labels:?} on {count}");
+        }
+    }
+
+    #[test]
+    fn a_broken_objects_pictures_need_the_whole_group() {
+        let flash = &thrown_pictures::FLASH[..];
+        let none = Color::default();
+        for (labels, flip, want, drawn) in [
+            (flash, false, [none, B, none, none], true),
+            (flash, true, [B, none, none, none], true),
+            (&flash[1..], false, [none; 4], false),
+        ] {
+            let cast = Cast::new(vec![(
+                thrown_pictures::SHEET.to_string(),
+                labelled_sheet(labels, 4),
+            )]);
+            let mut canvas = Canvas::new(4, 1);
+            let got = cast.draw_broken(&mut canvas, &thrown_pictures::FLASH, 0, flip, (2.0, 0.0));
+            assert_eq!(got, drawn);
+            assert_eq!([0, 1, 2, 3].map(|x| canvas.get(x, 0).unwrap()), want);
         }
     }
 
