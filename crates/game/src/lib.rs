@@ -61,6 +61,7 @@ mod hud;
 mod hutch_pictures;
 mod icons;
 mod import;
+mod item_pictures;
 pub mod keys;
 mod layers;
 mod letter_pictures;
@@ -237,8 +238,9 @@ pub fn user_dir() -> Option<PathBuf> {
 #[cfg(test)]
 mod import_coverage {
     use crate::{
-        bunch_pictures, critter_pictures, hutch_pictures, letter_pictures, spin_pictures,
-        stinger_pictures, thrower_pictures, thrown_pictures, tyre_pictures, walker_pictures,
+        bunch_pictures, critter_pictures, hutch_pictures, item_pictures, letter_pictures,
+        spin_pictures, stinger_pictures, thrower_pictures, thrown_pictures, tyre_pictures,
+        walker_pictures,
     };
 
     /// Every picture sheet the game reads is written by the importer or is
@@ -251,6 +253,7 @@ mod import_coverage {
             bunch_pictures::SHEET,
             thrown_pictures::SHEET,
             hutch_pictures::SHEET,
+            item_pictures::SHEET,
             stinger_pictures::SHEET,
             critter_pictures::SHEET,
             tyre_pictures::TYRE,

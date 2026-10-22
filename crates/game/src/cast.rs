@@ -36,6 +36,7 @@ use clamber_sprite::{Playback, SpriteSheet};
 use crate::bunch_pictures;
 use crate::critter_pictures;
 use crate::hutch_pictures;
+use crate::item_pictures;
 use crate::letter_pictures;
 use crate::pictures::{self, PictureClock};
 use crate::sparkles::Sparkles;
@@ -303,6 +304,12 @@ impl Cast {
             }
             return;
         }
+        if let Some(count) = pose.item {
+            if let Some(sprite) = self.item_picture(thing, pose, count, x, y) {
+                self.bank.draw(canvas, &Sprite { opacity, ..sprite });
+            }
+            return;
+        }
         if let Some(count) = pose.bunch {
             if let Some(sprite) = self.bunch_picture(thing, pose, count, x, y) {
                 self.bank.draw(canvas, &Sprite { opacity, ..sprite });
@@ -546,6 +553,43 @@ impl Cast {
                 flip_x,
                 ..Sprite::new(id, frames.get(frame).copied().unwrap_or(0), x, y)
             })
+        })
+    }
+
+    /// An extra-life item's picture `count` frames after it appeared: its
+    /// own from [`item_pictures::SHEET`], a px left of its position, if
+    /// the sheet has all eight; otherwise the frame of its kind's
+    /// animation that far through the cycle.
+    fn item_picture(
+        &self,
+        thing: &Thing,
+        pose: &Pose,
+        count: u32,
+        x: f32,
+        y: f32,
+    ) -> Option<Sprite> {
+        let entry = item_pictures::entry(count);
+        let own = self.kinds.get(item_pictures::SHEET).and_then(|&id| {
+            let sheet = self.bank.sheet(id);
+            let all = item_pictures::LABELS
+                .iter()
+                .all(|l| sheet.animation(l).is_some());
+            let frame = *sheet
+                .animation(item_pictures::LABELS[entry])?
+                .frames
+                .first()?;
+            all.then(|| Sprite::new(id, frame, x - 1.0, y))
+        });
+        own.or_else(|| {
+            let &id = self.kinds.get(&thing.kind)?;
+            let frames = self
+                .bank
+                .sheet(id)
+                .animations
+                .get(pose.animation)
+                .map_or(&[][..], |a| &a.frames[..]);
+            let at = entry * frames.len() / item_pictures::LABELS.len();
+            Some(Sprite::new(id, frames.get(at).copied().unwrap_or(0), x, y))
         })
     }
 
@@ -839,6 +883,9 @@ pub struct Pose {
     /// A bunch's counted frames since it appeared
     /// ([`crate::bunch_pictures`]).
     pub bunch: Option<u32>,
+    /// An extra-life item's frames since it appeared
+    /// ([`crate::item_pictures`]).
+    pub item: Option<u32>,
     /// A stinger's counted frames since it appeared
     /// ([`crate::stinger_pictures`]).
     pub stinger: Option<u32>,
@@ -889,6 +936,7 @@ impl Poses {
             pose.animation = cast.animation(id, thing_animation(world, thing));
             pose.spin = spins(world, thing).then(|| spin_pictures::step(0, thing.pos));
             pose.bunch = (is_bunch(world, thing) && thing.active).then_some(0);
+            pose.item = (is_item(thing) && thing.active).then_some(0);
             pose.stinger = (is_stinger(thing) && thing.active).then_some(0);
             pose.critter = critter(thing)
                 .filter(|_| thing.active)
@@ -931,6 +979,13 @@ impl Poses {
             pose.bunch = match pose.bunch {
                 _ if !is_bunch(world, thing) || !thing.active => None,
                 Some(count) if !respawn => Some(count + u32::from(!world.still)),
+                _ => Some(0),
+            };
+            // An item's cycle starts afresh on the frame it appears and
+            // when play starts again, and steps on every frame.
+            pose.item = match pose.item {
+                _ if !is_item(thing) || !thing.active => None,
+                Some(count) if !respawn => Some(count + 1),
                 _ => Some(0),
             };
             // A stinger's cycle starts afresh on the frame it appears and
@@ -1030,6 +1085,14 @@ fn critter(thing: &Thing) -> Option<u32> {
         Behavior::Critter(c) => Some(u32::from(c.perch)),
         _ => None,
     }
+}
+
+/// Whether `thing` is an extra-life item.
+fn is_item(thing: &Thing) -> bool {
+    matches!(
+        thing.archetype.map(|a| a.behavior),
+        Some(Behavior::Collect { lives: 1.., .. })
+    )
 }
 
 /// Whether `thing` is a stinger.
@@ -1952,6 +2015,32 @@ mod tests {
             ]);
             let mut canvas = Canvas::new(4, 1);
             cast.draw_thing(&mut canvas, &thing, &Pose::default(), 1.0, 0.0);
+            let got = [canvas.get(0, 0).unwrap(), canvas.get(1, 0).unwrap()];
+            assert_eq!(got == [B, Color::default()], own, "{labels:?}");
+        }
+    }
+
+    #[test]
+    fn an_item_shows_its_own_pictures_a_px_left_only_with_all_eight() {
+        let mut thing = world().things[0].clone();
+        thing.kind = "heart".to_string();
+        thing.archetype = clamber_sim::Archetypes::builtin().named("heart");
+        thing.active = true;
+        let labels = &crate::item_pictures::LABELS[..];
+        for (labels, own) in [(labels, true), (&labels[1..], false)] {
+            let cast = Cast::new(vec![
+                ("heart".to_string(), sheet()),
+                (
+                    crate::item_pictures::SHEET.to_string(),
+                    labelled_sheet(labels, 4),
+                ),
+            ]);
+            let pose = Pose {
+                item: Some(0),
+                ..Pose::default()
+            };
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, &thing, &pose, 1.0, 0.0);
             let got = [canvas.get(0, 0).unwrap(), canvas.get(1, 0).unwrap()];
             assert_eq!(got == [B, Color::default()], own, "{labels:?}");
         }
