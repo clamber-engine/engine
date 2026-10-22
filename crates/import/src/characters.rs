@@ -30,6 +30,13 @@ pub const CHARACTER_SHEET: &str = "character-";
 /// The sheet's palette for when the other character is the player.
 pub const FOLLOWING: &str = "following";
 
+/// The sheet of the characters' pictures on the level map, drawn with
+/// the map's own palette (`spec/formats/sprites.md`, "Sprite palettes").
+pub const MAP_SHEET: &str = "map-characters";
+
+/// The name of the picture set that goes in [`MAP_SHEET`].
+const MAP_SET: &str = "map";
+
 /// Pictures that are shown together, by label and picture hash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PictureSet {
@@ -2307,6 +2314,14 @@ const SECOND: &[PictureSet] = &[
 /// Files by path in the pack, with their contents.
 pub type Files = Vec<(String, Vec<u8>)>;
 
+/// A sheet's two files, by path in the pack.
+fn sheet_files(name: &str, sheet: crate::SheetFiles) -> [(String, Vec<u8>); 2] {
+    [
+        (format!("{SPRITES}/{name}.json"), sheet.json.into_bytes()),
+        (format!("{SPRITES}/{name}.png"), sheet.png),
+    ]
+}
+
 /// Writes each character's sheet.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CharacterDecoder {
@@ -2315,6 +2330,8 @@ pub struct CharacterDecoder {
     /// Entries in the frame table.
     pub entries: usize,
     pub characters: Vec<CharacterPictures>,
+    /// Where the level map's palette is.
+    pub map_palette: Location,
 }
 
 impl CharacterDecoder {
@@ -2348,6 +2365,7 @@ impl CharacterDecoder {
             table: at(Data::FrameTable)?,
             entries,
             characters,
+            map_palette: at(Data::MapPalette)?,
         })
     }
 
@@ -2368,18 +2386,21 @@ impl CharacterDecoder {
         let found = find_pictures(&table, &wanted, |l| image.at(l));
         let mut files = Vec::new();
         let mut notes = Vec::new();
+        let mut map_sheet = Vec::new();
+        let palette = |at| {
+            let bytes = image
+                .at(at)
+                .and_then(|b| b.get(..SpritePalette::SIZE))
+                .ok_or("a palette is outside the image")?;
+            SpritePalette::new(bytes)
+        };
+        let map_palette = palette(self.map_palette)?;
         for character in characters {
-            let palette = |at| {
-                let bytes = image
-                    .at(at)
-                    .and_then(|b| b.get(..SpritePalette::SIZE))
-                    .ok_or("a palette is outside the image")?;
-                SpritePalette::new(bytes)
-            };
             let leading = palette(character.leading)?;
             let following = palette(character.following)?;
             // By label, so a picture in two sets is in the sheet once.
             let mut frames = BTreeMap::new();
+            let mut map_frames = BTreeMap::new();
             let mut missing = Vec::new();
             for set in character.sets {
                 let numbers: Option<Vec<(&str, u16)>> = set
@@ -2391,6 +2412,7 @@ impl CharacterDecoder {
                     })
                     .collect();
                 match numbers {
+                    Some(numbers) if set.name == MAP_SET => map_frames.extend(numbers),
                     Some(numbers) => frames.extend(numbers),
                     None => missing.push(set.name),
                 }
@@ -2403,27 +2425,38 @@ impl CharacterDecoder {
                     missing.join(", ")
                 ));
             }
+            let read_pictures = |frames: &BTreeMap<&str, u16>| {
+                let read = read_frames(&table, frames.values().copied(), |l| image.at(l))?;
+                frames
+                    .iter()
+                    .map(|(&label, number)| {
+                        let picture = read[number].picture(None, Mirror::default())?;
+                        Ok((label.to_string(), picture))
+                    })
+                    .collect::<Result<Vec<_>, String>>()
+            };
+            if !map_frames.is_empty() {
+                let sheet = sprite_sheet(
+                    &read_pictures(&map_frames)?,
+                    &map_palette,
+                    &[],
+                    &format!("{MAP_SHEET}.png"),
+                )?;
+                map_sheet.extend(sheet_files(MAP_SHEET, sheet));
+            }
             if frames.is_empty() {
                 continue;
             }
-            let read = read_frames(&table, frames.values().copied(), |l| image.at(l))?;
-            let pictures = frames
-                .iter()
-                .map(|(&label, number)| {
-                    let picture = read[number].picture(None, Mirror::default())?;
-                    Ok((label.to_string(), picture))
-                })
-                .collect::<Result<Vec<_>, String>>()?;
             let name = format!("{CHARACTER_SHEET}{}", character.slot);
             let sheet = sprite_sheet(
-                &pictures,
+                &read_pictures(&frames)?,
                 &leading,
                 &[(FOLLOWING, &following)],
                 &format!("{name}.png"),
             )?;
-            files.push((format!("{SPRITES}/{name}.json"), sheet.json.into_bytes()));
-            files.push((format!("{SPRITES}/{name}.png"), sheet.png));
+            files.extend(sheet_files(&name, sheet));
         }
+        files.extend(map_sheet);
         Ok((files, notes))
     }
 }
@@ -2534,6 +2567,8 @@ mod tests {
                 leading: Location::new(BANK, LEADING),
                 following: Location::new(BANK, FOLLOWING_AT),
             }],
+            // Made up: the following palette's place stands in for it.
+            map_palette: Location::new(BANK, FOLLOWING_AT),
         }
     }
 
@@ -2662,6 +2697,46 @@ mod tests {
             panic!("not indexed");
         };
         assert_eq!(palette, &leading.palette());
+    }
+
+    #[test]
+    fn the_map_set_goes_into_its_own_sheet_in_the_map_palette() {
+        let decoder = decoder(vec![
+            set("one", vec![("a", hash(35))]),
+            set("map", vec![("m", hash(37))]),
+        ]);
+        let (files, notes) = decoder.sheets(&image()).unwrap();
+        assert!(notes.is_empty(), "{notes:?}");
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+        assert_eq!(
+            paths,
+            [
+                "sprites/character-1.json",
+                "sprites/character-1.png",
+                "sprites/map-characters.json",
+                "sprites/map-characters.png",
+            ]
+        );
+        let names = |json: &[u8]| {
+            let meta =
+                clamber_sprite::Sheet::from_json_str(std::str::from_utf8(json).unwrap(), "s.json")
+                    .unwrap();
+            meta.animations
+                .iter()
+                .map(|a| a.name.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(&files[0].1), ["a"]);
+        assert_eq!(names(&files[2].1), ["m"]);
+        let map = decode_png(&files[3].1).unwrap();
+        let clamber_sprite::Image::Indexed { palette, .. } = &map else {
+            panic!("not indexed");
+        };
+        let expected = SpritePalette::new(&hex(&vector("palette.hex")))
+            .unwrap()
+            .palette();
+        // The map's palette is the one at its own place, not the leading one.
+        assert_ne!(palette, &expected);
     }
 
     #[test]

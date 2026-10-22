@@ -56,7 +56,9 @@ use std::path::{Component, Path, PathBuf};
 
 use clamber_audio::encode::DEFAULT_QUALITY;
 
-pub use characters::{CHARACTER_SHEET, CharacterDecoder, CharacterPictures, FOLLOWING, PictureSet};
+pub use characters::{
+    CHARACTER_SHEET, CharacterDecoder, CharacterPictures, FOLLOWING, MAP_SHEET, PictureSet,
+};
 pub use collectibles::{Collectibles, GROUP_SIZE, Group, Item, SPARK, Shape};
 pub use graphics::{
     Background, GridPicture, HorizonBlock, PaletteSet, Pictures, RowColours, ScreenMap, Sky, TILE,

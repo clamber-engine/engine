@@ -223,7 +223,7 @@ impl Cast {
     /// Draws the lead's picture on the level map, `n` of 0 to 9
     /// (`map-lead-1` to `map-lead-10`), with its origin at `(x, y)`
     /// (`level-map.md`, "Pictures"). False, with nothing drawn, unless
-    /// the first character's sheet has all the map's pictures.
+    /// the pack's [`pictures::MAP_SHEET`] has all the map's pictures.
     pub fn draw_map_lead(
         &self,
         canvas: &mut dyn Surface,
@@ -253,7 +253,7 @@ impl Cast {
         flip_x: bool,
         at: (i32, i32),
     ) -> bool {
-        let Some(&id) = self.characters.get(&0) else {
+        let Some(&id) = self.kinds.get(pictures::MAP_SHEET) else {
             return false;
         };
         let sheet = self.bank.sheet(id);
@@ -1657,15 +1657,21 @@ mod tests {
     }
 
     #[test]
-    fn the_map_lead_is_drawn_from_the_first_characters_sheet_when_all_the_pictures_are_there() {
+    fn the_map_lead_is_drawn_from_the_map_sheet_when_all_the_pictures_are_there() {
         let all = crate::pictures::MAP;
         for (labels, drawn) in [(&all[..], true), (&all[..17], false), (&[][..], false)] {
-            let cast = Cast::new(vec![(format!("{CHARACTER}0"), character_sheet(labels))]);
+            let cast = Cast::new(vec![(
+                pictures::MAP_SHEET.to_string(),
+                character_sheet(labels),
+            )]);
             let mut canvas = Canvas::new(4, 1);
             assert_eq!(cast.draw_map_lead(&mut canvas, 3, false, (1, 0)), drawn);
             assert_eq!(canvas.get(1, 0).unwrap() == R, drawn);
         }
-        let cast = Cast::new(vec![(format!("{CHARACTER}0"), character_sheet(&all))]);
+        let cast = Cast::new(vec![(
+            pictures::MAP_SHEET.to_string(),
+            character_sheet(&all),
+        )]);
         let mut canvas = Canvas::new(4, 1);
         assert!(cast.draw_map_lead(&mut canvas, 3, true, (1, 0)));
         // mirrored about the origin, so the picture's pixels lie left of it

@@ -165,6 +165,9 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
     ],
 ];
 
+/// The sheet the level map's pictures are in, drawn in the map's palette.
+pub const MAP_SHEET: &str = "map-characters";
+
 /// The lead's map pictures, then the other character's.
 #[rustfmt::skip]
 pub const MAP: [&str; 18] = [
@@ -4178,6 +4181,7 @@ mod tests {
             }
         }
         assert_eq!(crate::cast::CHARACTER, clamber_import::CHARACTER_SHEET);
+        assert_eq!(MAP_SHEET, clamber_import::MAP_SHEET);
     }
 
     /// Flat floor with a crate 20 px in front of the player, within
