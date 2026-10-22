@@ -1899,6 +1899,9 @@ impl Decoder for CharacterDecoder {
                  art stands in"
             )),
         }
+        for note in crate::objects::notes() {
+            pack.note(note);
+        }
         Ok(())
     }
 }
@@ -2117,7 +2120,7 @@ mod tests {
             .decode(&Image::new(vec![0; 1024]), &mut pack)
             .unwrap();
         assert_eq!(pack.files().count(), 0);
-        assert_eq!(pack.notes.len(), 1);
+        assert!(pack.notes[0].starts_with("the characters' pictures couldn't be converted"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

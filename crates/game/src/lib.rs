@@ -230,3 +230,36 @@ pub fn user_dir() -> Option<PathBuf> {
             .join("clamber")
     })
 }
+
+#[cfg(test)]
+mod import_coverage {
+    use crate::{
+        bunch_pictures, hutch_pictures, letter_pictures, spin_pictures, thrower_pictures,
+        thrown_pictures, walker_pictures,
+    };
+
+    /// Every picture sheet the game reads is written by the importer or is
+    /// listed as not yet imported, so a sheet can't go unwritten unnoticed.
+    #[test]
+    fn every_sheet_the_game_reads_is_imported_or_listed() {
+        let read = [
+            letter_pictures::SHEET,
+            spin_pictures::SHEET,
+            bunch_pictures::SHEET,
+            thrown_pictures::SHEET,
+            hutch_pictures::SHEET,
+            thrower_pictures::THROWER,
+            thrower_pictures::BALL,
+            walker_pictures::Size::Small.name(),
+            walker_pictures::Size::Medium.name(),
+            walker_pictures::Size::Large.name(),
+        ];
+        let pending: Vec<&str> = clamber_import::PENDING_SHEETS.iter().map(|p| p.0).collect();
+        for sheet in read {
+            assert!(pending.contains(&sheet), "{sheet} isn't imported or listed");
+        }
+        for sheet in &pending {
+            assert!(read.contains(sheet), "{sheet} is listed but not read");
+        }
+    }
+}
