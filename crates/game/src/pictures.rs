@@ -3,8 +3,8 @@
 //! character's fall from a steep face and its landing, the standing
 //! pictures after them, the roll, walking, running and turning
 //! pictures, on the ground and in the air after walking off a ledge
-//! without a face, crouching, and the first character's picking up,
-//! carrying, throwing and putting down (`spec/behavior/player-frames.md`).
+//! without a face, crouching, and picking up, carrying, throwing and
+//! putting down (`spec/behavior/player-frames.md`).
 //!
 //! The pictures come from a character's sheet in a pack
 //! (`character-<slot>`, as the importer writes them), named by their
@@ -38,13 +38,12 @@
 //!   every jump measured onto the floor it took off from is, but not
 //!   when `s-air-1` ends. A jump out of a roll pressed in the air takes
 //!   off from where it was in the fall.
-//! - The first character's carrying pictures, given on flat floor, show
+//! - The carrying pictures, given on flat floor, show
 //!   on any ground. A pick-up, throw or put-down that leaves the ground,
 //!   and carrying in a fall that isn't a jump, show the engine's own art.
 //! - Jumps that land before their approach frame, landings after falls
-//!   (but the second character's from a steep face), the second
-//!   character carrying, and anything while swapping, hurt or losing a
-//!   life show the engine's own art.
+//!   (but the second character's from a steep face), and anything
+//!   while swapping, hurt or losing a life show the engine's own art.
 //! - The standing list goes on on a slope or at a ledge as on flat
 //!   floor, for either character.
 
@@ -137,6 +136,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
         (Set::Roll, &SECOND_ROLL),
         (Set::Walking, &SECOND_WALKING),
         (Set::Crouch, &SECOND_CROUCH),
+        (Set::Carry, &SECOND_CARRYING),
     ],
 ];
 
@@ -231,6 +231,24 @@ const CARRY_1: usize = 8;
 const THROW_1: usize = 18;
 const THROW_19: usize = 36;
 const HOLD_1: usize = 37;
+
+/// The second character's carrying pictures: `s-pick-1` to `s-pick-5`,
+/// `s-hold`, `s-carry-1` to `s-carry-8` and `s-throw-1` to `s-throw-14`.
+#[rustfmt::skip]
+const SECOND_CARRYING: [&str; 28] = [
+    "s-pick-1", "s-pick-2", "s-pick-3", "s-pick-4", "s-pick-5", "s-hold",
+    "s-carry-1", "s-carry-2", "s-carry-3", "s-carry-4", "s-carry-5", "s-carry-6", "s-carry-7",
+    "s-carry-8",
+    "s-throw-1", "s-throw-2", "s-throw-3", "s-throw-4", "s-throw-5", "s-throw-6", "s-throw-7",
+    "s-throw-8", "s-throw-9", "s-throw-10", "s-throw-11", "s-throw-12", "s-throw-13",
+    "s-throw-14",
+];
+const S_PICK_5: usize = 4;
+const S_HOLD: usize = 5;
+const S_CARRY_1: usize = 6;
+const S_THROW_1: usize = 14;
+/// How many frames each of `s-throw-1` to `s-throw-14` shows.
+const S_THROW_FRAMES: [u8; 14] = [1, 2, 3, 5, 3, 2, 2, 2, 3, 5, 3, 3, 3, 3];
 
 /// The second character's crouching pictures.
 #[rustfmt::skip]
@@ -333,6 +351,26 @@ fn handling(act: Act, f: u8) -> Option<usize> {
         (Act::PutDown, 0) => Some(PICK_7),
         (Act::PutDown, 1..=12) => Some(PICK_7 - 1 - k),
         // Q + 13 is a standing frame, shown by the standing list.
+        _ => None,
+    }
+}
+
+/// The second character on frame `f` of `act`, from G or Q, on the
+/// ground ("Carrying", "Second character"). G + 10 is a frame of
+/// standing with the object.
+fn second_handling(act: Act, f: u8) -> Option<usize> {
+    match (act, f) {
+        (Act::PickUp, 0..=9) => Some(usize::from(f / 2)),
+        (Act::PickUp, 10) => Some(S_HOLD),
+        (Act::Throw, 0..=39) => {
+            let mut left = f;
+            S_THROW_FRAMES.iter().enumerate().find_map(|(n, &frames)| {
+                let here = left < frames;
+                left = left.saturating_sub(frames);
+                here.then_some(S_THROW_1 + n)
+            })
+        }
+        (Act::PutDown, 0..=9) => Some(S_PICK_5 - usize::from(f / 2)),
         _ => None,
     }
 }
@@ -561,10 +599,8 @@ impl PictureClock {
             u32::try_from(recovery - 1 - i64::from(player.crouch.rising)).unwrap_or(0)
         });
 
-        // The first character's hands are busy with an object.
-        let hands = player.hands.filter(|_| first);
+        let hands = player.hands;
         let playing = matches!(world.flow.outcome, Outcome::Playing)
-            && (player.hands.is_none() || hands.is_some())
             && !matches!(
                 player.state,
                 State::Swap | State::Hurt | State::GroundAction | State::Swim | State::Hold
@@ -580,11 +616,14 @@ impl PictureClock {
             self.put_down_end = hands.act == Act::PutDown
                 && i64::from(hands.frame) + 1 == physics[Param::PutDownTime].floor()
                 && player.grounded();
-            if self.put_down_end {
+            if self.put_down_end && first {
                 standing(first, 0)
             } else {
                 self.handling(hands, world, jump_in, hold)
             }
+        } else if put_down_end && !first && player.grounded() {
+            // Q + 10 is S, whatever is held.
+            standing(first, 0)
         } else if jump_next {
             Some((Set::Jump, if first { "jump-1" } else { "s-jump-1" }))
         } else if let Some((n, _)) = player.since_bounce.filter(|_| !player.grounded()) {
@@ -619,7 +658,7 @@ impl PictureClock {
         // walking, running or turning, on the landing frame after a
         // bounce, or once up from crouching. After a walk-off without a
         // face it starts, or goes on, in the air.
-        let standing_now = self.shown.is_none()
+        let standing_now = (self.shown.is_none() || put_down_end && !first)
             && hands.is_none()
             && (player.grounded()
                 && matches!(player.state, State::Idle | State::Walk | State::Run)
@@ -641,8 +680,9 @@ impl PictureClock {
                 .or((crouched || !first && moved).then_some(0)),
         };
         if put_down_end && standing_now {
-            // Q + 13 was S; Q + 14 is S + 1.
-            self.standing = Some(1);
+            // The first character's Q + 13 was S; Q + 14 is S + 1. The
+            // second's S is Q + 10, the frame after its put-down.
+            self.standing = Some(u32::from(first));
         }
         if let Some(c) = self.standing {
             self.shown = standing(first, c);
@@ -651,9 +691,8 @@ impl PictureClock {
 }
 
 impl PictureClock {
-    /// The first character with an object in its hands ("Carrying",
-    /// "First character"). `hold`: frames standing with it before this
-    /// one.
+    /// A character with an object in its hands ("Carrying"). `hold`:
+    /// frames standing with it before this one.
     fn handling(
         &mut self,
         hands: Hands,
@@ -663,32 +702,45 @@ impl PictureClock {
     ) -> Option<(Set, &'static str)> {
         let player = &world.player;
         let grounded = player.grounded();
+        let first = self.slot == 0;
+        // The picture shown around a jump, and the carrying stride's.
+        let (list, jumping, first_step, steps, turning): (&[&str], _, _, _, _) = if first {
+            (&CARRYING, CARRY_1, CARRY_1, 10, CARRY_TURN)
+        } else {
+            (&SECOND_CARRYING, S_CARRY_1 + 1, S_CARRY_1, 8, S_HOLD)
+        };
         let n = if hands.act != Act::Carry {
-            handling(hands.act, hands.frame).filter(|_| grounded)
+            if first {
+                handling(hands.act, hands.frame)
+            } else {
+                second_handling(hands.act, hands.frame)
+            }
+            .filter(|_| grounded)
         } else if !grounded {
             // Only a jump's air is covered.
-            self.jump_age.map(|_| CARRY_1)
+            self.jump_age.map(|_| jumping)
         } else if (1..=2).contains(&jump_in)
             || world.events.contains(&Event::JumpStart)
             || self.carry_land.is_some_and(|n| n <= 1)
         {
-            Some(CARRY_1)
+            Some(jumping)
         } else if player.turn.is_some() {
-            Some(CARRY_TURN)
+            Some(turning)
         } else {
             match player.gait {
-                Gait::Walking(stride) if (1..=10).contains(&stride.step) => {
-                    Some(CARRY_1 + stride.step as usize - 1)
+                Gait::Walking(stride) if (1..=steps).contains(&stride.step) => {
+                    Some(first_step + stride.step as usize - 1)
                 }
-                Gait::Standing => {
+                Gait::Standing if first => {
                     let c = hold.map_or(0, |c| c.saturating_add(1));
                     self.holding = Some(c);
                     Some(holding(c))
                 }
+                Gait::Standing => Some(S_HOLD),
                 _ => None,
             }
         };
-        Some((Set::Carry, CARRYING[n?]))
+        Some((Set::Carry, list[n?]))
     }
 }
 
@@ -2692,8 +2744,122 @@ mod tests {
     }
 
     #[test]
-    fn the_second_character_s_carrying_shows_the_engine_s_own_art() {
-        let run = run(world(CRATE, 1), &carrying(&[], 30, &[], 60));
-        assert!(run.shown[3..].iter().all(|s| s.is_none()));
+    fn the_second_character_picks_up_stands_with_the_object_and_throws() {
+        // player-frames.md, "Carrying", "Second character".
+        let run = run(world(CRATE, 1), &carrying(&[], 49, &[], 140));
+        let g = at(&run, "s-pick-1");
+        assert_eq!(g, 3);
+        run.check(
+            g,
+            &[
+                ("s-pick-1", 2),
+                ("s-pick-2", 2),
+                ("s-pick-3", 2),
+                ("s-pick-4", 2),
+                ("s-pick-5", 2),
+                ("s-hold", 39),
+            ],
+        );
+        // Action let go on Q = G + 49: a throw of 40 frames, then standing.
+        let q = at(&run, "s-throw-1");
+        assert_eq!(q, g + 49);
+        let mut want = vec![("s-throw-1", 1)];
+        for (n, frames) in S_THROW_FRAMES.iter().enumerate().skip(1) {
+            want.push((SECOND_CARRYING[S_THROW_1 + n], usize::from(*frames)));
+        }
+        want.push(("s-stand-1", 1));
+        run.check(q, &want);
+    }
+
+    #[test]
+    fn the_second_character_s_throw_ends_in_walking_or_a_turn() {
+        let run = run(world(CRATE, 1), &carrying(&[], 30, &[Action::Right], 100));
+        let q = at(&run, "s-throw-1");
+        assert_eq!(run.shown[q + 39], Some("s-throw-14"));
+        assert_eq!(run.shown[q + 40], Some("s-walk-1"));
+    }
+
+    #[test]
+    fn the_second_character_s_pick_up_let_go_of_is_a_throw_from_q() {
+        let run = run(world(CRATE, 1), &carrying(&[], 5, &[], 80));
+        let q = at(&run, "s-throw-1");
+        assert_eq!(q, 3 + 5);
+        run.check(q, &[("s-throw-1", 1), ("s-throw-2", 2)]);
+        assert_eq!(run.shown[q + 40], Some("s-stand-1"));
+    }
+
+    #[test]
+    fn the_second_character_puts_down_in_reverse_and_stands_on_q_plus_10() {
+        let keys: Vec<Vec<Action>> = (0..100)
+            .map(|f| match f {
+                0..=2 => vec![],
+                3..=32 => vec![Action::Action],
+                33 => vec![Action::Down],
+                _ => vec![Action::Right],
+            })
+            .collect();
+        let run = run(world(CRATE, 1), &keys);
+        let q = 33;
+        run.check(
+            q,
+            &[
+                ("s-pick-5", 2),
+                ("s-pick-4", 2),
+                ("s-pick-3", 2),
+                ("s-pick-2", 2),
+                ("s-pick-1", 2),
+            ],
+        );
+        // Q + 10 is S whatever is held; walking starts on the next.
+        assert_eq!(run.shown[q + 10], Some("s-stand-1"));
+        assert_eq!(run.shown[q + 11], Some("s-walk-1"));
+    }
+
+    #[test]
+    fn the_second_character_moves_with_the_object_in_steps_of_three_frames() {
+        // player-frames.md's example: Right held on frames 0 to 29, then
+        // nothing; step 2 ends on 54 with v = 34, so it stands there.
+        let keys = carrying(&[], 30, &[Action::Action], 20)
+            .into_iter()
+            .chain((0..30).map(|_| vec![Action::Action, Action::Right]))
+            .chain((0..40).map(|_| vec![Action::Action]))
+            .collect::<Vec<_>>();
+        let run = run(world(CRATE, 1), &keys);
+        let s = at(&run, "s-carry-1");
+        assert_eq!(s, 20);
+        let mut want = Vec::new();
+        for n in 1..=8 {
+            want.push((SECOND_CARRYING[S_CARRY_1 + n - 1], 3));
+        }
+        want.extend([("s-carry-1", 3), ("s-carry-2", 3)]);
+        for n in 3..=7 {
+            want.push((SECOND_CARRYING[S_CARRY_1 + n - 1], 3));
+        }
+        want.extend([("s-carry-8", 3), ("s-carry-1", 3), ("s-carry-2", 3)]);
+        run.check(s, &want);
+        assert_eq!(run.shown[s + 54], Some("s-hold"));
+    }
+
+    #[test]
+    fn a_turn_with_the_object_shows_s_hold_and_a_jump_s_carry_2() {
+        let keys = carrying(&[Action::Right], 40, &[], 40)
+            .into_iter()
+            .chain((0..30).map(|_| vec![Action::Action, Action::Left]))
+            .collect::<Vec<_>>();
+        let turned = run(world(CRATE, 1), &keys);
+        turned.check(40, &[("s-hold", 8)]);
+        let keys: Vec<Vec<Action>> = (0..120)
+            .map(|f| match f {
+                0..=2 => vec![],
+                3..=40 => vec![Action::Action],
+                41..=45 => vec![Action::Action, Action::Jump],
+                _ => vec![Action::Action],
+            })
+            .collect();
+        let jumped = run(world(CRATE, 1), &keys);
+        let t = jumped.frames(Event::JumpStart)[0];
+        let l = jumped.frames(Event::Land)[0];
+        jumped.check(t - 2, &[("s-carry-2", l + 2 - (t - 2))]);
+        assert_eq!(jumped.shown[l + 2], Some("s-hold"));
     }
 }

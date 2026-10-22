@@ -90,6 +90,27 @@ impl Play {
         play
     }
 
+    /// `near`, with the second character under control.
+    fn second() -> Play {
+        let level = Arc::new(Level::from_toml_str(&level(2000, 220), "carry").unwrap());
+        let mut feel = generic_feel("classic-1").unwrap();
+        feel.roster.push(clamber_pack::CharacterFeel {
+            physics: clamber_pack::Presets::builtin()
+                .slot("classic-1", 1)
+                .unwrap(),
+            abilities: feel.roster[0].abilities.clone(),
+        });
+        let mut world = World::new(level, Arc::new(feel));
+        world.player.character = 1;
+        let mut play = Play {
+            world,
+            held: Actions::NONE,
+        };
+        play.hold(&[], 2);
+        assert!(play.world.player.grounded());
+        play
+    }
+
     /// Standing at x = 200 with a crate 20 px to the right, within reach.
     fn near() -> Play {
         Play::new(2000, 220)
@@ -520,4 +541,50 @@ fn a_put_down_starts_no_crouch_before_q_plus_14() {
     assert_eq!(play.world.player.crouch.held, 0);
     play.step(&[Down]);
     assert_eq!(play.world.player.crouch.held, 1);
+}
+
+/// carrying.md, "The second character": a pick-up with the target 0 for
+/// G to G + 10, carrying from G + 11, a carrying target of 3.375, a
+/// throw of 40 frames with the target 0 for 19, and free on Q + 40.
+#[test]
+fn the_second_character_picks_up_carries_and_throws_with_its_own_timing() {
+    let mut play = Play::second();
+    let rows = play.hold(&[A, Right], 12);
+    // Pressed Right: the target is 0 through G + 10.
+    assert!(rows[..11].iter().all(|r| r.act == Some(Act::PickUp)));
+    assert!(rows[..11].iter().all(|r| r.vel.x == Fixed::ZERO));
+    assert_eq!(rows[11].act, Some(Act::Carry));
+    assert!(rows[11].vel.x > Fixed::ZERO);
+    let rows = play.hold(&[A, Right], 60);
+    assert_eq!(rows[59].vel.x, f(3.375));
+    // Letting go on Q: 19 frames of target 0, then 2.25 with a direction.
+    let rows = play.hold(&[Right], 40);
+    assert!(rows[..40].iter().all(|r| r.act == Some(Act::Throw)));
+    assert!(rows[18].vel.x.abs() < rows[0].vel.x.abs());
+    assert!(rows[39].vel.x > f(2.0) && rows[39].vel.x <= f(2.25));
+    let row = play.step(&[Right]);
+    assert_eq!(row.act, None);
+}
+
+/// "The second character": a put-down of 10 frames.
+#[test]
+fn the_second_character_s_put_down_lasts_ten_frames() {
+    let mut play = Play::second();
+    play.hold(&[A], 30);
+    let rows = play.hold(&[Down], 10);
+    assert!(rows.iter().all(|r| r.act == Some(Act::PutDown)));
+    assert_eq!(play.step(&[Down]).act, None);
+}
+
+/// "Jumps while carrying": the first character's values, `vy` -7 on the
+/// take-off frame, whatever the second's own.
+#[test]
+fn the_second_character_s_carried_jump_has_the_first_character_s_values() {
+    let mut play = Play::second();
+    play.hold(&[A], 30);
+    let rows = play.hold(&[A, Jump], 12);
+    let t = rows.iter().position(|r| has(r, Event::JumpStart)).unwrap();
+    assert_eq!(rows[t].vel.y, f(-7.0));
+    // Held since the press: gravity 0.28125.
+    assert_eq!(rows[t + 1].vel.y - rows[t].vel.y, f(0.28125));
 }

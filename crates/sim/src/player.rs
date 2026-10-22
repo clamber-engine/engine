@@ -1022,6 +1022,17 @@ impl Player {
         picture: Option<i64>,
         events: &mut Vec<Event>,
     ) {
+        // A carried jump can have other values (`carry_jump_speed`).
+        let mut carried = *physics;
+        let physics = if self.carried_jump(physics) {
+            let speed = physics[Param::CarryJumpSpeed];
+            carried.set(Param::JumpSpeed, speed);
+            carried.set(Param::JumpReleaseSpeed, speed);
+            carried.set(Param::HeldJumpGravity, physics[Param::CarryHeldGravity]);
+            &carried
+        } else {
+            physics
+        };
         self.touched.clear();
         self.boosted = false;
         self.update_jump_held(input);
@@ -3145,6 +3156,13 @@ impl Player {
         }
         self.turn = Some(0);
         frames(physics[Param::TurnTime]) / 2 == 0
+    }
+
+    /// Whether a jump now has the carried values (`carry_jump_speed`).
+    fn carried_jump(&self, physics: &Physics) -> bool {
+        physics[Param::CarryJumpSpeed] > Fixed::ZERO
+            && physics[Param::CarryHeldGravity] > Fixed::ZERO
+            && self.hands.is_some_and(|h| h.act == Act::Carry)
     }
 
     /// Whether the player is carrying an object with its own stride

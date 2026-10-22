@@ -1036,6 +1036,13 @@ params! {
     /// Frames later a jump takes off while carrying than without an
     /// object. Whole frames.
     CarryJumpDelay => "carry_jump_delay",
+    /// Above 0, a jump taken off while carrying rises at this speed
+    /// (also the speed a short hop is cut to) instead of `jump_speed`
+    /// and `jump_release_speed`, for as long as the object is carried.
+    CarryJumpSpeed => "carry_jump_speed",
+    /// Above 0, the gravity of a carried jump held since its press, in
+    /// place of `held_jump_gravity`.
+    CarryHeldGravity => "carry_held_gravity",
     /// Above 0, a player carrying an object on the ground has no turn
     /// checks and no running: standing, it turns at once when the other
     /// way is held, or moves when forward is held; moving, it goes
