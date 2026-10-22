@@ -34,6 +34,7 @@ use clamber_sim::{
 use clamber_sprite::{Playback, SpriteSheet};
 
 use crate::bunch_pictures;
+use crate::hutch_pictures;
 use crate::letter_pictures;
 use crate::pictures::{self, PictureClock};
 use crate::sparkles::Sparkles;
@@ -257,6 +258,12 @@ impl Cast {
             self.bank.draw(canvas, &Sprite { opacity, ..sprite });
             return;
         }
+        if let Some(shown) = self.hutch_picture(thing, pose, x, y) {
+            if let Some(sprite) = shown {
+                self.bank.draw(canvas, &Sprite { opacity, ..sprite });
+            }
+            return;
+        }
         if let Some(count) = pose.bunch {
             if let Some(sprite) = self.bunch_picture(thing, pose, count, x, y) {
                 self.bank.draw(canvas, &Sprite { opacity, ..sprite });
@@ -461,23 +468,119 @@ impl Cast {
         group: &[&str; 8],
         entry: usize,
         flip: bool,
+        at: (f32, f32),
+    ) -> bool {
+        self.draw_group(canvas, thrown_pictures::SHEET, group, entry, flip, at)
+    }
+
+    /// Draws entry `entry` of `group` from the sheet called `sheet`, a px
+    /// left of `at`, mirrored if `flip`. Returns false, drawing nothing,
+    /// when the sheet doesn't have the whole group.
+    fn draw_group(
+        &self,
+        canvas: &mut dyn Surface,
+        sheet: &str,
+        group: &[&str],
+        entry: usize,
+        flip: bool,
         (x, y): (f32, f32),
     ) -> bool {
-        let Some(&id) = self.kinds.get(thrown_pictures::SHEET) else {
+        let Some(sprite) = self.group_sprite(sheet, group, entry, flip, (x, y)) else {
             return false;
-        };
-        let sheet = self.bank.sheet(id);
-        if !group.iter().all(|l| sheet.animation(l).is_some()) {
-            return false;
-        }
-        let Some(&frame) = sheet.animation(group[entry]).and_then(|a| a.frames.first()) else {
-            return false;
-        };
-        let sprite = Sprite {
-            flip_x: flip,
-            ..Sprite::new(id, frame, x - 1.0, y)
         };
         self.bank.draw(canvas, &sprite);
+        true
+    }
+
+    /// The sprite of entry `entry` of `group` in the sheet called
+    /// `sheet`, a px left of `(x, y)`, if the sheet has the whole group.
+    fn group_sprite(
+        &self,
+        sheet: &str,
+        group: &[&str],
+        entry: usize,
+        flip: bool,
+        (x, y): (f32, f32),
+    ) -> Option<Sprite> {
+        let &id = self.kinds.get(sheet)?;
+        let sheet = self.bank.sheet(id);
+        if !group.iter().all(|l| sheet.animation(l).is_some()) {
+            return None;
+        }
+        let frame = *sheet.animation(group.get(entry)?)?.frames.first()?;
+        Some(Sprite {
+            flip_x: flip,
+            ..Sprite::new(id, frame, x - 1.0, y)
+        })
+    }
+
+    /// What an animal crate's own pictures say `thing` shows: `None` if
+    /// the engine's art does, `Some(None)` if nothing (the crate is
+    /// drawn apart, by [`Cast::draw_crate`]), or its animal's picture
+    /// while waiting from B + 18 and while mounted from M + 2 to M + 21.
+    fn hutch_picture(&self, thing: &Thing, pose: &Pose, x: f32, y: f32) -> Option<Option<Sprite>> {
+        if !is_hutch(thing) {
+            return None;
+        }
+        let clock = pose.hutch;
+        let at = (x, y);
+        let sheet = hutch_pictures::SHEET;
+        let own = match thing.phase {
+            Phase::Mounted(since) => {
+                let entry = hutch_pictures::mounting(u32::from(since))?;
+                let flip = clock.flip;
+                self.group_sprite(sheet, &hutch_pictures::MOUNTING, entry, flip, at)
+            }
+            Phase::Opened(_) if clock.frames >= Some(hutch_pictures::ANIMAL_FROM) => {
+                let entry = hutch_pictures::waiting(clock.a);
+                self.group_sprite(sheet, &hutch_pictures::ANIMAL, entry, false, at)
+            }
+            _ => None,
+        };
+        if own.is_some() {
+            return Some(own);
+        }
+        let crate_own = self.has_group(sheet, &hutch_pictures::CRATE);
+        let before_animal = match thing.phase {
+            Phase::Ready => true,
+            Phase::Opened(_) => clock.frames < Some(hutch_pictures::ANIMAL_FROM),
+            _ => false,
+        };
+        (crate_own && before_animal).then_some(None)
+    }
+
+    /// Whether the sheet called `sheet` has the whole `group`.
+    fn has_group(&self, sheet: &str, group: &[&str]) -> bool {
+        self.kinds.get(sheet).is_some_and(|&id| {
+            let sheet = self.bank.sheet(id);
+            group.iter().all(|l| sheet.animation(l).is_some())
+        })
+    }
+
+    /// Draws an animal crate itself, whole or broken, with its origin at
+    /// `at`: its position, which stays where it was. Returns false,
+    /// drawing nothing, when the sheet doesn't have all three pictures.
+    pub fn draw_crate(&self, canvas: &mut dyn Surface, pose: &Pose, at: (f32, f32)) -> bool {
+        let entry = hutch_pictures::crate_picture(pose.hutch.frames);
+        let sheet = hutch_pictures::SHEET;
+        self.draw_group(canvas, sheet, &hutch_pictures::CRATE, entry, false, at)
+    }
+
+    /// Draws the puff of smoke of a crate's breaking with its origin at
+    /// `at`, if it's there and the sheet has all six pictures. Returns
+    /// whether the sheet has them, as [`Cast::draw_crate`] does.
+    pub fn draw_smoke(&self, canvas: &mut dyn Surface, pose: &Pose, at: (f32, f32)) -> bool {
+        let group = &hutch_pictures::SMOKE;
+        if !self.has_group(hutch_pictures::SHEET, group) {
+            return false;
+        }
+        if let Some(entry) = pose
+            .hutch
+            .frames
+            .and_then(|_| hutch_pictures::smoke(pose.hutch.c))
+        {
+            self.draw_group(canvas, hutch_pictures::SHEET, group, entry, false, at);
+        }
         true
     }
 
@@ -562,6 +665,9 @@ pub struct Pose {
     pub thrown: Option<u32>,
     /// Frames since an object was put down.
     pub put_down: Option<u32>,
+    /// An animal crate's frames since it broke
+    /// ([`crate::hutch_pictures`]).
+    pub hutch: hutch_pictures::Clock,
 }
 
 /// Every actor's pose: the player's, the other character's, the lost
@@ -620,6 +726,7 @@ impl Poses {
         let animation = cast.animation(id, Some(leaving_animation(world)));
         cast.advance(&mut self.leaving, id, animation);
         self.things.resize(world.things.len(), Pose::default());
+        let still = crate::sparkles::nothing_moves(world);
         for (pose, thing) in self.things.iter_mut().zip(&world.things) {
             let id = cast.kinds.get(&thing.kind).copied();
             let animation = cast.animation(id, thing_animation(world, thing));
@@ -642,8 +749,24 @@ impl Poses {
             pose.thrown = thrown(thing).then(|| pose.thrown.map_or(0, |n| n + 1));
             pose.put_down =
                 matches!(thing.phase, Phase::Placed).then(|| pose.put_down.map_or(0, |n| n + 1));
+            if is_hutch(thing) {
+                let seed = self.clock.wrapping_add(thing.index as u32);
+                let broken = thing.phase != Phase::Ready;
+                pose.hutch = pose.hutch.next(broken, still, seed);
+                if thing.phase == Phase::Mounted(0) {
+                    pose.hutch.flip = world.player.facing == Facing::Left;
+                }
+            }
         }
     }
+}
+
+/// Whether `thing` is an animal crate (or the animal that came out of it).
+fn is_hutch(thing: &Thing) -> bool {
+    matches!(
+        thing.archetype.map(|a| a.behavior),
+        Some(Behavior::Hutch(_))
+    )
 }
 
 /// The player's animation after a landing.
@@ -1487,6 +1610,104 @@ mod tests {
             let got = [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()];
             assert_eq!(got, want, "{labels:?} on {count}");
         }
+    }
+
+    fn crate_thing() -> Thing {
+        let mut thing = world().things[0].clone();
+        thing.kind = "hutch".to_string();
+        thing.archetype = clamber_sim::Archetypes::builtin().named("hutch");
+        thing.active = true;
+        thing
+    }
+
+    #[test]
+    fn a_crate_counts_frames_since_it_broke_and_those_on_which_something_moves() {
+        let mut world = world();
+        world.things[0] = crate_thing();
+        let cast = Cast::new(Vec::new());
+        let mut poses = Poses::new(&cast, &world);
+        poses.update(&cast, &world, 0);
+        assert_eq!(poses.things[0].hutch.frames, None);
+        // B, then two frames on which nothing moves.
+        world.things[0].phase = Phase::Opened(0);
+        let mut seen = Vec::new();
+        for m in 0..22u32 {
+            world.still = m == 1 || m == 2;
+            poses.update(&cast, &world, 0);
+            let h = poses.things[0].hutch;
+            seen.push((h.frames.unwrap(), h.c, h.a));
+        }
+        assert_eq!(seen[..4], [(0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 1, 0)]);
+        assert_eq!(seen[17], (17, 15, 0));
+        assert_eq!(seen[18], (18, 16, 0));
+        assert_eq!(seen[21], (21, 19, 3));
+        // Mounted facing left, the pictures are mirrored.
+        world.player.facing = Facing::Left;
+        world.things[0].phase = Phase::Mounted(0);
+        poses.update(&cast, &world, 0);
+        assert!(poses.things[0].hutch.flip);
+        // A crate that comes back is whole.
+        world.things[0].phase = Phase::Ready;
+        poses.update(&cast, &world, 0);
+        assert_eq!(poses.things[0].hutch, hutch_pictures::Clock::default());
+    }
+
+    #[test]
+    fn a_crate_and_its_animal_show_their_own_pictures_by_group() {
+        let thing = crate_thing();
+        let pose = |frames| Pose {
+            hutch: hutch_pictures::Clock {
+                frames,
+                ..Default::default()
+            },
+            ..Pose::default()
+        };
+        let cast = |groups: &[&[&str]]| {
+            let labels: Vec<&str> = groups.iter().flat_map(|g| g.iter().copied()).collect();
+            Cast::new(vec![
+                ("hutch".to_string(), sheet()),
+                (
+                    hutch_pictures::SHEET.to_string(),
+                    labelled_sheet(&labels, 4),
+                ),
+            ])
+        };
+        let none = Color::default();
+        let crates = &hutch_pictures::CRATE[..];
+        let animal = &hutch_pictures::ANIMAL[..];
+        let mounting = &hutch_pictures::MOUNTING[..];
+        let draw = |cast: &Cast, thing: &Thing, pose: &Pose| {
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, thing, pose, 2.0, 0.0);
+            [0, 1, 2, 3].map(|x| canvas.get(x, 0).unwrap())
+        };
+        let mut waiting = thing.clone();
+        waiting.phase = Phase::Opened(22);
+        // Own animal a px left of the thing (its sheet frame is at x 4).
+        let all = cast(&[crates, animal, mounting]);
+        assert_eq!(draw(&all, &waiting, &pose(Some(30))), [none, B, none, none]);
+        // Without the animal group the engine's art stays: the sheet's
+        // first frame is red.
+        let no_animal = cast(&[crates, mounting]);
+        assert_eq!(
+            draw(&no_animal, &waiting, &pose(Some(30))),
+            [none, none, R, none]
+        );
+        // Before the animal is out, the crate is drawn apart, not here.
+        let mut breaking = thing.clone();
+        breaking.phase = Phase::Opened(3);
+        assert_eq!(draw(&all, &breaking, &pose(Some(3))), [none; 4]);
+        // Mounted, M + 2 on, mirrored if the player faced left.
+        let mut mounted = thing.clone();
+        mounted.phase = Phase::Mounted(2);
+        let mut left = pose(Some(30));
+        left.hutch.flip = true;
+        assert_eq!(draw(&all, &mounted, &left), [B, none, none, none]);
+        let mut canvas = Canvas::new(4, 1);
+        assert!(all.draw_crate(&mut canvas, &pose(None), (2.0, 0.0)));
+        assert_eq!(canvas.get(1, 0), Some(B));
+        let no_crate = cast(&[animal, mounting]);
+        assert!(!no_crate.draw_crate(&mut Canvas::new(4, 1), &pose(None), (2.0, 0.0)));
     }
 
     #[test]

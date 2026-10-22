@@ -117,7 +117,7 @@ fn letter_at(pos: Vec2) -> (i32, i32) {
 
 /// Whether the last frame was one on which nothing moves: a bounce's,
 /// a defeat's or a knock-out's frozen frames, or a character joining.
-fn nothing_moves(world: &World) -> bool {
+pub(crate) fn nothing_moves(world: &World) -> bool {
     world.still
         && !matches!(world.flow.outcome, Outcome::Dying(_) | Outcome::GameOver)
         && world.ending.is_none()

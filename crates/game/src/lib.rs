@@ -57,6 +57,7 @@ mod feels;
 mod game;
 mod gpu;
 mod hud;
+mod hutch_pictures;
 mod icons;
 mod import;
 pub mod keys;

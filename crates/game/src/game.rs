@@ -16,6 +16,7 @@ use crate::canvas::{Canvas, Color, rgb};
 use crate::cast::{Cast, Poses};
 use crate::display::Look;
 use crate::hud::{draw_hud, picture_left};
+use crate::hutch_pictures;
 use crate::layers::{LayerArt, Viewing, nudge};
 use crate::surface::{Lighting, PointLight, Surface};
 use crate::thrown_pictures;
@@ -31,6 +32,7 @@ const ENTITY: Color = rgb(0xd0, 0x6a, 0xd8);
 const EYE: Color = rgb(0x10, 0x10, 0x18);
 const BLACK: Color = rgb(0, 0, 0);
 const PIECE: Color = rgb(0xb5, 0x79, 0x3f);
+const SMOKE: Color = rgb(0xb8, 0xb8, 0xc0);
 const FLASH: Color = rgb(0xff, 0xf2, 0xb0);
 
 /// Size of the box marking an entity that has no sprite, px.
@@ -427,7 +429,9 @@ impl Game {
         }
 
         if sprites {
+            self.draw_crates(canvas, &to_screen, false);
             self.draw_things(canvas, &to_screen, alpha, false);
+            self.draw_crates(canvas, &to_screen, true);
             self.draw_kegs(canvas, &to_screen);
             self.draw_sparkles(canvas, &to_screen);
             if !behind {
@@ -578,6 +582,58 @@ impl Game {
                 }
             }
             canvas.fill_rect(x.round() as i32 - 3, y.round() as i32 - 3, 6, 6, FLASH);
+        }
+    }
+
+    /// The animal crates themselves, whole or broken, standing where
+    /// they were placed, or (`effects`) the flash and smoke of their
+    /// breaking (animal-crate.md, "Pictures"). A group the sheet doesn't
+    /// have is the engine's own: the crate is the thing's own art, and
+    /// the flash and smoke are squares.
+    fn draw_crates(
+        &self,
+        canvas: &mut dyn Surface,
+        to_screen: &dyn Fn((f64, f64)) -> (f64, f64),
+        effects: bool,
+    ) {
+        for thing in self.world.things.iter().filter(|t| t.active) {
+            let hutch = thing
+                .archetype
+                .is_some_and(|a| matches!(a.behavior, Behavior::Hutch(_)));
+            let Some(pose) = self.poses.things.get(thing.index).filter(|_| hutch) else {
+                continue;
+            };
+            let Some(origin) = self.world.level.entities.get(thing.index).map(|e| e.at) else {
+                continue;
+            };
+            let (x, y) = (origin.x.to_f64(), origin.y.to_f64());
+            let at = |dx: f64, dy: f64| {
+                let (x, y) = to_screen((x + dx, y + dy));
+                (x as f32, y as f32)
+            };
+            let cast = self.drawn_cast();
+            if !effects {
+                cast.draw_crate(canvas, pose, at(0.0, 0.0));
+                continue;
+            }
+            let clock = pose.hutch;
+            if clock.frames.is_none() {
+                continue;
+            }
+            if let Some(entry) = hutch_pictures::flash(clock.c) {
+                let rise = -hutch_pictures::flash_rise(clock.c);
+                let (fx, fy) = at(0.0, rise);
+                let group = &thrown_pictures::FLASH;
+                if !cast.draw_broken(canvas, group, entry, false, (fx, fy)) {
+                    let (px, py) = (fx.round() as i32, fy.round() as i32);
+                    canvas.fill_rect(px - 3, py - 3, 6, 6, FLASH);
+                }
+            }
+            let smoke = at(f64::from(clock.dx), -f64::from(clock.dy));
+            if !cast.draw_smoke(canvas, pose, smoke) && hutch_pictures::smoke(clock.c).is_some() {
+                let (px, py) = (smoke.0.round() as i32, smoke.1.round() as i32);
+                canvas.fill_rect(px - 4, py - 4, 8, 8, SMOKE);
+            }
         }
     }
 
