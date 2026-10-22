@@ -4,7 +4,7 @@
 //! pictures after them, the roll, walking, running and turning
 //! pictures, on the ground and in the air after walking off a ledge
 //! without a face, crouching, and picking up, carrying, throwing and
-//! putting down, and being hurt
+//! putting down, being hurt, and the first character's ground action
 //! (`spec/behavior/player-frames.md`).
 //!
 //! The pictures come from a character's sheet in a pack
@@ -77,6 +77,8 @@ pub enum Set {
     Carry,
     /// Being hurt, from the hit to the end of the level.
     Hurt,
+    /// The first character's ground action.
+    Act,
 }
 
 /// Each set's labels, for the first character (slot 0) and the second
@@ -125,6 +127,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
         (Set::Crouch, &CROUCH),
         (Set::Carry, &CARRYING),
         (Set::Hurt, &HURT),
+        (Set::Act, &ACT),
     ],
     &[
         (
@@ -219,6 +222,15 @@ const CROUCH: [&str; 22] = [
     "crouch-8", "crouch-9", "crouch-10", "crouch-11", "crouch-12", "crouch-13", "crouch-14",
     "crouch-15", "crouch-16", "crouch-17", "crouch-18", "crouch-19", "crouch-20", "crouch-21",
     "crouch-22",
+];
+
+/// The first character's ground action pictures: `act-1` to `act-30`.
+#[rustfmt::skip]
+const ACT: [&str; 30] = [
+    "act-1", "act-2", "act-3", "act-4", "act-5", "act-6", "act-7", "act-8", "act-9", "act-10",
+    "act-11", "act-12", "act-13", "act-14", "act-15", "act-16", "act-17", "act-18", "act-19",
+    "act-20", "act-21", "act-22", "act-23", "act-24", "act-25", "act-26", "act-27", "act-28",
+    "act-29", "act-30",
 ];
 
 /// The first character's being-hurt pictures: `hurt-1` to `hurt-14` and
@@ -534,7 +546,7 @@ pub fn stand_in(slot: usize, state: State, has: impl Fn(&str) -> bool) -> Option
         State::Jump | State::Fall => &[Set::Jump],
         State::Bounce => &[Set::Bounce, Set::Jump],
         State::Hurt => &[Set::Hurt],
-        State::GroundAction => &[Set::Crouch],
+        State::GroundAction => &[Set::Act, Set::Crouch],
         _ => &[],
     };
     let air = |labels: &[&'static str]| match state {
@@ -784,6 +796,23 @@ impl PictureClock {
         }
         self.hurt_landings = [None; 3];
 
+        // The ground action: `act-1` on its first frame, then each picture
+        // on two ("The ground action"). A pause repeats the picture, as
+        // the action's own count stands still. A Jump press ends it.
+        if let Some(action) = player
+            .ground_action
+            .filter(|a| first && !a.air && a.frame <= 58 && player.state == State::GroundAction)
+        {
+            self.standing = None;
+            self.landed = None;
+            self.shown = Some(if jump_next {
+                (Set::Jump, "jump-1")
+            } else {
+                (Set::Act, ACT[usize::from((action.frame + 3) / 2) - 1])
+            });
+            return;
+        }
+
         let hands = player.hands;
         let playing = matches!(world.flow.outcome, Outcome::Playing)
             && !matches!(
@@ -858,8 +887,10 @@ impl PictureClock {
             Some(c) => Some(c.saturating_add(1)),
             None => before
                 .is_some_and(|(set, _)| {
-                    matches!(set, Set::Stop | Set::Jump | Set::Bounce | Set::Carry)
-                        || (first && set == Set::Walking)
+                    matches!(
+                        set,
+                        Set::Stop | Set::Jump | Set::Bounce | Set::Carry | Set::Act
+                    ) || (first && set == Set::Walking)
                 })
                 .then_some(0)
                 .or((crouched || !first && moved).then_some(0)),
@@ -2900,6 +2931,52 @@ mod tests {
         }
     }
 
+    /// Nothing held, then Down and Action on frame 20 only.
+    fn action_press(total: usize) -> Vec<Vec<Action>> {
+        (0..total)
+            .map(|f| {
+                if f == 20 {
+                    vec![Action::Down, Action::Action]
+                } else {
+                    vec![]
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_first_character_s_ground_action() {
+        // player-frames.md, "The ground action": act-1 on 20, act-2 on
+        // 21 and 22, ..., act-30 on 77 and 78; 79 = E shows stand-1.
+        let run = run(world(FLAT, 0), &action_press(100));
+        assert_eq!(run.shown[20], Some("act-1"));
+        for n in 2..=30 {
+            let label = labels(0, Set::Act)[n - 1];
+            assert_eq!(run.shown[2 * n + 17], Some(label), "act-{n}");
+            assert_eq!(run.shown[2 * n + 18], Some(label), "act-{n}");
+        }
+        assert_eq!(run.shown[79], Some("stand-1"));
+    }
+
+    #[test]
+    fn a_jump_press_ends_the_ground_action() {
+        let mut keys = action_press(120);
+        keys[30] = vec![Action::Jump];
+        let run = run(world(FLAT, 0), &keys);
+        assert_eq!(run.shown[29], Some("act-6"));
+        assert_eq!(run.shown[30], Some("jump-1"));
+    }
+
+    #[test]
+    fn the_second_character_s_ground_action_keeps_the_engine_s_art() {
+        let run = run(world(FLAT, 1), &action_press(100));
+        assert!(
+            run.shown[20..79]
+                .iter()
+                .all(|l| !l.is_some_and(|l| l.starts_with("act-")))
+        );
+    }
+
     #[test]
     fn the_sets_are_the_importer_s() {
         for (slot, sets) in SETS.iter().enumerate() {
@@ -2916,6 +2993,7 @@ mod tests {
                     Set::Crouch => "crouch",
                     Set::Carry => "carry",
                     Set::Hurt => "hurt",
+                    Set::Act => "act",
                 };
                 let theirs = character.sets.iter().find(|s| s.name == name).unwrap();
                 let theirs: Vec<&str> = theirs.pictures.iter().map(|&(l, _)| l).collect();
