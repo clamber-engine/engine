@@ -2381,3 +2381,31 @@ fn walking_into_a_steep_face_ends_standing_and_stays_standing() {
     hold(&mut world, &[Action::Left]);
     assert!(world.player.turn.is_some());
 }
+
+#[test]
+fn the_second_character_walking_into_a_steep_face_also_stays_standing() {
+    // spec/behavior/ground-speed.md, "Blocked" holds for either character.
+    let mut world = ground(rise, 150.0);
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(clamber_pack::CharacterFeel {
+        physics: clamber_pack::Presets::builtin()
+            .slot("classic-1", 1)
+            .unwrap(),
+        abilities: Default::default(),
+    });
+    world = World::new(world.level.clone(), Arc::new(feel));
+    world.player.character = 1;
+    let mut stood = false;
+    for f in 0..120 {
+        hold(&mut world, &[Action::Right]);
+        let p = &world.player;
+        if stood {
+            assert_eq!(p.gait, Gait::Standing, "frame {f}");
+        } else if p.gait == Gait::Standing && p.pos.x == fx(199.0) {
+            stood = true;
+        }
+    }
+    assert!(stood);
+    hold(&mut world, &[Action::Left]);
+    assert!(world.player.turn.is_some());
+}
