@@ -45,6 +45,7 @@ use crate::stinger_pictures;
 use crate::surface::Surface;
 use crate::thrower_pictures::{self, Group};
 use crate::thrown_pictures;
+use crate::tyre_pictures;
 use crate::walker_pictures::{self, Size, WalkerClock};
 
 /// The sheet the player is drawn with.
@@ -286,6 +287,10 @@ impl Cast {
             }
             return;
         }
+        if let Some(sprite) = self.tyre_picture(thing, x, y) {
+            self.bank.draw(canvas, &Sprite { opacity, ..sprite });
+            return;
+        }
         if let Some(clock) = pose.critter {
             if let Some(sprite) = self.critter_picture(thing, pose, clock, x, y) {
                 self.bank.draw(canvas, &Sprite { opacity, ..sprite });
@@ -474,6 +479,30 @@ impl Cast {
                 ..Sprite::new(id, frames.get(frame).copied().unwrap_or(0), x, y)
             })
         })
+    }
+
+    /// A tyre's own picture for its phase, a px left, if the pack's sheet
+    /// for its kind has all seven; otherwise none, and the engine's art is drawn.
+    fn tyre_picture(&self, thing: &Thing, x: f32, y: f32) -> Option<Sprite> {
+        if !matches!(thing.archetype?.behavior, Behavior::Spring(_)) {
+            return None;
+        }
+        let name = if thing.kind == "stiff-tyre" {
+            tyre_pictures::STIFF
+        } else {
+            tyre_pictures::TYRE
+        };
+        let &id = self.kinds.get(name)?;
+        let sheet = self.bank.sheet(id);
+        if !tyre_pictures::LABELS
+            .iter()
+            .all(|l| sheet.animation(l).is_some())
+        {
+            return None;
+        }
+        let label = tyre_pictures::LABELS[tyre_pictures::picture(thing.phase)];
+        let frame = *sheet.animation(label)?.frames.first()?;
+        Some(Sprite::new(id, frame, x - 1.0, y))
     }
 
     /// A critter's picture at `clock`: its own from
@@ -1903,6 +1932,28 @@ mod tests {
             cast.draw_thing(&mut canvas, &thing, &pose, 1.0, 0.0);
             let got = [canvas.get(0, 0).unwrap(), canvas.get(1, 0).unwrap()];
             assert_eq!(got, want, "{labels:?} mirrored {mirrored}");
+        }
+    }
+
+    #[test]
+    fn a_tyre_shows_its_own_pictures_only_with_all_seven() {
+        let mut thing = world().things[0].clone();
+        thing.kind = "spring".to_string();
+        thing.archetype = clamber_sim::Archetypes::builtin().named("spring");
+        thing.active = true;
+        let labels = &crate::tyre_pictures::LABELS[..];
+        for (labels, own) in [(labels, true), (&labels[1..], false)] {
+            let cast = Cast::new(vec![
+                ("spring".to_string(), sheet()),
+                (
+                    crate::tyre_pictures::TYRE.to_string(),
+                    labelled_sheet(labels, 4),
+                ),
+            ]);
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, &thing, &Pose::default(), 1.0, 0.0);
+            let got = [canvas.get(0, 0).unwrap(), canvas.get(1, 0).unwrap()];
+            assert_eq!(got == [B, Color::default()], own, "{labels:?}");
         }
     }
 

@@ -86,6 +86,7 @@ mod text;
 mod thrower_pictures;
 mod thrown_pictures;
 mod title;
+mod tyre_pictures;
 mod walker_pictures;
 
 use std::path::{Path, PathBuf};
@@ -237,7 +238,7 @@ pub fn user_dir() -> Option<PathBuf> {
 mod import_coverage {
     use crate::{
         bunch_pictures, critter_pictures, hutch_pictures, letter_pictures, spin_pictures,
-        stinger_pictures, thrower_pictures, thrown_pictures, walker_pictures,
+        stinger_pictures, thrower_pictures, thrown_pictures, tyre_pictures, walker_pictures,
     };
 
     /// Every picture sheet the game reads is written by the importer or is
@@ -252,6 +253,8 @@ mod import_coverage {
             hutch_pictures::SHEET,
             stinger_pictures::SHEET,
             critter_pictures::SHEET,
+            tyre_pictures::TYRE,
+            tyre_pictures::STIFF,
             thrower_pictures::THROWER,
             thrower_pictures::BALL,
             walker_pictures::Size::Small.name(),
