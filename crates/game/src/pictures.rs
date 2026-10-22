@@ -3216,14 +3216,14 @@ mod stand_in_tests {
     fn nearest_picture_is_of_the_same_character() {
         let only = |names: &'static [&'static str]| move |l: &str| names.contains(&l);
         let sheet = only(&["stand-1", "air-0", "air-1", "rise-1"]);
-        assert_eq!(stand_in(0, State::Fall, &sheet), Some("air-0"));
-        assert_eq!(stand_in(0, State::Jump, &sheet), Some("rise-1"));
-        assert_eq!(stand_in(0, State::Walk, &sheet), Some("stand-1"));
-        assert_eq!(stand_in(0, State::Idle, &sheet), Some("stand-1"));
+        assert_eq!(stand_in(0, State::Fall, sheet), Some("air-0"));
+        assert_eq!(stand_in(0, State::Jump, sheet), Some("rise-1"));
+        assert_eq!(stand_in(0, State::Walk, sheet), Some("stand-1"));
+        assert_eq!(stand_in(0, State::Idle, sheet), Some("stand-1"));
         let second = only(&["s-air-1", "s-stand-1", "s-walk-1"]);
-        assert_eq!(stand_in(1, State::Fall, &second), Some("s-air-1"));
-        assert_eq!(stand_in(1, State::Walk, &second), Some("s-walk-1"));
-        assert_eq!(stand_in(1, State::Roll, &second), Some("s-stand-1"));
+        assert_eq!(stand_in(1, State::Fall, second), Some("s-air-1"));
+        assert_eq!(stand_in(1, State::Walk, second), Some("s-walk-1"));
+        assert_eq!(stand_in(1, State::Roll, second), Some("s-stand-1"));
         assert_eq!(stand_in(0, State::Fall, only(&[])), None);
     }
 }
