@@ -17,8 +17,6 @@
 //!
 //! Engine choices where the spec says nothing:
 //!
-//! - The second character's pictures in the air from T + 16 until it
-//!   lands are the engine's own art.
 //! - The second character's walking, running and turning pictures,
 //!   given on flat ground, show on any ground too, and go on in the air
 //!   after a walk-off from a ledge without a face as when it passes over
@@ -1654,7 +1652,16 @@ fn in_air(
             });
             air(s)
         }
-        (false, _) => return None,
+        (false, _) => match approach.filter(|&a| age >= a) {
+            None => "s-air-1",
+            Some(a) => match age - a {
+                0 => "s-air-2",
+                1..=2 => "s-air-3",
+                3..=4 => "s-air-4",
+                5..=6 => "s-air-5",
+                _ => "s-air-6",
+            },
+        },
     };
     Some((Set::Jump, label))
 }
@@ -2436,7 +2443,13 @@ mod tests {
 
     #[test]
     fn the_second_character_s_jump_and_landing() {
-        second_jump_and_landing(&run(world(FLAT, 1), &jump(10, 1, 120)));
+        let run = run(world(FLAT, 1), &jump(10, 1, 120));
+        // Jump held 1 frame: A = T + 23 and L = T + 37.
+        let t = run.frames(Event::JumpStart)[0];
+        assert_eq!(run.shown[t + 22], Some("s-air-1"));
+        assert_eq!(run.shown[t + 23], Some("s-air-2"));
+        assert_eq!(run.frames(Event::Land)[0], t + 37);
+        second_jump_and_landing(&run);
     }
 
     #[test]
@@ -2499,7 +2512,21 @@ mod tests {
         ] {
             want.push((r, 2));
         }
-        want.push(("", l - (t + 16)));
+        // `s-air-1` up to A − 1, then the table of "A jump and its landing".
+        let a = (t + 16..l)
+            .find(|&f| run.shown[f] != Some("s-air-1"))
+            .expect("approach frame");
+        assert!(a >= t + 20, "A = T + {}", a - t);
+        want.push(("s-air-1", a - (t + 16)));
+        for (label, n) in [
+            ("s-air-2", 1),
+            ("s-air-3", 2),
+            ("s-air-4", 2),
+            ("s-air-5", 2),
+        ] {
+            want.push((label, n));
+        }
+        want.push(("s-air-6", l - (a + 7)));
         want.extend([
             ("s-land-1", 1),
             ("s-land-2", 2),
@@ -3254,6 +3281,45 @@ mod tests {
             let on_flat = stand_after_walking(FLAT, slot, x, walk);
             let on_slope = stand_after_walking(&dip, slot, x, walk);
             assert_eq!(on_slope.shown, on_flat.shown, "{slot} {x} {walk}");
+        }
+    }
+
+    /// A crouch ("Crouching") at the end of a platform, on the 1-in-4
+    /// slope and at the top of a steep face shows the pictures of the same
+    /// crouch on flat floor, with no teetering picture.
+    #[test]
+    fn crouching_at_a_ledge_and_on_a_slope_matches_flat_floor() {
+        let ledge = FLAT.replace(
+            "rect = [0, 400, 2048, 80]",
+            "rect = [0, 400, 120, 80]\n[[collision]]\nshape = \"rect\"\nrect = [120, 440, 1928, 40]",
+        );
+        let dip = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../content/test/slope-dip.level"
+        ))
+        .unwrap();
+        let dip = dip.replace("start = [64.26953125, 400]", "start = [64, 400]");
+        let cases = [
+            (&ledge, 100.0),
+            (&ledge, 117.0),
+            (&dip, 480.0),
+            (&dip, 520.0),
+        ];
+        for slot in [0, 1] {
+            for (level, x) in cases {
+                let keys = crouch(&[], 200, 400);
+                let on_flat = run(
+                    world(
+                        &FLAT.replace("start = [64, 400]", &format!("start = [{x}, 400]")),
+                        slot,
+                    ),
+                    &keys,
+                );
+                let src = level.replace("start = [64, 400]", &format!("start = [{x}, 400]"));
+                let there = run(world(&src, slot), &keys);
+                assert_eq!(there.shown, on_flat.shown, "{slot} {x}");
+                assert!(there.shown[30].is_some_and(|l| l.contains("crouch")));
+            }
         }
     }
 
