@@ -3488,6 +3488,48 @@ mod tests {
             .collect()
     }
 
+    /// A jump pressed on a crouch's frames, or on those of getting up
+    /// ("A jump and its landing"), shows its first picture on the press
+    /// frame in place of the crouch's or getting up's own; the frames
+    /// before keep the crouch lists.
+    #[test]
+    fn a_jump_out_of_a_crouch_shows_its_first_picture_on_the_press() {
+        for (slot, label, last) in [(0, "jump-1", 9), (1, "s-jump-1", 12)] {
+            // Down held on frames 20 to 39, so U is 40.
+            let base = run(world(FLAT, slot), &crouch(&[], 39, 200));
+            for p in (20..=39).chain(40..=40 + last) {
+                let mut keys = crouch(&[], 39, 200);
+                keys[p].push(Action::Jump);
+                let there = run(world(FLAT, slot), &keys);
+                assert_eq!(there.shown[p], Some(label), "{slot} P = {p}");
+                assert_eq!(there.shown[..p], base.shown[..p], "{slot} P = {p}");
+                assert_eq!(there.frames(Event::JumpStart), [p + 1], "{slot} P = {p}");
+            }
+        }
+    }
+
+    /// Jump with Action pressed, then Down on the next frame and no Jump
+    /// on P + 2: no jump, `jump-1` on P and the new crouch's list from P + 1.
+    #[test]
+    fn a_jump_with_action_then_down_shows_the_press_and_a_new_crouch() {
+        for (slot, label) in [(0, "jump-1"), (1, "s-jump-1")] {
+            let mut keys = vec![vec![]; 120];
+            keys[30] = vec![Action::Jump, Action::Action];
+            for k in &mut keys[31..90] {
+                k.push(Action::Down);
+            }
+            keys[31].push(Action::Jump);
+            let there = run(world(FLAT, slot), &keys);
+            assert!(there.frames(Event::JumpStart).is_empty(), "{slot}");
+            assert_eq!(there.shown[30], Some(label), "{slot}");
+            let own = run(world(FLAT, slot), &crouch(&[], 89, 120));
+            let c = labels(slot, Set::Crouch)[0];
+            assert_eq!(own.shown[20], Some(c), "{slot}");
+            assert_eq!(there.shown[31], Some(c), "{slot}");
+            assert_eq!(there.shown[31..90], own.shown[20..79], "{slot}");
+        }
+    }
+
     #[test]
     fn the_first_character_crouching_a_long_while() {
         // player-frames.md's example: standing, Down held on frames 20 to
