@@ -3338,6 +3338,30 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    /// spec/behavior/level-map.md, "The other character": a two-character
+    /// game begins the map with it 16 px left of the lead; one character
+    /// has none.
+    #[test]
+    fn a_new_two_character_game_has_the_other_beside_the_lead() {
+        let dir = map_pack("map-other");
+        let mut map = MapPlay::load(&dir).unwrap().unwrap();
+        let positions = |map: &MapPlay| {
+            let MapPhase::Shown(screen) = &map.phase else {
+                panic!("shown");
+            };
+            (screen.lead.position(), screen.lead.other_position())
+        };
+        map.new_game(false);
+        assert!(positions(&map).1.is_none());
+        map.new_game(true);
+        let (lead, other) = positions(&map);
+        assert_eq!(
+            other.expect("the other character").x.floor() as i64,
+            lead.x.floor() - 16
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     /// The map's first frame on the step `black` after the level's last.
     fn until_shown(s: &mut Session) -> u32 {
         let mut steps = 0;
