@@ -141,6 +141,11 @@ impl Game {
     }
 
     /// The sprites the player and entities are drawn with now.
+    /// The sheets the level map's characters are drawn with.
+    pub fn map_cast(&self) -> &Cast {
+        self.drawn_cast()
+    }
+
     fn drawn_cast(&self) -> &Cast {
         match &self.replaced.cast {
             Some(cast) if !self.look.pixel_art => cast,

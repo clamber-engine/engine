@@ -34,7 +34,7 @@ pub const FOLLOWING: &str = "following";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PictureSet {
     /// The set's name: `stop`, `standing`, `jump`, `bounce`, `roll`,
-    /// `walking`, `crouch`, `carry` or `scene`.
+    /// `walking`, `crouch`, `carry`, `scene` or `map`.
     pub name: &'static str,
     pub pictures: &'static [(&'static str, &'static str)],
 }
@@ -1201,6 +1201,83 @@ const FIRST: &[PictureSet] = &[
             ),
         ],
     },
+    PictureSet {
+        name: "map",
+        pictures: &[
+            (
+                "map-lead-1",
+                "d04c96c11202572daf17c9452bd108a3e913c1e7804a7d32e7465411e003ee5c",
+            ),
+            (
+                "map-lead-2",
+                "624ce46eb019ebc2e0480359824a6c368de59a3b7f94ed322fccbd14e26ea43a",
+            ),
+            (
+                "map-lead-3",
+                "1f44c8d65217e4e2dc61d784c748632ff32319e838f12245c8c02e5c31f96f14",
+            ),
+            (
+                "map-lead-4",
+                "3be7370c1bb673ad00129964f14522db3e48859051c2011bcd4132f1cd51977a",
+            ),
+            (
+                "map-lead-5",
+                "f3be04419a891ddd876982c456dd0ee7b324193099c1fd9ff18be3046e327a72",
+            ),
+            (
+                "map-lead-6",
+                "d2f845667dfcb290cfeb5b52220b5252f3c4e27c81fd5756b0b786335e5457d8",
+            ),
+            (
+                "map-lead-7",
+                "2d56620e6b88a64c10dca3394bd2f261cd5b102f0e4787fdebb0e813ec7bb1cb",
+            ),
+            (
+                "map-lead-8",
+                "f3fda78649ddb25d4ecdd77c7eedd9409a76b78b1c35d009ad4828b7f6d62b4f",
+            ),
+            (
+                "map-lead-9",
+                "90042a3a02f9905068dcf7d91449bc6b0fe88d72bed7f21328d32ab3edcb0c7e",
+            ),
+            (
+                "map-lead-10",
+                "9f4d8a0c16a19596a82ce47e11cd7a0e9953e25efcc28a7048813905e521b0f2",
+            ),
+            (
+                "map-other-1",
+                "70c4929658e8baba52ca2b02fc36903d1d0a61aa8f13e7bd5141a3b1e6d8e9cd",
+            ),
+            (
+                "map-other-2",
+                "e4c158c7d2ae49f1cbe9ce97f0ee3a43c56afcf3831f9dfb570564f2bd6c404c",
+            ),
+            (
+                "map-other-3",
+                "4a9176f66de94895fff1139c9cf21c12f8b28d4c87a2648f73799284880ab2c0",
+            ),
+            (
+                "map-other-4",
+                "fb91e71d2e990b4e82fa5473a44c9fdc95f0098a051daaae0c031de291082b5f",
+            ),
+            (
+                "map-other-5",
+                "feeff0479a169ea6a17b8cc582e2e405169b7fd3ae83121b1a71f91f2e4b5604",
+            ),
+            (
+                "map-other-6",
+                "2350ffc0ea6ca2713f5e30229bf5f8564d9f91d0e8b4e6befc95c0919adc2153",
+            ),
+            (
+                "map-other-7",
+                "612f58cf9802d54c9ffad81af186fe3a442f6c5bd1fbd00b6b27ebe79fae9e24",
+            ),
+            (
+                "map-other-8",
+                "b266d2713e5a9834051e67e350f8ad988be5354c3cdc94a3ea5862cd51374f48",
+            ),
+        ],
+    },
 ];
 
 /// The second character's sets, as [`FIRST`].
@@ -2355,6 +2432,19 @@ mod tests {
             let cells: Vec<&str> = l.split('|').map(|c| c.trim().trim_matches('`')).collect();
             let row = (cells[1].to_string(), cells[2].to_string());
             tables[usize::from(row.0.starts_with("s-"))].push(row);
+        }
+        // The map's pictures are in `level-map.md`; they go in the first
+        // character's sheet.
+        let map = std::fs::read_to_string(format!(
+            "{}/../../spec/behavior/level-map.md",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let (_, pictures) = map.split_once("\n## Pictures").unwrap();
+        let (pictures, _) = pictures.split_once("**Where.**").unwrap();
+        for l in pictures.lines().filter(|l| l.starts_with("| `map-")) {
+            let cells: Vec<&str> = l.split('|').map(|c| c.trim().trim_matches('`')).collect();
+            tables[0].push((cells[1].to_string(), cells[2].to_string()));
         }
         for (sets, table) in [FIRST, SECOND].iter().zip(&tables) {
             let ours: BTreeMap<&str, &str> = sets

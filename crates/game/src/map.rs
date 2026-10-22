@@ -23,6 +23,7 @@ use clamber_worldmap::{
 };
 
 use crate::canvas::{Color, rgb};
+use crate::cast::Cast;
 use crate::surface::Surface;
 
 /// Where a pack keeps the map a new game begins on.
@@ -67,6 +68,21 @@ pub struct MapPlay {
     pub root: PathBuf,
     pub progress: Progress,
     pub phase: MapPhase,
+    lead: LeadLook,
+}
+
+/// What the lead's picture on the map depends on besides where it is
+/// (`level-map.md`, "Pictures").
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct LeadLook {
+    /// Facing left: the page's `x` last went down.
+    left: bool,
+    /// The lead's `x` on its page on the frame before.
+    x: Option<i64>,
+    /// The counted frame of the last page change.
+    changed: Option<u64>,
+    /// The page changes on the next frame.
+    about: bool,
 }
 
 impl MapPlay {
@@ -93,6 +109,7 @@ impl MapPlay {
             root: root.to_path_buf(),
             progress: Progress::default(),
             phase: MapPhase::Shown(screen),
+            lead: LeadLook::default(),
         })
     }
 
@@ -109,6 +126,7 @@ impl MapPlay {
         let screen = LegsScreen::new_game(&self.map, self.legs()).expect("checked in new");
         self.progress = Progress::default();
         self.phase = MapPhase::Shown(screen);
+        self.lead = LeadLook::default();
     }
 
     /// Whether a press at `node` enters it: a level, or a warp to another
@@ -137,6 +155,7 @@ impl MapPlay {
             let given = self.map.nodes[node].onward;
             let lead = LegWalker::after_finish(&self.map, self.legs(), node, &times, given);
             self.phase = MapPhase::Shown(LegsScreen::new(lead));
+            self.lead = LeadLook::default();
         }
         let MapPhase::Shown(screen) = &self.phase else {
             return MapStep::Stay;
@@ -147,6 +166,25 @@ impl MapPlay {
         let buttons = buttons(held, self.enterable(node));
         let mut screen = screen.clone();
         let out = screen.step(&self.map, self.legs(), &self.progress, buttons);
+        let page_width = i64::from(self.legs().page_width.max(1));
+        let x = screen.lead.position().x.floor().rem_euclid(page_width);
+        // the page changes on the next frame if a frame run now says so
+        let about = screen
+            .clone()
+            .step(&self.map, self.legs(), &self.progress, buttons)
+            .step
+            .page
+            .is_some();
+        let look = &mut self.lead;
+        if out.step.page.is_some() {
+            look.changed = Some(screen.lead.frame());
+        } else if let Some(before) = look.x
+            && x != before
+        {
+            look.left = x < before;
+        }
+        look.x = Some(x);
+        look.about = about;
         self.phase = MapPhase::Shown(screen);
         let Some(node) = out.left else {
             return MapStep::Stay;
@@ -199,8 +237,22 @@ impl MapPlay {
         };
     }
 
+    /// The lead's map picture on the frame last run, 0 to 9 for
+    /// `map-lead-1` to `map-lead-10`, and whether it is mirrored; None
+    /// when the map isn't shown or the lead isn't drawn, on the frames
+    /// around a page change (`level-map.md`, "Pictures").
+    pub fn lead_picture(&self) -> Option<(usize, bool)> {
+        let MapPhase::Shown(screen) = &self.phase else {
+            return None;
+        };
+        let frame = screen.lead.frame();
+        let covered = self.lead.about || self.lead.changed.is_some_and(|p| frame <= p + 1);
+        let n = (frame.saturating_sub(1) / 4 % 10) as usize;
+        (!covered).then_some((n, self.lead.left))
+    }
+
     /// Draws the map as it is after the frame last run.
-    pub fn draw(&self, canvas: &mut dyn Surface) {
+    pub fn draw(&self, canvas: &mut dyn Surface, cast: &Cast) {
         canvas.clear(0);
         let MapPhase::Shown(screen) = &self.phase else {
             return;
@@ -212,13 +264,13 @@ impl MapPlay {
         }
         let (w, h) = canvas.view();
         let scale = f64::from(w) / f64::from(legs.page_width.max(1));
-        let left = (screen.lead.page(legs) * i64::from(legs.page_width)) as f64;
+        let left_edge = (screen.lead.page(legs) * i64::from(legs.page_width)) as f64;
         let height = self.map.size.y.to_f64();
         let at = |p: clamber_level::Vec2| {
             let y = p.y.to_f64();
             let y = if legs.y_up { height - y } else { y };
             (
-                (p.x.to_f64() - left) * scale,
+                (p.x.to_f64() - left_edge) * scale,
                 y * scale + (f64::from(h) - height * scale) / 2.0,
             )
         };
@@ -252,7 +304,21 @@ impl MapPlay {
             let (x, y, r) = (x.round() as i32, y.round() as i32, r.round() as i32);
             canvas.fill_rect(x - r, y - r, 2 * r, 2 * r, shade(color));
         }
-        let (x, y) = at(screen.lead.position());
+        let position = screen.lead.position();
+        let Some((n, left)) = self.lead_picture() else {
+            return;
+        };
+        let (px, py) = (position.x.floor() as f64, position.y.floor() as f64);
+        let (px, py) = (px - left_edge, if legs.y_up { height - py } else { py });
+        let origin = (
+            px * scale - 1.0,
+            py * scale + (f64::from(h) - height * scale) / 2.0,
+        );
+        let origin = (origin.0.floor() as i32, origin.1.floor() as i32);
+        if cast.draw_map_lead(canvas, n, left, origin) {
+            return;
+        }
+        let (x, y) = at(position);
         let (bw, bh) = ((6.0 * scale) as i32, (10.0 * scale) as i32);
         let x = x.round() as i32 - bw / 2;
         canvas.fill_rect(x, y.round() as i32 - bh, bw, bh, shade(LEAD));

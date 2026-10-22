@@ -1173,7 +1173,7 @@ impl Session {
     /// should be [`look`](Session::look)'s.
     pub fn draw(&self, canvas: &mut dyn Surface, alpha: f64) {
         if let (Screen::Map, Some(map)) = (&self.screen, &self.map) {
-            map.draw(canvas);
+            map.draw(canvas, self.game.map_cast());
             return;
         }
         let playing = self.screen == Screen::Playing;
@@ -3299,8 +3299,42 @@ mod tests {
         for _ in 0..40 {
             map.step(Actions::NONE);
         }
-        map.draw(&mut lit);
+        map.draw(&mut lit, s.game.map_cast());
         assert!(lit.pixels.iter().any(|&p| p != 0), "a stand-in picture");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// spec/behavior/level-map.md, "Pictures": the lead's picture changes
+    /// every 4 counted frames through 10, it faces the way its `x` last
+    /// went, and none is drawn on the frames around a page change.
+    #[test]
+    fn the_lead_on_the_map_cycles_faces_and_hides_at_a_page_change() {
+        let dir = map_pack("map-pictures");
+        let path = dir.join(LEVEL_MAP);
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, text.replace("page_width = 256", "page_width = 64")).unwrap();
+        let mut map = MapPlay::load(&dir).unwrap().unwrap();
+        let mut pictures = Vec::new();
+        for _ in 0..140 {
+            map.step(Actions::NONE);
+            pictures.push(map.lead_picture());
+        }
+        assert_eq!(pictures[0], Some((0, false)));
+        assert_eq!(pictures[3], Some((0, false)));
+        assert_eq!(pictures[4], Some((1, false)));
+        let hidden: Vec<usize> = (0..140).filter(|&f| pictures[f].is_none()).collect();
+        assert!(!hidden.is_empty(), "a page changes in the walk");
+        let MapPhase::Shown(screen) = &map.phase else {
+            panic!("shown");
+        };
+        assert!(screen.lead.frame() > 100);
+        // frames P - 1 to P + 1 and the lag frame, which isn't counted
+        assert_eq!(hidden.len(), 4, "{hidden:?}");
+        assert_eq!(hidden[3] - hidden[0], 3);
+        // the cycle goes on through them: the counted frame decides
+        let after = hidden[3] + 1;
+        let counted = after - 1; // one lag frame before it
+        assert_eq!(pictures[after].unwrap().0, counted / 4 % 10);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

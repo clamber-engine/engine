@@ -83,6 +83,8 @@ pub enum Set {
     Rope,
     /// The pictures the leading character waits with in a scene.
     Scene,
+    /// The pictures of the characters on the level map.
+    Map,
 }
 
 /// Each set's labels, for the first character (slot 0) and the second
@@ -134,6 +136,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
         (Set::Act, &ACT),
         (Set::Rope, &ROPE),
         (Set::Scene, &FIRST_SCENE),
+        (Set::Map, &MAP),
     ],
     &[
         (
@@ -157,6 +160,14 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
         (Set::Hurt, &SECOND_HURT),
         (Set::Scene, &SECOND_SCENE),
     ],
+];
+
+/// The lead's map pictures, then the other character's.
+#[rustfmt::skip]
+pub const MAP: [&str; 18] = [
+    "map-lead-1", "map-lead-2", "map-lead-3", "map-lead-4", "map-lead-5", "map-lead-6",
+    "map-lead-7", "map-lead-8", "map-lead-9", "map-lead-10", "map-other-1", "map-other-2",
+    "map-other-3", "map-other-4", "map-other-5", "map-other-6", "map-other-7", "map-other-8",
 ];
 
 /// The first character's pictures while it waits in the scene.
@@ -3607,6 +3618,7 @@ mod tests {
                     Set::Act => "act",
                     Set::Rope => "rope",
                     Set::Scene => "scene",
+                    Set::Map => "map",
                 };
                 let theirs = character.sets.iter().find(|s| s.name == name).unwrap();
                 let theirs: Vec<&str> = theirs.pictures.iter().map(|&(l, _)| l).collect();

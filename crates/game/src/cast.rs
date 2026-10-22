@@ -211,6 +211,38 @@ impl Cast {
         Some(Sprite::new(id, frame, x - 1.0, y))
     }
 
+    /// Draws the lead's picture on the level map, `n` of 0 to 9
+    /// (`map-lead-1` to `map-lead-10`), with its origin at `(x, y)`
+    /// (`level-map.md`, "Pictures"). False, with nothing drawn, unless
+    /// the first character's sheet has all the map's pictures.
+    pub fn draw_map_lead(
+        &self,
+        canvas: &mut dyn Surface,
+        n: usize,
+        flip_x: bool,
+        at: (i32, i32),
+    ) -> bool {
+        let Some(&id) = self.characters.get(&0) else {
+            return false;
+        };
+        let sheet = self.bank.sheet(id);
+        if !pictures::MAP.iter().all(|l| sheet.animation(l).is_some()) {
+            return false;
+        }
+        let Some(&frame) = sheet
+            .animation(pictures::MAP[n % 10])
+            .and_then(|a| a.frames.first())
+        else {
+            return false;
+        };
+        let sprite = Sprite {
+            flip_x,
+            ..Sprite::new(id, frame, at.0 as f32, at.1 as f32)
+        };
+        self.bank.draw(canvas, &sprite);
+        true
+    }
+
     /// Draws the other character in `pose` with its feet at `(x, y)`, if
     /// there is one.
     pub fn draw_other(&self, canvas: &mut dyn Surface, world: &World, pose: &Pose, x: f32, y: f32) {
@@ -1569,6 +1601,23 @@ mod tests {
         );
         let SpriteSheet { image, .. } = sheet();
         SpriteSheet::new(Sheet::from_json_str(&json, "c").unwrap(), image).unwrap()
+    }
+
+    #[test]
+    fn the_map_lead_is_drawn_from_the_first_characters_sheet_when_all_the_pictures_are_there() {
+        let all = crate::pictures::MAP;
+        for (labels, drawn) in [(&all[..], true), (&all[..17], false), (&[][..], false)] {
+            let cast = Cast::new(vec![(format!("{CHARACTER}0"), character_sheet(labels))]);
+            let mut canvas = Canvas::new(4, 1);
+            assert_eq!(cast.draw_map_lead(&mut canvas, 3, false, (1, 0)), drawn);
+            assert_eq!(canvas.get(1, 0).unwrap() == R, drawn);
+        }
+        let cast = Cast::new(vec![(format!("{CHARACTER}0"), character_sheet(&all))]);
+        let mut canvas = Canvas::new(4, 1);
+        assert!(cast.draw_map_lead(&mut canvas, 3, true, (1, 0)));
+        // mirrored about the origin, so the picture's pixels lie left of it
+        assert_eq!(canvas.get(0, 0).unwrap(), R);
+        assert_eq!(canvas.get(1, 0).unwrap(), Color::default());
     }
 
     #[test]
