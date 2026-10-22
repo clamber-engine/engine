@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use clamber_pack::{Feel, Pack, Presets};
+use clamber_pack::{CharacterFeel, Feel, Pack, Presets};
 use clamber_sim::generic_feel;
 
 /// The preset the bundled game starts on, with its generic character.
@@ -53,7 +53,13 @@ impl Feels {
                 Ok((selection.feel, warnings))
             }
             None => {
-                let feel = generic_feel(id).ok_or_else(|| format!("no preset named `{id}`"))?;
+                let mut feel = generic_feel(id).ok_or_else(|| format!("no preset named `{id}`"))?;
+                // The second character, who joins when a holder breaks:
+                // the preset's own slot 1, with the first's abilities.
+                if let Some(physics) = self.presets().slot(id, 1) {
+                    let abilities = feel.roster[0].abilities.clone();
+                    feel.roster.push(CharacterFeel { physics, abilities });
+                }
                 let placeholder = self.presets().get(id).is_some_and(|p| p.placeholder);
                 let warnings = placeholder
                     .then(|| {
@@ -76,7 +82,11 @@ mod tests {
         let feels = Feels::generic();
         assert_eq!(feels.designed_for(), "classic-1");
         let (feel, warnings) = feels.feel(STARTING_PRESET).unwrap();
-        assert_eq!(feel, generic_feel(STARTING_PRESET).unwrap());
+        let mut generic = generic_feel(STARTING_PRESET).unwrap();
+        assert_eq!(feel.roster[0], generic.roster[0]);
+        assert_eq!(feel.roster.len(), 2);
+        generic.roster = feel.roster.clone();
+        assert_eq!(feel, generic);
         assert!(warnings.is_empty(), "{warnings:?}");
         let (_, warnings) = feels.feel("classic-2").unwrap();
         assert_eq!(warnings.len(), 1, "{warnings:?}");

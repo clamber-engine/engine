@@ -1834,7 +1834,11 @@ mod tests {
         s.step(&press(Action::Down));
         s.step(&press(Action::Jump));
         assert!(matches!(s.screen, Screen::Title(_)));
-        assert_eq!(*s.game.world.feel, generic_feel("snappy").unwrap());
+        assert_eq!(s.game.world.feel.preset, "snappy");
+        assert_eq!(
+            s.game.world.feel.world,
+            generic_feel("snappy").unwrap().world
+        );
         assert_eq!(s.prefs.preset.as_deref(), Some("snappy"));
         assert_eq!(Prefs::load(&path), s.prefs);
         std::fs::remove_dir_all(dir).unwrap();
