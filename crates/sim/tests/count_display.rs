@@ -6,7 +6,8 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
 use clamber_sim::{
-    CountDisplay, FlowEvent, InputFrame, LivesDisplay, START_LIVES, World, generic_feel, step,
+    CountDisplay, FlowEvent, InputFrame, LivesDisplay, LivesStart, START_LIVES, World,
+    generic_feel, step,
 };
 
 /// The player stands at x = 600 on flat ground at y = 400.
@@ -437,4 +438,26 @@ fn reaching_100_with_99_lives_keeps_100_and_shows_99() {
         .filter_map(|r| r.lives.map(|l| l.number))
         .collect();
     assert!(!shown.is_empty() && shown.iter().all(|&n| n == 99));
+}
+
+/// count-display.md, "The lives image": the cycle runs from the frame
+/// the number is first drawn, and the first pictures depend on what play
+/// started after.
+#[test]
+fn the_lives_display_says_how_long_ago_it_began_and_what_play_started_after() {
+    let mut w = world(&[]);
+    let rows = play(&mut w, 40);
+    let at = |k: usize| rows[k].lives.unwrap();
+    assert_eq!((at(8).since, at(8).start), (0, Some(LivesStart::Level)));
+    assert_eq!(at(30).since, 22);
+
+    let mut w = world(&[]);
+    w.flow.lives = 10;
+    play(&mut w, 5);
+    w.player.pos.y = clamber_sim::Fixed::from_int(F + 900);
+    w.player.ground = None;
+    lose_a_life(&mut w);
+    let rows = play(&mut w, 10);
+    let shown = rows[8].lives.unwrap();
+    assert_eq!((shown.since, shown.start), (1, Some(LivesStart::Fallout)));
 }

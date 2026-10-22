@@ -3,7 +3,7 @@
 //! display shows the count and lives only when it says so.
 
 use clamber_pack::Param;
-use clamber_sim::{CountDisplay, LetterRow, LivesDisplay, RELIC, World};
+use clamber_sim::{CountDisplay, LetterRow, LivesDisplay, LivesStart, RELIC, World};
 
 use crate::canvas::{Color, rgb};
 use crate::icons::{Icon, draw_icon};
@@ -148,11 +148,39 @@ fn draw_count(canvas: &mut dyn Surface, left: i32, count: &CountDisplay, image: 
 fn draw_lives(canvas: &mut dyn Surface, left: i32, lives: &LivesDisplay) {
     let x = left + lives.x;
     if lives.image {
-        draw_icon_on_line(canvas, Icon::Life, (x - ICON - 1, lives.y + 4));
+        let grow = LIVES_GROW[usize::from(lives_picture(lives.since, lives.start)) - 1];
+        let size = (ICON + grow) as f32;
+        let top = lives.y as f32 + 4.0 + (GLYPH.1 as f32 - size) / 2.0;
+        let left = (x - ICON - 1) as f32 - grow as f32 / 2.0;
+        draw_icon(canvas, Icon::Life, (left, top), size);
     }
     for (k, digit) in lives.number.to_string().chars().enumerate() {
         let x = x + lives.gap * k as i32;
         draw_text(canvas, x, lives.y + 4, &digit.to_string(), COUNT);
+    }
+}
+
+/// The lives image's cycle: the picture, 1 to 8, of each of its 14 steps
+/// of 3 frames (count-display.md, "The lives image").
+const LIVES_CYCLE: [u8; 14] = [1, 2, 3, 2, 1, 4, 5, 6, 7, 8, 7, 6, 5, 4];
+
+/// How much bigger than its square the engine's art for each of the
+/// lives pictures 1 to 10 is, px: it swells and shrinks through the
+/// cycle. The spec has no hashes for them.
+const LIVES_GROW: [i32; 10] = [0, 1, 2, 3, 4, 3, 2, 1, -1, -2];
+
+/// Which of the lives pictures, 1 to 10, the lives image shows `since`
+/// frames after the number was first drawn (`D`), when the display is
+/// for play starting after `start` or not. The frames before `D` + 4
+/// show what `D` + 4 does.
+fn lives_picture(since: u32, start: Option<LivesStart>) -> u8 {
+    let from_cycle = since.saturating_sub(7);
+    let step = (from_cycle / 3 % LIVES_CYCLE.len() as u32) as usize;
+    match (since, start) {
+        (..=6, Some(LivesStart::Level | LivesStart::Knockout)) => 9,
+        (..=6, _) => 4,
+        (7..=9, Some(LivesStart::Fallout)) => 10,
+        _ => LIVES_CYCLE[step],
     }
 }
 
@@ -191,6 +219,27 @@ mod tests {
     use clamber_sim::generic_feel;
 
     use super::*;
+
+    #[test]
+    fn the_lives_image_follows_the_cycle_of_three_frame_steps() {
+        let at = |since| lives_picture(since, None);
+        assert_eq!([at(4), at(6)], [4, 4]);
+        let steps: Vec<u8> = (0..14).map(|k| at(7 + 3 * k)).collect();
+        assert_eq!(steps, LIVES_CYCLE);
+        assert_eq!([at(7), at(9), at(10)], [1, 1, 2]);
+        // Step 1 follows step 14.
+        assert_eq!([at(7 + 42), at(7 + 42 + 3)], [1, 2]);
+    }
+
+    #[test]
+    fn play_starting_has_its_own_first_pictures() {
+        let level = |since| lives_picture(since, Some(LivesStart::Level));
+        assert_eq!([level(4), level(6), level(7)], [9, 9, 1]);
+        let knocked = |since| lives_picture(since, Some(LivesStart::Knockout));
+        assert_eq!([knocked(5), knocked(7)], [9, 1]);
+        let fell = |since| lives_picture(since, Some(LivesStart::Fallout));
+        assert_eq!([fell(4), fell(7), fell(9), fell(10)], [4, 10, 10, 2]);
+    }
     use crate::canvas::Canvas;
 
     fn world(entities: &str) -> World {

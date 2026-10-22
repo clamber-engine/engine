@@ -43,7 +43,7 @@ use clamber_pack::Param;
 
 use crate::archetype::Behavior;
 use crate::collect::{
-    self, LetterEnd, LetterShow, LivesGain, LostLife, Pickup, Release, RelicFlight,
+    self, LetterEnd, LetterShow, LivesGain, LivesStart, LostLife, Pickup, Release, RelicFlight,
 };
 use crate::hits;
 use crate::keg;
@@ -135,6 +135,8 @@ pub struct Flow {
     /// The frame play last started on: the level's first, or the one
     /// play comes back on after a lost life.
     pub play_from: u32,
+    /// What play started after on `play_from`.
+    pub play_after: LivesStart,
     pub lives: u8,
     /// The collectible count: gems, and what collectibles add.
     pub gems: u32,
@@ -251,6 +253,10 @@ pub(crate) fn dying(world: &mut World) -> bool {
         }
         world.flow.outcome = Outcome::Playing;
         world.flow.hits_taken = 0;
+        world.flow.play_after = match world.flow.lost {
+            Some(lost) if !lost.knocked => LivesStart::Fallout,
+            _ => LivesStart::Knockout,
+        };
         world.flow.lost = None;
         world.flow.events.push(FlowEvent::Respawn);
     }

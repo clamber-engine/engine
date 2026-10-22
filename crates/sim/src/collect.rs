@@ -218,6 +218,24 @@ pub struct LivesDisplay {
     pub image: bool,
     /// Each digit is this far right of the one before.
     pub gap: i32,
+    /// Frames since the number was first drawn (at its highest), for the
+    /// image's cycle (count-display.md, "The lives image"); 0 before.
+    pub since: u32,
+    /// What play started after, for the display shown then.
+    pub start: Option<LivesStart>,
+}
+
+/// What play started after, for the lives display shown then
+/// (count-display.md, "When play starts").
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum LivesStart {
+    /// The level's first frame.
+    #[default]
+    Level,
+    /// A restart after a knock-out.
+    Knockout,
+    /// A restart after falling out of the level.
+    Fallout,
 }
 
 /// The letter row as drawn in a picture: where the top of its images
@@ -358,7 +376,11 @@ impl World {
                 int(Param::LivesSpeed),
             ),
         )?;
-        Some(self.lives_at(self.flow.lives, y, true))
+        let first = u32::try_from(since - int(Param::PlayLivesIn)).unwrap_or(0);
+        Some(LivesDisplay {
+            start: Some(self.flow.play_after),
+            ..self.lives_at(self.flow.lives, y, true, first)
+        })
     }
 
     /// The lives display after a lost life, in the picture made on frame
@@ -406,7 +428,12 @@ impl World {
             (0, int(Param::LivesSlide), i64::MAX),
             (rest, int(Param::LivesRise), 0, int(Param::LivesSpeed)),
         )?;
-        Some(self.lives_at(number, y, n < burst || n >= again))
+        Some(self.lives_at(
+            number,
+            y,
+            n < burst || n >= again,
+            u32::try_from(n - from).unwrap_or(0),
+        ))
     }
 
     /// The lives display with the letter row's ending `end` and a
@@ -478,13 +505,16 @@ impl World {
             number = number.saturating_add(1);
         }
         let image = n < burst || n >= burst.saturating_add(again);
-        (y >= rest - gone).then(|| self.lives_at(number, y, image))
+        (y >= rest - gone).then(|| {
+            let since = u32::try_from(n - joined - into).unwrap_or(0);
+            self.lives_at(number, y, image, since)
+        })
     }
 
     /// The lives display after a gain, in the picture made on frame `n`.
     fn gained_lives(&self, n: u32) -> Option<LivesDisplay> {
-        let (number, y) = self.item_lives(n)?;
-        y.map(|y| self.lives_at(number, y, true))
+        let (number, y, since) = self.item_lives(n)?;
+        y.map(|y| self.lives_at(number, y, true, since))
     }
 
     /// The lives display for the lives gained since it last started, in
@@ -495,7 +525,7 @@ impl World {
     /// Frames a gain holds are held; the number shown goes up one at a
     /// time toward the lives the gains count by then, counting only
     /// frames that aren't held (extra-lives.md, "Several items").
-    pub(crate) fn item_lives(&self, n: u32) -> Option<(u8, Option<i64>)> {
+    pub(crate) fn item_lives(&self, n: u32) -> Option<(u8, Option<i64>, u32)> {
         let gains = &self.flow.gains;
         let first = gains.iter().map(|g| g.at).min().filter(|&at| at <= n)?;
         let physics = &self.feel.world;
@@ -589,13 +619,18 @@ impl World {
                 Some(rest)
             };
         }
-        start?;
+        let (from, _) = start?;
         let shown = u8::try_from(shown).unwrap_or(u8::MAX);
-        Some((shown, y.filter(|&y| y >= rest - gone)))
+        let since = i64::from(n - from) - into;
+        Some((
+            shown,
+            y.filter(|&y| y >= rest - gone),
+            u32::try_from(since).unwrap_or(0),
+        ))
     }
 
     /// The lives display showing `number` lives with its top at `y`.
-    fn lives_at(&self, number: u8, y: i64, image: bool) -> LivesDisplay {
+    fn lives_at(&self, number: u8, y: i64, image: bool, since: u32) -> LivesDisplay {
         let physics = &self.feel.world;
         let int = |p: Param| i32::try_from(physics[p].floor()).unwrap_or(0);
         let number = number.min(MAX_SHOWN);
@@ -607,6 +642,8 @@ impl World {
             y: i32::try_from(y).unwrap_or(i32::MAX),
             image,
             gap,
+            since,
+            start: None,
         }
     }
 
