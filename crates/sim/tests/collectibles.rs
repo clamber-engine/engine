@@ -614,10 +614,13 @@ fn a_bunch_leaving_the_view_flies_its_first_items_and_counts_the_rest_at_once() 
     assert_eq!(ups, [17, 23, 29, 30, 35, 36, 41, 42, 48, 54]);
 }
 
+/// A point in the picture.
+type Corner = (i32, i32);
+
 /// The copies drawn after each of 40 steps with a standing player on a
 /// spark whose `xc - V` is 100 (the view held still), and the corner
 /// the first copy starts from.
-fn single_copies() -> (Vec<Vec<(i32, i32)>>, (i32, i32)) {
+fn single_copies() -> (Vec<Vec<Corner>>, Corner) {
     let mut play = Play::new(world("spark", &[(X, F)], false));
     let mut drawn = Vec::new();
     let mut top = 0;
