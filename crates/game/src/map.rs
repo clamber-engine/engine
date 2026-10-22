@@ -33,6 +33,9 @@ const PATH: Color = rgb(0xc8, 0xa0, 0x60);
 const LEVEL: Color = rgb(0xe8, 0x50, 0x40);
 const STOP: Color = rgb(0xf0, 0xe0, 0xb0);
 const LEAD: Color = rgb(0x40, 0xb0, 0xf0);
+/// How far left of a page's edge the other character's origin may be and still
+/// show (cut off) there: it is in view from position 248 on the previous page.
+const OTHER_IN_VIEW: f64 = 8.0;
 const OTHER: Color = rgb(0xf0, 0xa0, 0x40);
 
 /// Where the game is with respect to the map.
@@ -301,7 +304,10 @@ impl MapPlay {
         let (left_edge, scale, height) = view;
         let (_, h) = canvas.view();
         let (px, py) = (at.x.floor() as f64 - left_edge, at.y.floor() as f64);
-        if px < 0.0 || px >= f64::from(legs.page_width) {
+        // after a walk over a page edge the other is still on the previous
+        // page: out of view until 8 px short of the edge, then cut off
+        // (`level-map.md`, "The other character on the previous page")
+        if !other_in_view(px, legs.page_width) {
             return;
         }
         let py = if legs.y_up { height - py } else { py };
@@ -443,6 +449,11 @@ fn buttons(held: Actions, enter: bool) -> Buttons {
 }
 
 /// `c` at brightness `light`, 0 (black) to [`clamber_worldmap::FULL`].
+/// Whether the other character, `px` across the shown page, is in view.
+fn other_in_view(px: f64, page_width: u32) -> bool {
+    (-OTHER_IN_VIEW..f64::from(page_width)).contains(&px)
+}
+
 fn dim(c: Color, light: u32) -> Color {
     let full = clamber_worldmap::FULL;
     let channel = |shift: u32| ((c >> shift & 0xff) * light / full) << shift;
@@ -452,6 +463,14 @@ fn dim(c: Color, light: u32) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_other_shows_cut_off_from_8_px_before_the_page_edge() {
+        assert!(!other_in_view(-9.0, 256));
+        assert!(other_in_view(-8.0, 256));
+        assert!(other_in_view(0.0, 256));
+        assert!(!other_in_view(256.0, 256));
+    }
 
     #[test]
     fn tandem_enters_as_jump_does() {

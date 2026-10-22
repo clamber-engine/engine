@@ -558,10 +558,17 @@ impl LegWalker {
         // the lead's legs are ended by the walk: a leg ends on the frame
         // its number goes up, or the walk ends
         let mut first = copy.frame;
+        // the frame on which the lead's page went down during the leg
+        let mut wrapped = None;
         while copy.walk.is_some() {
+            let frame = copy.frame;
+            let page = copy.page(legs);
             let out = copy.step(map, legs, p, Buttons::NONE);
             if out.lag {
                 continue;
+            }
+            if out.page.is_some_and(|now| now < page) {
+                wrapped = Some(frame);
             }
             let ended = out.arrived.is_some() || copy.walk.as_ref().is_some_and(|w| w.leg != leg);
             if ended {
@@ -569,7 +576,13 @@ impl LegWalker {
                 let end = if end > from {
                     end - Fixed::from_int(OTHER_BEHIND)
                 } else if end < from {
-                    end + Fixed::from_int(OTHER_BEHIND)
+                    // a wrap on or after the frame the other first moves
+                    // leaves it on the lead's x
+                    if wrapped.is_some_and(|at| at >= first + OTHER_LATER) {
+                        end
+                    } else {
+                        end + Fixed::from_int(OTHER_BEHIND)
+                    }
                 } else {
                     // not covered: the other ends where the lead does
                     end
@@ -580,6 +593,7 @@ impl LegWalker {
                 });
                 from = whole(copy.position.x);
                 first = copy.frame;
+                wrapped = None;
                 leg += 1;
             }
         }

@@ -840,3 +840,45 @@ fn the_other_walks_the_leg_later_and_ends_behind() {
     assert_eq!(other.x.floor(), lead_at - 24);
     assert_eq!(other.y, lead.position().y);
 }
+
+/// A walk to the left of 64 px from `from`, with the other character,
+/// run to its end; returns the lead's and the other's whole-pixel `x`.
+fn left_walk(from: i32) -> (i64, i64) {
+    let map = map_with(
+        "appear_wait = 0\nappear_offset = [0, 0]",
+        &format!(
+            "[[nodes]]\nid = \"a\"\nkind = \"waypoint\"\nat = [{from}, 0]\n\
+             [[nodes]]\nid = \"b\"\nkind = \"waypoint\"\nat = [{}, 0]\n\
+             [[paths]]\nfrom = \"a\"\nto = \"b\"\nleave = [\"left\"]",
+            from - 64
+        ),
+    );
+    let legs = legs(&map);
+    let p = Progress::default();
+    let mut lead = LegWalker::appear(&map, legs, 0).with_other();
+    for frame in 0..200 {
+        let held = if frame == 0 {
+            Buttons::LEFT
+        } else {
+            Buttons::NONE
+        };
+        lead.step(&map, legs, &p, held);
+    }
+    (
+        lead.position().x.floor(),
+        lead.other_position().unwrap().x.floor(),
+    )
+}
+
+/// `level-map.md`, "The other character", legs over a page edge: in a walk
+/// to the left the other ends on the lead's `x` if the page changes on or
+/// after the frame it first moves, and 24 px to its right if earlier.
+#[test]
+fn over_a_page_edge_to_the_left_the_other_ends_by_when_the_page_changes() {
+    // the page changes about 32 frames in, later than the other's start
+    let (lead, other) = left_walk(288);
+    assert_eq!((lead, other), (224, 224));
+    // about 4 frames in, before it
+    let (lead, other) = left_walk(260);
+    assert_eq!((lead, other), (196, 220));
+}
