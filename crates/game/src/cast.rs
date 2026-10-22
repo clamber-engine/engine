@@ -34,6 +34,7 @@ use clamber_sim::{
 use clamber_sprite::{Playback, SpriteSheet};
 
 use crate::bunch_pictures;
+use crate::critter_pictures;
 use crate::hutch_pictures;
 use crate::letter_pictures;
 use crate::pictures::{self, PictureClock};
@@ -285,6 +286,12 @@ impl Cast {
             }
             return;
         }
+        if let Some(clock) = pose.critter {
+            if let Some(sprite) = self.critter_picture(thing, pose, clock, x, y) {
+                self.bank.draw(canvas, &Sprite { opacity, ..sprite });
+            }
+            return;
+        }
         if let Some(count) = pose.stinger {
             if let Some(sprite) = self.stinger_picture(thing, pose, count, x, y) {
                 self.bank.draw(canvas, &Sprite { opacity, ..sprite });
@@ -464,6 +471,50 @@ impl Cast {
             let frame = frames.len() * at / stinger_pictures::LABELS.len();
             Some(Sprite {
                 flip_x: true,
+                ..Sprite::new(id, frames.get(frame).copied().unwrap_or(0), x, y)
+            })
+        })
+    }
+
+    /// A critter's picture at `clock`: its own from
+    /// [`critter_pictures::SHEET`] if the sheet has all six, otherwise
+    /// the frame of its kind's animation for the same wing position;
+    /// mirrored as the clock says either way.
+    fn critter_picture(
+        &self,
+        thing: &Thing,
+        pose: &Pose,
+        clock: critter_pictures::Clock,
+        x: f32,
+        y: f32,
+    ) -> Option<Sprite> {
+        let at = clock.picture();
+        let flip_x = clock.mirrored;
+        let own = self.kinds.get(critter_pictures::SHEET).and_then(|&id| {
+            let sheet = self.bank.sheet(id);
+            let all = critter_pictures::LABELS
+                .iter()
+                .all(|l| sheet.animation(l).is_some());
+            let frame = *sheet
+                .animation(critter_pictures::LABELS[at])?
+                .frames
+                .first()?;
+            all.then(|| Sprite {
+                flip_x,
+                ..Sprite::new(id, frame, x, y)
+            })
+        });
+        own.or_else(|| {
+            let &id = self.kinds.get(&thing.kind)?;
+            let frames = self
+                .bank
+                .sheet(id)
+                .animations
+                .get(pose.animation)
+                .map_or(&[][..], |a| &a.frames[..]);
+            let frame = frames.len() * at / critter_pictures::LABELS.len();
+            Some(Sprite {
+                flip_x,
                 ..Sprite::new(id, frames.get(frame).copied().unwrap_or(0), x, y)
             })
         })
@@ -762,6 +813,9 @@ pub struct Pose {
     /// A stinger's counted frames since it appeared
     /// ([`crate::stinger_pictures`]).
     pub stinger: Option<u32>,
+    /// A critter's place in its pictures
+    /// ([`crate::critter_pictures`]).
+    pub critter: Option<critter_pictures::Clock>,
     /// Frames since a thrown object left the hands
     /// ([`crate::thrown_pictures`]).
     pub thrown: Option<u32>,
@@ -807,6 +861,9 @@ impl Poses {
             pose.spin = spins(world, thing).then(|| spin_pictures::step(0, thing.pos));
             pose.bunch = (is_bunch(world, thing) && thing.active).then_some(0);
             pose.stinger = (is_stinger(thing) && thing.active).then_some(0);
+            pose.critter = critter(thing)
+                .filter(|_| thing.active)
+                .map(|_| critter_pictures::Clock::appearing(thing));
             pose.put_down = matches!(thing.phase, Phase::Placed).then_some(0);
             pose.thrown = thrown(thing).then_some(0);
         }
@@ -853,6 +910,14 @@ impl Poses {
                 _ if !is_stinger(thing) || !thing.active => None,
                 Some(count) if !respawn => Some(count + u32::from(!thing.still)),
                 _ => Some(0),
+            };
+            // A critter's pictures start afresh on the frame it appears.
+            pose.critter = match (critter(thing), pose.critter) {
+                (Some(perch), Some(clock)) if thing.active && !respawn => {
+                    Some(clock.next(thing, perch))
+                }
+                (Some(_), _) if thing.active => Some(critter_pictures::Clock::appearing(thing)),
+                _ => None,
             };
             // A thrown object's frames count from the one it leaves the
             // hands on, and a put-down one's from the one it is set down.
@@ -928,6 +993,14 @@ fn walker_size(world: &World, thing: &Thing) -> Option<Size> {
 /// `pictures` param says ([`crate::spin_pictures`]).
 fn spins(world: &World, thing: &Thing) -> bool {
     pictures_param(world, thing) == Some(spin_pictures::SPIN)
+}
+
+/// A critter's perch length in frames, if `thing` is a critter.
+fn critter(thing: &Thing) -> Option<u32> {
+    match thing.archetype?.behavior {
+        Behavior::Critter(c) => Some(u32::from(c.perch)),
+        _ => None,
+    }
 }
 
 /// Whether `thing` is a stinger.
@@ -1758,6 +1831,78 @@ mod tests {
             cast.draw_thing(&mut canvas, thing, &pose, 1.0, 0.0);
             let got = [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()];
             assert_eq!(got, want, "{labels:?} on {count}");
+        }
+    }
+
+    fn critter_at(vx: i32, clock: u32, still: bool) -> Thing {
+        let mut thing = world().things[0].clone();
+        thing.vx = clamber_fixed::Fixed::from_int(vx);
+        thing.clock = clock;
+        thing.still = still;
+        thing
+    }
+
+    #[test]
+    fn it_counts_flying_frames_and_perches_for_a_perch() {
+        let mut clock = critter_pictures::Clock::appearing(&critter_at(-1, 0, false));
+        assert!(clock.mirrored);
+        clock = clock.next(&critter_at(1, 0, false), 360);
+        assert_eq!((clock.flying, clock.mirrored), (1, false));
+        // Held still, nothing changes, not even the mirroring.
+        assert_eq!(clock.next(&critter_at(-1, 0, true), 360), clock);
+        // It perches, keeping its mirroring, for 360 frames.
+        clock = clock.next(&critter_at(-1, 359, false), 360);
+        assert_eq!((clock.perched, clock.mirrored), (Some(0), false));
+        clock = clock.next(&critter_at(-1, 358, false), 360);
+        assert_eq!(clock.perched, Some(1));
+        clock = clock.next(&critter_at(-1, 0, false), 360);
+        assert_eq!(clock.perched, Some(2));
+        clock.perched = Some(358);
+        clock = clock.next(&critter_at(-1, 0, false), 360);
+        assert_eq!(clock.perched, Some(359));
+        clock = clock.next(&critter_at(-1, 0, false), 360);
+        assert_eq!(
+            (clock.perched, clock.flying, clock.mirrored),
+            (None, 0, true)
+        );
+    }
+
+    fn critter_thing() -> Thing {
+        let mut thing = world().things[0].clone();
+        thing.kind = "critter".to_string();
+        thing.archetype = clamber_sim::Archetypes::builtin().named("critter");
+        thing.active = true;
+        thing
+    }
+
+    #[test]
+    fn a_critter_shows_its_own_pictures_mirrored_as_it_flies() {
+        let thing = critter_thing();
+        let labels = &crate::critter_pictures::LABELS[..];
+        for (labels, mirrored, want) in [
+            (labels, true, [B, Color::default()]),
+            (labels, false, [Color::default(), B]),
+            // Without one of the six, the engine's art, mirrored the same.
+            (&labels[1..], true, [R, Color::default()]),
+        ] {
+            let cast = Cast::new(vec![
+                ("critter".to_string(), sheet()),
+                (
+                    crate::critter_pictures::SHEET.to_string(),
+                    labelled_sheet(labels, 4),
+                ),
+            ]);
+            let pose = Pose {
+                critter: Some(crate::critter_pictures::Clock {
+                    mirrored,
+                    ..Default::default()
+                }),
+                ..Pose::default()
+            };
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, &thing, &pose, 1.0, 0.0);
+            let got = [canvas.get(0, 0).unwrap(), canvas.get(1, 0).unwrap()];
+            assert_eq!(got, want, "{labels:?} mirrored {mirrored}");
         }
     }
 

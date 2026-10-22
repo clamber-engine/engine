@@ -51,6 +51,7 @@ mod cast;
 mod clock;
 mod controls;
 mod credits;
+mod critter_pictures;
 mod dim;
 pub mod display;
 mod feels;
@@ -235,8 +236,8 @@ pub fn user_dir() -> Option<PathBuf> {
 #[cfg(test)]
 mod import_coverage {
     use crate::{
-        bunch_pictures, hutch_pictures, letter_pictures, spin_pictures, stinger_pictures,
-        thrower_pictures, thrown_pictures, walker_pictures,
+        bunch_pictures, critter_pictures, hutch_pictures, letter_pictures, spin_pictures,
+        stinger_pictures, thrower_pictures, thrown_pictures, walker_pictures,
     };
 
     /// Every picture sheet the game reads is written by the importer or is
@@ -250,6 +251,7 @@ mod import_coverage {
             thrown_pictures::SHEET,
             hutch_pictures::SHEET,
             stinger_pictures::SHEET,
+            critter_pictures::SHEET,
             thrower_pictures::THROWER,
             thrower_pictures::BALL,
             walker_pictures::Size::Small.name(),
