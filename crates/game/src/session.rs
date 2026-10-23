@@ -257,6 +257,9 @@ pub struct Session {
     /// Frames the title screen has shown for, all told: its logo comes
     /// in the first time only.
     pub title_frames: u32,
+    /// Logic frames stepped since the session began, which times the
+    /// silences between songs.
+    pub ticks: u64,
     /// The mouse pointer's place in the view, once it has moved over it.
     pub pointer: Option<(f32, f32)>,
     /// Presses the mouse adds to the next menu step.
@@ -292,6 +295,7 @@ impl Session {
             file_request: None,
             device: Device::Keyboard,
             title_frames: 0,
+            ticks: 0,
             pointer: None,
             clicks: Actions::NONE,
             dragging: None,
@@ -333,6 +337,7 @@ impl Session {
     /// [`Input::menu`]).
     pub fn step(&mut self, input: &InputFrame) {
         self.cues.clear();
+        self.ticks += 1;
         if self.screen == Screen::Playing {
             self.play(input);
             return;

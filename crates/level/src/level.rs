@@ -197,6 +197,10 @@ pub struct Track {
     pub loop_start: Option<u64>,
     /// The loop's length in frames; without it the loop runs to the end.
     pub loop_length: Option<u64>,
+    /// When play comes into this level from another, the other level's
+    /// music is cut and this track starts this many logic frames later,
+    /// with nothing heard in between; without it the tracks crossfade.
+    pub silence: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -645,6 +649,7 @@ struct TrackFile {
     file: String,
     loop_start: Option<u64>,
     loop_length: Option<u64>,
+    silence: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -1180,6 +1185,7 @@ impl Reader<'_> {
             file: m.file,
             loop_start: m.loop_start,
             loop_length: m.loop_length,
+            silence: m.silence,
         })
     }
 
@@ -1639,6 +1645,9 @@ impl Level {
                     let n = i64::try_from(n).unwrap_or(i64::MAX);
                     mt.insert(key.into(), Value::Integer(n));
                 }
+            }
+            if let Some(n) = m.silence {
+                mt.insert("silence".into(), Value::Integer(n.into()));
             }
             t.insert("music".into(), Value::Table(mt));
         }

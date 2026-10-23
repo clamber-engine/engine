@@ -729,6 +729,7 @@ impl LevelDecoder {
                         file: file.clone(),
                         loop_start: music.looping.map(|l| l.start as u64),
                         loop_length: music.looping.map(|l| l.length as u64),
+                        silence: crate::silent_frames(song.song),
                     });
                     files.insert(file, ogg);
                 }

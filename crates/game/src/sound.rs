@@ -172,6 +172,10 @@ pub struct Audio {
     /// The folder and track of the level the session was last seen
     /// playing, to follow it to another.
     level_seen: Option<(PathBuf, Option<Track>)>,
+    /// The session's tick on which the level's music starts, when play
+    /// came into the level with the other's music cut and a silence
+    /// before its own.
+    silent_until: Option<u64>,
     /// The volumes last set on the mixer, from the prefs.
     volume: Option<Volume>,
 }
@@ -225,6 +229,7 @@ impl Audio {
             level: None,
             list: MusicList::default(),
             level_seen: None,
+            silent_until: None,
             volume: None,
         }
     }
@@ -278,6 +283,13 @@ impl Audio {
                 let list = std::mem::take(&mut self.list);
                 self.set_music(music.as_ref(), dir, &list);
                 self.list = list;
+                // A track with a silence is cut to and started after it,
+                // not crossfaded to (`music.md`, "A change of song").
+                // Counted from the step that brought play here.
+                if let Some(n) = music.as_ref().and_then(|m| m.silence) {
+                    self.silent_until = Some(session.ticks + u64::from(n));
+                    self.handle.stop_music(0);
+                }
             }
             self.level_seen = Some((dir.to_path_buf(), music.clone()));
         }
@@ -305,6 +317,15 @@ impl Audio {
             Some(Tune::Level) => self.level.as_mut(),
             None => None,
         };
+        let silent = match self.silent_until {
+            Some(until) if session.ticks < until => true,
+            Some(_) => {
+                self.silent_until = None;
+                false
+            }
+            None => false,
+        };
+        let wanted = wanted.filter(|_| !silent || session.tune() != Some(Tune::Level));
         let Some(track) = wanted.filter(|t| !t.failed) else {
             if playing {
                 self.handle.stop_music(out);
@@ -511,6 +532,7 @@ mod tests {
             file: "level.wav".into(),
             loop_start: None,
             loop_length: None,
+            silence: None,
         };
         audio.set_music(Some(&track), &dir, &list);
         let near = |a: f32, b: f32| (a - b).abs() < 0.01;
@@ -565,6 +587,7 @@ mod tests {
             file: "level.wav".into(),
             loop_start: None,
             loop_length: None,
+            silence: None,
         };
         audio.set_music(Some(&track), &dir, &MusicList::default());
 
@@ -600,6 +623,7 @@ mod tests {
             file: "first.wav".into(),
             loop_start: None,
             loop_length: None,
+            silence: None,
         };
         audio.set_music(Some(&track), &dir, &MusicList::default());
 
@@ -616,6 +640,45 @@ mod tests {
         audio.update(&s, |w| panic!("{w}"));
         let crossfade = (RATE as f32 * CROSSFADE) as usize;
         assert!(last(&mut mixer, crossfade + 1) > 0.2, "the second level's");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_level_with_a_silence_is_cut_to_and_started_after_it() {
+        let dir = folder("silence");
+        std::fs::write(dir.join("first.wav"), level_wav(RATE as usize, -16384)).unwrap();
+        std::fs::write(dir.join("second.wav"), level_wav(RATE as usize, 16384)).unwrap();
+        let (handle, mut mixer) = mixer(8);
+        let mut audio = Audio::new(handle, RATE, &SoundList::default(), |w| panic!("{w}"));
+        audio.set_title_music(&MusicList::default());
+        let track = Track {
+            file: "first.wav".into(),
+            loop_start: None,
+            loop_length: None,
+            silence: None,
+        };
+        audio.set_music(Some(&track), &dir, &MusicList::default());
+
+        let mut s = session();
+        s.level_path = dir.join("first.level");
+        s.step(&press(Action::Jump));
+        audio.update(&s, |w| panic!("{w}"));
+        assert!(last(&mut mixer, 800) < -0.2, "the first level's music");
+
+        let src = format!("{LEVEL}\n[music]\nfile = \"second.wav\"\nsilence = 3\n");
+        let level = Level::from_toml_str(&src, "test").unwrap();
+        s.game = Game::new(World::new(Arc::new(level), s.game.world.feel.clone()));
+        s.level_path = dir.join("second.level");
+        audio.update(&s, |w| panic!("{w}"));
+        assert_eq!(last(&mut mixer, 10), 0.0, "cut at once, no crossfade");
+        for _ in 0..2 {
+            s.step(&press(Action::Left));
+            audio.update(&s, |w| panic!("{w}"));
+            assert_eq!(last(&mut mixer, 10), 0.0, "silent");
+        }
+        s.step(&press(Action::Left));
+        audio.update(&s, |w| panic!("{w}"));
+        assert!(last(&mut mixer, 800) > 0.2, "the second level's, after 3");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -658,6 +721,7 @@ mod tests {
             file: "nowhere.ogg".into(),
             loop_start: None,
             loop_length: None,
+            silence: None,
         };
         audio.set_music(
             Some(&track),

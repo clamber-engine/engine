@@ -404,7 +404,7 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
 /// 16 columns and `N` = 17 from `level-ground.md`, and the tile set's
 /// first 987 tiles in one part from `graphics.md` ("The first level's
 /// room"). The characters walk in leftward (`exits.md`, "Walking in"),
-/// and it has no restart, view-limit record or music.
+/// and it has no restart or view-limit record. `music.md`: song 23 plays in it.
 pub fn first_room(title: &str) -> Option<LevelParts> {
     let at = |data| locate(title, data);
     let (columns, types, split) = match title {
@@ -438,7 +438,13 @@ pub fn first_room(title: &str) -> Option<LevelParts> {
         scene: None,
         scene_of: None,
         view_limits: None,
-        song: None,
+        song: Some(LevelSong {
+            sample_table: at(Data::SampleTable)?,
+            shared_samples: at(Data::SharedSampleList)?,
+            sample_sets: at(Data::SampleSetTable)?,
+            song_table: at(Data::SongTable)?,
+            song: 23,
+        }),
         late_life_item: false,
     })
 }
@@ -449,7 +455,7 @@ pub fn first_room(title: &str) -> Option<LevelParts> {
 /// 435 and front tiles 0 to 43 from `graphics.md` ("The first level's
 /// scene"). The lead walks in leftward, and the scene plays by itself
 /// and goes back to the first level (`exits.md`, "The scene"). It has no
-/// single collectibles (`collectibles.md`), restart or music.
+/// single collectibles (`collectibles.md`) or restart. `music.md`: song 25 plays in it.
 pub fn first_scene(title: &str) -> Option<LevelParts> {
     let at = |data| locate(title, data);
     let (columns, types, pictures, front_count) = match title {
@@ -484,7 +490,13 @@ pub fn first_scene(title: &str) -> Option<LevelParts> {
         scene: None,
         scene_of: Some(FIRST_LEVEL),
         view_limits: Some(at(Data::SceneViewLimits)?),
-        song: None,
+        song: Some(LevelSong {
+            sample_table: at(Data::SampleTable)?,
+            shared_samples: at(Data::SharedSampleList)?,
+            sample_sets: at(Data::SampleSetTable)?,
+            song_table: at(Data::SongTable)?,
+            song: 25,
+        }),
         late_life_item: false,
     })
 }

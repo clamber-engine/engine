@@ -440,6 +440,11 @@ fn writes_the_level_s_music_with_its_loop() {
     let music = level.music.unwrap();
     assert_eq!(music.file, "first-music.ogg");
     assert_eq!(music.loop_length, Some(3200));
+    assert_eq!(
+        music.silence,
+        Some(70),
+        "music.md: song 0 starts 70 frames after the cut"
+    );
     let ogg = fs::read(dir.join(&music.file)).unwrap();
     let input = clamber_audio::Input::bytes(ogg, Some("ogg"));
     let (decoded, _) = clamber_audio::Sound::decode(&input).unwrap();

@@ -34,6 +34,22 @@ const ECHO_DELAY: u8 = 4;
 /// delay (`voice-output.md`, "The voice's sound").
 const AFTER_SILENT: usize = 2;
 
+/// The logic frames from the cut of the song that was playing to the
+/// start of song `song`, when the game changes song (`music.md`, "A
+/// change of song"). Song 12, the map's, depends on whether the level
+/// was finished before, so it has none here.
+pub fn silent_frames(song: u16) -> Option<u32> {
+    match song {
+        0 => Some(70),
+        16 => Some(48),
+        17 => Some(30),
+        23 => Some(31),
+        25 => Some(32),
+        26 => Some(44),
+        _ => None,
+    }
+}
+
 /// Where a level's song and its samples are in an image.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LevelSong {

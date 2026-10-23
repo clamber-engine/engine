@@ -87,7 +87,7 @@ pub use level_start::{START_RECORD_SIZE, StartRecord};
 pub use location::{BANK_SIZE, Location};
 pub use locators::{Data, first_level, first_level_ground, first_room, first_scene, locate};
 pub use manifest::{FORMAT, MANIFEST, MAX_VIEW, Manifest, NotShareable, Widescreen};
-pub use music::{Fit, LevelSong, Music, RATE, render};
+pub use music::{Fit, LevelSong, Music, RATE, render, silent_frames};
 pub use nibbles::{NIBBLE_HEADER, unpack_nibbles};
 pub use objects::{ObjectDecoder, ObjectPalette, ObjectSheet, PENDING_SHEETS, written_sheets};
 pub use placements::{Class, ENTRY_SIZE, Entry, Placement, Placements, RECORD_SIZE, Record};
