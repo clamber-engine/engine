@@ -3629,6 +3629,34 @@ mod tests {
     }
 
     #[test]
+    fn the_first_character_does_not_teeter_before_a_tall_steep_face() {
+        // player-frames.md, "Teetering at the end of a floor": a face of
+        // 128 px down (4 px per column) leading on to a lower floor 16
+        // columns wide, after which the floor steps down again: standing
+        // on the top 0 to 9 columns before the face's first column after
+        // a walk's stop shows the standing pictures.
+        let mut points = vec![[0, 300], [1600, 300]];
+        points.extend((1601..=1632).map(|c| [c, 300 + 4 * (c - 1600)]));
+        points.extend([[1648, 428], [1648, 520], [2048, 520], [2048, 599], [0, 599]]);
+        let level = format!(
+            "format = 1\nsize = [2048, 600]\nstart = [0, 300]\n\
+             [[collision]]\nshape = \"polygon\"\npoints = {points:?}\n"
+        );
+        for x in [1591.0, 1595.0, 1599.0] {
+            let src = level.replace("start = [0, 300]", &format!("start = [{x}, 300]"));
+            let run = run(world(&src, 0), &hold(&[Action::Right], 1, 300));
+            let s = first_stand(&run, 0);
+            assert!(run.grounded[s], "{x}");
+            assert!(
+                run.shown[s..]
+                    .iter()
+                    .all(|l| !l.unwrap().contains("teeter")),
+                "{x}"
+            );
+        }
+    }
+
+    #[test]
     fn the_first_character_does_not_teeter_at_the_left_side_of_a_steep_face() {
         // player-frames.md, "Teetering at the end of a floor": a top with
         // a 64 px face (4 px per column) to its left and a lower floor at
