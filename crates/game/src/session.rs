@@ -3379,6 +3379,54 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    /// spec/behavior/level-map.md, "When the map appears": a new game's
+    /// start pictures go on through the fade-out after the press at the
+    /// link point, and none is drawn on the black frames.
+    #[test]
+    fn the_start_pictures_go_on_through_the_new_games_fade_out() {
+        let dir = map_pack("map-start-fade");
+        let mut map = MapPlay::load(&dir).unwrap().unwrap();
+        map.new_game(false);
+        let mut press = None;
+        for _ in 0..400 {
+            map.step(Actions::NONE);
+            let MapPhase::Shown(screen) = &map.phase else {
+                panic!("shown");
+            };
+            if !screen.lead.walking() && screen.lead.frame() > 100 {
+                break;
+            }
+        }
+        let mut looks = Vec::new();
+        for f in 0..40 {
+            let held = if f == 0 {
+                Actions::from(Action::Jump)
+            } else {
+                Actions::NONE
+            };
+            map.step(held);
+            let MapPhase::Shown(screen) = &map.phase else {
+                break;
+            };
+            press.get_or_insert(screen.lead.frame());
+            looks.push((screen.lead.frame(), map.lead_picture().map(|(l, _)| l)));
+        }
+        let press = press.unwrap();
+        assert!(looks.len() > 20, "the fade-out runs on the map");
+        // the map shows again, from the cycle, after the black frames
+        for (frame, look) in looks.into_iter().take_while(|&(f, _)| f >= press) {
+            let number = frame - 1;
+            if let Some(look) = look {
+                assert_eq!(
+                    look,
+                    MapLook::Start((number.saturating_sub(1) / 4 % 9) as usize),
+                    "frame {frame}, press on {press}"
+                );
+            }
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     /// spec/behavior/level-map.md, "The other character": a two-character
     /// game begins the map with it 16 px left of the lead; one character
     /// has none.
