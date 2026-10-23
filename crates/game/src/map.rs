@@ -16,6 +16,7 @@
 //! at the map's brightness, a page at a time. No music plays on it.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use clamber_input::{Action, Actions};
 use clamber_worldmap::{
@@ -25,7 +26,7 @@ use clamber_worldmap::{
 use crate::canvas::{Color, rgb};
 use crate::cast::Cast;
 use crate::pictures;
-use crate::surface::Surface;
+use crate::surface::{Flip, Quad, Surface, Texture};
 
 /// Where a pack keeps the map a new game begins on.
 pub const LEVEL_MAP: &str = "maps/level-map.map";
@@ -56,6 +57,77 @@ pub enum MapPhase {
         /// given and the level isn't counted as finished.
         lost: bool,
     },
+    /// The lead was knocked out with no tries left: the game-over picture
+    /// ([`GameOver`]).
+    GameOver(GameOver),
+}
+
+/// The game-over picture and what happens to it (`level-map.md`, "With no
+/// tries left").
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GameOver {
+    /// The picture's frame on the frame last run: negative while the
+    /// screen is still black.
+    pub frame: i32,
+    /// Whether a button that presses was held on the frame before.
+    held: bool,
+    /// The frame of the press that started the fade-out, and the brightness
+    /// the picture had then.
+    press: Option<(i32, u32)>,
+}
+
+impl GameOver {
+    /// The frames from the knock-out's step to the picture's frame 0.
+    const WAIT: i32 = 40;
+    /// The frames the fade-in and the fade-out take to change by one
+    /// brightness step.
+    const STEP: i32 = 2;
+    /// Black frames after the fade-out, and the frame after them on which
+    /// the next screen begins.
+    const BLACK: i32 = 65;
+
+    fn new() -> GameOver {
+        GameOver {
+            frame: -Self::WAIT,
+            held: false,
+            press: None,
+        }
+    }
+
+    /// The frame on which the picture is black after the press.
+    fn black_from(&self) -> Option<i32> {
+        let (press, level) = self.press?;
+        // a press on frame 1 is black on frame 3, not 1
+        Some(if press == 1 {
+            3
+        } else {
+            press + Self::STEP * level as i32
+        })
+    }
+
+    /// The picture's brightness, 0 (black) to [`clamber_worldmap::FULL`].
+    pub fn brightness(&self) -> u32 {
+        let full = clamber_worldmap::FULL as i32;
+        let level = match self.press {
+            None => self.frame / Self::STEP,
+            Some((press, level)) => level as i32 - (self.frame - press) / Self::STEP,
+        };
+        level.clamp(0, full) as u32
+    }
+
+    /// Runs a frame with `pressed` whether a button that presses is held:
+    /// true on the frame the next screen begins.
+    fn step(&mut self, pressed: bool) -> bool {
+        self.frame += 1;
+        let new = pressed && !self.held;
+        self.held = pressed;
+        if new && self.press.is_none() && self.frame >= 1 {
+            let level = self.brightness();
+            self.press = Some((self.frame, level));
+        }
+        self.black_from()
+            .is_some_and(|black| self.frame > black + Self::BLACK)
+    }
 }
 
 /// Which pictures the characters begin with when the map appears
@@ -97,6 +169,8 @@ pub enum MapStep {
     /// The map has faded out after a level node was entered: its level,
     /// as a path, begins now.
     Begin(PathBuf),
+    /// The game-over picture has faded out and its black frames are over.
+    Over,
 }
 
 /// A legs map and the player's progress on it.
@@ -118,6 +192,29 @@ pub struct MapPlay {
     pub(crate) opening: Opening,
     /// Whether the level last finished had been finished before.
     pub(crate) again: bool,
+    /// The game-over picture, if the pack has it.
+    game_over: Option<Picture>,
+}
+
+/// A picture ready to draw; equal to itself only.
+#[derive(Clone, Debug)]
+struct Picture(Arc<Texture>);
+
+impl PartialEq for Picture {
+    fn eq(&self, other: &Picture) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Picture {
+    /// The pack's game-over picture, if it has one and it can be read.
+    fn load(root: &Path) -> Option<Picture> {
+        let bytes = std::fs::read(root.join(clamber_import::game_over_picture_path())).ok()?;
+        match clamber_sprite::decode_png(&bytes) {
+            Ok(clamber_sprite::Image::Rgba(image)) => Some(Picture(Texture::new(image, true))),
+            _ => None,
+        }
+    }
 }
 
 /// What the lead's picture on the map depends on besides where it is
@@ -165,6 +262,7 @@ impl MapPlay {
             second_leads: false,
             opening,
             again: false,
+            game_over: Picture::load(root),
         })
     }
 
@@ -221,6 +319,16 @@ impl MapPlay {
 
     /// Runs a frame of the map with `held` held.
     pub fn step(&mut self, held: Actions) -> MapStep {
+        if let MapPhase::GameOver(over) = &mut self.phase {
+            let pressed = [Action::Jump, Action::Pause, Action::Tandem]
+                .into_iter()
+                .any(|a| held.contains(a));
+            return if over.step(pressed) {
+                MapStep::Over
+            } else {
+                MapStep::Stay
+            };
+        }
         if let MapPhase::Black {
             frames,
             node,
@@ -380,6 +488,24 @@ impl MapPlay {
         };
     }
 
+    /// The lead, alone, was knocked out in the level entered from the
+    /// map with no tries left: the game-over picture appears instead of
+    /// the map (`level-map.md`, "With no tries left"). Does nothing
+    /// unless a level entered from the map is being played.
+    pub fn game_over(&mut self) {
+        if !self.playing() {
+            return;
+        }
+        self.two = false;
+        self.second_leads = false;
+        self.phase = MapPhase::GameOver(GameOver::new());
+    }
+
+    /// Whether the game-over picture is showing or about to.
+    pub fn is_game_over(&self) -> bool {
+        matches!(self.phase, MapPhase::GameOver(_))
+    }
+
     /// The lead's map picture on the frame last run, with the set it is
     /// from (the second character's pictures when it leads), and whether
     /// it is mirrored; None when the map isn't shown or the lead isn't
@@ -488,9 +614,56 @@ impl MapPlay {
         );
     }
 
+    /// Draws the game-over picture at its brightness, its pixels at the
+    /// screen's, as the map's picture is placed.
+    fn draw_game_over(&self, canvas: &mut dyn Surface, over: &GameOver) {
+        let light = over.brightness();
+        if over.frame < 0 || light == 0 {
+            return;
+        }
+        let (w, h) = canvas.view();
+        let Some(Picture(texture)) = &self.game_over else {
+            let centre = w as i32 / 2;
+            crate::text::draw_text_centred(
+                canvas,
+                centre,
+                h as i32 / 2,
+                "GAME OVER",
+                dim(STOP, light),
+            );
+            return;
+        };
+        let scale = w as f32 / texture.width() as f32;
+        let height = texture.height() as f32 * scale;
+        let top = (h as f32 - height) / 2.0;
+        canvas.quad(&Quad {
+            texture: texture.clone(),
+            src: clamber_sprite::Rect {
+                x: 0,
+                y: 0,
+                w: texture.width(),
+                h: texture.height(),
+            },
+            dst: [0.0, top, w as f32, top + height],
+            flip: Flip::default(),
+            flash: None,
+            opacity: 255,
+            lean: 0.0,
+            normals: None,
+        });
+        let full = clamber_worldmap::FULL;
+        if light < full {
+            canvas.shade(0, (255 * (full - light) / full) as u8);
+        }
+    }
+
     /// Draws the map as it is after the frame last run.
     pub fn draw(&self, canvas: &mut dyn Surface, cast: &Cast) {
         canvas.clear(0);
+        if let MapPhase::GameOver(over) = &self.phase {
+            self.draw_game_over(canvas, over);
+            return;
+        }
         let MapPhase::Shown(screen) = &self.phase else {
             return;
         };

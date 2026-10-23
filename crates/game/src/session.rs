@@ -884,8 +884,17 @@ impl Session {
             self.screen = Screen::title();
             return;
         };
-        let MapStep::Begin(path) = map.step(frame.held) else {
-            return;
+        let path = match map.step(frame.held) {
+            MapStep::Begin(path) => path,
+            // what follows the picture isn't in the spec (engine's
+            // choice): the title, where Start begins a new game
+            MapStep::Over => {
+                map.new_game(false);
+                self.tries_left = None;
+                self.screen = Screen::title();
+                return;
+            }
+            MapStep::Stay => return,
         };
         match self.load(&path, self.pack.as_ref()) {
             Ok(mut game) => {
@@ -1206,7 +1215,7 @@ impl Session {
                 }
                 _ => self.screen = Screen::complete(),
             },
-            Outcome::GameOver => self.screen = Screen::game_over(),
+            Outcome::GameOver => self.screen = self.game_over_screen(),
             Outcome::Exited(exit) => self.leave_by(exit),
             Outcome::Ended => self.end_scene(),
             _ => {}
@@ -1235,9 +1244,26 @@ impl Session {
         }
     }
 
+    /// The screen for the last try lost: the game-over picture if the
+    /// lead, alone, was knocked out in a level of an imported game's map
+    /// (`level-map.md`, "With no tries left"), the game-over menu
+    /// otherwise.
+    fn game_over_screen(&mut self) -> Screen {
+        let world = &self.game.world;
+        let knocked = world.flow.lost.is_some_and(|l| l.knocked) && world.other.is_none();
+        match &mut self.map {
+            Some(map) if knocked && self.pack.is_some() && map.playing() => {
+                map.game_over();
+                Screen::Map
+            }
+            _ => Screen::game_over(),
+        }
+    }
+
     /// The music that should be playing.
     pub fn tune(&self) -> Option<Tune> {
         match self.screen.tune() {
+            Some(Tune::Map) if self.map.as_ref().is_some_and(|m| m.is_game_over()) => None,
             Some(Tune::Map) if self.map.as_ref().is_none_or(|m| m.music().is_none()) => None,
             tune => tune,
         }
@@ -3735,6 +3761,83 @@ mod tests {
         assert!(s.game.world.frame < 40, "a new level");
         assert_eq!(s.game.world.flow.lives, tries - 1);
         assert_eq!(s.tries_left, None);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// spec/behavior/level-map.md, "With no tries left": the game-over
+    /// picture's frame 0 comes 41 frames after the level's last frame and
+    /// fades in by 2 frames a step; a press on frame 40 starts a fade-out
+    /// that is black from frame 70, and the next screen begins on frame
+    /// 136. A press on frame 0 does nothing.
+    #[test]
+    fn a_lone_lead_losing_the_last_try_shows_the_game_over_picture() {
+        let dir = map_pack("map-game-over");
+        let walker = format!(
+            "{LEVEL}\n[[entities]]\ntype = \"crawler\"\nat = [540, 300]\nparams = {{ speed = 1 }}\n"
+        );
+        std::fs::write(dir.join("levels/level-1.level"), walker).unwrap();
+        let mut s = session(LEVEL);
+        s.game.world.feel = Arc::new(generic_feel("classic-1").unwrap());
+        s.map = MapPlay::load(&dir).unwrap();
+        s.pack = Some(Installed {
+            dir: dir.clone(),
+            manifest: clamber_import::Manifest {
+                format: clamber_import::FORMAT,
+                id: "test".into(),
+                name: "Test".into(),
+                title: "test".into(),
+                release: "test".into(),
+                importer: "test".into(),
+                redistribute: false,
+                pixel_art: false,
+                view: None,
+                widescreen: None,
+            },
+        });
+        s.step(&press(Action::Jump));
+        let jump = Actions::from(Action::Jump);
+        hold(&mut s, Actions::NONE, 273, |f| match f {
+            140 | 240 => jump,
+            _ => Actions::NONE,
+        });
+        assert_eq!(s.screen, Screen::Playing);
+        s.game.world.flow.lives = 1;
+
+        let mut steps = 0;
+        while s.screen == Screen::Playing {
+            s.step(&idle());
+            steps += 1;
+            assert!(steps < 600, "never knocked out");
+        }
+        assert_eq!(s.screen, Screen::Map, "no game-over menu");
+        let over = |s: &Session| match &map_of(s).phase {
+            MapPhase::GameOver(over) => (over.frame, over.brightness()),
+            other => panic!("not the game-over picture: {other:?}"),
+        };
+        assert_eq!(s.tune(), None, "no map song");
+        // the step of the loss comes after the level's last
+        assert_eq!(over(&s).0, -40);
+        let before = hold(&mut s, Actions::NONE, 40, |f| {
+            if f == 39 { jump } else { Actions::NONE }
+        });
+        assert_eq!(over(&s), (0, 0));
+        // a press on frame 0 does nothing
+        hold(&mut s, before, 32, |_| Actions::NONE);
+        assert_eq!(over(&s), (32, 15));
+        hold(&mut s, Actions::NONE, 7, |_| Actions::NONE);
+        assert_eq!(over(&s).0, 39);
+        hold(&mut s, Actions::NONE, 1, |_| jump);
+        assert_eq!(over(&s), (40, 15));
+        hold(&mut s, jump, 1, |_| jump);
+        assert_eq!(over(&s), (41, 15), "kept held, one press");
+        hold(&mut s, jump, 28, |_| Actions::NONE);
+        assert_eq!(over(&s), (69, 1));
+        hold(&mut s, Actions::NONE, 1, |_| Actions::NONE);
+        assert_eq!(over(&s), (70, 0));
+        hold(&mut s, Actions::NONE, 65, |_| Actions::NONE);
+        assert_eq!(s.screen, Screen::Map, "black until frame 135");
+        hold(&mut s, Actions::NONE, 1, |_| Actions::NONE);
+        assert!(matches!(s.screen, Screen::Title(_)));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

@@ -81,7 +81,8 @@ pub use level::{
 pub use level_map::{
     APPEARANCE_OFFSET, CORNER_SIZE, Direction, FIRST_CORNER, LAST_CORNER, LEVEL_MAP, LevelMap,
     LevelMapDecoder, Link, MAPS, PAGES, PageLocations, Point, Rules, StopKind, TABLE_SIZE,
-    corner_count, is_corner, page_locations, page_picture_path, page_pictures,
+    corner_count, game_over_picture, game_over_picture_path, is_corner, page_locations,
+    page_picture_path, page_pictures,
 };
 pub use level_start::{START_RECORD_SIZE, StartRecord};
 pub use location::{BANK_SIZE, Location};

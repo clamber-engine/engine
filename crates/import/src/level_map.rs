@@ -123,6 +123,28 @@ pub fn page_pictures(image: &Image, title: &str) -> Result<Vec<Vec<u8>>, String>
         .collect()
 }
 
+/// The file in a pack of the game-over picture.
+pub fn game_over_picture_path() -> String {
+    format!("{MAPS}/{LEVEL_MAP}-game-over.png")
+}
+
+/// The game-over picture of an image of `title`, as PNG: a page picture
+/// of its own (`level-map.md`, "The game-over picture").
+pub fn game_over_picture(image: &Image, title: &str) -> Result<Vec<u8>, String> {
+    let part = |data, len, what| {
+        let location = locate(title, data)
+            .ok_or_else(|| format!("the spec doesn't say where {title}'s game-over picture is"))?;
+        image
+            .at(location)
+            .and_then(|bytes| bytes.get(..len))
+            .ok_or_else(|| format!("the game-over picture's {what} runs past the end of the image"))
+    };
+    let map = part(Data::GameOverTileMap, PAGE_MAP_BYTES, "tile map")?;
+    let tiles = TileSet::new(part(Data::GameOverTileSet, PAGE_SET_BYTES, "tile set")?)?;
+    let palettes = PaletteSet::new(part(Data::GameOverPaletteSet, 256, "palette set")?)?;
+    Ok(encode_png(&page_picture(map, &tiles, &palettes)?))
+}
+
 /// A direction that can start a walk from a stop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Direction {
@@ -681,6 +703,12 @@ impl Decoder for LevelMapDecoder {
                 pack.write(&page_picture_path(page), png)?;
             }
         }
+        if locate(&self.title, Data::GameOverTileMap).is_some() {
+            pack.write(
+                &game_over_picture_path(),
+                &game_over_picture(image, &self.title)?,
+            )?;
+        }
         Ok(())
     }
 }
@@ -1202,6 +1230,21 @@ mod tests {
             2,
             &0x001Fu16.to_le_bytes(),
         );
+        // the game-over picture: tile 1 at the top left, as the pages
+        put(&mut bytes, Data::GameOverTileMap, 0, &1u16.to_le_bytes());
+        put(&mut bytes, Data::GameOverTileSet, 32, &[0x80]);
+        put(
+            &mut bytes,
+            Data::GameOverPaletteSet,
+            0,
+            &0x7C00u16.to_le_bytes(),
+        );
+        put(
+            &mut bytes,
+            Data::GameOverPaletteSet,
+            2,
+            &0x001Fu16.to_le_bytes(),
+        );
         let dir = std::env::temp_dir().join(format!("clamber-level-map-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut pack = PackWriter {
@@ -1228,6 +1271,13 @@ mod tests {
             assert_eq!(picture.get(0, 0), [255, 0, 0, 255], "page {page}");
             assert_eq!(picture.get(1, 0), [0, 0, 255, 255], "page {page}");
         }
+        let png = std::fs::read(dir.join(game_over_picture_path())).unwrap();
+        let clamber_sprite::Image::Rgba(picture) = clamber_sprite::decode_png(&png).unwrap() else {
+            panic!("the game-over picture is RGBA")
+        };
+        assert_eq!((picture.width, picture.height), (256, 224));
+        assert_eq!(picture.get(0, 0), [255, 0, 0, 255]);
+        assert_eq!(picture.get(1, 0), [0, 0, 255, 255]);
         std::fs::remove_dir_all(&dir).unwrap();
 
         // an image whose map has no start point

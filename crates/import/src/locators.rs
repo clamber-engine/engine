@@ -82,11 +82,14 @@ pub enum Data {
     MapPageTileSets,
     MapPagePaletteSets,
     MapFirstPalette,
+    GameOverTileMap,
+    GameOverTileSet,
+    GameOverPaletteSet,
     PackedMap,
 }
 
 impl Data {
-    pub const ALL: [Data; 72] = [
+    pub const ALL: [Data; 75] = [
         Data::SampleTable,
         Data::SharedSampleList,
         Data::SampleSetTable,
@@ -158,6 +161,9 @@ impl Data {
         Data::MapPageTileSets,
         Data::MapPagePaletteSets,
         Data::MapFirstPalette,
+        Data::GameOverTileMap,
+        Data::GameOverTileSet,
+        Data::GameOverPaletteSet,
         Data::PackedMap,
     ];
 
@@ -257,6 +263,9 @@ impl Data {
             Data::MapPageTileSets => "Level map: the page picture tile-set table",
             Data::MapPagePaletteSets => "Level map: the page picture palette-set table",
             Data::MapFirstPalette => "Level map: the first page's palette set",
+            Data::GameOverTileMap => "Level map: the game-over picture's tile map",
+            Data::GameOverTileSet => "Level map: the game-over picture's tile set",
+            Data::GameOverPaletteSet => "Level map: the game-over picture's palette set",
             Data::PackedMap => "Level ground: the first level's packed map",
         }
     }
@@ -336,6 +345,9 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
         ("title-1", Data::MapPageTileSets) => (0xC0, 0xE13C),
         ("title-1", Data::MapPagePaletteSets) => (0xC0, 0xE1A4),
         ("title-1", Data::MapFirstPalette) => (0xF9, 0xBE03),
+        ("title-1", Data::GameOverTileMap) => (0xF8, 0x7728),
+        ("title-1", Data::GameOverTileSet) => (0xC4, 0x68AA),
+        ("title-1", Data::GameOverPaletteSet) => (0xF9, 0xB7E3),
         ("title-2", Data::PackedMap) => (0xE3, 0xE006),
         ("title-2", Data::TypeTable) => (0xFC, 0x6154),
         _ => return None,
