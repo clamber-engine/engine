@@ -266,6 +266,10 @@ const SECOND_ROLL: [&str; 15] = [
     "s-stop-5",
 ];
 
+/// How many frames before frame 0 of a resume at a restart barrel the
+/// standing list is counted from, for the first character with nothing held.
+const RESUME_STANDING_BEFORE: u32 = 143;
+
 /// The first character's standing pictures: `stand-1` to `stand-11`,
 /// then `wait-1` to `wait-34`.
 const STANDING: [&str; 45] = [
@@ -1087,6 +1091,25 @@ impl PictureClock {
             self.landed = None;
             return;
         }
+        // Coming back at a restart barrel with nothing held
+        // (restart-barrel.md, "The player"): the first character shows
+        // the standing list as if it had begun 143 frames before the
+        // resume's frame 0, in the air and after the landing alike.
+        if let Some(r) = world.resume
+            && self.slot == 0
+            && world.player_drawn()
+            && player.turn.is_none()
+            && matches!(player.gait, Gait::Standing)
+            && matches!(player.state, State::Fall | State::Idle)
+        {
+            let c = u32::from(r.frame) + RESUME_STANDING_BEFORE;
+            self.shown = standing(true, c);
+            self.standing = Some(c);
+            self.teeters = false;
+            self.landed = None;
+            self.jump_age = None;
+            return;
+        }
         let before = std::mem::take(&mut self.shown);
         let crouched = std::mem::replace(
             &mut self.crouched,
@@ -1544,7 +1567,10 @@ impl PictureClock {
 /// where the mode goes on (`ground-speed.md`, "After a fall or a
 /// bounce").
 fn upright_fall(player: &clamber_sim::Player) -> bool {
-    !player.grounded() && player.walked_off && !player.walked_off_face && player.roll.is_none()
+    !player.grounded()
+        && (player.walked_off || player.keg_fall)
+        && !player.walked_off_face
+        && player.roll.is_none()
 }
 
 /// A character on a steep face, in the fall after it and on its
@@ -1947,10 +1973,11 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
+    use clamber_fixed::Fixed;
     use clamber_input::{Action, Actions, Frame};
     use clamber_level::Level;
     use clamber_pack::{CharacterFeel, Presets};
-    use clamber_sim::{Event, InputFrame, ROLL, generic_feel, step};
+    use clamber_sim::{Event, FlowEvent, InputFrame, ROLL, generic_feel, step};
 
     use super::*;
     use crate::game::jump_in;
@@ -2042,6 +2069,99 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// What the first character shows on frames 1 to `last` of a resume
+    /// at a restart barrel, `keys` giving what is held on each frame.
+    fn resumed(last: u32, keys: impl Fn(u32) -> Vec<Action>) -> Vec<Option<&'static str>> {
+        let src = r#"
+            format = 1
+            size = [3000, 700]
+            start = [900, 409]
+
+            [[collision]]
+            shape = "rect"
+            rect = [0, 409, 3000, 100]
+
+            [[entities]]
+            type = "keg"
+            at = [1000, 400]
+        "#;
+        let mut world = world(src, 0);
+        let mut held = Actions::NONE;
+        let mut go = |world: &mut World, keys: &[Action]| {
+            let now: Actions = keys.iter().copied().collect();
+            let input = InputFrame::single(Frame::after(held, now));
+            held = now;
+            step(world, &input);
+            input
+        };
+        go(&mut world, &[]);
+        for _ in 0..120 {
+            go(&mut world, &[Action::Right]);
+            if !world.flow.checkpoints.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(world.flow.checkpoints, [0]);
+        world.player.pos.y = Fixed::from_int(900);
+        world.player.ground = None;
+        for _ in 0..400 {
+            go(&mut world, &[]);
+            if world.flow.events.contains(&FlowEvent::Respawn) {
+                break;
+            }
+        }
+        assert_eq!(world.resume.map(|r| r.frame), Some(0));
+        let mut clock = PictureClock::default();
+        let mut shown = vec![None];
+        for frame in 1..=last {
+            let input = go(&mut world, &keys(frame));
+            clock.update(&world, jump_in(&world, &input));
+            shown.push(clock.shown().map(|(_, label)| label));
+        }
+        shown
+    }
+
+    /// restart-barrel.md, "The player", no input: from frame 63 the
+    /// standing list as if frame 0 were its 143rd frame, in the air and
+    /// after the landing.
+    #[test]
+    fn a_resume_with_nothing_held_shows_the_standing_list_from_wait_2() {
+        let shown = resumed(300, |_| vec![]);
+        for frame in 63..=300 {
+            let want = first_standing(frame + 143);
+            assert_eq!(shown[frame as usize], Some(want), "frame {frame}");
+        }
+        let at = |frame: u32| first_standing(frame + 143);
+        assert_eq!((at(63), at(65)), ("wait-2", "wait-2"));
+        assert_eq!((at(66), at(69)), ("wait-3", "wait-3"));
+    }
+
+    fn check_resume(shown: &[Option<&str>], from: usize, want: &[(&str, usize)]) {
+        let mut f = from;
+        for &(label, count) in want {
+            for _ in 0..count {
+                assert_eq!(shown[f], Some(label), "frame {f}");
+                f += 1;
+            }
+        }
+    }
+
+    /// restart-barrel.md, "The player": Right held from frame 63.
+    #[test]
+    fn a_resume_with_right_held_from_frame_63_walks() {
+        let shown = resumed(73, |f| if f >= 63 { vec![Action::Right] } else { vec![] });
+        let want = [("walk-1", 3), ("walk-2", 3), ("walk-3", 2), ("walk-4", 3)];
+        check_resume(&shown, 63, &want);
+    }
+
+    /// restart-barrel.md, "The player": Left held from frame 63.
+    #[test]
+    fn a_resume_with_left_held_from_frame_63_turns() {
+        let shown = resumed(71, |f| if f >= 63 { vec![Action::Left] } else { vec![] });
+        let want = [("turn-a", 2), ("turn-b", 4), ("turn-a", 2), ("walk-1", 1)];
+        check_resume(&shown, 63, &want);
     }
 
     /// Nothing held for `wait` frames, then Jump held `hold` frames,
