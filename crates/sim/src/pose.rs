@@ -363,6 +363,11 @@ pub fn second_pose_held(player: &Player, air_hold: u8, crouch_hold: u8) -> Secon
     {
         return SecondPose::Moving;
     }
+    // A roll started with Down held keeps the moving range to its end;
+    // Down still held then crouches.
+    if player.state == State::Roll || clock.rolling {
+        return SecondPose::Moving;
+    }
     if (player.crouch.held > 0 && player.ground_action.is_none())
         || (1..=crouch_hold).contains(&clock.uncrouched)
     {

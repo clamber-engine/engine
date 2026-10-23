@@ -1,13 +1,14 @@
 //! Balls hurting the player in Classic 1 (spec/behavior/ball-contact.md).
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
-use clamber_pack::Fixed;
+use clamber_pack::{CharacterFeel, Fixed, Presets};
 use clamber_sim::{
-    Archetypes, BALL, Behavior, Contact, Event, Facing, InputFrame, Phase, Pose, SecondPose, World,
-    generic_feel, pose, second_pose, step,
+    Archetypes, BALL, Behavior, Contact, Event, Facing, InputFrame, Phase, Pose, ROLL, SecondPose,
+    World, generic_feel, pose, second_pose, step,
 };
 
 fn f(v: f64) -> Fixed {
@@ -282,7 +283,10 @@ fn standing_still_fidgets_and_down_crouches() {
 fn second_play() -> Play {
     let mut play = Play::new();
     let mut feel = generic_feel("classic-1").unwrap();
-    feel.roster.push(feel.roster[0].clone());
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: BTreeMap::from([(ROLL.to_string(), BTreeMap::new())]),
+    });
     play.world.feel = Arc::new(feel);
     play.world.player.character = 1;
     play.step(&[]);
@@ -432,4 +436,77 @@ fn the_landing_of_a_face_fall_has_the_moving_range() {
     assert_eq!(play.second(), SecondPose::Moving);
     play.world.player.gait = Gait::Standing;
     assert_eq!(play.second(), SecondPose::Standing);
+}
+
+/// ball-contact.md, "Which pose the player has", the second character:
+/// Down held when Action is pressed starts a roll, which has the moving
+/// range from its first frame to its end, then crouching while Down is
+/// still held.
+#[test]
+fn a_roll_started_with_down_held_has_the_rolling_range() {
+    let mut play = second_play();
+    play.step(&[Action::Down]);
+    assert_eq!(play.second(), SecondPose::Crouching);
+    play.step(&[Action::Down, Action::Action]);
+    let mut rolled = 0;
+    for _ in 0..120 {
+        if play.second() == SecondPose::Moving {
+            rolled += 1;
+        } else {
+            break;
+        }
+        play.step(&[Action::Down]);
+    }
+    assert!(rolled > 20, "rolled {rolled}");
+    assert_eq!(play.second(), SecondPose::Crouching);
+}
+
+/// A play with both characters, the first under control.
+fn two_play() -> Play {
+    let mut play = Play::new();
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: BTreeMap::from([(ROLL.to_string(), BTreeMap::new())]),
+    });
+    let level = play.world.level.clone();
+    play.world = World::new(level, Arc::new(feel));
+    play.step(&[]);
+    assert!(play.world.other.is_some());
+    play
+}
+
+/// ball-contact.md, "Swapping characters": a swap pressed on Q (first
+/// character as the player, control back on E = Q + 79) is hurt on F + 1
+/// for F up to Q - 1, by nothing for F from Q to E - 1, and the other
+/// character, standing, is hurt on F + 1 from F = E on by its standing
+/// range.
+#[test]
+fn a_swap_protects_from_its_press_until_control_returns() {
+    let q = 3;
+    let e = q + 79;
+    // A ball `i` px to the left of the player's feet and 21 px above,
+    // placed before step `f_end`; whether the player is hurt on the next.
+    let hurt = |f_end: usize, i: i32| {
+        let mut play = two_play();
+        let mut hurt = false;
+        for n in 0..=f_end + 1 {
+            if n == f_end {
+                let at = play.world.player.pos;
+                let x = Fixed::from_int(at.x.floor() as i32 - i);
+                play.ball(Vec2::new(x, at.y - f(21.0)), 0.5625, 0);
+            }
+            let keys: &[Action] = if n == q { &[Action::Swap] } else { &[] };
+            hurt = play.step(keys) && n == f_end + 1;
+        }
+        hurt
+    };
+    for f_end in 0..e + 4 {
+        let expected = f_end < q || f_end >= e;
+        assert_eq!(hurt(f_end, 0), expected, "F {f_end}");
+    }
+    // The first character is reached 10 px away, the second one standing
+    // isn't.
+    assert!(hurt(q - 1, 10));
+    assert!(!hurt(e, 10));
 }
