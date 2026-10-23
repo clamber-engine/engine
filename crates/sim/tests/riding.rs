@@ -428,6 +428,50 @@ fn riding_follows_a_slope_down_at_full_speed() {
     }
 }
 
+/// riding-slopes.md "The second character": the slope rules are the
+/// first character's, with the second character's speed targets.
+#[test]
+fn the_second_character_rides_slopes_by_the_same_rules() {
+    let second = |play: &mut Play| {
+        let mut feel = (*play.world.feel).clone();
+        feel.roster.push(CharacterFeel {
+            physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+            abilities: BTreeMap::new(),
+        });
+        play.world.feel = Arc::new(feel);
+        play.world.player.character = 1;
+    };
+    // Down the slope, charging: follows each column, up to 3.9375.
+    let height = |c: i32| if c < 100 { 0 } else { (c - 100) / 4 + 1 };
+    let mut play = Play::on(height, (60.0, 0.0), 896, Facing::Right, &[R, A]);
+    second(&mut play);
+    let mut fastest = 0;
+    for _ in 0..100 {
+        play.step(&[R, A]);
+        let (x, y, vx, vy) = play.row();
+        assert!(play.world.player.grounded());
+        assert_eq!((y, vy), (Fixed::from_int(height(x.floor() as i32)), 0));
+        fastest = fastest.max(vx);
+    }
+    assert_eq!(fastest, 1008);
+    // A jump downhill leaves from the higher of the old and new floors,
+    // as for the first character.
+    let mut jumps = Vec::new();
+    for is_second in [false, true] {
+        let mut play = Play::on(height, (115.640625, 4.0), 512, Facing::Right, &[R]);
+        if is_second {
+            second(&mut play);
+        }
+        let mut rows = Vec::new();
+        for frame in 146..=148 {
+            play.step(if frame == 146 { &[R, J] } else { &[R] });
+            rows.push(play.row().1);
+        }
+        jumps.push(rows);
+    }
+    assert_eq!(jumps[0], jumps[1]);
+}
+
 /// Off a ledge with no floor below, the rider leaves the floor as on a
 /// walk-off's leave frame, and falls.
 #[test]
