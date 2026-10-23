@@ -262,9 +262,13 @@ pub struct Session {
     pub ticks: u64,
     /// Logic frames after play came into another area that the song
     /// playing is cut, before the silence that leads to the new area's
-    /// own (`music.md`, "When the cut comes"). Entering a level from the
-    /// map and the cuts at the ends of a level aren't counted yet.
+    /// own (`music.md`, "When the cut comes"). The cuts at the ends of a
+    /// level aren't counted yet.
     pub song_cut: u32,
+    /// How many times play has entered a level from the map, each of
+    /// which starts the level's song over after its cut and silence even
+    /// when the level is the one played before.
+    pub map_entries: u32,
     /// The mouse pointer's place in the view, once it has moved over it.
     pub pointer: Option<(f32, f32)>,
     /// Presses the mouse adds to the next menu step.
@@ -302,6 +306,7 @@ impl Session {
             title_frames: 0,
             ticks: 0,
             song_cut: 0,
+            map_entries: 0,
             pointer: None,
             clicks: Actions::NONE,
             dragging: None,
@@ -872,7 +877,10 @@ impl Session {
                 }
                 self.game = game;
                 self.level_path = path;
-                self.song_cut = 0;
+                // The map is black from `P` + 30 and this is `P` + 32;
+                // the map's song is cut on `P` + 36 (`music.md`).
+                self.song_cut = 4;
+                self.map_entries += 1;
                 self.left.clear();
                 self.screen = Screen::Playing;
             }
@@ -3312,6 +3320,8 @@ mod tests {
         let mut lit = Game::canvas();
         s.step(&idle());
         assert_eq!(s.screen, Screen::Playing, "the level begins on P + 32");
+        assert_eq!(s.song_cut, 4, "the map's song is cut on P + 36");
+        assert_eq!(s.map_entries, 1);
         assert_eq!(s.level_path, dir.join("levels/level-1.level"));
         assert_eq!(s.game.world.frame, 0);
         assert!(map_of(&s).playing());
