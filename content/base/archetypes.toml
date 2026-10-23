@@ -48,7 +48,9 @@
 #   level. After a bounce it holds still first for the bounce's frozen
 #   frames, as the player does. With `bounced_speed` (left out: it keeps
 #   its speed), bounced on, it moves at that speed away from the way the
-#   player faces, and faces that way. With `hurt_jump_lift` (left out:
+#   player faces, and faces that way. With `heavy = true`, a player
+#   whose preset has a `bounce_back_rise` doesn't bounce on it: it's
+#   thrown back and the walker is pushed (neither is defeated). With `hurt_jump_lift` (left out:
 #   the preset's), the preset's hurt box rises that far above the feet
 #   against it when the airborne pose lifts it. Hit by a thrown object, it's knocked
 #   back the way the object came at `defeat_knock`, its speed easing

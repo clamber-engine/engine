@@ -444,6 +444,12 @@ mod tests {
                     | Param::BounceHoldsAll
                     | Param::BounceAgain
                     | Param::BounceHoldFromStart
+                    | Param::BounceBackRise
+                    | Param::BounceBackAway
+                    | Param::BounceBackSame
+                    | Param::BounceBackMinAbove
+                    | Param::PushSpeed
+                    | Param::PushEnd
                     | Param::StanceStandSpeed
                     | Param::StanceRunSpeed
                     | Param::FaceSlope

@@ -330,6 +330,7 @@ mod tests {
                 reach: false,
             },
             still: false,
+            pushed: false,
         };
         let mut rows = Vec::new();
         for _ in 1..=49 {

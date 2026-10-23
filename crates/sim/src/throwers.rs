@@ -202,6 +202,7 @@ fn spawn(world: &mut World, pos: Vec2, velocity: Vec2) {
             kept: false,
         },
         still: false,
+        pushed: false,
     };
     if index < world.things.len() {
         world.things[index] = ball;
@@ -489,6 +490,7 @@ mod tests {
                 kept: false,
             },
             still: false,
+            pushed: false,
         }
     }
 

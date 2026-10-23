@@ -121,6 +121,9 @@ pub struct Player {
     /// The speed across that `vel.x` was moved toward on the last step:
     /// 0 when nothing moved it on.
     pub target: Fixed,
+    /// Thrown back from a heavy walker and not on the ground yet: the
+    /// speed across stays as it is, whatever is held.
+    pub thrown_back: bool,
     /// The collider being stood on, if any.
     pub ground: Option<usize>,
     pub facing: Facing,
@@ -366,6 +369,7 @@ impl Player {
             pos,
             vel: Vec2::default(),
             target: Fixed::ZERO,
+            thrown_back: false,
             ground: None,
             facing: Facing::Right,
             state: State::Idle,
@@ -529,12 +533,26 @@ impl Player {
         self.takeoff_wait = None;
         self.unseated = false;
         self.hopped_off = None;
+        self.thrown_back = false;
         self.end_roll();
         self.ground_action = None;
         if !events.contains(&Event::Bounce) {
             events.push(Event::Bounce);
         }
         self.state = State::Bounce;
+    }
+
+    /// Throws the player back from a heavy walker it came down on
+    /// (walker-contact.md, "Thrown back by a large walker"): it rises at
+    /// `rise`, with no frozen frames, and moves across at `across` away
+    /// from the way it faces, which nothing held changes until it lands.
+    pub fn throw_back(&mut self, rise: Fixed, across: Fixed, events: &mut Vec<Event>) {
+        self.bounce(rise, 0, events);
+        self.vel.x = match self.facing {
+            Facing::Left => across,
+            Facing::Right => -across,
+        };
+        self.thrown_back = true;
     }
 
     /// Puts the player on an animal at `(x, feet)`, whole px: moved by
@@ -1712,7 +1730,11 @@ impl Player {
         let mut push = Fixed::ZERO;
         let mut held_target = None;
         self.target = Fixed::ZERO;
-        self.vel.x = if let Some(action) = acting {
+        // Landed on the last step: it eases as usual from this one.
+        self.thrown_back &= !self.grounded();
+        self.vel.x = if self.thrown_back {
+            self.vel.x
+        } else if let Some(action) = acting {
             // Down a face, faster; its last frame takes one more step,
             // unless it's in the air.
             self.target = action

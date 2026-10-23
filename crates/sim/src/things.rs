@@ -156,10 +156,10 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     // frames (walker-contact.md, "During a bounce").
     let again = physics[Param::BounceAgain] > Fixed::ZERO;
     let bounce_frozen = again && frozen && world.player.state == State::Bounce;
-    let mut bounced = if boxes && !riding && !knocked(world) && !bounce_frozen {
+    let (mut bounced, pushes) = if boxes && !riding && !knocked(world) && !bounce_frozen {
         bounce_on_boxes(world, &physics)
     } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
     // Walkers with a contact table decide for themselves, on the frames
     // the player moves.
@@ -407,6 +407,11 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     for index in bounced {
         bounce_off(&mut world.things[index], facing, freeze);
     }
+    // A heavy walker that threw the player back is pushed the way the
+    // player faces, after it moved this frame as it did.
+    for index in pushes {
+        push(&mut world.things[index], facing, &physics);
+    }
     // A thrower holds still on the bounce's frozen frames too.
     for index in bounced_throwers {
         defeat(&mut world.things[index], freeze);
@@ -627,14 +632,20 @@ fn advance(
                     turn_around(thing, turn_delay);
                 }
             }
+            // A pushed walker's speed eases to nothing, not to its
+            // heading's, until it is slow enough to walk again.
+            let target = if thing.pushed { Fixed::ZERO } else { speed };
             walk(
                 level,
                 thing,
-                speed,
+                target,
                 &archetype,
                 turn_delay,
                 physics[Param::FaceSlope],
             );
+            if thing.pushed && thing.vx.abs() <= physics[Param::PushEnd] {
+                thing.pushed = false;
+            }
         }
         Behavior::Patrol { path, period } => {
             let origin = level.entities[thing.index].at;
@@ -760,6 +771,19 @@ fn bounce_off(thing: &mut Thing, facing: Facing, hold: u8) {
         thing.turn = 0;
     }
     defeat(thing, hold);
+}
+
+/// Pushes a heavy walker at `push_speed` the way a player facing
+/// `facing` threw itself back from it, whatever its own heading is. Its
+/// speed then eases to nothing until it is down to `push_end` (see
+/// [`walk`]).
+fn push(thing: &mut Thing, facing: Facing, physics: &Physics) {
+    let speed = physics[Param::PushSpeed];
+    thing.vx = match facing {
+        Facing::Left => -speed,
+        Facing::Right => speed,
+    };
+    thing.pushed = true;
 }
 
 /// Moves a defeated walker or thrower: still while `hold` lasts, then down under
@@ -1535,9 +1559,14 @@ fn has_contact(thing: &Thing) -> bool {
 /// `bounce_again`, a player in the air after a bounce bounces however
 /// fast it rises, and only off the first placed enemy in reach.
 /// Returns the enemies bounced on, which are defeated once they've
-/// moved this frame.
-fn bounce_on_boxes(world: &mut World, physics: &Physics) -> Vec<usize> {
+/// moved this frame, and the heavy walkers that threw the player back
+/// instead (walker-contact.md, "Thrown back by a large walker"), which
+/// are pushed once they've moved. With `bounce_back_rise`, a heavy walker
+/// is not bounced on, and not touched either with the player's feet less
+/// than `bounce_back_min_above` px above its floor.
+fn bounce_on_boxes(world: &mut World, physics: &Physics) -> (Vec<usize>, Vec<usize>) {
     let mut bounced = Vec::new();
+    let mut pushes = Vec::new();
     let player = &mut world.player;
     let max_rise = physics[Param::BounceMaxRise];
     let again = physics[Param::BounceAgain] > Fixed::ZERO;
@@ -1553,7 +1582,7 @@ fn bounce_on_boxes(world: &mut World, physics: &Physics) -> Vec<usize> {
         .hands
         .is_some_and(|h| h.act == Act::Throw && h.frame > 0 && h.frame <= release);
     if player.grounded() || player.state == State::Roll || rising_fast || throwing {
-        return bounced;
+        return (bounced, pushes);
     }
     let at = whole_pixels(player.pos);
     let offset = physics[Param::BounceOffset];
@@ -1577,19 +1606,44 @@ fn bounce_on_boxes(world: &mut World, physics: &Physics) -> Vec<usize> {
         if thing.phase != Phase::Ready || !archetype.behavior.is_enemy() || has_contact(thing) {
             continue;
         }
-        if overlap(
+        if !overlap(
             reach,
             archetype.bounds(whole_pixels(thing.pos), going(thing)),
         ) {
-            player.bounce(speed, freeze, &mut world.events);
-            bounced.push(thing.index);
-            world.flow.events.push(FlowEvent::Defeat(thing.index));
+            continue;
+        }
+        let heavy = matches!(archetype.behavior, Behavior::Walker { heavy: true, .. });
+        if heavy && physics[Param::BounceBackRise] > Fixed::ZERO {
+            // Not thrown back again before landing (engine choice: the
+            // spec doesn't cover a second heavy walker in reach).
+            if player.thrown_back {
+                continue;
+            }
+            let above = whole_pixels(thing.pos).y - at.y;
+            if above < physics[Param::BounceBackMinAbove] {
+                continue;
+            }
+            let across = if thing.heading == player.facing {
+                physics[Param::BounceBackSame]
+            } else {
+                physics[Param::BounceBackAway]
+            };
+            let rise = physics[Param::BounceBackRise];
+            player.throw_back(rise, across, &mut world.events);
+            pushes.push(thing.index);
             if again {
                 break;
             }
+            continue;
+        }
+        player.bounce(speed, freeze, &mut world.events);
+        bounced.push(thing.index);
+        world.flow.events.push(FlowEvent::Defeat(thing.index));
+        if again {
+            break;
         }
     }
-    bounced
+    (bounced, pushes)
 }
 
 /// Defeats an enemy the rolling player's attack box touches on an

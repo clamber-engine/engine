@@ -213,6 +213,7 @@ mod tests {
             air: None,
             phase: Phase::Ready,
             still: false,
+            pushed: false,
         }
     }
 

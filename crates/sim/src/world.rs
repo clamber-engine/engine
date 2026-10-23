@@ -120,6 +120,9 @@ pub struct Thing {
     /// on, as on a bounce's frozen frames or while the player is knocked
     /// out. Not part of the trace.
     pub still: bool,
+    /// A walker pushed by a player it threw back: its speed eases to
+    /// nothing instead of toward its heading's, until it is slow enough.
+    pub pushed: bool,
 }
 
 impl Thing {
@@ -148,6 +151,7 @@ impl Thing {
             air: None,
             phase: Phase::Ready,
             still: false,
+            pushed: false,
         }
     }
 }

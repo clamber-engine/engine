@@ -984,6 +984,108 @@ fn second_bounce_speed_and_gravity_hold_from_b() {
     );
 }
 
+/// walker-contact.md, "The second character": the large walker's ranges of
+/// I are those of the throw-back.
+#[test]
+fn second_thrown_back_ranges_for_the_large_walker() {
+    let table = [
+        (Facing::Right, "left", -34, 23),
+        (Facing::Right, "right", -33, 24),
+        (Facing::Left, "left", -24, 33),
+        (Facing::Left, "right", -23, 34),
+    ];
+    for (facing, heading, low, high) in table {
+        for (i, thrown) in [
+            (low - 1, false),
+            (low, true),
+            (high, true),
+            (high + 1, false),
+        ] {
+            assert_eq!(
+                second_bounces_at(large_walker, i, facing, heading),
+                thrown,
+                "I = {i}, facing {facing:?}, heading {heading}"
+            );
+        }
+    }
+}
+
+/// U from 10 to 57: closer in, the second character isn't thrown back
+/// (it is hurt by the walker instead).
+#[test]
+fn second_thrown_back_height_limits() {
+    let from = |u: i32| {
+        let mut w = second_on([300, 0], &large_walker("300", "0", "left"));
+        w.player.pos.y = Fixed::from_int(400 - u) - fx(0.0625);
+        w.player.vel.y = fx(0.0625 - 0.4375);
+        play(&mut w, 1, |_| false)[0].2.contains(&Event::Bounce)
+    };
+    assert!(from(57), "U = 57");
+    assert!(!from(58), "U = 58");
+    assert!(from(10), "U = 10");
+    assert!(!from(9), "U = 9");
+}
+
+/// The example of "Thrown back by a large walker": `vy` -3.0, then the
+/// gravity; `vx` 2.5 away from the way it faces (2.0 with the walker
+/// heading the way it faces), which nothing held changes; the walker
+/// isn't defeated and is pushed at 4 in the way the character faces,
+/// losing an eighth each frame, until 12/256 or less.
+#[test]
+fn second_thrown_back_by_a_large_walker() {
+    for (heading, vx) in [("left", -2.5), ("right", -2.0)] {
+        let mut w = second_on([300, 300], &large_walker("300", "1", heading));
+        w.player.facing = Facing::Right;
+        let mut rows = Vec::new();
+        let mut previous = Actions::NONE;
+        let mut b = None;
+        for n in 0..80 {
+            // Right held after B: the speed across stays.
+            let held = if b.is_some() {
+                Action::Right.into()
+            } else {
+                Actions::NONE
+            };
+            step(&mut w, &InputFrame::single(Frame::after(previous, held)));
+            previous = held;
+            if b.is_none() && w.events.contains(&Event::Bounce) {
+                b = Some(n);
+            }
+            rows.push((w.player.vel, w.things[0].vx, w.things[0].pushed));
+        }
+        let b = b.expect("thrown back");
+        let thing = &w.things[0];
+        assert!(
+            thing.active && matches!(thing.phase, Phase::Ready),
+            "{heading}"
+        );
+        assert_eq!(rows[b].0.y, fx(-3.0), "{heading}");
+        assert_eq!(rows[b].0.x, fx(vx), "{heading}");
+        assert_eq!(rows[b + 1].0.y, fx(-3.0 + 0.4375), "{heading}");
+        assert_eq!(rows[b + 1].0.x, fx(vx), "{heading}");
+        assert_eq!(rows[b].1, fx(4.0), "{heading}");
+        assert_eq!(rows[b + 1].1, fx(3.5), "{heading}");
+        assert_eq!(rows[b + 2].1, fx(3.0625), "{heading}");
+        assert_eq!(rows[b + 3].1, fx(2.6796875), "{heading}");
+        // B + 36 is the first frame at 12/256 or less; the walker walks by
+        // its heading again from B + 37.
+        assert!(rows[b + 35].1 > fx(12.0 / 256.0), "{heading}");
+        assert!(rows[b + 36].1 <= fx(12.0 / 256.0), "{heading}");
+        assert!(rows[b + 35].2 && !rows[b + 36].2, "{heading}");
+    }
+}
+
+/// With Jump held on every frame from B, the gravity is 0.3515625.
+#[test]
+fn second_thrown_back_held_gravity() {
+    let (_, b) = bounce_from(|| second_on([300, 300], &large_walker("300", "1", "left")));
+    let mut w = second_on([300, 300], &large_walker("300", "1", "left"));
+    let steps = play(&mut w, b + 3, |n| n >= b);
+    assert_eq!(steps[b].1, fx(-3.0));
+    assert_eq!(steps[b + 1].1, fx(-3.0 + 0.3515625));
+    assert_eq!(steps[b + 2].1, fx(-3.0 + 2.0 * 0.3515625));
+}
+
 #[test]
 fn classic_bounce_needs_the_player_not_to_be_rising_fast() {
     // vy after this frame's gravity: -1.1875 bounces, -1.25 doesn't.
@@ -1306,7 +1408,7 @@ fn large_walker(x: &str, speed: &str, facing: &str) -> String {
         [[entities]]
         type = "crawler"
         at = [{x}, 400]
-        params = {{ speed = {speed}, facing = "{facing}", size = [26, 38], offset = 0.5, {CLASSIC_WALKER} }}
+        params = {{ speed = {speed}, facing = "{facing}", size = [26, 38], offset = 0.5, heavy = true, {CLASSIC_WALKER} }}
         "#
     )
 }

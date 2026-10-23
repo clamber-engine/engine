@@ -645,6 +645,27 @@ params! {
     /// and on the `bounce_freeze` frames too, not only from the frame
     /// after them.
     BounceHoldFromStart => "bounce_hold_from_start",
+    /// Above 0, coming down on a `heavy` walker throws the player back
+    /// instead of bouncing: it rises at this speed, whatever its speed
+    /// was, and the walker isn't defeated. 0: heavy walkers are bounced
+    /// on like any other.
+    BounceBackRise => "bounce_back_rise",
+    /// The speed across, away from the way the player faces, it is thrown
+    /// back at when the walker's heading is the opposite of the way the
+    /// player faces.
+    BounceBackAway => "bounce_back_away",
+    /// The same, when the walker's heading is the way the player faces.
+    BounceBackSame => "bounce_back_same",
+    /// Fewest px the player's feet are above the walker's floor for the
+    /// throw-back; closer in, it's not thrown back.
+    BounceBackMinAbove => "bounce_back_min_above",
+    /// The speed a heavy walker is pushed at, in the direction the player
+    /// faces, when it throws the player back. It then loses the fraction
+    /// of it that its `response` gives each frame.
+    PushSpeed => "push_speed",
+    /// A pushed walker walks by its heading again from the frame after
+    /// its speed is this or less.
+    PushEnd => "push_end",
     /// For walkers with a `contact` table: on the ground, a player moving
     /// faster than this is walking or running, and slower, standing.
     StanceStandSpeed => "stance_stand_speed",

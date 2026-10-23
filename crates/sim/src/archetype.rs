@@ -37,6 +37,8 @@ pub enum Behavior {
     /// Its facing follows a turn
     /// `turn_delay` frames later. Bounced on, its speed becomes
     /// `bounced_speed` away from the way the player faces, if it has one.
+    /// A `heavy` one isn't bounced on by a player whose preset has a
+    /// `bounce_back_rise`: it throws it back and is pushed instead.
     /// Defeated, it falls as `defeat` says. When it appears with the view
     /// (see [`View`](crate::View)), it waits `appear_wait` frames,
     /// counting the one it appears on, before it moves. Walkers with the
@@ -57,6 +59,7 @@ pub enum Behavior {
         columns: bool,
         stops_at_x: bool,
         bounced_speed: Option<Fixed>,
+        heavy: bool,
         contact: Option<WalkerContact>,
         hurt_jump_lift: Option<Fixed>,
         rider: RiderReach,
@@ -1563,6 +1566,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "columns",
             "stops_at_x",
             "bounced_speed",
+            "heavy",
             "contact",
             "hurt_jump_lift",
             "rider",
@@ -1853,6 +1857,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 columns: flag("columns")?,
                 stops_at_x: flag("stops_at_x")?,
                 bounced_speed,
+                heavy: flag("heavy")?,
                 contact: match table.get("contact") {
                     None => None,
                     Some(v) => Some(parse_walker_contact(v, &format!("{path}.contact"))?),

@@ -226,6 +226,11 @@ impl Kind {
                     _ => ([26, 38], 0.5),
                 };
                 set("rider", self.rider());
+                // walker-contact.md, "The second character": the large
+                // walker throws the second character back.
+                if self == Kind::LargeWalker {
+                    set("heavy", Value::Boolean(true));
+                }
                 // walker.md, "Pictures": the kind's pictures, from the
                 // pack's sheet named after it.
                 set("pictures", Value::String(self.name().into()));
