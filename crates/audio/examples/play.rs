@@ -10,7 +10,7 @@ use clamber_audio::{Input, Output, Play, Sound, mixer};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = std::env::args().nth(1).ok_or("usage: play FILE")?;
     let (mut handle, mixer) = mixer(8);
-    let output = Output::open(mixer)?;
+    let output = Output::open(mixer, None)?;
     let sound = Sound::load(&Input::file(&path), output.rate())?;
     handle.play(&sound, Play::default());
     let length = sound.frames() as u64 * 1000 / u64::from(output.rate());

@@ -23,6 +23,10 @@ pub struct Prefs {
     /// How loud the game plays, from the options screen.
     #[serde(default)]
     pub volume: Volume,
+    /// The sound device picked on the options screen, by name. Without
+    /// one, the system's default is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_device: Option<String>,
     /// The folder a game was last imported from, to start choosing the
     /// next one in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -209,6 +213,7 @@ mod tests {
                     music: 30,
                     effects: 0,
                 },
+                audio_device: Some("Speakers (USB)".into()),
                 import_folder: Some(PathBuf::from("games")),
                 widescreen: BTreeMap::from([
                     (BUNDLED.to_string(), Widescreen::OriginalFraming),

@@ -143,6 +143,9 @@ pub enum Setting {
     /// around to silent.
     MusicVolume,
     EffectsVolume,
+    /// The sound device, changed with Left, Right or Jump, which go
+    /// round "System default" and the devices there are.
+    SoundDevice,
     /// The widescreen mode of the game being played, changed with Left,
     /// and Right or Jump, which go round the modes.
     Widescreen,
@@ -296,6 +299,9 @@ pub struct Session {
     pub(crate) clicks: Actions,
     /// The volume being dragged with the mouse, if one is.
     pub(crate) dragging: Option<Setting>,
+    /// The names of the sound devices there are, kept up to date by the
+    /// program that plays the sound.
+    pub audio_devices: Vec<String>,
 }
 
 impl Session {
@@ -335,6 +341,7 @@ impl Session {
             pointer: None,
             clicks: Actions::NONE,
             dragging: None,
+            audio_devices: Vec::new(),
         }
     }
 
@@ -477,6 +484,20 @@ impl Session {
                     return;
                 }
             }
+            if menu.current() == Setting::SoundDevice {
+                let back = pressed.contains(Action::Left);
+                if back || pressed.contains(Action::Right) || pressed.contains(Action::Jump) {
+                    let device = next_device(
+                        &self.audio_devices,
+                        self.prefs.audio_device.as_deref(),
+                        back,
+                    );
+                    self.prefs.audio_device = device;
+                    menu.items = options_items(&self.prefs, widescreen, rendering);
+                    self.save_prefs("the sound device");
+                    return;
+                }
+            }
             if menu.current() == Setting::Widescreen {
                 let back = pressed.contains(Action::Left);
                 if back || pressed.contains(Action::Right) || pressed.contains(Action::Jump) {
@@ -529,6 +550,7 @@ impl Session {
                 // changed above
                 Setting::MusicVolume
                 | Setting::EffectsVolume
+                | Setting::SoundDevice
                 | Setting::Widescreen
                 | Setting::Rendering => return,
                 Setting::Back => unreachable!(),
@@ -1377,6 +1399,9 @@ impl Session {
                 let about = match menu.current() {
                     Setting::Vsync => Some(about_vsync(&self.prefs.display)),
                     Setting::Vrr => Some(about_vrr(self.prefs.display.vrr)),
+                    Setting::SoundDevice => {
+                        Some("Where sound plays; a controller's device never takes it over")
+                    }
                     Setting::Widescreen => Some(about_widescreen(self.widescreen())),
                     Setting::Rendering => self.rendering().map(about_rendering),
                     Setting::OriginalTiming => {
@@ -1549,6 +1574,10 @@ pub(crate) fn options_items(
             Setting::EffectsVolume,
         ),
         (
+            format!("Sound: < {} >", device_label(prefs.audio_device.as_deref())),
+            Setting::SoundDevice,
+        ),
+        (
             format!("Widescreen: < {} >", widescreen.label()),
             Setting::Widescreen,
         ),
@@ -1565,6 +1594,40 @@ pub(crate) fn options_items(
     ));
     items.push(("Back".into(), Setting::Back));
     items
+}
+
+/// The longest a sound device's name is shown on the options screen.
+const DEVICE_NAME: usize = 24;
+
+/// How the options screen shows the sound device picked, `device`.
+fn device_label(device: Option<&str>) -> String {
+    let Some(name) = device else {
+        return "System default".into();
+    };
+    if name.chars().count() <= DEVICE_NAME {
+        return name.into();
+    }
+    let head: String = name.chars().take(DEVICE_NAME - 1).collect();
+    format!("{head}…")
+}
+
+/// The choice after (or, with `back`, before) `current` going round
+/// "System default" (none) and `devices`. A picked device that isn't
+/// among them is kept in its place, after the others.
+fn next_device(devices: &[String], current: Option<&str>, back: bool) -> Option<String> {
+    let mut choices: Vec<Option<&str>> = vec![None];
+    choices.extend(devices.iter().map(|d| Some(d.as_str())));
+    if !choices.contains(&current) {
+        choices.push(current);
+    }
+    let at = choices.iter().position(|c| *c == current).unwrap_or(0);
+    let len = choices.len();
+    let to = if back {
+        (at + len - 1) % len
+    } else {
+        (at + 1) % len
+    };
+    choices[to].map(str::to_string)
 }
 
 /// What the VSync setting in `display` does, in a line.
@@ -2086,6 +2149,23 @@ mod tests {
     }
 
     #[test]
+    fn the_sound_device_goes_round_the_default_and_the_devices() {
+        let devices = ["A".to_string(), "B".to_string()];
+        let next = |cur: Option<&str>, back| next_device(&devices, cur, back);
+        assert_eq!(next(None, false).as_deref(), Some("A"));
+        assert_eq!(next(Some("A"), false).as_deref(), Some("B"));
+        assert_eq!(next(Some("B"), false), None);
+        assert_eq!(next(None, true).as_deref(), Some("B"));
+        // a picked device that's gone stays among the choices
+        assert_eq!(next(Some("B"), false), None);
+        assert_eq!(next(Some("C"), true).as_deref(), Some("B"));
+        assert_eq!(next(Some("C"), false), None);
+        assert_eq!(device_label(None), "System default");
+        assert_eq!(device_label(Some("Speakers")), "Speakers");
+        assert_eq!(device_label(Some(&"x".repeat(40))).chars().count(), 24);
+    }
+
+    #[test]
     fn a_volume_is_clicked_and_dragged_and_toggles_change_on_click() {
         let dir = std::env::temp_dir().join(format!("clamber-mouse-{}", std::process::id()));
         let path = dir.join("prefs.toml");
@@ -2154,6 +2234,7 @@ mod tests {
                 "VRR: Off",
                 "Music: < 80% >",
                 "Effects: < 80% >",
+                "Sound: < System default >",
                 "Widescreen: < Wide activation >",
                 "Original timing: Off",
                 "Back"
@@ -2201,10 +2282,11 @@ mod tests {
         // Original timing is off until switched on
         s.step(&press(Action::Down));
         s.step(&press(Action::Down));
+        s.step(&press(Action::Down));
         assert_eq!(options(&s).current(), Setting::OriginalTiming);
         s.step(&press(Action::Jump));
         assert!(s.prefs.original_timing);
-        assert_eq!(labels(&s)[6], "Original timing: On");
+        assert_eq!(labels(&s)[7], "Original timing: On");
 
         s.step(&press(Action::Down));
         s.step(&press(Action::Jump));
@@ -2259,7 +2341,7 @@ mod tests {
             let Screen::Options(menu, _) = &s.screen else {
                 panic!("not on the options screen")
             };
-            menu.items[5].0.clone()
+            menu.items[6].0.clone()
         };
         assert_eq!(
             s.widescreen(),

@@ -191,6 +191,7 @@ fn play(options: Options) -> Result<(), String> {
     let audio = open_audio(
         &session.game.world.level,
         level_path.parent().unwrap_or(Path::new("")),
+        session.prefs.audio_device.clone(),
     );
     session.settings_path = options
         .settings
@@ -200,6 +201,8 @@ fn play(options: Options) -> Result<(), String> {
         session.input.set_settings(load_settings(path));
     }
 
+    #[cfg(feature = "audio")]
+    let session_device = session.prefs.audio_device.clone();
     let event_loop = EventLoop::new().map_err(|e| e.to_string())?;
     let mut app = App {
         title: format!("Clamber: {}", title(&session.game.world.level, &level_path)),
@@ -211,6 +214,8 @@ fn play(options: Options) -> Result<(), String> {
         gamepads: clamber_input::Gamepads::new()
             .map_err(|e| report::warn(format!("no gamepads: {e}")))
             .ok(),
+        #[cfg(feature = "audio")]
+        sound_device: session_device,
         #[cfg(feature = "audio")]
         audio,
         held: BTreeSet::new(),
@@ -357,12 +362,16 @@ fn load(options: &Options, saved: Option<&str>) -> Result<(Session, PathBuf), St
 /// device, or with sounds that can't be read, the game plays on with
 /// what there is.
 #[cfg(feature = "audio")]
-fn open_audio(level: &Level, dir: &Path) -> Option<(clamber_audio::Output, clamber_game::Audio)> {
+fn open_audio(
+    level: &Level,
+    dir: &Path,
+    device: Option<String>,
+) -> Option<(clamber_audio::Output, clamber_game::Audio)> {
     use clamber_game::{Audio, DEFAULT_MUSIC, DEFAULT_SOUNDS, MusicList, SoundList};
 
     let warn = |w: String| report::warn(w);
     let (handle, mixer) = clamber_audio::mixer(MAX_VOICES);
-    let output = clamber_audio::Output::open(mixer)
+    let output = clamber_audio::Output::open(mixer, device)
         .map_err(|e| warn(format!("{e}; playing without sound")))
         .ok()?;
     let sounds = SoundList::load(&content_dir().join(DEFAULT_SOUNDS)).unwrap_or_else(|e| {
@@ -516,6 +525,9 @@ struct App {
     /// The output, kept open while the game runs, and what plays on it.
     #[cfg(feature = "audio")]
     audio: Option<(clamber_audio::Output, clamber_game::Audio)>,
+    /// The sound device last given to the output.
+    #[cfg(feature = "audio")]
+    sound_device: Option<String>,
     /// Keys down now, to release them all when the window loses focus.
     held: BTreeSet<Key>,
     /// Keys down now that went to the path being typed, whose release
@@ -553,6 +565,24 @@ struct App {
 const CURSOR_HIDE: std::time::Duration = std::time::Duration::from_secs(2);
 
 impl App {
+    /// Switches the sound to the device the options screen picked, tells
+    /// the options screen which devices there are, and notes what the
+    /// output says about its choices.
+    #[cfg(feature = "audio")]
+    fn follow_sound_device(&mut self) {
+        let Some((output, _)) = &self.audio else {
+            return;
+        };
+        if self.session.prefs.audio_device != self.sound_device {
+            self.sound_device = self.session.prefs.audio_device.clone();
+            output.set_device(self.sound_device.clone());
+        }
+        self.session.audio_devices = output.devices();
+        for note in output.take_notes() {
+            report::note(format_args!("sound: {note}"));
+        }
+    }
+
     fn fail(&mut self, event_loop: &ActiveEventLoop, error: impl ToString) {
         self.error = Some(error.to_string());
         event_loop.exit();
@@ -833,6 +863,12 @@ impl App {
             #[cfg(feature = "gamepad")]
             if let Some(pads) = &mut self.gamepads {
                 for event in pads.poll() {
+                    #[cfg(feature = "audio")]
+                    if let (Some((output, _)), clamber_input::Event::PadConnected(_)) =
+                        (&self.audio, &event)
+                    {
+                        output.gamepad_connected();
+                    }
                     self.session.handle(event);
                 }
             }
@@ -841,6 +877,8 @@ impl App {
             if let Some((_, audio)) = &mut self.audio {
                 audio.update(&self.session, report::warn);
             }
+            #[cfg(feature = "audio")]
+            self.follow_sound_device();
             if self.session.quit {
                 return;
             }

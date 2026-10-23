@@ -1,10 +1,11 @@
-//! Sending the mixer to the system's default sound device.
+//! Sending the mixer to a sound device: the one the player picked, else
+//! the system's default (see [`Policy`]).
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{
@@ -12,6 +13,7 @@ use cpal::{
     SupportedBufferSize,
 };
 
+use crate::policy::Policy;
 use crate::sound::Resampler;
 use crate::{AudioError, Mixer};
 
@@ -19,9 +21,14 @@ use crate::{AudioError, Mixer};
 const LOGIC_RATE: u32 = 60;
 /// How often to look for a device again after losing it.
 const RETRY: Duration = Duration::from_millis(500);
+/// How often to look at which devices there are and which is the default.
+const LOOK: Duration = Duration::from_secs(1);
 
-/// Plays a [`Mixer`] on the default output device, from the device's own
-/// audio thread. If the device goes away (headphones unplugged, a USB
+/// Plays a [`Mixer`] on an output device, from the device's own audio
+/// thread: the one picked with [`set_device`](Self::set_device) while it's
+/// there, otherwise the system's default, except that the output stays on
+/// its device when a game controller's sound device takes the default over
+/// by itself. If the device goes away (headphones unplugged, a USB
 /// interface switched off), the output reopens on whatever is the default
 /// device then, retrying until there is one.
 ///
@@ -46,18 +53,26 @@ struct Shared {
     /// nanoseconds.
     latency: AtomicU64,
     reopened: AtomicU32,
+    /// The output devices at the latest look.
+    devices: Mutex<Vec<String>>,
+    /// What the output has to say about its choices, not yet taken.
+    notes: Mutex<Vec<String>>,
 }
 
 enum Event {
     /// The stream of this generation stopped working.
     Lost(u64),
+    /// Play on this device, or the default with none.
+    Prefer(Option<String>),
+    /// A gamepad appeared.
+    Gamepad,
     Close,
 }
 
 impl Output {
-    /// Opens the default output device and starts playing `mixer` on it,
-    /// at the device's preferred rate.
-    pub fn open(mixer: Mixer) -> Result<Output, AudioError> {
+    /// Starts playing `mixer` on the output device named `device`, or the
+    /// default if it's none or isn't there, at the device's preferred rate.
+    pub fn open(mixer: Mixer, device: Option<String>) -> Result<Output, AudioError> {
         let shared = Arc::new(Shared::default());
         let (events, rx) = channel();
         let (opened_tx, opened_rx) = channel();
@@ -66,7 +81,7 @@ impl Output {
             let events = events.clone();
             std::thread::Builder::new()
                 .name("audio output".into())
-                .spawn(move || output_thread(mixer, shared, events, rx, opened_tx))
+                .spawn(move || output_thread(mixer, device, shared, events, rx, opened_tx))
                 .map_err(|e| AudioError(format!("can't start audio output thread: {e}")))?
         };
         let rate = opened_rx
@@ -78,6 +93,32 @@ impl Output {
             events,
             thread: Some(thread),
         })
+    }
+
+    /// Plays on the output device named `device`, or on the system's
+    /// default with none, switching at once if it's there. A device that's
+    /// not there is switched to when it appears.
+    pub fn set_device(&self, device: Option<String>) {
+        let _ = self.events.send(Event::Prefer(device));
+    }
+
+    /// Tells the output a gamepad appeared, which tells it that a
+    /// controller's sound device becoming the default at the same time
+    /// isn't the player's doing.
+    pub fn gamepad_connected(&self) {
+        let _ = self.events.send(Event::Gamepad);
+    }
+
+    /// The names of the output devices at the latest look, a second ago
+    /// at most.
+    pub fn devices(&self) -> Vec<String> {
+        self.shared.devices.lock().unwrap().clone()
+    }
+
+    /// What the output has said about its choices since the last call:
+    /// the device it chose and why, and switches it skipped.
+    pub fn take_notes(&self) -> Vec<String> {
+        std::mem::take(&mut *self.shared.notes.lock().unwrap())
     }
 
     /// The rate sounds and music are loaded at, in frames per second.
@@ -124,18 +165,47 @@ impl Drop for Output {
     }
 }
 
-/// Opens streams and reopens them when they fail. Owns the mixer between
-/// streams.
+/// The system's default output device and the output devices there are,
+/// by name.
+fn look() -> (Option<String>, Vec<String>) {
+    let host = cpal::default_host();
+    let default = host.default_output_device().map(|d| d.to_string());
+    let mut present: Vec<String> = host
+        .output_devices()
+        .map(|ds| ds.map(|d| d.to_string()).collect())
+        .unwrap_or_default();
+    present.extend(default.clone());
+    present.sort();
+    present.dedup();
+    (default, present)
+}
+
+/// Opens streams and reopens them when they fail or the device to play on
+/// changes. Owns the mixer between streams.
 fn output_thread(
     mixer: Mixer,
+    preferred: Option<String>,
     shared: Arc<Shared>,
     events: Sender<Event>,
     rx: Receiver<Event>,
     opened: Sender<Result<u32, AudioError>>,
 ) {
+    let began = Instant::now();
+    let now = || began.elapsed().as_millis() as u64;
+    let mut policy = Policy::new(preferred);
     let mut feed = Feed::new(mixer);
     let mut generation = 0;
-    let first = match open_stream(None, &mut feed, &shared, &events, generation) {
+    let consider = |policy: &mut Policy| {
+        let (default, present) = look();
+        let decision = policy.decide(now(), default.as_deref(), &present);
+        if let Some(note) = decision.note {
+            shared.notes.lock().unwrap().push(note);
+        }
+        *shared.devices.lock().unwrap() = present;
+        decision.device
+    };
+    let mut target = consider(&mut policy);
+    let mut stream = match open_stream(None, target.as_deref(), &mut feed, &shared, &events, 0) {
         Ok((stream, rate)) => {
             let _ = opened.send(Ok(rate));
             Some(stream)
@@ -145,23 +215,23 @@ fn output_thread(
             return;
         }
     };
-    let mut stream = first;
     loop {
-        let event = if stream.is_some() {
-            rx.recv().unwrap_or(Event::Close)
-        } else {
-            match rx.recv_timeout(RETRY) {
-                Ok(e) => e,
-                Err(RecvTimeoutError::Timeout) => Event::Lost(generation),
-                Err(RecvTimeoutError::Disconnected) => Event::Close,
-            }
-        };
-        match event {
-            Event::Close => return,
+        let wait = if stream.is_some() { LOOK } else { RETRY };
+        let mut lost = false;
+        match rx.recv_timeout(wait) {
+            Ok(Event::Close) | Err(RecvTimeoutError::Disconnected) => return,
             // a late report from a stream already replaced
-            Event::Lost(g) if g != generation => continue,
-            Event::Lost(_) => {}
+            Ok(Event::Lost(g)) if g != generation => continue,
+            Ok(Event::Lost(_)) => lost = true,
+            Ok(Event::Prefer(device)) => policy.prefer(device),
+            Ok(Event::Gamepad) => policy.gamepad_connected(now()),
+            Err(RecvTimeoutError::Timeout) => {}
         }
+        let wanted = consider(&mut policy);
+        if stream.is_some() && !lost && wanted == target {
+            continue;
+        }
+        target = wanted;
         if let Some(s) = stream.take() {
             drop(s);
             shared.reopened.fetch_add(1, Ordering::Relaxed);
@@ -173,26 +243,36 @@ fn output_thread(
         generation += 1;
         *shared.device.lock().unwrap() = String::new();
         let rate = feed.rate;
-        match open_stream(Some(rate), &mut feed, &shared, &events, generation) {
-            Ok((s, _)) => stream = Some(s),
-            Err(_) => stream = None,
-        }
+        stream = open_stream(
+            Some(rate),
+            target.as_deref(),
+            &mut feed,
+            &shared,
+            &events,
+            generation,
+        )
+        .ok()
+        .map(|(s, _)| s);
     }
 }
 
-/// Builds and starts a stream on the default device. With `rate`, prefers
-/// that rate; otherwise uses the device's own and makes it the mix rate.
-/// Returns the stream and the mix rate.
+/// Builds and starts a stream on the device named `name`, or on the
+/// default if it's none or isn't there. With `rate`, prefers that rate;
+/// otherwise uses the device's own and makes it the mix rate. Returns the
+/// stream and the mix rate.
 fn open_stream(
     rate: Option<u32>,
+    name: Option<&str>,
     feed: &mut Feed,
     shared: &Arc<Shared>,
     events: &Sender<Event>,
     generation: u64,
 ) -> Result<(cpal::Stream, u32), AudioError> {
     let err = |e: cpal::Error| AudioError(format!("audio output: {e}"));
-    let device = cpal::default_host()
-        .default_output_device()
+    let host = cpal::default_host();
+    let named = name.and_then(|name| host.output_devices().ok()?.find(|d| d.to_string() == name));
+    let device = named
+        .or_else(|| host.default_output_device())
         .ok_or_else(|| AudioError("no audio output device".into()))?;
     let default = device.default_output_config().map_err(err)?;
     let wanted = rate.and_then(|rate| {

@@ -16,8 +16,9 @@
 //!   playing it.
 //! - With the `encode` feature, [`encode::Vorbis`] writes Ogg Vorbis
 //!   files.
-//! - With the `output` feature, [`Output`] plays the mixer on the default
-//!   sound device and reopens it when the device goes away.
+//! - With the `output` feature, [`Output`] plays the mixer on the picked
+//!   or default sound device and reopens it when the device goes away;
+//!   [`policy`] decides which device that is.
 
 mod decode;
 #[cfg(feature = "encode")]
@@ -26,6 +27,7 @@ mod mixer;
 mod music;
 #[cfg(feature = "output")]
 mod output;
+pub mod policy;
 pub mod seam;
 mod sound;
 
