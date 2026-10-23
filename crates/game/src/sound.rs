@@ -180,6 +180,11 @@ const KNOCKOUT_MAP_SONG: u64 = 307;
 /// frames after the level's last (`music.md`, "When the cut comes"). The
 /// finishing tune that fills the time isn't imported, so it is silent.
 const MAP_SILENCE_FIRST: u64 = 49 + 212 - FINISH_CUT;
+/// The same without the still frames (#438): the song is first heard on
+/// frame 162 of the map.
+const MAP_SILENCE_FIRST_NO_STILL: u64 = MAP_SILENCE_FIRST - STILL_FRAMES;
+/// The still frames after a first finish (`level-map.md`, "Still frames").
+const STILL_FRAMES: u64 = 50;
 
 /// Frames from the first step of the game-over picture's wait to the
 /// cut of the knock-out's song, the 37th frame before the picture's
@@ -357,8 +362,10 @@ impl Audio {
             if self.map.is_some() {
                 let silence = if map_again == Some(true) {
                     MAP_SILENCE_AGAIN
-                } else {
+                } else if session.prefs.original_timing {
                     MAP_SILENCE_FIRST
+                } else {
+                    MAP_SILENCE_FIRST_NO_STILL
                 };
                 self.silent_until = Some(session.ticks + FINISH_CUT + silence);
             }
@@ -1097,9 +1104,14 @@ mod tests {
 
     #[test]
     fn the_map_s_song_plays_and_starts_after_a_finish_once_its_silence_is_over() {
-        for (again, silence) in [(true, MAP_SILENCE_AGAIN), (false, MAP_SILENCE_FIRST)] {
+        for (again, original, silence) in [
+            (true, false, MAP_SILENCE_AGAIN),
+            (false, true, MAP_SILENCE_FIRST),
+            (false, false, MAP_SILENCE_FIRST - 50),
+        ] {
             let dir = folder("map-song");
             let mut s = map_session(&dir);
+            s.prefs.original_timing = original;
             let (handle, mut mixer) = mixer(8);
             let mut audio = Audio::new(handle, RATE, &SoundList::default(), |w| panic!("{w}"));
             audio.update(&s, |w| panic!("{w}"));
@@ -1113,20 +1125,26 @@ mod tests {
                 map.progress.clear(&map.map.place(node), "normal");
             }
             map.phase = crate::map::MapPhase::Playing(node);
-            map.finished(false, false);
+            map.finished(false, false, s.prefs.original_timing);
             s.finishes += 1;
             for n in 0..FINISH_CUT + silence {
                 audio.update(&s, |w| panic!("{w}"));
                 let heard = last(&mut mixer, 10);
                 if n < FINISH_CUT {
-                    assert!(heard > 0.2, "{again}: still playing on frame {n}");
+                    assert!(
+                        heard > 0.2,
+                        "{again} {original}: still playing on frame {n}"
+                    );
                 } else {
-                    assert_eq!(heard, 0.0, "{again}: silent on frame {n}");
+                    assert_eq!(heard, 0.0, "{again} {original}: silent on frame {n}");
                 }
                 s.ticks += 1;
             }
             audio.update(&s, |w| panic!("{w}"));
-            assert!(last(&mut mixer, 800) > 0.2, "{again}: the song starts");
+            assert!(
+                last(&mut mixer, 800) > 0.2,
+                "{again} {original}: the song starts"
+            );
             std::fs::remove_dir_all(dir).unwrap();
         }
     }

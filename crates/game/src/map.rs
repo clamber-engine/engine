@@ -427,7 +427,11 @@ impl MapPlay {
     /// The level entered from the map was finished: records it, and
     /// shows the map after the black frames. Does nothing unless a level
     /// entered from the map is being played.
-    pub fn finished(&mut self, two: bool, second_leads: bool) {
+    ///
+    /// Unless `original_timing`, the still frames after a first finish
+    /// are left out, and everything after them comes that many frames
+    /// earlier (#438).
+    pub fn finished(&mut self, two: bool, second_leads: bool, original_timing: bool) {
         let MapPhase::Playing(node) = self.phase else {
             return;
         };
@@ -443,7 +447,7 @@ impl MapPlay {
         self.progress
             .clear(&place, exit.as_deref().unwrap_or("normal"));
         let legs = self.legs();
-        let times = match &legs.finish {
+        let mut times = match &legs.finish {
             Some(f) if again => f.again.clone(),
             Some(f) => f.first.clone(),
             None => FinishTimes {
@@ -452,6 +456,11 @@ impl MapPlay {
                 gate: legs.appear_wait,
             },
         };
+        if !original_timing && let Some((from, n)) = times.still {
+            // the finish pictures still end where they did
+            times.still = Some((from, 0));
+            times.gate = times.gate.saturating_sub(n);
+        }
         self.phase = MapPhase::Black {
             // the step after the last black one is the map's first
             frames: times.black.max(1),

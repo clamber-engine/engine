@@ -148,6 +148,9 @@ pub enum Setting {
     /// The rendering mode of the imported pixel-art game being played,
     /// changed with Left, Right or Jump. Not shown for other games.
     Rendering,
+    /// Whether the spec's timing is followed exactly, where it holds the
+    /// game still or answers a press late (`Prefs::original_timing`).
+    OriginalTiming,
     Back,
 }
 
@@ -521,6 +524,7 @@ impl Session {
                 Setting::Fullscreen => display.fullscreen = !display.fullscreen,
                 Setting::Vsync => display.vsync = !display.vsync,
                 Setting::Vrr => display.vrr = !display.vrr,
+                Setting::OriginalTiming => self.prefs.original_timing = !self.prefs.original_timing,
                 // changed above
                 Setting::MusicVolume
                 | Setting::EffectsVolume
@@ -1211,6 +1215,7 @@ impl Session {
                     map.finished(
                         self.game.world.other.is_some(),
                         self.game.world.player.character == 1,
+                        self.prefs.original_timing,
                     );
                     self.finishes += 1;
                     self.screen = Screen::Map;
@@ -1364,6 +1369,9 @@ impl Session {
                     Setting::Vrr => Some(about_vrr(self.prefs.display.vrr)),
                     Setting::Widescreen => Some(about_widescreen(self.widescreen())),
                     Setting::Rendering => self.rendering().map(about_rendering),
+                    Setting::OriginalTiming => {
+                        Some(about_original_timing(self.prefs.original_timing))
+                    }
                     _ => None,
                 };
                 if let Some(about) = about {
@@ -1541,6 +1549,10 @@ pub(crate) fn options_items(
             Setting::Rendering,
         ));
     }
+    items.push((
+        format!("Original timing: {}", on(prefs.original_timing)),
+        Setting::OriginalTiming,
+    ));
     items.push(("Back".into(), Setting::Back));
     items
 }
@@ -1562,6 +1574,15 @@ fn about_vrr(on: bool) -> &'static str {
         "The display refreshes as each frame is ready, without tearing"
     } else {
         "For G-Sync, FreeSync and HDMI VRR displays; judders on others"
+    }
+}
+
+/// What the original timing setting does, in a line, when it's `on` or off.
+fn about_original_timing(on: bool) -> &'static str {
+    if on {
+        "Pauses and delays as in the original, for comparing"
+    } else {
+        "Skips the original's pauses and answers presses at once"
     }
 }
 
@@ -2124,6 +2145,7 @@ mod tests {
                 "Music: < 80% >",
                 "Effects: < 80% >",
                 "Widescreen: < Wide activation >",
+                "Original timing: Off",
                 "Back"
             ]
         );
@@ -2166,7 +2188,14 @@ mod tests {
         assert_eq!(Prefs::load(&path), s.prefs);
         std::fs::remove_dir_all(dir).unwrap();
 
+        // Original timing is off until switched on
         s.step(&press(Action::Down));
+        s.step(&press(Action::Down));
+        assert_eq!(options(&s).current(), Setting::OriginalTiming);
+        s.step(&press(Action::Jump));
+        assert!(s.prefs.original_timing);
+        assert_eq!(labels(&s)[6], "Original timing: On");
+
         s.step(&press(Action::Down));
         s.step(&press(Action::Jump));
         let Screen::Title(menu) = &s.screen else {
@@ -3613,7 +3642,7 @@ mod tests {
                 map.progress.clear(&map.map.place(node), "normal");
             }
             map.phase = MapPhase::Playing(node);
-            map.finished(false, false);
+            map.finished(false, false, true);
             // through the black frames to the map's frame 0
             while !matches!(map.phase, MapPhase::Shown(_)) {
                 map.step(Actions::NONE);
@@ -3626,6 +3655,48 @@ mod tests {
             for (frame, look) in want {
                 assert_eq!(looks[frame], Some(look), "frame {frame}, again {again}");
             }
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// #438: with the original timing off, a first finish has no still
+    /// frames: the gate is 192, and the cycle goes on from the finish
+    /// pictures without the 50 frames' gap.
+    #[test]
+    fn a_first_finish_has_no_still_frames_unless_the_original_timing_is_on() {
+        let dir = map_pack("map-no-still");
+        for (original, gate, cycle_at_216) in [(true, 242, 1), (false, 192, 2)] {
+            let mut map = MapPlay::load(&dir).unwrap().unwrap();
+            map.new_game(false);
+            let node = map.map.node("f").unwrap();
+            map.phase = MapPhase::Playing(node);
+            map.finished(false, false, original);
+            while !matches!(map.phase, MapPhase::Shown(_)) {
+                map.step(Actions::NONE);
+            }
+            let mut looks = vec![map.lead_picture().map(|(l, _)| l)];
+            let mut walked = None;
+            for f in 1..260 {
+                map.step(Actions::NONE);
+                looks.push(map.lead_picture().map(|(l, _)| l));
+                let MapPhase::Shown(screen) = &map.phase else {
+                    unreachable!()
+                };
+                if walked.is_none() && screen.lead.walking() {
+                    walked = Some(f);
+                }
+            }
+            assert_eq!(looks[161], Some(MapLook::Finish(10)));
+            if original {
+                assert_eq!(looks[215], Some(MapLook::Cycle(0)));
+                assert_eq!(looks[216], Some(MapLook::Cycle(cycle_at_216)));
+            } else {
+                // frame 163 is what 213 is with the still frames
+                assert_eq!(looks[162], Some(MapLook::Cycle(0)));
+                assert_eq!(looks[165], Some(MapLook::Cycle(0)));
+                assert_eq!(looks[166], Some(MapLook::Cycle(1)));
+            }
+            assert_eq!(walked, Some(gate), "original timing {original}");
         }
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -3649,6 +3720,7 @@ mod tests {
     fn finishing_a_level_goes_back_to_the_map() {
         let dir = map_pack("map-finish");
         let mut s = session(LEVEL);
+        s.prefs.original_timing = true;
         s.map = MapPlay::load(&dir).unwrap();
         s.step(&press(Action::Jump));
         let jump = Actions::from(Action::Jump);

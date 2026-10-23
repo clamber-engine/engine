@@ -37,6 +37,12 @@ pub struct Prefs {
     /// [`Rendering::Original`].
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub rendering: BTreeMap<String, Rendering>,
+    /// Where the spec has something happen later than the frame that
+    /// caused it, or has the screen hold still for no reason in the game,
+    /// follow the spec exactly (#437, #438). Off by default: the game
+    /// then responds at once. Differential tests turn it on.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub original_timing: bool,
 }
 
 /// What [`Prefs::widescreen`] calls the bundled game.
@@ -209,6 +215,7 @@ mod tests {
                     ("title-1".to_string(), Widescreen::WideActivation),
                 ]),
                 rendering: BTreeMap::from([("title-1".to_string(), Rendering::Enhanced)]),
+                original_timing: true,
             },
         ] {
             assert_eq!(Prefs::from_toml_str(&prefs.to_toml_string()), Ok(prefs));
