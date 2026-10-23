@@ -338,6 +338,19 @@ fn a_jump_while_carrying_takes_off_a_frame_later() {
     assert!(has(&rows[1], Event::JumpStart));
 }
 
+/// With the feel immediate (#437) a carried jump takes off on P, as a jump
+/// without an object does.
+#[test]
+fn an_immediate_jump_while_carrying_takes_off_on_the_press() {
+    let mut play = Play::carrying();
+    let mut feel = (*play.world.feel).clone();
+    feel.immediate = true;
+    play.world.feel = Arc::new(feel);
+    let rows = play.hold(&[A, Jump], 2);
+    assert!(has(&rows[0], Event::JumpStart));
+    assert_eq!(rows[0].vel.y, f(-7.0));
+}
+
 /// Letting go of action on P + 1 or P + 2 cancels the jump and throws
 /// from the ground; on P + 3, the throw is in the air.
 #[test]

@@ -176,6 +176,7 @@ impl Pack {
                 world,
                 roster,
                 window: None,
+                immediate: false,
             },
             warnings,
         })
@@ -198,6 +199,12 @@ pub struct Feel {
     /// The engine's own, set by the game for how it's shown: no preset
     /// sets it, and with none things go by the view.
     pub window: Option<u32>,
+    /// A press is answered on the frame it's made: the delays between a
+    /// press and its effect (`jump_delay`, `carry_jump_delay`) are 0
+    /// whatever the preset says (#437). The engine's own, set by the game
+    /// when its original timing is off; no preset sets it, and spec
+    /// traces are played with it off.
+    pub immediate: bool,
 }
 
 /// One character's resolved movement and abilities. Level regions adjust

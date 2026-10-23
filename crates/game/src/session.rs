@@ -14,6 +14,7 @@ use clamber_import::{Importer, Installed, Replacements, Widescreen};
 
 use clamber_input::{Action, Actions, Device, Event, Frame, Input, Settings};
 use clamber_level::Arrival;
+use clamber_pack::Feel;
 use clamber_sim::{FlowEvent, InputFrame, LivesStart, Outcome, World};
 
 use crate::canvas::{Color, rgb};
@@ -1197,6 +1198,15 @@ impl Session {
             return;
         }
         let hurt_before = self.game.world.player.knockout.is_some();
+        // Presses are answered on their own frame unless the original's
+        // timing is asked for (#437).
+        let immediate = !self.prefs.original_timing;
+        if self.game.world.feel.immediate != immediate {
+            self.game.world.feel = Arc::new(Feel {
+                immediate,
+                ..Feel::clone(&self.game.world.feel)
+            });
+        }
         if !self.game.step(input) {
             return;
         }
@@ -3699,6 +3709,36 @@ mod tests {
             assert_eq!(walked, Some(gate), "original timing {original}");
         }
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// #437: with the original timing off a Jump press is answered on its
+    /// own frame; on, the preset's delay of a frame stays.
+    #[test]
+    fn a_jump_press_is_answered_at_once_unless_the_original_timing_is_on() {
+        for original in [false, true] {
+            let level = Level::from_toml_str(LEVEL, "test").unwrap();
+            let mut s = Session::new(Game::new(World::new(
+                Arc::new(level),
+                Arc::new(generic_feel("classic-1").unwrap()),
+            )));
+            s.prefs.original_timing = original;
+            s.step(&press(Action::Jump));
+            assert_eq!(s.screen, Screen::Playing);
+            let idle = Actions::NONE;
+            for _ in 0..60 {
+                s.step(&input(idle, idle));
+            }
+            let jump = Actions::from(Action::Jump);
+            s.step(&input(idle, jump));
+            let first = s.game.world.events.contains(&clamber_sim::Event::JumpStart);
+            s.step(&input(jump, jump));
+            let second = s.game.world.events.contains(&clamber_sim::Event::JumpStart);
+            assert_eq!(
+                (first, second),
+                (!original, original),
+                "original {original}"
+            );
+        }
     }
 
     /// The map's first frame on the step `black` after the level's last.

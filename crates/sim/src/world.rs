@@ -511,6 +511,11 @@ impl World {
         if let Some(ground) = player.ground {
             physics.apply(&self.level.surface(ground).physics);
         }
+        if self.feel.immediate {
+            // A press is answered on its own frame (#437).
+            physics.set(Param::JumpDelay, Fixed::ZERO);
+            physics.set(Param::CarryJumpDelay, Fixed::ZERO);
+        }
         physics
     }
 
@@ -1560,6 +1565,7 @@ pub fn generic_feel(preset: &str) -> Option<Feel> {
             abilities: BTreeMap::from([(ROLL.to_string(), BTreeMap::new())]),
         }],
         window: None,
+        immediate: false,
     })
 }
 

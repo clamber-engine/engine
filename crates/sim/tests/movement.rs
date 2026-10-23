@@ -781,6 +781,23 @@ fn classic_jump_starts_the_frame_after_the_press() {
 }
 
 #[test]
+fn immediate_jump_starts_on_the_press_frame() {
+    // #437: with the feel immediate, a press is answered on its own frame,
+    // like a roll's; a one-frame tap included.
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.immediate = true;
+    let mut w = Play::new(feel);
+    let mut steps = hold(&mut w, &[Action::Jump], 1);
+    steps.extend(hold(&mut w, &[], 2));
+    assert_eq!(first(&steps, Event::JumpStart), Some(0));
+    let starts = all_events(&steps)
+        .into_iter()
+        .filter(|&e| e == Event::JumpStart)
+        .count();
+    assert_eq!(starts, 1);
+}
+
+#[test]
 fn classic_presses_before_landing() {
     // spec/behavior/jump-input.md, "Pressing before landing": every row of
     // the table, with the landing frame L = LAND and E = L + 3.
