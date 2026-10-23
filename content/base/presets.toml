@@ -267,6 +267,7 @@ join_rise = 0
 join_sag = 0
 pick_up_time = 0
 pick_up_still = 0
+pick_up_down_hold = 0
 carry_jump_delay = 0
 carry_jump_speed = 0
 carry_held_gravity = 0
@@ -839,6 +840,9 @@ join_sag = 0.1875
 # rule there is `speed_response`. Reach is the object's (archetypes.toml).
 pick_up_time = 15
 pick_up_still = 10
+# Letting go of action with down held on G to G + 15 waits (carrying.md,
+# "During the pick-up").
+pick_up_down_hold = 16
 carry_jump_delay = 1
 # Carrying has its own stride cycle (player-frames.md, "Carrying"): 10
 # steps of 512, at v/4 + v/8 and at least 96, so half of that counts. A
@@ -1284,6 +1288,7 @@ ground_action_time = 0
 # It stands where step 2 or 7 ends below 0.1875 with nothing held.
 pick_up_time = 11
 pick_up_still = 11
+pick_up_down_hold = 11
 carry_jump_speed = 7
 carry_held_gravity = 0.28125
 throw_time = 40

@@ -237,12 +237,70 @@ fn jumps_during_a_pick_up_do_nothing() {
     assert!(rows.iter().all(|r| r.ground && !has(r, Event::JumpStart)));
 }
 
+/// carrying.md, "During the pick-up": letting go of action with down
+/// held doesn't throw on that frame; the throw comes on the first frame
+/// without down.
 #[test]
-fn letting_go_during_a_pick_up_throws_even_with_down_held() {
+fn letting_go_during_a_pick_up_with_down_held_throws_when_down_is_let_go_of() {
     let mut play = Play::near();
     play.hold(&[A], 5);
-    let q = play.step(&[Down]);
-    assert_eq!(q.act, Some(Act::Throw));
+    for _ in 0..3 {
+        let row = play.step(&[Down]);
+        assert_ne!(row.act, Some(Act::Throw));
+        assert_ne!(row.act, Some(Act::PutDown));
+    }
+    assert_eq!(play.step(&[]).act, Some(Act::Throw));
+
+    // Without down it's a throw on the frame itself.
+    let mut play = Play::near();
+    play.hold(&[A], 5);
+    assert_eq!(play.step(&[]).act, Some(Act::Throw));
+}
+
+/// Down held on every frame up to and including G + 15 puts the object
+/// down from G + 16, whether or not down is still held then.
+#[test]
+fn down_held_through_the_pick_up_puts_the_object_down() {
+    for last in [&[Down][..], &[][..]] {
+        let mut play = Play::near();
+        play.hold(&[A], 5);
+        for _ in 0..11 {
+            let row = play.step(&[Down]);
+            assert_ne!(row.act, Some(Act::Throw));
+            assert_ne!(row.act, Some(Act::PutDown));
+        }
+        assert_eq!(play.step(last).act, Some(Act::PutDown));
+    }
+}
+
+/// Down let go of on G + 16 for the first time, after action was let go
+/// of on G + 16 too, is a plain release: Down held puts down, none throws.
+#[test]
+fn letting_go_after_the_pick_up_is_as_before() {
+    let mut play = Play::near();
+    play.hold(&[A], 16);
+    assert_eq!(play.step(&[Down]).act, Some(Act::PutDown));
+    let mut play = Play::near();
+    play.hold(&[A], 16);
+    assert_eq!(play.step(&[]).act, Some(Act::Throw));
+}
+
+/// "The second character": the same with G + 10 as the last frame.
+#[test]
+fn the_second_character_s_throw_waits_for_down_the_same_way() {
+    let mut play = Play::second();
+    play.hold(&[A], 5);
+    assert_ne!(play.step(&[Down]).act, Some(Act::Throw));
+    assert_eq!(play.step(&[]).act, Some(Act::Throw));
+
+    let mut play = Play::second();
+    play.hold(&[A], 5);
+    for _ in 0..6 {
+        let row = play.step(&[Down]);
+        assert_ne!(row.act, Some(Act::Throw));
+        assert_ne!(row.act, Some(Act::PutDown));
+    }
+    assert_eq!(play.step(&[]).act, Some(Act::PutDown));
 }
 
 #[test]

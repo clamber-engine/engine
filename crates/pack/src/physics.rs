@@ -1084,6 +1084,11 @@ params! {
     /// Frames from the start of a pick-up, counting its first, that the
     /// target speed is 0 whatever is held. Whole frames.
     PickUpStill => "pick_up_still",
+    /// Letting go of action on one of this many frames from the start of
+    /// a pick-up, counting its first, with down held, doesn't throw: the
+    /// throw waits for the first frame without down, or the object is
+    /// put down if down is held through the last of them. Whole frames.
+    PickUpDownHold => "pick_up_down_hold",
     /// Frames later a jump takes off while carrying than without an
     /// object. Whole frames.
     CarryJumpDelay => "carry_jump_delay",

@@ -550,6 +550,7 @@ mod tests {
                     | Param::FollowTurnFlip
                     | Param::PickUpTime
                     | Param::PickUpStill
+                    | Param::PickUpDownHold
                     | Param::CarryJumpDelay
                     | Param::CarryJumpSpeed
                     | Param::CarryHeldGravity
