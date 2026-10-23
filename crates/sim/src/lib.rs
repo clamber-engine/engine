@@ -131,7 +131,7 @@ pub use player::{
     Act, Boost, Crouch, FaceSwitch, Facing, Gait, GroundAction, HALF_WIDTH, HEIGHT, Hands, Holds,
     Knockout, Landing, Player, ROLL, Roll, RollSize, SWAP_FRAMES, State, Stride,
 };
-pub use pose::{Air, Pose, PoseClock, Stance, hurt_pose, pose, stance};
+pub use pose::{Air, Pose, PoseClock, SecondPose, Stance, hurt_pose, pose, second_pose, stance};
 pub use record::{record, row};
 pub use ride::{RidePart, Riding};
 pub use rope::{OnRope, ROPE};

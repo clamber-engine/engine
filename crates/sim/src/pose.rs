@@ -44,7 +44,7 @@ use clamber_fixed::Fixed;
 
 use clamber_pack::{Param, Physics};
 
-use crate::archetype::{Poses, WalkerContact};
+use crate::archetype::{Poses, SecondBall, WalkerContact};
 use crate::player::{Act, Player, State, frames};
 use crate::world::Event;
 
@@ -56,6 +56,16 @@ pub enum Pose {
     Rolling,
     Crouching,
     Fidget,
+}
+
+/// The pose a ball reads a character other than the first by
+/// (spec/behavior/ball-contact.md, "The second character under
+/// control"), for its three ranges.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SecondPose {
+    Standing,
+    Moving,
+    Crouching,
 }
 
 /// The stance a walker with a [`WalkerContact`] reads, for its ranges.
@@ -127,6 +137,9 @@ pub struct PoseClock {
     /// The object it carried broke on a walker while it was in the air,
     /// so it keeps the carrying pose until it lands.
     pub carried_air: bool,
+    /// Steps since Down was last held on the ground, from 1 on the first
+    /// without it; 0 while it is held.
+    pub uncrouched: u8,
 }
 
 impl Default for PoseClock {
@@ -145,6 +158,7 @@ impl Default for PoseClock {
             from: Fixed::ZERO,
             drop: Fixed::ZERO,
             carried_air: false,
+            uncrouched: u8::MAX,
         }
     }
 }
@@ -214,6 +228,12 @@ pub(crate) fn note(player: &mut Player, events: &[Event], physics: &Physics) {
         Some(clock.standing.map_or(0, |n| n.saturating_add(1)))
     } else {
         None
+    };
+
+    clock.uncrouched = if player.crouch.held > 0 {
+        0
+    } else {
+        clock.uncrouched.saturating_add(1)
     };
 
     let speed = player.vel.x.abs();
@@ -298,6 +318,41 @@ pub fn pose(player: &Player, poses: &Poses) -> Pose {
         return Pose::Fidget;
     }
     Pose::Upright
+}
+
+/// The pose `player`, a character other than the first, has at the end
+/// of the last step, for a ball with `second`. Engine choices where the
+/// spec doesn't say: a jump is in the air from its press frame,
+/// and only one standing still (a hop too) holds the range after
+/// landing; walking and running on the ground, with a roll's stop, are
+/// moving, and a turn is standing; the crouching range is not given to
+/// the ground action.
+pub fn second_pose(player: &Player, second: &SecondBall) -> SecondPose {
+    let clock = player.pose;
+    let held = matches!(clock.air, Air::Still | Air::Hop)
+        && clock.since_land.is_some_and(|n| n <= second.air_hold);
+    if !player.grounded()
+        || player.jump_age.is_some()
+        || player.takeoff
+        || player.takeoff_wait.is_some()
+        || player.jump_buffer.age() == Some(0)
+        || held
+    {
+        return SecondPose::Moving;
+    }
+    if (player.crouch.held > 0 && player.ground_action.is_none())
+        || (1..=second.crouch_hold).contains(&clock.uncrouched)
+    {
+        return SecondPose::Crouching;
+    }
+    if player.turn.is_some() {
+        return SecondPose::Standing;
+    }
+    if matches!(player.state, State::Walk | State::Run | State::Roll) || player.roll_stop > 0 {
+        SecondPose::Moving
+    } else {
+        SecondPose::Standing
+    }
 }
 
 /// The pose the preset's hurt box reads, by the preset's timings

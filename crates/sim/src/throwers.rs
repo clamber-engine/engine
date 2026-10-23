@@ -306,8 +306,16 @@ pub(crate) fn hurt_ahead(world: &World) -> Option<usize> {
             else {
                 return false;
             };
-            let pose = pose::pose(player, &contact.poses);
-            let reach = contact.reach(pose, player.facing, t.clock.saturating_sub(1));
+            let steps = t.clock.saturating_sub(1);
+            let reach = match contact.second {
+                Some(second) if player.character != 0 => contact.reach_second(
+                    &second,
+                    pose::second_pose(player, &second),
+                    player.facing,
+                    steps,
+                ),
+                _ => contact.reach(pose::pose(player, &contact.poses), player.facing, steps),
+            };
             reach.contains(x - t.pos.x.floor(), y - ceil(t.pos.y))
         })
         .map(|t| t.index)

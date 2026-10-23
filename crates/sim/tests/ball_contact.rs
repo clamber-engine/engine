@@ -6,8 +6,8 @@ use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_pack::Fixed;
 use clamber_sim::{
-    Archetypes, BALL, Behavior, Contact, Event, Facing, InputFrame, Phase, Pose, World,
-    generic_feel, pose, step,
+    Archetypes, BALL, Behavior, Contact, Event, Facing, InputFrame, Phase, Pose, SecondPose, World,
+    generic_feel, pose, second_pose, step,
 };
 
 fn f(v: f64) -> Fixed {
@@ -276,4 +276,98 @@ fn standing_still_fidgets_and_down_crouches() {
     assert_eq!(fidget, expected);
     play.step(&[Action::Down]);
     assert_eq!(play.pose(), Pose::Crouching);
+}
+
+/// A play with the second character under control.
+fn second_play() -> Play {
+    let mut play = Play::new();
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(feel.roster[0].clone());
+    play.world.feel = Arc::new(feel);
+    play.world.player.character = 1;
+    play.step(&[]);
+    play
+}
+
+impl Play {
+    fn second(&self) -> SecondPose {
+        second_pose(&self.world.player, &contact().second.unwrap())
+    }
+}
+
+/// ball-contact.md, "The second character under control": the three
+/// ranges, facing each way.
+#[test]
+fn the_second_character_has_three_ranges() {
+    let c = contact();
+    let second = c.second.unwrap();
+    for (pose, right, left, above) in [
+        (SecondPose::Standing, (-12, 9), (-11, 10), (-3, 35)),
+        (SecondPose::Moving, (-18, 10), (-12, 16), (-1, 35)),
+        (SecondPose::Crouching, (-19, 12), (-14, 17), (-3, 22)),
+    ] {
+        let r = c.reach_second(&second, pose, Facing::Right, 0);
+        let l = c.reach_second(&second, pose, Facing::Left, 0);
+        assert_eq!((r.across, r.above), (right, above), "{pose:?}");
+        assert_eq!(l.across, left, "{pose:?}");
+    }
+}
+
+/// The same ball that hurts the first character at I = 19 doesn't
+/// reach a standing second character, whose range ends at 9.
+#[test]
+fn a_standing_second_character_is_reached_over_a_smaller_area() {
+    for (character, i, hurts) in [(0, 10, true), (1, 10, false), (1, 9, true)] {
+        let mut play = second_play();
+        play.world.player.character = character;
+        play.world.player.pos.x = f(400.25);
+        // A = 20 at the end of the next step.
+        let x = 400.0 - f64::from(i);
+        play.ball(Vec2::new(f(x + 0.5), f(279.0)), 0.5625, 0);
+        play.step(&[]);
+        assert_eq!(play.step(&[]), hurts, "character {character}, I {i}");
+    }
+}
+
+/// ball-contact.md, "Which pose the player has", the second character:
+/// crouching from the first frame Down is held and for 12 frames after,
+/// then standing; walking is the moving range, and a jump standing still
+/// is moving up to L + 16.
+#[test]
+fn the_second_character_poses_follow_the_spec() {
+    let mut play = second_play();
+    assert_eq!(play.second(), SecondPose::Standing);
+    play.step(&[Action::Down]);
+    assert_eq!(play.second(), SecondPose::Crouching);
+    for _ in 0..20 {
+        play.step(&[Action::Down]);
+    }
+    for n in 1..=12 {
+        play.step(&[]);
+        assert_eq!(play.second(), SecondPose::Crouching, "recovery {n}");
+    }
+    play.step(&[]);
+    assert_eq!(play.second(), SecondPose::Standing);
+
+    play.step(&[Action::Right]);
+    assert_eq!(play.second(), SecondPose::Moving);
+    for _ in 0..60 {
+        play.step(&[]);
+    }
+    assert_eq!(play.second(), SecondPose::Standing);
+
+    play.step(&[Action::Jump]);
+    let mut landed = None;
+    for n in 0..120 {
+        if landed.is_none() && play.world.events.contains(&Event::Land) {
+            landed = Some(n);
+        }
+        let expect = match landed {
+            Some(l) if n > l + 16 => SecondPose::Standing,
+            _ => SecondPose::Moving,
+        };
+        assert_eq!(play.second(), expect, "step {n}, landed {landed:?}");
+        play.step(&[Action::Jump]);
+    }
+    assert!(landed.is_some());
 }

@@ -14,7 +14,7 @@ use serde::Deserialize;
 use toml::{Table, Value};
 
 use crate::player::Facing;
-use crate::pose::{Pose, Stance};
+use crate::pose::{Pose, SecondPose, Stance};
 
 const BUILTIN: &str = include_str!("../../../content/base/archetypes.toml");
 const BUILTIN_ORIGIN: &str = "content/base/archetypes.toml";
@@ -823,6 +823,27 @@ pub struct Contact {
     pub turn: [(u32, i32, i32); MAX_TURN_PARTS],
     pub turn_parts: u8,
     pub poses: Poses,
+    /// How it reaches a character other than the first, if differently.
+    pub second: Option<SecondBall>,
+}
+
+/// How a ball reaches a character other than the first under control
+/// (spec/behavior/ball-contact.md, "The second character under
+/// control"): three ranges instead of five, `moving` being walking,
+/// running, rolling and the air, and its own pose timeline. Facing left
+/// they turn around by the contact's `mirror`, and the ball's turn moves
+/// them as it does the others.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SecondBall {
+    pub standing: Offsets,
+    pub moving: Offsets,
+    pub crouching: Offsets,
+    /// The moving range goes on up to this many frames after the
+    /// landing frame of a jump standing still.
+    pub air_hold: u8,
+    /// The crouching range goes on for this many frames after Down is
+    /// let go.
+    pub crouch_hold: u8,
 }
 
 /// When the player has which [`Pose`](crate::Pose), for a ball's or a
@@ -938,6 +959,28 @@ impl Contact {
             Pose::Crouching => self.crouching,
             Pose::Fidget => self.fidget,
         };
+        self.place(base, facing, steps)
+    }
+
+    /// The offsets a ball reaches a character other than the first from,
+    /// when `second` says how, in `pose`.
+    pub fn reach_second(
+        &self,
+        second: &SecondBall,
+        pose: SecondPose,
+        facing: Facing,
+        steps: u32,
+    ) -> Offsets {
+        let base = match pose {
+            SecondPose::Standing => second.standing,
+            SecondPose::Moving => second.moving,
+            SecondPose::Crouching => second.crouching,
+        };
+        self.place(base, facing, steps)
+    }
+
+    /// `base` turned for `facing` and moved by the turn after `steps`.
+    fn place(&self, base: Offsets, facing: Facing, steps: u32) -> Offsets {
         let (from, to) = base.across;
         let across = match facing {
             Facing::Right => (from, to),
@@ -3423,6 +3466,7 @@ fn parse_contact(value: &Value, path: &str) -> Result<Contact, String> {
         "land_hold",
         "roll_after",
         "fidget_time",
+        "second",
     ];
     if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
         return Err(format!("{path}.{key}: no such value"));
@@ -3496,6 +3540,56 @@ fn parse_contact(value: &Value, path: &str) -> Result<Contact, String> {
         turn,
         turn_parts: parts.len() as u8,
         poses: parse_poses(table, path)?,
+        second: match table.get("second") {
+            None => None,
+            Some(v) => Some(parse_second_ball(v, &format!("{path}.second"))?),
+        },
+    })
+}
+
+/// Reads a ball's [`SecondBall`] table. Errors start with `path`.
+fn parse_second_ball(value: &Value, path: &str) -> Result<SecondBall, String> {
+    let Value::Table(table) = value else {
+        return Err(format!("{path}: expected a table"));
+    };
+    const KEYS: &[&str] = &["standing", "moving", "crouching", "air_hold", "crouch_hold"];
+    if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
+        return Err(format!("{path}.{key}: no such value"));
+    }
+    let offsets = |key: &str| -> Result<Offsets, String> {
+        let at = format!("{path}.{key}");
+        let Some(Value::Array(items)) = table.get(key) else {
+            return Err(format!("{at}: expected a list of 4"));
+        };
+        let n = items
+            .iter()
+            .enumerate()
+            .map(|(i, v)| match v {
+                Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+                _ => Err(format!("{at}[{i}]: expected a whole number")),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if n.len() != 4 {
+            return Err(format!("{at}: expected a list of 4"));
+        }
+        if n[0] > n[1] || n[2] > n[3] {
+            return Err(format!("{at}: a range ends before it starts"));
+        }
+        Ok(Offsets {
+            across: (n[0], n[1]),
+            above: (n[2], n[3]),
+        })
+    };
+    let count = |key: &str| match table.get(key) {
+        Some(Value::Integer(n)) if (0..=254).contains(n) => Ok(*n as u8),
+        _ => Err(format!("{path}.{key}: expected a whole number, 0 to 254")),
+    };
+    Ok(SecondBall {
+        standing: offsets("standing")?,
+        moving: offsets("moving")?,
+        crouching: offsets("crouching")?,
+        air_hold: count("air_hold")?,
+        crouch_hold: count("crouch_hold")?,
     })
 }
 

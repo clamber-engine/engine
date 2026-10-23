@@ -240,8 +240,15 @@
 #   on the frame. Its steps count from 0 at its start, and one more on
 #   each frame it moves without bouncing or stopping passing through
 #   floors. A ball hurts on no frame on which it bounced or stopped
-#   passing through floors. Nothing changes the ball. Without
-#   `contact`, it doesn't touch the player.
+#   passing through floors. With a `contact.second` table
+#   (`standing`, `moving`, `crouching`, as above, and `air_hold`,
+#   `crouch_hold`), a character other than the first is reached by those
+#   ranges instead: `moving` is walking, running, rolling and the air
+#   from a jump's press frame, up to `air_hold` frames after landing
+#   from a jump standing still; `crouching` is down held on the ground
+#   and `crouch_hold` frames after; `standing` the rest, turning
+#   included. Nothing changes the ball. Without `contact`, it doesn't
+#   touch the player.
 # - `stinger`: an enemy that sways around its start, horizontally and
 #   vertically, passing through floors and walls. Its turning points are
 #   `reach = [left, right, up, down]` whole px (0 to 255) from its start.
@@ -808,6 +815,19 @@ upright_jump = 5
 land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }
 roll_after = [3, 9]
 fidget_time = [239, 180, 457]
+
+# The second character under control (ball-contact.md, "The second
+# character under control"): three ranges, the turn the same; the
+# moving one is walking, running, rolling and the air, from a jump's
+# first frame to 16 frames after landing, and the crouching one goes on
+# for 12 frames after Down. The spec gives the low end of `above` in
+# the air only; on the ground the engine uses upright's.
+[archetypes.ball.contact.second]
+standing = [-12, 9, -3, 35]
+moving = [-18, 10, -1, 35]
+crouching = [-19, 12, -3, 22]
+air_hold = 16
+crouch_hold = 12
 
 # title-1's (spec/behavior/stinger.md). The spec doesn't say how big a
 # stinger is; the size is Clamber's own and only draws it. It doesn't say
