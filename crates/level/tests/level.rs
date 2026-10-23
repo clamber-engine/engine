@@ -710,10 +710,8 @@ fn entities_can_appear_by_sections() {
 
 #[test]
 fn music_may_have_a_silence_before_it_starts() {
-    let src = format!(
-        "format = 1\nsize = [100, 100]\nstart = [10, 10]\n[music]\nfile = \"a.ogg\"\nsilence = 70\n"
-    );
-    let l = Level::from_toml_str(&src, "test").unwrap();
+    let src = "format = 1\nsize = [100, 100]\nstart = [10, 10]\n[music]\nfile = \"a.ogg\"\nsilence = 70\n";
+    let l = Level::from_toml_str(src, "test").unwrap();
     assert_eq!(l.music.as_ref().unwrap().silence, Some(70));
     let back = Level::from_toml_str(&l.to_toml_string(), "saved").unwrap();
     assert_eq!(back.music, l.music);
