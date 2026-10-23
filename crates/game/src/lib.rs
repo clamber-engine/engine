@@ -77,6 +77,7 @@ mod prefs;
 mod prompts;
 pub mod replay;
 pub mod report;
+mod ride_pictures;
 mod session;
 mod sign_pictures;
 mod sling_pictures;

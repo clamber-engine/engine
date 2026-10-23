@@ -51,6 +51,11 @@ pub const ANIMAL: [&str; 22] = [
     "animal-22",
 ];
 
+/// The animal's pictures while it stands, ridden or not.
+pub const STANDING: [&str; 6] = [
+    "animal-1", "animal-2", "animal-3", "animal-4", "animal-5", "animal-6",
+];
+
 pub const MOUNTING: [&str; 5] = [
     "mounting-1",
     "mounting-2",

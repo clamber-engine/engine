@@ -40,6 +40,7 @@ use crate::hutch_pictures;
 use crate::item_pictures;
 use crate::letter_pictures;
 use crate::pictures::{self, PictureClock};
+use crate::ride_pictures;
 use crate::sign_pictures;
 use crate::sling_pictures;
 use crate::sparkles::Sparkles;
@@ -177,6 +178,13 @@ impl Cast {
             .sling
             .is_some_and(|s| (1..=u16::from(s.values.hold)).contains(&s.since))
         {
+            return;
+        }
+        if let Some(shown) = pose.ride.shown()
+            && self.has_group(hutch_pictures::SHEET, &ride_pictures::RIDER)
+            && let Some(sprite) = self.ride_sprite(shown.rider, shown, (x, y))
+        {
+            self.bank.draw(canvas, &sprite);
             return;
         }
         if let Some(sprite) = self.picture(player.character, pose, x, y) {
@@ -900,6 +908,27 @@ impl Cast {
         })
     }
 
+    /// Riding picture `label` of the hutch sheet, mirrored as `shown` says,
+    /// the rider's `d` px lower. Its origin is a px left of the position.
+    fn ride_sprite(
+        &self,
+        label: &str,
+        shown: ride_pictures::Shown,
+        (x, y): (f32, f32),
+    ) -> Option<Sprite> {
+        let &id = self.kinds.get(hutch_pictures::SHEET)?;
+        let frame = *self.bank.sheet(id).animation(label)?.frames.first()?;
+        let d = if label.starts_with("rider-") {
+            shown.d
+        } else {
+            0
+        };
+        Some(Sprite {
+            flip_x: shown.flip,
+            ..Sprite::new(id, frame, x - 1.0, y + d as f32)
+        })
+    }
+
     /// What an animal crate's own pictures say `thing` shows: `None` if
     /// the engine's art does, `Some(None)` if nothing (the crate is
     /// drawn apart, by [`Cast::draw_crate`]), or its animal's picture
@@ -917,6 +946,14 @@ impl Cast {
                 let flip = clock.flip;
                 self.group_sprite(sheet, &hutch_pictures::MOUNTING, entry, flip, at)
             }
+            Phase::Ridden => pose
+                .ridden
+                .filter(|_| {
+                    ride_pictures::ANIMAL_GROUPS
+                        .iter()
+                        .all(|group| self.has_group(sheet, group))
+                })
+                .and_then(|shown| self.ride_sprite(shown.animal, shown, at)),
             Phase::Opened(_) if clock.frames >= Some(hutch_pictures::ANIMAL_FROM) => {
                 let entry = hutch_pictures::waiting(clock.a);
                 self.group_sprite(sheet, &hutch_pictures::ANIMAL, entry, false, at)
@@ -1074,6 +1111,10 @@ pub struct Pose {
     /// A launch barrel's frames since it caught the player
     /// ([`crate::sling_pictures`]).
     pub sling: Option<u32>,
+    /// The player's riding pictures ([`crate::ride_pictures`]).
+    pub ride: ride_pictures::Clock,
+    /// What a ridden animal shows, from its rider's clock.
+    pub ridden: Option<ride_pictures::Shown>,
 }
 
 /// Every actor's pose: the player's, the other character's, the lost
@@ -1133,6 +1174,8 @@ impl Poses {
         let landing = cast.playing(id, &self.player, LAND);
         let animation = cast.animation(id, Some(player_animation(world, landing)));
         cast.advance(&mut self.player, id, animation);
+        self.player.ride.update(&world.player);
+        let ride_shown = self.player.ride.shown();
         let animation = cast.animation(id, Some(other_animation(world)));
         cast.advance(&mut self.other, id, animation);
         let animation = cast.animation(id, Some(leaving_animation(world)));
@@ -1143,6 +1186,7 @@ impl Poses {
             let id = cast.kinds.get(&thing.kind).copied();
             let animation = cast.animation(id, thing_animation(world, thing));
             cast.advance(pose, id, animation);
+            pose.ridden = ride_shown.filter(|_| thing.phase == Phase::Ridden);
             match walker_size(world, thing) {
                 Some(size) => pose.walker.update(thing, size),
                 None => pose.walker = WalkerClock::default(),
@@ -2557,6 +2601,43 @@ mod tests {
         assert_eq!(canvas.get(1, 0), Some(B));
         let no_crate = cast(&[animal, mounting]);
         assert!(!no_crate.draw_crate(&mut Canvas::new(4, 1), &pose(None), (2.0, 0.0)));
+    }
+
+    #[test]
+    fn a_ridden_animal_shows_its_riding_pictures_by_group() {
+        let mut thing = crate_thing();
+        thing.phase = Phase::Ridden;
+        let shown = ride_pictures::Shown {
+            animal: "ride-walk-1",
+            rider: "rider-14",
+            d: 1,
+            flip: false,
+        };
+        let pose = Pose {
+            ridden: Some(shown),
+            ..Pose::default()
+        };
+        let cast = |groups: &[&[&str]]| {
+            let labels: Vec<&str> = groups.iter().flat_map(|g| g.iter().copied()).collect();
+            Cast::new(vec![
+                ("hutch".to_string(), sheet()),
+                (
+                    hutch_pictures::SHEET.to_string(),
+                    labelled_sheet(&labels, 4),
+                ),
+            ])
+        };
+        let none = Color::default();
+        let draw = |cast: &Cast| {
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, &thing, &pose, 2.0, 0.0);
+            [0, 1, 2, 3].map(|x| canvas.get(x, 0).unwrap())
+        };
+        let mut groups: Vec<&[&str]> = ride_pictures::ANIMAL_GROUPS.to_vec();
+        assert_eq!(draw(&cast(&groups)), [none, B, none, none]);
+        // Without a group of them the engine's art stays.
+        groups.pop();
+        assert_eq!(draw(&cast(&groups)), [none, none, R, none]);
     }
 
     #[test]

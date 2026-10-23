@@ -435,6 +435,7 @@ mod tests {
             "bunches",
             "thrown-objects",
             "animal-crate",
+            "riding",
             "walker",
             "thrower",
             "critter",
