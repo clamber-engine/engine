@@ -4015,6 +4015,35 @@ mod tests {
     }
 
     #[test]
+    fn the_ground_action_s_pictures_go_on_past_a_platform_s_end() {
+        // player-frames.md, "The ground action": past a platform's end
+        // the action goes on in the air with the list unchanged.
+        const LEDGE: &str = r#"
+            format = 1
+            size = [2048, 1200]
+            start = [64, 400]
+
+            [[collision]]
+            shape = "rect"
+            rect = [0, 400, 72, 80]
+        "#;
+        let keys: Vec<Vec<Action>> = (0..100)
+            .map(|f| match f {
+                20 => vec![Action::Down, Action::Action, Action::Right],
+                21..=80 => vec![Action::Right],
+                _ => vec![],
+            })
+            .collect();
+        let run = run(world(LEDGE, 0), &keys);
+        assert!(run.grounded[20..79].iter().any(|g| !g), "left the floor");
+        for n in 2..=30 {
+            let label = labels(0, Set::Act)[n - 1];
+            assert_eq!(run.shown[2 * n + 17], Some(label), "act-{n}");
+            assert_eq!(run.shown[2 * n + 18], Some(label), "act-{n}");
+        }
+    }
+
+    #[test]
     fn a_jump_press_ends_the_ground_action() {
         let mut keys = action_press(120);
         keys[30] = vec![Action::Jump];
