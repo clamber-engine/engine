@@ -33,6 +33,39 @@ const WATER: Color = rgb(0x3a, 0x7a, 0xd8);
 const ENTITY: Color = rgb(0xd0, 0x6a, 0xd8);
 const EYE: Color = rgb(0x10, 0x10, 0x18);
 const BLACK: Color = rgb(0, 0, 0);
+
+/// The kinds always drawn behind the ground layer's raised tiles
+/// (graphics.md, "Walkers and objects and raised tiles"). A `sign` is too,
+/// but it's also drawn over the characters, which needs a mask: not done.
+const BEHIND_RAISED: [&str; 1] = ["tyre"];
+/// The kinds always drawn in front of them, also when the level ends.
+const IN_FRONT_OF_RAISED: [&str; 11] = [
+    "small-walker",
+    "medium-walker",
+    "large-walker",
+    "thrower",
+    "bunch",
+    "barrel",
+    "holder",
+    "animal-crate",
+    "figure",
+    "restart-barrel",
+    "down-launch-barrel",
+];
+
+/// Which things [`Game::draw_things`] draws, and where in the order.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pass {
+    /// Kinds behind the raised tiles.
+    Behind,
+    /// Everything but scenery, under the characters.
+    Things,
+    /// Scenery, which is drawn over the characters (signs.md).
+    Scenery,
+    /// Kinds in front of the raised tiles when those are drawn over the
+    /// characters.
+    InFront,
+}
 const PIECE: Color = rgb(0xb5, 0x79, 0x3f);
 const SMOKE: Color = rgb(0xb8, 0xb8, 0xc0);
 const FLASH: Color = rgb(0xff, 0xf2, 0xb0);
@@ -383,11 +416,13 @@ impl Game {
         };
         let sprites = shows(Part::Sprites);
         // Raised layers are behind the characters, except in the walk-outs.
-        layers(canvas, &|l| match l.depth {
-            Depth::Back => true,
-            Depth::Raised => !behind,
-            Depth::Front => false,
-        });
+        layers(canvas, &|l| l.depth == Depth::Back);
+        // The things of some kinds are always behind the raised layers
+        // (graphics.md, "Walkers and objects and raised tiles").
+        if sprites {
+            self.draw_things(canvas, &to_screen, alpha, Pass::Behind);
+        }
+        layers(canvas, &|l| l.depth == Depth::Raised && !behind);
         if self.debug && only.is_none() {
             for region in &level.regions {
                 let points = match &region.area {
@@ -430,15 +465,20 @@ impl Game {
 
         if sprites {
             self.draw_crates(canvas, &to_screen, false);
-            self.draw_things(canvas, &to_screen, alpha, false);
+            self.draw_things(canvas, &to_screen, alpha, Pass::Things);
             self.draw_crates(canvas, &to_screen, true);
             self.draw_barrel_effects(canvas, &to_screen);
             self.draw_kegs(canvas, &to_screen);
             self.draw_sparkles(canvas, &to_screen);
             self.draw_characters(canvas, alpha, origin);
-            self.draw_things(canvas, &to_screen, alpha, true);
+            self.draw_things(canvas, &to_screen, alpha, Pass::Scenery);
         }
         layers(canvas, &|l| behind && l.depth == Depth::Raised);
+        // Only the characters and the animal go behind them when the
+        // level ends; the other kinds stay in front.
+        if sprites && behind {
+            self.draw_things(canvas, &to_screen, alpha, Pass::InFront);
+        }
         layers(canvas, &|l| l.depth == Depth::Front);
         if shows(Part::Hud) {
             let clock = self.poses.clock;
@@ -451,8 +491,7 @@ impl Game {
         }
     }
 
-    /// The things in the level: scenery, which is drawn over the
-    /// characters (signs.md), or everything else. Those in the level are
+    /// The things in the level that `pass` draws. Those in the level are
     /// drawn `alpha` of the way through the last step ([`thing_at`]).
     ///
     /// [`thing_at`]: Game::thing_at
@@ -461,8 +500,9 @@ impl Game {
         canvas: &mut dyn Surface,
         to_screen: &dyn Fn((f64, f64)) -> (f64, f64),
         alpha: f64,
-        scenery: bool,
+        pass: Pass,
     ) {
+        let behind = self.world.behind_scenery();
         let pose = |thing: &Thing| self.poses.things.get(thing.index).copied();
         let in_level = self.world.things.iter().filter(|t| t.active);
         let in_level = in_level.map(|t| (t, self.thing_at(t, alpha)));
@@ -480,7 +520,16 @@ impl Game {
                 .archetype
                 .is_some_and(|a| matches!(a.behavior, Behavior::Scenery { .. }));
             let patch = hidden_pictures::shown(thing).is_some();
-            if is_scenery != scenery
+            let wanted = match pass {
+                Pass::Behind => BEHIND_RAISED.contains(&thing.kind.as_str()),
+                Pass::InFront => behind && IN_FRONT_OF_RAISED.contains(&thing.kind.as_str()),
+                Pass::Things | Pass::Scenery => {
+                    let hidden_by_raised = BEHIND_RAISED.contains(&thing.kind.as_str());
+                    let later = behind && IN_FRONT_OF_RAISED.contains(&thing.kind.as_str());
+                    (is_scenery == (pass == Pass::Scenery)) && !hidden_by_raised && !later
+                }
+            };
+            if !wanted
                 || ([END, EXIT, WALL_EXIT, DIM, HIDDEN].contains(&thing.kind.as_str())
                     && !patch
                     && !self.debug)
@@ -1001,6 +1050,50 @@ mod tests {
         assert_eq!(at(400.0, 250.0), Some(rgb(1, 2, 3)));
         assert_eq!(at(500.0, 290.0), Some(state_color(State::Idle)));
         assert_eq!(at(545.0, 255.0), Some(rgb(4, 5, 6)));
+    }
+
+    #[test]
+    fn draws_each_kind_in_its_order_against_the_raised_tiles() {
+        let src = format!(
+            r#"{LEVEL}
+            [[entities]]
+            type = "tyre"
+            at = [605, 290]
+
+            [[entities]]
+            type = "barrel"
+            at = [615, 290]
+
+            [[layers]]
+            name = "rock"
+            depth = "raised"
+            image = "rock.png"
+            offset = [600, 280]
+            "#
+        );
+        let level = Level::from_toml_str(&src, "test").unwrap();
+        let mut rock = clamber_sprite::RgbaImage::new(20, 20);
+        rock.data.fill([7, 8, 9, 255]);
+        let mut art = LayerArt::default();
+        art.insert("rock.png", rock, false);
+        let world = World::new(Arc::new(level), Arc::new(generic_feel("default").unwrap()));
+        let mut game = Game::new(world).with_art(art);
+        game.debug = false;
+        game.restart();
+        let pixel = |game: &Game, x: f64, y: f64| {
+            let mut canvas = Game::canvas();
+            game.draw(&mut canvas, 1.0);
+            let (left, top) = game.camera.top_left(1.0);
+            canvas.get((x - left) as i32, (y - top) as i32)
+        };
+        let rock = Some(rgb(7, 8, 9));
+        assert_eq!(pixel(&game, 605.0, 290.0), rock);
+        assert_eq!(pixel(&game, 615.0, 290.0), Some(ENTITY));
+
+        // At a level's end the order changes for the characters only.
+        game.world.ending = Some(clamber_sim::Ending::default());
+        assert_eq!(pixel(&game, 605.0, 290.0), rock);
+        assert_eq!(pixel(&game, 615.0, 290.0), Some(ENTITY));
     }
 
     #[test]
