@@ -842,4 +842,51 @@ pub(super) const SHEETS: &[ObjectSheet] = &[
             ),
         ],
     },
+    ObjectSheet {
+        name: "item-pictures",
+        // The spec gives the one-life items' palette; the two- and three-life
+        // items share these pictures and get the same colours until it says more.
+        pictures: &[
+            (
+                "item-1",
+                "00b714faaa104d329f86bfd9087e74a4019897f24e10646b2fe0a1464cfe86bc",
+                OneLife,
+            ),
+            (
+                "item-2",
+                "5ddab46e4042ada86b660a6627cafe51e37d048f28a6af29320e6ac9515c455a",
+                OneLife,
+            ),
+            (
+                "item-3",
+                "27ab0cf985b07f3ac37a962a4fda48bf213494e9ddaea6baec4a4548f920c19a",
+                OneLife,
+            ),
+            (
+                "item-4",
+                "cc69a39dd4ba8de653bacbd6fb6141967e45eb50bccc004aaba2339faf488ca9",
+                OneLife,
+            ),
+            (
+                "item-5",
+                "1c1ba6799da463bc9415dc2303b04f0de999bde7e66cd5462fc16003264ebe0d",
+                OneLife,
+            ),
+            (
+                "item-6",
+                "01740532d6f866ba10a48706e365f2e4ec6dc18bc7a465283a3837930b318aa0",
+                OneLife,
+            ),
+            (
+                "item-7",
+                "f14a2d4b0c0d4e4247fde938f02b1b11e5bdbdd39af39b3cad57d8253ac6f84d",
+                OneLife,
+            ),
+            (
+                "item-8",
+                "2ab2dd8b5bcb4486b1af9e8296d19c797728ee1f4c5edaa79fe4a1434096c764",
+                OneLife,
+            ),
+        ],
+    },
 ];

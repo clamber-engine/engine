@@ -2,7 +2,8 @@
 //! objects' palettes"): the pictures the spec names by hash for the
 //! letters, single collectibles, bunches, thrown objects with their
 //! flashes and pieces, the animal crate with its smoke and animal, the
-//! walkers, the thrower and its balls, the critters and the stingers,
+//! walkers, the thrower and its balls, the critters, the stingers and the
+//! extra-life items,
 //! each coloured with the palette the spec gives.
 //!
 //! Pictures are found as the characters' are ([`find_pictures`]); a
@@ -10,7 +11,7 @@
 //! art for what the sheet lacks. A sheet's pictures can use several
 //! palettes (the thrown objects' flashes use the shared one), so a
 //! sheet's image has all of them, the n-th at colour numbers 16n + 1 to
-//! 16n + 15. The tyres, extra-life items, signs and launch barrels have
+//! 16n + 15. The tyres, signs and launch barrels have
 //! no palette in the spec yet, so [`PENDING_SHEETS`] lists their sheets
 //! and the import report says they are not converted.
 //!
@@ -42,6 +43,7 @@ pub enum ObjectPalette {
     Thrower,
     Critter,
     Stinger,
+    OneLife,
     /// The first character's leading palette.
     FirstLeading,
 }
@@ -66,6 +68,7 @@ impl ObjectPalette {
             ObjectPalette::Thrower => Data::ThrowerPalette,
             ObjectPalette::Critter => Data::CritterPalette,
             ObjectPalette::Stinger => Data::StingerPalette,
+            ObjectPalette::OneLife => Data::OneLifePalette,
             ObjectPalette::FirstLeading => Data::FirstLeadingPalette,
         }
     }
@@ -74,7 +77,6 @@ impl ObjectPalette {
 /// The sheets the game reads for objects whose pictures the importer
 /// can't write yet, with what they hold.
 pub const PENDING_SHEETS: &[(&str, &str)] = &[
-    ("item-pictures", "the extra-life items"),
     ("sign-pictures", "the signs"),
     ("hidden-patch", "the hidden barrels' patch"),
     ("barrel-pictures", "the launch barrels"),
@@ -138,6 +140,7 @@ impl ObjectDecoder {
             ObjectPalette::Thrower,
             ObjectPalette::Critter,
             ObjectPalette::Stinger,
+            ObjectPalette::OneLife,
             ObjectPalette::FirstLeading,
         ];
         let palettes = all
@@ -436,6 +439,7 @@ mod tests {
             "thrower",
             "critter",
             "stinger",
+            "extra-lives",
         ];
         let mut spec = Vec::new();
         for doc in docs {
@@ -468,7 +472,7 @@ mod tests {
         }
         // Every written sheet is in the table, once.
         let names: Vec<&str> = written_sheets().collect();
-        assert_eq!(names.len(), 12);
+        assert_eq!(names.len(), 13);
     }
 
     #[test]
