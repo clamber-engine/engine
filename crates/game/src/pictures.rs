@@ -999,7 +999,7 @@ struct Landed {
     n: u8,
     /// On the floor it took off from, or lower.
     not_above: bool,
-    /// After a jump off a rope: M is L.
+    /// After a jump off a rope that doesn't run from L: M is L.
     rope: bool,
 }
 
@@ -1168,7 +1168,8 @@ impl PictureClock {
                     return Some(Landed {
                         n: 0,
                         not_above: true,
-                        rope: true,
+                        // Running from L, the running pictures show.
+                        rope: !matches!(player.gait, Gait::Running(_)),
                     });
                 }
                 let land = age.saturating_add(1);
@@ -4501,6 +4502,34 @@ mod tests {
                 ("stand-2", 3),
             ],
         );
+    }
+
+    #[test]
+    fn landing_after_jumping_off_a_rope_with_a_direction_held_on_l() {
+        // player-frames.md, "After jumping off, with Left or Right held
+        // on L": running from L, `run-1` on L, whether Action is held or
+        // not, then standing once the run has slowed. At a low speed on
+        // L: `run-1` on L to L + 2, `stand-1` from L + 3.
+        for side in [Action::Left, Action::Right] {
+            for action in [false, true] {
+                let (mut keys, _) = rope_keys(
+                    |k| match k {
+                        2 => vec![Action::Jump, Action::Right],
+                        _ => vec![],
+                    },
+                    120,
+                );
+                let level = low_rope_level(330);
+                let l = run(world(&level, 0), &keys).frames(Event::Land)[0];
+                keys[l] = vec![side];
+                if action {
+                    keys[l].push(Action::Action);
+                }
+                let r = run(world(&level, 0), &keys);
+                assert_eq!(r.frames(Event::Land)[0], l);
+                r.check(l, &[("run-1", 3), ("stand-1", 3), ("stand-2", 3)]);
+            }
+        }
     }
 
     #[test]

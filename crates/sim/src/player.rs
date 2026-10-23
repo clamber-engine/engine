@@ -2285,7 +2285,10 @@ impl Player {
                         fixed: true,
                         bounce: false,
                     })
-                } else if switch == 0 && held(Action::Action) && held_dir != 0 {
+                } else if (switch == 0 && held(Action::Action) || self.rope_run) && held_dir != 0 {
+                    // After a jump off a rope it runs from L with a
+                    // direction held, Action or not (`player-frames.md`,
+                    // "Landing after a rope").
                     Gait::Running(Stride::START)
                 } else {
                     Gait::Landing(Landing {
