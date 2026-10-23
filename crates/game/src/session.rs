@@ -260,6 +260,11 @@ pub struct Session {
     /// Logic frames stepped since the session began, which times the
     /// silences between songs.
     pub ticks: u64,
+    /// Logic frames after play came into another area that the song
+    /// playing is cut, before the silence that leads to the new area's
+    /// own (`music.md`, "When the cut comes"). Only coming back to an
+    /// area was measured; entering one cuts at once.
+    pub song_cut: u32,
     /// The mouse pointer's place in the view, once it has moved over it.
     pub pointer: Option<(f32, f32)>,
     /// Presses the mouse adds to the next menu step.
@@ -296,6 +301,7 @@ impl Session {
             device: Device::Keyboard,
             title_frames: 0,
             ticks: 0,
+            song_cut: 0,
             pointer: None,
             clicks: Actions::NONE,
             dragging: None,
@@ -833,6 +839,7 @@ impl Session {
     fn play_level(&mut self, path: &Path, pack: Option<Installed>) -> Result<(), String> {
         self.game = self.load(path, pack.as_ref())?;
         self.level_path = path.to_path_buf();
+        self.song_cut = 0;
         self.left.clear();
         self.map = match pack.as_ref().map(|p| MapPlay::load(&p.dir)) {
             Some(Ok(map)) => map,
@@ -865,6 +872,7 @@ impl Session {
                 }
                 self.game = game;
                 self.level_path = path;
+                self.song_cut = 0;
                 self.left.clear();
                 self.screen = Screen::Playing;
             }
@@ -991,6 +999,9 @@ impl Session {
             self.left.push((self.level_path.clone(), from));
         }
         self.level_path = path;
+        // Coming back: the picture is black two frames before the first
+        // frame here and the song is cut 7 after it (`music.md`).
+        self.song_cut = if back.is_some() { 5 } else { 0 };
         Ok(())
     }
 

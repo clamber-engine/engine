@@ -176,6 +176,9 @@ pub struct Audio {
     /// came into the level with the other's music cut and a silence
     /// before its own.
     silent_until: Option<u64>,
+    /// The session's tick on which the song still playing is cut, when
+    /// the cut comes after play came into the level.
+    cut_at: Option<u64>,
     /// The volumes last set on the mixer, from the prefs.
     volume: Option<Volume>,
 }
@@ -230,6 +233,7 @@ impl Audio {
             list: MusicList::default(),
             level_seen: None,
             silent_until: None,
+            cut_at: None,
             volume: None,
         }
     }
@@ -287,8 +291,13 @@ impl Audio {
                 // not crossfaded to (`music.md`, "A change of song").
                 // Counted from the step that brought play here.
                 if let Some(n) = music.as_ref().and_then(|m| m.silence) {
-                    self.silent_until = Some(session.ticks + u64::from(n));
-                    self.handle.stop_music(0);
+                    let cut = u64::from(session.song_cut);
+                    self.silent_until = Some(session.ticks + cut + u64::from(n));
+                    if cut == 0 {
+                        self.handle.stop_music(0);
+                    } else {
+                        self.cut_at = Some(session.ticks + cut);
+                    }
                 }
             }
             self.level_seen = Some((dir.to_path_buf(), music.clone()));
@@ -306,6 +315,16 @@ impl Audio {
             if let Some(sound) = self.effects.get(cue) {
                 self.handle.play(sound, Play::default());
             }
+        }
+
+        // The song that was playing goes on until its cut.
+        match self.cut_at {
+            Some(at) if session.ticks < at => return,
+            Some(_) => {
+                self.cut_at = None;
+                self.handle.stop_music(0);
+            }
+            None => {}
         }
 
         let playing = self.handle.music().is_some();
@@ -679,6 +698,51 @@ mod tests {
         s.step(&press(Action::Left));
         audio.update(&s, |w| panic!("{w}"));
         assert!(last(&mut mixer, 800) > 0.2, "the second level's, after 3");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_song_playing_goes_on_until_its_cut_after_coming_back() {
+        let dir = folder("cut");
+        std::fs::write(dir.join("first.wav"), level_wav(RATE as usize, -16384)).unwrap();
+        std::fs::write(dir.join("second.wav"), level_wav(RATE as usize, 16384)).unwrap();
+        let (handle, mut mixer) = mixer(8);
+        let mut audio = Audio::new(handle, RATE, &SoundList::default(), |w| panic!("{w}"));
+        audio.set_title_music(&MusicList::default());
+        let track = Track {
+            file: "first.wav".into(),
+            loop_start: None,
+            loop_length: None,
+            silence: None,
+        };
+        audio.set_music(Some(&track), &dir, &MusicList::default());
+        let mut s = session();
+        s.level_path = dir.join("first.level");
+        s.step(&press(Action::Jump));
+        audio.update(&s, |w| panic!("{w}"));
+        assert!(last(&mut mixer, 800) < -0.2, "the first level's music");
+
+        let src = format!("{LEVEL}\n[music]\nfile = \"second.wav\"\nsilence = 2\n");
+        let level = Level::from_toml_str(&src, "test").unwrap();
+        s.game = Game::new(World::new(Arc::new(level), s.game.world.feel.clone()));
+        s.level_path = dir.join("second.level");
+        s.song_cut = 2;
+        audio.update(&s, |w| panic!("{w}"));
+        assert!(last(&mut mixer, 800) < -0.2, "still playing");
+        s.step(&press(Action::Left));
+        audio.update(&s, |w| panic!("{w}"));
+        assert!(last(&mut mixer, 800) < -0.2, "still playing");
+        s.step(&press(Action::Left));
+        audio.update(&s, |w| panic!("{w}"));
+        assert_eq!(last(&mut mixer, 10), 0.0, "cut");
+        for _ in 0..1 {
+            s.step(&press(Action::Left));
+            audio.update(&s, |w| panic!("{w}"));
+            assert_eq!(last(&mut mixer, 10), 0.0, "silent");
+        }
+        s.step(&press(Action::Left));
+        audio.update(&s, |w| panic!("{w}"));
+        assert!(last(&mut mixer, 800) > 0.2, "the second level's, 2 + 2 on");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
