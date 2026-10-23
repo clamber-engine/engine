@@ -1260,6 +1260,24 @@ bounce = [-17, 27, -7, 39]
 # the ground only.
 carry = [-14, 16, -8, 40]
 
+# The second character leading (bunches.md, "Second character leading"
+# and "Landing, second character leading"): its jumps have one row, the
+# walking one, held for the 17 frames of its landing. The spec measured
+# the landing only onto the floor the jump started from; other landings
+# hold it the same here. Running with Action released and falling
+# without a jump aren't covered either and take the nearest row.
+[[archetypes.cluster.reach]]
+stand = [-12, 11, -10, 38]
+walk = [-18, 12, -6, 38]
+crouch = [-19, 14, -9, 25]
+roll = [-18, 12, -6, 38]
+jump = [-18, 12, -6, 38]
+air = [-18, 12, -6, 38]
+air_below = []
+jump_early = 0
+land_hold = 17
+land_ran = 17
+
 # A letter of the level's word (spec/behavior/letters.md): entities set
 # which with `letter`, from 1 to the preset's `letter_count`. It's
 # taken from a bunch's offsets, with the ranges letters.md measured
@@ -1297,6 +1315,24 @@ land_ran = 1
 land_drop = [64, 1]
 roll_after = [0, 9]
 upright_fall = true
+
+# The second character leading (bunches.md, "Second character leading"
+# and "Landing, second character leading"): its jumps have one row, the
+# walking one, held for the 17 frames of its landing. The spec measured
+# the landing only onto the floor the jump started from; other landings
+# hold it the same here. Running with Action released and falling
+# without a jump aren't covered either and take the nearest row.
+[[archetypes.letter.reach]]
+stand = [-12, 11, -10, 38]
+walk = [-18, 12, -6, 38]
+crouch = [-19, 14, -9, 25]
+roll = [-18, 12, -6, 38]
+jump = [-18, 12, -6, 38]
+air = [-18, 12, -6, 38]
+air_below = []
+jump_early = 0
+land_hold = 17
+land_ran = 17
 
 # A golden figure (spec/behavior/figure.md): taken, it adds one to the
 # relic count (the spec's figure count) and nothing to the collectible
