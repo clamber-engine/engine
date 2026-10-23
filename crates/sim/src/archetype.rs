@@ -621,6 +621,14 @@ pub struct Hutch {
     pub ride: Ride,
 }
 
+/// The target speeds of the second character as the player riding
+/// ([`Ride::second`]; spec/behavior/riding.md, "The second character").
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SecondRide {
+    pub speed: Fixed,
+    pub run_speed: Fixed,
+}
+
 /// How a player rides an animal (spec/behavior/riding.md; see
 /// [`ride`](crate::ride)). Speeds are px per frame, times whole frames.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -703,6 +711,9 @@ pub struct Ride {
     pub drop_second: Fixed,
     pub drop_gravity: Fixed,
     pub drop_land: Fixed,
+    /// The target speeds with the second character as the player (left
+    /// out: the first character's).
+    pub second: Option<SecondRide>,
 }
 
 /// How a walker meets a player riding an animal
@@ -3178,7 +3189,7 @@ fn parse_hutch(table: &Table, path: &str) -> Result<Hutch, String> {
 
 /// Reads how an animal is ridden. Errors start with `path`.
 fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
-    const KEYS: [&str; 37] = [
+    const KEYS: [&str; 38] = [
         "speed",
         "run_speed",
         "response",
@@ -3216,6 +3227,7 @@ fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
         "drop_second",
         "drop_gravity",
         "drop_land",
+        "second",
     ];
     let Value::Table(table) = value else {
         return Err(format!("{path}: expected a table"));
@@ -3281,6 +3293,27 @@ fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
         drop_second: number("drop_second")?,
         drop_gravity: number("drop_gravity")?,
         drop_land: number("drop_land")?,
+        second: match table.get("second") {
+            None => None,
+            Some(Value::Table(t)) => {
+                let at = format!("{path}.second");
+                if let Some(key) = t
+                    .keys()
+                    .find(|k| !["speed", "run_speed"].contains(&k.as_str()))
+                {
+                    return Err(format!("{at}.{key}: no such value"));
+                }
+                let read = |key: &str| {
+                    let v = t.get(key).ok_or_else(|| format!("{at}: missing `{key}`"))?;
+                    clamber_pack::read_number(v, "", &format!("{at}.{key}")).map_err(|e| e.message)
+                };
+                Some(SecondRide {
+                    speed: read("speed")?,
+                    run_speed: read("run_speed")?,
+                })
+            }
+            Some(_) => return Err(format!("{path}.second: expected a table")),
+        },
     })
 }
 

@@ -409,6 +409,7 @@ fn first_input(player: &mut crate::Player, r: &mut Resume, keg: &Keg, input: &Fr
             dir: i32::from(right) - i32::from(left),
             speed: None,
             air: true,
+            struck: false,
         });
         player.state = State::GroundAction;
     } else if let Some(turn) = keg.first_turn.filter(|_| left && !right) {

@@ -234,25 +234,24 @@ fn knock_out_ranges() {
 }
 
 #[test]
-fn only_on_attack_frames_and_each_pause_lengthens_the_action() {
+fn only_one_walker_an_action_and_one_pause() {
     // A walker heading left reaches I = -62 at the end of P + 16 (not an
     // attack frame), then sits in range for the next attack frame, P + 17.
     // A second reaches I = -62 at the end of P + 27: the second attack
-    // frame, t = 25, moved 2 frames later by the first pause.
+    // frame, t = 25, moved 2 frames later by the pause. It isn't knocked
+    // out, and there is no second pause.
     let mut w = world(300, Facing::Right, SMALL, "left", 2);
     let rows = act(&mut w, &[D, A], &[(16, 0, 363.5), (27, 1, 363.5)], 70);
-    assert_eq!(struck(&rows), [17, 27]);
+    assert_eq!(struck(&rows), [17]);
     assert_eq!(rows[17].struck, [0]);
-    assert_eq!(rows[27].struck, [1]);
-    // E = P + 63.
-    assert_eq!(acting(&rows), (0..=62).collect::<Vec<_>>());
-    assert_eq!(rows[63].state, State::Idle);
     // On pause frames neither walker moves, the falling one included.
-    for k in [28, 29] {
-        assert_eq!(rows[k].walkers, rows[27].walkers, "frame {k}");
+    for k in [18, 19] {
+        assert_eq!(rows[k].walkers, rows[17].walkers, "frame {k}");
     }
-    assert_ne!(rows[30].walkers[0], rows[29].walkers[0]);
-    assert_ne!(rows[30].walkers[1], rows[29].walkers[1]);
+    assert_ne!(rows[20].walkers[0], rows[19].walkers[0]);
+    for k in 28..=29 {
+        assert_ne!(rows[k].walkers[1], rows[k - 1].walkers[1], "frame {k}");
+    }
 }
 
 #[test]
@@ -432,4 +431,43 @@ fn a_knocked_out_walker_never_touches_the_player() {
         w.events.contains(&Event::Hurt)
     });
     assert!(hurt);
+}
+
+#[test]
+fn two_walkers_in_reach_knock_out_one_whichever_way_they_and_the_player_face() {
+    // "Two things in reach": at most one of two small walkers, always the
+    // same one of the pair, even exchanged, facing either way and heading
+    // either way.
+    for (facing, heading) in [
+        (Facing::Left, "left"),
+        (Facing::Left, "right"),
+        (Facing::Right, "left"),
+        (Facing::Right, "right"),
+    ] {
+        let sign = if facing == Facing::Left { -1.0 } else { 1.0 };
+        let mut both = 0;
+        for a in (10..=60_i32).step_by(10) {
+            for b in (10..=60).step_by(10) {
+                let mut chosen = Vec::new();
+                for (first, second) in [(a, b), (b, a)] {
+                    let mut w = world(300, facing, SMALL, heading, 2);
+                    let put = [
+                        (0, 0, 300.0 + sign * f64::from(first)),
+                        (0, 1, 300.0 + sign * f64::from(second)),
+                    ];
+                    let rows = act(&mut w, &[D, A], &put, 70);
+                    let hit: Vec<usize> = rows.iter().flat_map(|r| r.struck.clone()).collect();
+                    assert!(hit.len() <= 1, "{facing:?} {heading} {first} {second}");
+                    chosen.push(hit);
+                }
+                // Level with each other they are in range together: the same
+                // one is struck, always the first placed.
+                if a == b && chosen[0].len() == 1 && chosen[1].len() == 1 {
+                    both += 1;
+                    assert_eq!(chosen[0], chosen[1], "{facing:?} {heading} {a} {b}");
+                }
+            }
+        }
+        assert!(both > 0, "{facing:?} {heading}: nothing in reach");
+    }
 }

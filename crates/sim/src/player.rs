@@ -1479,6 +1479,7 @@ impl Player {
                     dir: held_dir,
                     speed,
                     air: false,
+                    struck: false,
                 });
                 goes_on = true;
             }
@@ -3995,6 +3996,10 @@ pub struct GroundAction {
     /// It started in the air, on frame 1 of a resume, and goes on in the
     /// air (restart-barrel.md).
     pub air: bool,
+    /// It has knocked out a walker or a thrower: the rest of its attack
+    /// frames knock out nothing and strike no hidden object
+    /// (ground-action-enemies.md, "Two things in reach").
+    pub struck: bool,
 }
 
 /// A timed roll.

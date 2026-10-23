@@ -97,7 +97,7 @@ pub(crate) fn strike(world: &mut World, physics: &Physics) -> bool {
     };
     let attacking = clamber_pack::physics::steps(physics[Param::GroundAttackFrames])
         .any(|n| n == u32::from(action.frame));
-    if !attacking || world.player.riding.is_some() {
+    if !attacking || action.struck || world.player.riding.is_some() {
         return false;
     }
     let mut struck = false;

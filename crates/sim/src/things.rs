@@ -436,6 +436,11 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     if !struck.is_empty() || struck_hidden {
         world.player.frozen = pause;
     }
+    if !struck.is_empty()
+        && let Some(action) = &mut world.player.ground_action
+    {
+        action.struck = true;
+    }
     if knocked(world) {
         return hurt_by;
     }
@@ -1694,7 +1699,8 @@ fn ground_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
     let attacking = world.player.ground_action.is_some_and(|a| {
         clamber_pack::physics::steps(attack_frames).any(|n| n == u32::from(a.frame))
     });
-    if width <= Fixed::ZERO || !attacking {
+    let used = world.player.ground_action.is_some_and(|a| a.struck);
+    if width <= Fixed::ZERO || !attacking || used {
         return Vec::new();
     }
     let reach = attack_box(
@@ -1703,7 +1709,9 @@ fn ground_attacks(world: &mut World, physics: &Physics) -> Vec<usize> {
         width,
         physics[Param::GroundAttackOffset],
     );
-    strike(world, reach, |b| b.fall().is_some(), going, usize::MAX)
+    // One action knocks out at most one; which of two in range on the
+    // same frame isn't in the spec, so it's the first placed.
+    strike(world, reach, |b| b.fall().is_some(), going, 1)
 }
 
 /// The player's attack box on whole pixels with the player at `pos`:

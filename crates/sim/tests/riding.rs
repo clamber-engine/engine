@@ -4,10 +4,12 @@
 //! relative; here the floor is at y = 300, and on flat floor `x` starts at
 //! 1000.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
+use clamber_pack::{CharacterFeel, Presets};
 use clamber_sim::{
     Behavior, Facing, Fixed, InputFrame, Other, Phase, RidePart, Riding, State, World,
     generic_feel, step,
@@ -696,4 +698,47 @@ fn swap_does_nothing_while_riding() {
     play.step(&[]);
     play.step(&[Action::Tandem]);
     assert!(play.world.swap.is_none());
+}
+
+/// "The second character": with it as the player the targets are 2.25
+/// walking and 3.9375 charging; the first character's stay as they are
+/// while it follows.
+#[test]
+fn the_second_character_rides_to_larger_targets() {
+    let mut play = Play::flat(0, Facing::Right, &[]);
+    let mut feel = (*play.world.feel).clone();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: BTreeMap::new(),
+    });
+    let feel = Arc::new(feel);
+    play.world.feel = feel.clone();
+    play.world.player.character = 1;
+    for vx in [18, 35, 51, 67, 82] {
+        play.step(&[R]);
+        assert_eq!(play.row().2, vx);
+    }
+    for (keys, facing, target) in [
+        (vec![R], Facing::Right, 576),
+        (vec![R, A], Facing::Right, 1008),
+        (vec![L], Facing::Left, -576),
+        (vec![L, A], Facing::Left, -1008),
+    ] {
+        let mut play = Play::flat(0, facing, &[]);
+        play.world.feel = feel.clone();
+        play.world.player.character = 1;
+        // a charge ends in its own time, so look at the fastest frame
+        let mut fastest = 0i64;
+        for _ in 0..140 {
+            play.step(&keys);
+            fastest = fastest.max(play.row().2.abs());
+        }
+        assert_eq!(fastest, i64::abs(target));
+    }
+
+    let mut play = Play::flat(0, Facing::Right, &[]);
+    for _ in 0..140 {
+        play.step(&[R]);
+    }
+    assert_eq!(play.row().2, 512);
 }

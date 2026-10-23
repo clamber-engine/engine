@@ -197,7 +197,13 @@ impl Player {
         let Some(mut r) = self.riding else {
             return;
         };
-        let ride = r.ride;
+        let mut ride = r.ride;
+        if let Some(second) = ride.second
+            && self.character != 0
+        {
+            ride.speed = second.speed;
+            ride.run_speed = second.run_speed;
+        }
         let held = |a| input.held.contains(a);
         let pressed = |a| input.pressed.contains(a);
         // Getting off on the first riding frame starts from where the
