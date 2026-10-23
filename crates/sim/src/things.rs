@@ -220,6 +220,13 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         world.flow.events.push(FlowEvent::Defeat(index));
         bounced_throwers.push(index);
     }
+    // With `bounce_hold_from_start`, the held gravity needs Jump held on B.
+    if physics[Param::BounceHoldFromStart] > Fixed::ZERO
+        && world.events.contains(&Event::Bounce)
+        && world.player.state == State::Bounce
+    {
+        world.player.jump_hold = world.player.jump_held > 0;
+    }
     let attacked = if attack_boxes && !frozen && !knocked(world) {
         roll_attacks(world, &physics, previous)
     } else {

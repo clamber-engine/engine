@@ -158,6 +158,7 @@ bounce_max_rise = 0
 bounce_holds_walkers = 0
 bounce_holds_all = 0
 bounce_again = 0
+bounce_hold_from_start = 0
 stance_stand_speed = 0
 stance_run_speed = 0
 face_slope = 0
@@ -1214,6 +1215,16 @@ walk_turn_steps = [1, 3, 5, 7, 9, 11, 13, 15]
 walk_run_steps = [2, 4, 6, 8, 10, 12, 14, 16]
 run_turn_steps = [3, 5, 7, 9, 11, 13]
 run_walk_on_last_step = 1
+# Bouncing off walkers (walker-contact.md, "The second character"): its
+# own bounce box, 32 wide with its middle 5 ahead and reaching 20 under
+# the feet, gives its ranges and 7 more px of reach against the small and
+# medium walkers, and it leaves at 8.5. The held gravity needs Jump held
+# from B on. The large walker isn't bounced on by it (not built yet).
+bounce_speed = 8.5
+bounce_width = 32
+bounce_offset = 5
+bounce_below = 20
+bounce_hold_from_start = 1
 # The second character follows by where the first is now.
 follow_lag = 0
 # The second character being hit isn't specified yet, so it's a hit with

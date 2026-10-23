@@ -641,6 +641,10 @@ params! {
     /// only one enemy is (the first placed); another one in reach is
     /// checked again on the next frame that can bounce.
     BounceAgain => "bounce_again",
+    /// Above 0, a bounce's held gravity needs Jump held on its own frame
+    /// and on the `bounce_freeze` frames too, not only from the frame
+    /// after them.
+    BounceHoldFromStart => "bounce_hold_from_start",
     /// For walkers with a `contact` table: on the ground, a player moving
     /// faster than this is walking or running, and slower, standing.
     StanceStandSpeed => "stance_stand_speed",

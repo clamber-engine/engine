@@ -896,6 +896,94 @@ fn classic_bounce_height_limits_by_walker() {
     }
 }
 
+/// Whether the second character leading, `i` px from a still walker
+/// made by `walker` and falling onto it, bounces.
+fn second_bounces_at(
+    walker: fn(&str, &str, &str) -> String,
+    i: i32,
+    facing: Facing,
+    heading: &str,
+) -> bool {
+    let mut w = second_on([300 + i, 340], &walker("300", "0", heading));
+    w.player.facing = facing;
+    let steps = play(&mut w, 40, |_| false);
+    steps.iter().any(|s| s.2.contains(&Event::Bounce))
+}
+
+/// walker-contact.md, "The second character": its ranges of I against the
+/// small and the medium walker.
+#[test]
+fn second_bounce_ranges_for_the_small_and_medium_walkers() {
+    type Walker = fn(&str, &str, &str) -> String;
+    let table: [(Walker, Facing, &str, i32, i32); 8] = [
+        (small_walker, Facing::Right, "left", -31, 20),
+        (small_walker, Facing::Right, "right", -30, 21),
+        (small_walker, Facing::Left, "left", -21, 30),
+        (small_walker, Facing::Left, "right", -20, 31),
+        (medium_walker, Facing::Right, "left", -38, 18),
+        (medium_walker, Facing::Right, "right", -28, 28),
+        (medium_walker, Facing::Left, "left", -28, 28),
+        (medium_walker, Facing::Left, "right", -18, 38),
+    ];
+    for (walker, facing, heading, low, high) in table {
+        for (i, bounces) in [
+            (low - 1, false),
+            (low, true),
+            (high, true),
+            (high + 1, false),
+        ] {
+            assert_eq!(
+                second_bounces_at(walker, i, facing, heading),
+                bounces,
+                "I = {i}, facing {facing:?}, heading {heading}"
+            );
+        }
+    }
+}
+
+/// U at most 31 (small) or 44 (medium): 7 more than the first
+/// character's.
+#[test]
+fn second_bounce_height_limits_by_walker() {
+    for (walker, top) in [
+        (small_walker as fn(&str, &str, &str) -> String, 31),
+        (medium_walker, 44),
+    ] {
+        let from = |u: i32| {
+            let mut w = second_on([300, 0], &walker("300", "0", "left"));
+            w.player.pos.y = Fixed::from_int(400 - u) - fx(0.0625);
+            w.player.vel.y = fx(0.0625 - 0.4375);
+            play(&mut w, 1, |_| false)[0].2.contains(&Event::Bounce)
+        };
+        assert!(from(top), "U = {top}");
+        assert!(!from(top + 1), "U = {}", top + 1);
+    }
+}
+
+/// Bounce `vy` -8.5; the held gravity 0.3515625 needs Jump held on B too,
+/// not only from B + 3.
+#[test]
+fn second_bounce_speed_and_gravity_hold_from_b() {
+    let (_, b) = second_bounce();
+    let vy = |jump: &dyn Fn(usize) -> bool| {
+        let mut w = second_on([300, 300], &small_walker("300", "0", "left"));
+        let steps = play(&mut w, b + 4, jump);
+        (steps[b].1, steps[b + 3].1)
+    };
+    assert_eq!(vy(&|_| false), (fx(-8.5), fx(-8.5 + 0.4375)));
+    assert_eq!(vy(&|n| n >= b), (fx(-8.5), fx(-8.5 + 0.3515625)));
+    assert_eq!(
+        vy(&|n| n >= b + 1),
+        (fx(-8.5), fx(-8.5 + 0.4375)),
+        "not held on B"
+    );
+    assert_eq!(
+        vy(&|n| n >= b && n != b + 2),
+        (fx(-8.5), fx(-8.5 + 0.4375)),
+        "released on a frozen frame"
+    );
+}
+
 #[test]
 fn classic_bounce_needs_the_player_not_to_be_rising_fast() {
     // vy after this frame's gravity: -1.1875 bounces, -1.25 doesn't.

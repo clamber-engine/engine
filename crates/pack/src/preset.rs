@@ -443,6 +443,7 @@ mod tests {
                     | Param::BounceHoldsWalkers
                     | Param::BounceHoldsAll
                     | Param::BounceAgain
+                    | Param::BounceHoldFromStart
                     | Param::StanceStandSpeed
                     | Param::StanceRunSpeed
                     | Param::FaceSlope

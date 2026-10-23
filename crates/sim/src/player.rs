@@ -1037,7 +1037,10 @@ impl Player {
         self.boosted = false;
         self.update_jump_held(input);
         if self.frozen > 0 {
-            if self.unseated {
+            if self.unseated
+                || (self.state == State::Bounce
+                    && physics[Param::BounceHoldFromStart] > Fixed::ZERO)
+            {
                 self.jump_hold &= input.held.contains(Action::Jump);
             }
             self.frozen -= 1;
