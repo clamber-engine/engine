@@ -3,13 +3,15 @@
 //! bounce does to it. Balls are removed as soon as they appear, as in
 //! the spec's measurements.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
-use clamber_pack::Fixed;
+use clamber_pack::{CharacterFeel, Fixed, Presets};
 use clamber_sim::{
-    Event, Facing, FlowEvent, InputFrame, Phase, START_LIVES, State, World, generic_feel, step,
+    Event, Facing, FlowEvent, InputFrame, Phase, ROLL, START_LIVES, State, World, generic_feel,
+    step,
 };
 
 fn f(v: f64) -> Fixed {
@@ -497,5 +499,93 @@ fn a_thrower_knocked_out_by_a_bounce_or_a_roll_is_there_after_a_knock_out() {
         play.resume();
         play.step(&[]);
         assert!(play.thrower_back(380), "after a roll, {wait} frames on");
+    }
+}
+
+/// A play with the second character under control.
+fn second_play(start: i32, y: i32) -> Play {
+    let mut play = Play::new(start, y);
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: BTreeMap::from([(ROLL.to_string(), BTreeMap::new())]),
+    });
+    play.world.feel = Arc::new(feel);
+    play.world.player.character = 1;
+    play
+}
+
+/// thrower-contact.md, "The second character under control": standing
+/// on the ledge, I from −23 to 23 facing right and −22 to 24 facing
+/// left, narrower than the first character's.
+#[test]
+fn the_second_character_standing_has_its_own_hurt_range() {
+    for (x, facing, hurts) in [
+        (976.5, Facing::Right, false),
+        (977.0, Facing::Right, true),
+        (1023.5, Facing::Right, true),
+        (1024.0, Facing::Right, false),
+        (977.5, Facing::Left, false),
+        (978.0, Facing::Left, true),
+        (1024.0, Facing::Left, true),
+        (1025.0, Facing::Left, false),
+    ] {
+        let mut play = second_play(900, 380);
+        play.settle();
+        play.stand_at(x, facing);
+        assert!(!play.step(&[]), "{x} {facing:?}");
+        assert_eq!(play.step(&[]), hurts, "{x} {facing:?}");
+    }
+}
+
+/// The same, walking: I from −29 to 24 facing right.
+#[test]
+fn the_second_character_walking_has_the_moving_range() {
+    let mut play = second_play(900, 380);
+    play.settle();
+    play.stand_at(960.0, Facing::Right);
+    let mut hurt_at = None;
+    for _ in 0..60 {
+        let hurt = play.step(&[Action::Right]);
+        if hurt {
+            hurt_at = Some(play.world.player.pos.x.floor() - 1000);
+            break;
+        }
+    }
+    // Hurt one frame after the first end of a frame with I −29 or more.
+    let at = hurt_at.expect("hurt");
+    assert!((-28..=-26).contains(&at), "{at}");
+}
+
+/// thrower-contact.md, "The second character under control": bounce
+/// ranges I −38 to 29 facing right and −28 to 39 facing left, U from −13
+/// to 34.
+#[test]
+fn the_second_character_bounce_range() {
+    for (x, y, facing, bounces) in [
+        (961.0, 190.0, Facing::Right, false),
+        (962.0, 190.0, Facing::Right, true),
+        (1029.0, 190.0, Facing::Right, true),
+        (1030.0, 190.0, Facing::Right, false),
+        (971.0, 190.0, Facing::Left, false),
+        (972.0, 190.0, Facing::Left, true),
+        (1039.0, 190.0, Facing::Left, true),
+        (1040.0, 190.0, Facing::Left, false),
+        // U 34 and 35, then −13 and −14.
+        (1000.0, 166.0, Facing::Right, true),
+        (1000.0, 165.0, Facing::Right, false),
+        (1000.0, 213.0, Facing::Right, true),
+        (1000.0, 214.0, Facing::Right, false),
+    ] {
+        let mut play = second_play(900, 200);
+        play.settle();
+        fall_into(&mut play, Vec2::new(f(x), f(y - 1.0)), 0.0, facing);
+        play.step(&[]);
+        assert_eq!(up(play.world.player.pos.y), y as i64, "{x} {y}");
+        assert_eq!(
+            play.world.events.contains(&Event::Bounce),
+            bounces,
+            "{x} {y} {facing:?}"
+        );
     }
 }

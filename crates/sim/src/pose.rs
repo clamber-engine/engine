@@ -333,7 +333,12 @@ pub fn pose(player: &Player, poses: &Poses) -> Pose {
 /// moving, and a turn is standing; the crouching range is not given to
 /// the ground action.
 pub fn second_pose(player: &Player, second: &SecondBall) -> SecondPose {
-    let pose = second_pose_held(player, second.air_hold, second.crouch_hold);
+    second_pose_for(player, second.air_hold, second.crouch_hold)
+}
+
+/// [`second_pose`] with the two holds given.
+pub fn second_pose_for(player: &Player, air_hold: u8, crouch_hold: u8) -> SecondPose {
+    let pose = second_pose_held(player, air_hold, crouch_hold);
     // Teetering has the moving range from its first picture, and the
     // landing of a fall from a steep face keeps it until the gait starts.
     let teetering = player.pose.teeters && player.pose.standing.is_some_and(|n| n >= 4);

@@ -1,11 +1,13 @@
 //! Hidden objects on `classic-1` (spec/behavior/hidden-objects.md).
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
+use clamber_pack::{CharacterFeel, Presets};
 use clamber_sim::{
-    Behavior, Event, Facing, Fixed, InputFrame, Phase, State, World, generic_feel, step,
+    Behavior, Event, Facing, Fixed, InputFrame, Phase, ROLL, State, World, generic_feel, step,
 };
 
 use Action::{Action as A, Down as D, Right as R};
@@ -19,7 +21,7 @@ fn falling_kind(metal: bool) -> String {
         ("crate", -1)
     };
     format!(
-        r#"{{ strike_frames = [], fall_height = 160, across = [[-28, 42], [-42, 28]], above = [-27, 20], becomes = "{becomes}", becomes_at = [0, 0], item_speed = [{across}, -6] }}"#
+        r#"{{ strike_frames = [], fall_height = 160, across = [[-28, 42], [-42, 28]], above = [-27, 20], second_across = [[-38, 28], [-28, 38]], second_above = [-20, 27], becomes = "{becomes}", becomes_at = [0, 0], item_speed = [{across}, -6] }}"#
     )
 }
 
@@ -376,5 +378,95 @@ fn landed_on_vertical_range() {
         w.things[0].pos.y = Fixed::from_int((end + d) as i32);
         step(&mut w, &InputFrame::default());
         assert_eq!(w.things[0].phase != Phase::Ready, out, "D = {d}");
+    }
+}
+
+/// The second character under control.
+fn second(mut w: World) -> World {
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: BTreeMap::from([(ROLL.to_string(), BTreeMap::new())]),
+    });
+    w.feel = Arc::new(feel);
+    w.player.character = 1;
+    w
+}
+
+/// Whether the second character, falling from rest 200 px above a hidden
+/// barrel at (500, 300), `across` px right of it facing `facing`, sets
+/// it off.
+fn second_falls(across: f64, facing: Facing) -> bool {
+    let mut w = second(world(
+        (500.0 + across, 100.0),
+        &[(500, 300)],
+        &falling_kind(true),
+    ));
+    w.player.facing = facing;
+    for _ in 0..120 {
+        step(&mut w, &InputFrame::default());
+        if w.things[0].phase != Phase::Ready {
+            return true;
+        }
+        if w.player.grounded() {
+            break;
+        }
+    }
+    false
+}
+
+/// hidden-objects.md, "The second character": a long fall sets off a
+/// hidden metal barrel from I −38 to 28 facing right and −28 to 38 facing
+/// left, not the first character's ranges.
+#[test]
+fn the_second_character_is_set_off_by_its_own_ranges() {
+    for (facing, low, high) in [(Facing::Right, -38.0, 28.0), (Facing::Left, -28.0, 38.0)] {
+        for (across, out) in [
+            (low - 1.0, false),
+            (low, true),
+            (high, true),
+            (high + 1.0, false),
+        ] {
+            assert_eq!(second_falls(across, facing), out, "{facing:?} I = {across}");
+        }
+    }
+}
+
+/// hidden-objects.md, "The second character": D from −20 to 27.875.
+#[test]
+fn the_second_character_vertical_range() {
+    let feet = |w: &World| -(-w.player.pos.y).floor();
+    let mut w = second(world((500.0, 0.0), &[(1500, 300)], &falling_kind(true)));
+    loop {
+        let mut next = w.clone();
+        step(&mut next, &InputFrame::default());
+        if feet(&next) >= 240 {
+            break;
+        }
+        w = next;
+    }
+    let mut ahead = w.clone();
+    step(&mut ahead, &InputFrame::default());
+    let end = feet(&ahead);
+    for (d, out) in [(-21, false), (-20, true), (27, true), (28, false)] {
+        let mut w = w.clone();
+        w.things[0].pos.x = Fixed::from_int(500);
+        w.things[0].pos.y = Fixed::from_int((end + d) as i32);
+        step(&mut w, &InputFrame::default());
+        assert_eq!(w.things[0].phase != Phase::Ready, out, "D = {d}");
+    }
+}
+
+/// hidden-objects.md, "The second character": no ground action, and its
+/// roll doesn't strike a hidden bunch.
+#[test]
+fn the_second_character_never_strikes_a_hidden_bunch() {
+    for keys in [&[D, A][..], &[D, A, R][..], &[D, A][..]] {
+        let mut w = second(world((500.0, 300.0), &[(520, 300)], "{}"));
+        settle(&mut w, Facing::Right);
+        play(&mut w, keys, 60, |_, w| {
+            assert_eq!(w.things[0].phase, Phase::Ready);
+            assert_eq!(w.things[0].kind, "hidden");
+        });
     }
 }

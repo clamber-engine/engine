@@ -32,6 +32,9 @@
 //!
 //! Engine choices where the spec says nothing:
 //!
+//! - The second character has no ground action and its roll doesn't
+//!   strike; it's set off by a long fall by `second` ranges if the
+//!   object has them (hidden-objects.md, "The second character").
 //! - Only the character under control sets off hidden objects, and not
 //!   while riding the animal. Every object in range on a frame is set
 //!   off, with one pause.
@@ -140,11 +143,15 @@ pub(crate) fn land(world: &mut World, physics: &Physics) {
         let Some(h) = hidden(thing).filter(|_| ready(thing)) else {
             continue;
         };
+        let ranges = match h.second {
+            Some(second) if world.player.character != 0 => (second.across, second.above),
+            _ => (h.across, h.above),
+        };
         if h.fall_height > 0
             && thing.pos.y.floor() - top >= i64::from(h.fall_height)
             && within(
-                h.across,
-                h.above,
+                ranges.0,
+                ranges.1,
                 world.player.facing,
                 offsets(world, thing.pos),
             )

@@ -444,6 +444,13 @@ impl Kind {
                     Value::Array(vec![ints(&[-28, 42]), ints(&[-42, 28])]),
                 );
                 set("above", ints(&[-27, 20]));
+                // hidden-objects.md, "The second character": measured
+                // with a metal barrel, a default for the other kind.
+                set(
+                    "second_across",
+                    Value::Array(vec![ints(&[-38, 28]), ints(&[-28, 38])]),
+                );
+                set("second_above", ints(&[-20, 27]));
                 set("becomes", Value::String(becomes.into()));
                 set("becomes_at", ints(&[0, 0]));
                 set("item_speed", ints(&[across, -6]));

@@ -199,8 +199,13 @@
 #   preset's attack box, which knocks it out; on the roll's first frame
 #   the offsets from where the player was before it count too. Facing
 #   left, each `across` turns around as a ball's, by `mirror`. Knocked
-#   out, it touches nothing. Without `contact`, it doesn't touch the
-#   player; its balls can.
+#   out, it touches nothing. With a `contact.second` table (`standing`,
+#   `moving`, `bounce`, each `[across from, to, above from, to]`, and
+#   `air_hold`), a character other than the first is hurt by `standing`
+#   (standing still on the ground, crouching included) or `moving`
+#   (the rest, and `air_hold` frames after landing from a jump standing
+#   still), and bounces off it by `bounce`; the rest is as above.
+#   Without `contact`, it doesn't touch the player; its balls can.
 # - `ball`: falls under `gravity`, up to `max_fall`; nothing changes its
 #   speed across. Its floor is the highest in the 1-px column of its x
 #   that's no more than `floor_reach` above where it was at the start of
@@ -470,7 +475,9 @@
 #   included: `across`, the player's x rounded down less its own, as
 #   `[[from, to], [from, to]]` for the player facing right, then left;
 #   and `above`, its y less the player's feet line (the player's y
-#   rounded up), `[from, to]`. It's set off at the end of a frame, after
+#   rounded up), `[from, to]`; a character other than the first is set
+#   off by a fall by `second_across` and `second_above` instead, if
+#   given together. It's set off at the end of a frame, after
 #   the player's move, with the offsets within those ranges. With
 #   `fall_height = 0`, the ground action sets it off on its attack frames
 #   that are in `strike_frames`, and pauses as when it knocks out a
@@ -816,6 +823,19 @@ upright_jump = 5
 land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }
 roll_after = [3, 9]
 fidget_time = [239, 180, 457]
+
+# The second character under control (thrower-contact.md, "The second
+# character under control"): standing still on the ground has one hurt
+# range, everything else the other, in the air and on the ledge alike,
+# and its bounce range is its own. The spec doesn't say how it is hurt
+# crouching, so that takes the standing range, and the moving range
+# goes on 16 frames after the landing of a jump standing still, as it
+# does against balls.
+[archetypes.thrower.contact.second]
+standing = [-23, 23, -16, 31]
+moving = [-29, 24, -12, 31]
+bounce = [-38, 29, -34, 13]
+air_hold = 16
 
 [archetypes.ball]
 behavior = "ball"

@@ -446,6 +446,9 @@ pub const MAX_FLUTTER: usize = 16;
 pub struct Hidden {
     pub across: [(i32, i32); 2],
     pub above: (i32, i32),
+    /// The `across` and `above` a long fall of a character other than
+    /// the first is set off by, if they differ.
+    pub second: Option<SecondFall>,
     pub strike_frames: [u8; MAX_STRIKE_FRAMES],
     /// Only the first `strike_count` are used.
     pub strike_count: u8,
@@ -457,6 +460,14 @@ pub struct Hidden {
     pub item_gravity: Fixed,
     pub item_max_fall: Fixed,
     pub item_touch: Fixed,
+}
+
+/// The ranges a character other than the first is set off by a long
+/// fall by: `across` for facing right then left, and `above`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SecondFall {
+    pub across: [(i32, i32); 2],
+    pub above: (i32, i32),
 }
 
 /// The most attack frames a hidden object can be struck on.
@@ -928,6 +939,24 @@ pub struct ThrowerContact {
     pub roll: Option<Offsets>,
     pub mirror: i32,
     pub poses: Poses,
+    /// How it reaches a character other than the first, if differently.
+    pub second: Option<SecondThrower>,
+}
+
+/// How a thrower reaches a character other than the first under control
+/// (spec/behavior/thrower-contact.md, "The second character under
+/// control"): two hurt ranges, `standing` for standing still on the
+/// ground and `moving` for everything else, and its own `bounce`. Facing
+/// left they turn around by the contact's `mirror`. The ledge rule, the
+/// guards and the knock-out are the first character's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SecondThrower {
+    pub standing: Offsets,
+    pub moving: Offsets,
+    pub bounce: Offsets,
+    /// The moving range goes on up to this many frames after the
+    /// landing frame of a jump standing still.
+    pub air_hold: u8,
 }
 
 impl ThrowerContact {
@@ -1796,6 +1825,8 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         "hidden" => &[
             "across",
             "above",
+            "second_across",
+            "second_above",
             "strike_frames",
             "fall_height",
             "becomes",
@@ -2656,6 +2687,18 @@ fn parse_hidden(table: &Table, path: &str) -> Result<Hidden, String> {
     Ok(Hidden {
         across: parse_ranges(get("across")?, &format!("{path}.across"), "right then left")?,
         above: parse_range(get("above")?, &format!("{path}.above"))?,
+        second: match (table.get("second_across"), table.get("second_above")) {
+            (None, None) => None,
+            (Some(across), Some(above)) => Some(SecondFall {
+                across: parse_ranges(across, &format!("{path}.second_across"), "right then left")?,
+                above: parse_range(above, &format!("{path}.second_above"))?,
+            }),
+            _ => {
+                return Err(format!(
+                    "{path}: `second_across` and `second_above` go together"
+                ));
+            }
+        },
         strike_frames,
         strike_count: items.len() as u8,
         fall_height,
@@ -3797,6 +3840,53 @@ fn parse_path(value: &Value, path: &str) -> Result<HandsPath, String> {
     Ok(out)
 }
 
+/// Reads a thrower's [`SecondThrower`] table. Errors start with `path`.
+fn parse_second_thrower(value: &Value, path: &str) -> Result<SecondThrower, String> {
+    let Value::Table(table) = value else {
+        return Err(format!("{path}: expected a table"));
+    };
+    const KEYS: &[&str] = &["standing", "moving", "bounce", "air_hold"];
+    if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
+        return Err(format!("{path}.{key}: no such value"));
+    }
+    let offsets = |key: &str| -> Result<Offsets, String> {
+        let at = format!("{path}.{key}");
+        let Some(Value::Array(items)) = table.get(key) else {
+            return Err(format!("{at}: expected a list of 4 whole numbers"));
+        };
+        let n = items
+            .iter()
+            .map(|v| match v {
+                Value::Integer(n) if i32::try_from(*n).is_ok() => Some(*n as i32),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()
+            .filter(|n| n.len() == 4)
+            .ok_or_else(|| format!("{at}: expected a list of 4 whole numbers"))?;
+        if n[0] > n[1] || n[2] > n[3] {
+            return Err(format!("{at}: a range ends before it starts"));
+        }
+        Ok(Offsets {
+            across: (n[0], n[1]),
+            above: (n[2], n[3]),
+        })
+    };
+    let air_hold = match table.get("air_hold") {
+        Some(Value::Integer(n)) if (0..=254).contains(n) => *n as u8,
+        _ => {
+            return Err(format!(
+                "{path}.air_hold: expected a whole number, 0 to 254"
+            ));
+        }
+    };
+    Ok(SecondThrower {
+        standing: offsets("standing")?,
+        moving: offsets("moving")?,
+        bounce: offsets("bounce")?,
+        air_hold,
+    })
+}
+
 /// Reads a thrower's [`ThrowerContact`] table. Errors start with `path`.
 fn parse_thrower_contact(value: &Value, path: &str) -> Result<ThrowerContact, String> {
     let Value::Table(table) = value else {
@@ -3813,6 +3903,7 @@ fn parse_thrower_contact(value: &Value, path: &str) -> Result<ThrowerContact, St
         "land_hold",
         "roll_after",
         "fidget_time",
+        "second",
     ];
     if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
         return Err(format!("{path}.{key}: no such value"));
@@ -3858,6 +3949,10 @@ fn parse_thrower_contact(value: &Value, path: &str) -> Result<ThrowerContact, St
         },
         mirror: whole("mirror")?,
         poses: parse_poses(table, path)?,
+        second: match table.get("second") {
+            None => None,
+            Some(v) => Some(parse_second_thrower(v, &format!("{path}.second"))?),
+        },
     })
 }
 

@@ -44,7 +44,10 @@
 //! fidget pose and the ball's rolling pose after a roll take the upright
 //! range; a knocked-out thrower touches nothing on the frames from its
 //! knock-out on, not only from the fourth, and isn't removed on the
-//! frames it holds still; and a rider, or a player on a bounce's frozen
+//! frames it holds still; for the second character, crouching takes the
+//! standing range, the moving range goes on 16 frames after the landing
+//! of a jump standing still as it does against balls, and a roll into a
+//! thrower defeats it as the first character's does; and a rider, or a player on a bounce's frozen
 //! frames, doesn't bounce on it.
 
 use clamber_fixed::Fixed;
@@ -54,7 +57,7 @@ use clamber_pack::{Feel, Param, Physics};
 use crate::archetype::{Archetypes, Ball, Behavior};
 use crate::columns;
 use crate::player::{Facing, State, ceil, frames};
-use crate::pose::{self, Pose};
+use crate::pose::{self, Pose, SecondPose};
 use crate::sections::Window;
 use crate::view::View;
 use crate::world::{Event, Phase, Thing, World};
@@ -362,9 +365,19 @@ pub(crate) fn thrower_hurt_ahead(world: &World) -> Option<usize> {
             {
                 return false;
             }
-            let range = match pose::pose(player, &contact.poses) {
-                Pose::Airborne => contact.airborne,
-                Pose::Upright | Pose::Rolling | Pose::Crouching | Pose::Fidget => contact.upright,
+            let range = match contact.second {
+                Some(second) if player.character != 0 => {
+                    match pose::second_pose_for(player, second.air_hold, 0) {
+                        SecondPose::Moving => second.moving,
+                        SecondPose::Standing | SecondPose::Crouching => second.standing,
+                    }
+                }
+                _ => match pose::pose(player, &contact.poses) {
+                    Pose::Airborne => contact.airborne,
+                    Pose::Upright | Pose::Rolling | Pose::Crouching | Pose::Fidget => {
+                        contact.upright
+                    }
+                },
             };
             let mut range = contact.facing(range, player.facing);
             let above = y - ceil(t.pos.y);
@@ -408,8 +421,12 @@ pub(crate) fn bounced_on(world: &World, max_rise: Fixed) -> Option<usize> {
             else {
                 return false;
             };
+            let bounce = match contact.second {
+                Some(second) if player.character != 0 => second.bounce,
+                _ => contact.bounce,
+            };
             contact
-                .facing(contact.bounce, player.facing)
+                .facing(bounce, player.facing)
                 .contains(x - t.pos.x.floor(), y - ceil(t.pos.y))
         })
         .map(|t| t.index)
