@@ -263,12 +263,16 @@ pub struct Session {
     /// Logic frames after play came into another area that the song
     /// playing is cut, before the silence that leads to the new area's
     /// own (`music.md`, "When the cut comes"). The cuts at the ends of a
-    /// level aren't counted yet.
+    /// level are counted in `finishes`; a knock-out's isn't yet.
     pub song_cut: u32,
     /// How many times play has entered a level from the map, each of
     /// which starts the level's song over after its cut and silence even
     /// when the level is the one played before.
     pub map_entries: u32,
+    /// How many times a level entered from the map was finished, each of
+    /// which cuts the level's song 3 frames after the level's last frame
+    /// (`music.md`, "When the cut comes").
+    pub finishes: u32,
     /// The mouse pointer's place in the view, once it has moved over it.
     pub pointer: Option<(f32, f32)>,
     /// Presses the mouse adds to the next menu step.
@@ -307,6 +311,7 @@ impl Session {
             ticks: 0,
             song_cut: 0,
             map_entries: 0,
+            finishes: 0,
             pointer: None,
             clicks: Actions::NONE,
             dragging: None,
@@ -1166,6 +1171,7 @@ impl Session {
                         self.game.world.other.is_some(),
                         self.game.world.player.character == 1,
                     );
+                    self.finishes += 1;
                     self.screen = Screen::Map;
                 }
                 _ => self.screen = Screen::complete(),
@@ -3521,6 +3527,7 @@ mod tests {
 
         finish_level(&mut s);
         assert_eq!(s.screen, Screen::Map, "no complete screen");
+        assert_eq!(s.finishes, 1, "the level's song is cut after its end");
         assert!(map_of(&s).progress.cleared_by("level-map:f", "normal"));
         assert_eq!(until_shown(&mut s), 49);
         // frame 0 was the last step; the walk down starts on the gate

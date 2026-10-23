@@ -157,6 +157,9 @@ const MUSIC_IN: f32 = 0.05;
 const CROSSFADE: f32 = 1.0;
 /// Fade out when the music stops, as when the level ends.
 const MUSIC_OUT: f32 = 0.75;
+/// Logic frames from the last frame of a finished level to the cut of
+/// its song (`music.md`, "When the cut comes").
+const FINISH_CUT: u64 = 3;
 
 /// Plays a session's cues, and the music for its screen, on a mixer.
 pub struct Audio {
@@ -181,6 +184,8 @@ pub struct Audio {
     cut_at: Option<u64>,
     /// The level entries from the map seen so far.
     entries_seen: u32,
+    /// The level finishes seen so far.
+    finishes_seen: u32,
     /// The volumes last set on the mixer, from the prefs.
     volume: Option<Volume>,
 }
@@ -237,6 +242,7 @@ impl Audio {
             silent_until: None,
             cut_at: None,
             entries_seen: 0,
+            finishes_seen: 0,
             volume: None,
         }
     }
@@ -287,6 +293,14 @@ impl Audio {
         let seen = self.level_seen.as_ref();
         let entered = session.map_entries != self.entries_seen;
         self.entries_seen = session.map_entries;
+        // The song of a level with a silence plays through the walk-out
+        // and the fade, and is cut 3 frames after the level's last frame.
+        if session.finishes != self.finishes_seen {
+            self.finishes_seen = session.finishes;
+            if music.as_ref().is_some_and(|m| m.silence.is_some()) {
+                self.cut_at = Some(session.ticks + FINISH_CUT);
+            }
+        }
         let other = seen.is_none_or(|(d, m)| d != dir || m != music);
         if entered || other {
             if seen.is_some() {
@@ -791,6 +805,42 @@ mod tests {
         s.step(&press(Action::Left));
         audio.update(&s, |w| panic!("{w}"));
         assert!(last(&mut mixer, 800) > 0.2, "started again");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_finished_level_s_song_goes_on_until_3_frames_after_its_last_frame() {
+        let dir = folder("finish");
+        std::fs::write(dir.join("first.wav"), level_wav(RATE as usize, 16384)).unwrap();
+        let (handle, mut mixer) = mixer(8);
+        let mut audio = Audio::new(handle, RATE, &SoundList::default(), |w| panic!("{w}"));
+        audio.set_title_music(&MusicList::default());
+        let track = Track {
+            file: "first.wav".into(),
+            loop_start: None,
+            loop_length: None,
+            silence: Some(2),
+        };
+        let src = format!("{LEVEL}\n[music]\nfile = \"first.wav\"\nsilence = 2\n");
+        let level = Level::from_toml_str(&src, "test").unwrap();
+        audio.set_music(Some(&track), &dir, &MusicList::default());
+        let mut s = session();
+        s.level_path = dir.join("first.level");
+        s.game = Game::new(World::new(Arc::new(level), s.game.world.feel.clone()));
+        s.step(&press(Action::Jump));
+        audio.update(&s, |w| panic!("{w}"));
+        assert!(last(&mut mixer, 800) > 0.2, "playing at first");
+
+        // the last frame, then the map's black frames
+        s.finishes += 1;
+        s.screen = Screen::Map;
+        for n in 0..3 {
+            audio.update(&s, |w| panic!("{w}"));
+            assert!(last(&mut mixer, 800) > 0.2, "still playing {n} frames on");
+            s.step(&press(Action::Left));
+        }
+        audio.update(&s, |w| panic!("{w}"));
+        assert_eq!(last(&mut mixer, 10), 0.0, "cut 3 frames on");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
