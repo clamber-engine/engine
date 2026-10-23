@@ -128,6 +128,8 @@ pub enum Tune {
     Level,
     /// The level map's, which a pack's map gives.
     Map,
+    /// The song of the game-over picture, after the knock-out's song.
+    GameOver,
 }
 
 /// An item on the options screen.
@@ -1263,7 +1265,9 @@ impl Session {
     /// The music that should be playing.
     pub fn tune(&self) -> Option<Tune> {
         match self.screen.tune() {
-            Some(Tune::Map) if self.map.as_ref().is_some_and(|m| m.is_game_over()) => None,
+            Some(Tune::Map) if self.map.as_ref().is_some_and(|m| m.is_game_over()) => {
+                Some(Tune::GameOver)
+            }
             Some(Tune::Map) if self.map.as_ref().is_none_or(|m| m.music().is_none()) => None,
             tune => tune,
         }
@@ -3814,7 +3818,7 @@ mod tests {
             MapPhase::GameOver(over) => (over.frame, over.brightness()),
             other => panic!("not the game-over picture: {other:?}"),
         };
-        assert_eq!(s.tune(), None, "no map song");
+        assert_eq!(s.tune(), Some(Tune::GameOver));
         // the step of the loss comes after the level's last
         assert_eq!(over(&s).0, -40);
         let before = hold(&mut s, Actions::NONE, 40, |f| {

@@ -34,6 +34,8 @@ pub struct WorldMap {
     pub decorations: Vec<Decoration>,
     /// The music played while the map is shown.
     pub music: Option<MapMusic>,
+    /// The music played while the game-over picture shows.
+    pub game_over_music: Option<MapMusic>,
 }
 
 /// A map's music track: an audio file relative to the map file, and
@@ -480,6 +482,7 @@ struct File {
     #[serde(default)]
     decorations: Vec<DecorationFile>,
     music: Option<MusicFile>,
+    game_over_music: Option<MusicFile>,
 }
 
 #[derive(Deserialize)]
@@ -819,26 +822,29 @@ impl Reader<'_> {
                     at: v2(d.at),
                 })
                 .collect(),
-            music: f
-                .music
-                .map(|m| {
-                    if m.file.is_empty() {
-                        return Err(MapError::new(self.origin, "music.file is empty"));
-                    }
-                    if m.loop_length.is_some() && m.loop_start.is_none() {
-                        return Err(MapError::new(
-                            self.origin,
-                            "music.loop_length needs `loop_start`",
-                        ));
-                    }
-                    Ok(MapMusic {
-                        file: m.file,
-                        loop_start: m.loop_start,
-                        loop_length: m.loop_length,
-                    })
-                })
-                .transpose()?,
+            music: self.music(f.music, "music")?,
+            game_over_music: self.music(f.game_over_music, "game_over_music")?,
         })
+    }
+
+    fn music(&self, file: Option<MusicFile>, table: &str) -> Result<Option<MapMusic>, MapError> {
+        file.map(|m| {
+            if m.file.is_empty() {
+                return Err(MapError::new(self.origin, format!("{table}.file is empty")));
+            }
+            if m.loop_length.is_some() && m.loop_start.is_none() {
+                return Err(MapError::new(
+                    self.origin,
+                    format!("{table}.loop_length needs `loop_start`"),
+                ));
+            }
+            Ok(MapMusic {
+                file: m.file,
+                loop_start: m.loop_start,
+                loop_length: m.loop_length,
+            })
+        })
+        .transpose()
     }
 
     fn dir(&self, at: &str, name: &str) -> Result<Dir, MapError> {

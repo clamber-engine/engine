@@ -636,28 +636,36 @@ pub struct LevelMapDecoder {
 
 /// The map's song (`behavior/music.md`, "The songs").
 const MAP_SONG: u16 = 12;
+/// The game-over picture's song.
+const GAME_OVER_SONG: u16 = 15;
 
 impl LevelMapDecoder {
-    /// The map's song as an Ogg file and the `[music]` table of the world
-    /// map that names it, or why it couldn't be converted.
-    fn song(&self, image: &Image, file: &str) -> Result<(Vec<u8>, String, String), String> {
+    /// Song `number` as an Ogg file and the `[table]` of the world map
+    /// that names it as `file`, or why it couldn't be converted.
+    fn song(
+        &self,
+        image: &Image,
+        number: u16,
+        table: &str,
+        file: &str,
+    ) -> Result<(Vec<u8>, String, String), String> {
         let at = |data| locate(&self.title, data).ok_or("the spec doesn't place the songs");
         let song = LevelSong {
             sample_table: at(Data::SampleTable)?,
             shared_samples: at(Data::SharedSampleList)?,
             sample_sets: at(Data::SampleSetTable)?,
             song_table: at(Data::SongTable)?,
-            song: MAP_SONG,
+            song: number,
         };
         let read = |at| image.at(at);
         let music = song.music(read)?;
         let ogg = music.ogg(self.audio_quality)?;
-        let mut table = format!("\n[music]\nfile = \"{file}\"\n");
+        let mut table = format!("\n[{table}]\nfile = \"{file}\"\n");
         if let Some(l) = music.looping {
             table += &format!("loop_start = {}\nloop_length = {}\n", l.start, l.length);
         }
         let note = format!(
-            "song {MAP_SONG}: {}",
+            "song {number}: {}",
             match music.looping {
                 Some(_) => music.fit.describe(),
                 None => "ends",
@@ -684,18 +692,25 @@ impl Decoder for LevelMapDecoder {
         let mut text = map.to_title_world_map(LEVEL_MAP, &rules)?;
         // the song's file is next to the map's
         let file = format!("{LEVEL_MAP}-music.ogg");
-        match crate::optional(|| self.song(image, &file)) {
-            Ok((ogg, table, note)) => {
-                text += &table;
-                pack.write(&format!("{MAPS}/{file}"), &ogg)?;
-                pack.note(note);
+        let game_over_file = format!("{LEVEL_MAP}-game-over-music.ogg");
+        let songs = [
+            (MAP_SONG, "music", file),
+            (GAME_OVER_SONG, "game_over_music", game_over_file),
+        ];
+        for (number, table, file) in songs {
+            match crate::optional(|| self.song(image, number, table, &file)) {
+                Ok((ogg, table, note)) => {
+                    text += &table;
+                    pack.write(&format!("{MAPS}/{file}"), &ogg)?;
+                    pack.note(note);
+                }
+                Err(reason) => pack.skip(Skipped {
+                    part: Optional::Song,
+                    name: format!("song {number}"),
+                    reason,
+                    diagnostics: Vec::new(),
+                }),
             }
-            Err(reason) => pack.skip(Skipped {
-                part: Optional::Song,
-                name: format!("song {MAP_SONG}"),
-                reason,
-                diagnostics: Vec::new(),
-            }),
         }
         pack.write(&format!("{MAPS}/{LEVEL_MAP}.map"), text.as_bytes())?;
         if locate(&self.title, Data::MapPageTileMaps).is_some() {

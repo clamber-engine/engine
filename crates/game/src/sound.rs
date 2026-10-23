@@ -181,6 +181,15 @@ const KNOCKOUT_MAP_SONG: u64 = 307;
 /// finishing tune that fills the time isn't imported, so it is silent.
 const MAP_SILENCE_FIRST: u64 = 49 + 212 - FINISH_CUT;
 
+/// Frames from the first step of the game-over picture's wait to the
+/// cut of the knock-out's song, the 37th frame before the picture's
+/// frame 0 (`music.md`, "Knocked out as the lead alone with no tries
+/// left"; the wait is 40 frames).
+const OVER_CUT: u64 = 3;
+/// Frames from that step to the start of the game-over picture's song,
+/// the frame before the picture's frame 0.
+const OVER_SONG: u64 = 39;
+
 /// Plays a session's cues, and the music for its screen, on a mixer.
 pub struct Audio {
     handle: AudioHandle,
@@ -190,6 +199,10 @@ pub struct Audio {
     level: Option<TrackToPlay>,
     /// The level map's song, from the pack's map.
     map: Option<TrackToPlay>,
+    /// The game-over picture's song.
+    game_over: Option<TrackToPlay>,
+    /// The session's tick on which the game-over picture's wait began.
+    over_at: Option<u64>,
     /// The loops and volumes of music, from [`set_title_music`].
     ///
     /// [`set_title_music`]: Audio::set_title_music
@@ -271,6 +284,8 @@ impl Audio {
             cut_at: None,
             entries_seen: 0,
             finishes_seen: 0,
+            game_over: None,
+            over_at: None,
             knockout: None,
             knockouts_seen: 0,
             volume: None,
@@ -369,6 +384,17 @@ impl Audio {
                 self.knockout = Some((play, hit + KNOCKOUT_END));
             }
         }
+        // With no tries left the knock-out's song is cut a little later,
+        // before the game-over picture's song.
+        let over = session.map.as_ref().is_some_and(|m| m.is_game_over());
+        if !over {
+            self.over_at = None;
+        } else if self.over_at.is_none() {
+            self.over_at = Some(session.ticks);
+            if let Some((_, end)) = self.knockout.as_mut() {
+                *end = session.ticks + OVER_CUT;
+            }
+        }
         if self
             .knockout
             .as_ref()
@@ -435,6 +461,17 @@ impl Audio {
             Some(Tune::Title) => self.title.as_mut(),
             Some(Tune::Level) => self.level.as_mut(),
             Some(Tune::Map) => self.map.as_mut(),
+            Some(Tune::GameOver) if knocked.is_some() => knocked,
+            Some(Tune::GameOver) => {
+                let begun = self
+                    .over_at
+                    .is_some_and(|at| session.ticks >= at + OVER_SONG);
+                let cut = session.map.as_ref().is_some_and(|m| m.game_over_song_cut());
+                if cut && playing {
+                    self.handle.stop_music(0);
+                }
+                self.game_over.as_mut().filter(|_| begun && !cut)
+            }
             None => None,
         };
         let silent = match self.silent_until {
@@ -468,6 +505,21 @@ impl Audio {
 
     /// Keeps the map's song that of the session's map.
     fn follow_map(&mut self, session: &Session) {
+        let over = session.map.as_ref().and_then(|m| m.game_over_music());
+        match over {
+            Some((path, music)) if self.game_over.as_ref().is_none_or(|g| g.path != path) => {
+                let mut play = TrackToPlay::new(path.clone(), self.list.find(&path));
+                if let Some(start) = music.loop_start {
+                    play.looping = Some(Looping::From {
+                        start,
+                        length: music.loop_length,
+                    });
+                }
+                self.game_over = Some(play);
+            }
+            None => self.game_over = None,
+            _ => {}
+        }
         let Some((path, music)) = session.map.as_ref().and_then(|m| m.music()) else {
             self.map = None;
             return;
@@ -984,6 +1036,7 @@ mod tests {
     fn map_session(dir: &Path) -> Session {
         std::fs::create_dir_all(dir.join("maps")).unwrap();
         std::fs::write(dir.join("maps/map.wav"), level_wav(RATE as usize, 16384)).unwrap();
+        std::fs::write(dir.join("maps/over.wav"), level_wav(RATE as usize, -16384)).unwrap();
         let map = r#"
             format = 1
             id = "level-map"
@@ -1030,6 +1083,9 @@ mod tests {
 
             [music]
             file = "map.wav"
+
+            [game_over_music]
+            file = "over.wav"
         "#;
         std::fs::write(dir.join(crate::map::LEVEL_MAP), map).unwrap();
         let mut s = session();
@@ -1073,6 +1129,35 @@ mod tests {
             assert!(last(&mut mixer, 800) > 0.2, "{again}: the song starts");
             std::fs::remove_dir_all(dir).unwrap();
         }
+    }
+
+    #[test]
+    fn the_game_over_picture_cuts_the_knock_out_song_and_starts_its_own() {
+        let dir = folder("game-over-song");
+        let mut s = map_session(&dir);
+        let (handle, mut mixer) = mixer(8);
+        let mut audio = Audio::new(handle, RATE, &SoundList::default(), |w| panic!("{w}"));
+        // the knock-out's song is playing as the picture's wait begins
+        let song = dir.join("maps/map.wav");
+        let play = TrackToPlay::new(song.clone(), audio.list.find(&song));
+        audio.knockout = Some((play, u64::MAX));
+        audio.knockouts_seen = s.knockouts;
+        let map = s.map.as_mut().unwrap();
+        let node = map.map.nodes.iter().position(|n| n.id == "f").unwrap();
+        map.phase = crate::map::MapPhase::Playing(node);
+        map.game_over();
+        assert_eq!(s.tune(), Some(Tune::GameOver));
+        for at in 0..60 {
+            audio.update(&s, |w| panic!("{w}"));
+            let heard = last(&mut mixer, 800);
+            match at {
+                0..OVER_CUT => assert!(heard > 0.2, "the knock-out's song: {at}"),
+                _ if at < OVER_SONG => assert_eq!(heard, 0.0, "silent: {at}"),
+                _ => assert!(heard < -0.2, "the picture's song: {at}"),
+            }
+            s.ticks += 1;
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

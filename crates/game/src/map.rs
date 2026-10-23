@@ -284,6 +284,14 @@ impl MapPlay {
         Some((self.root.join(dir).join(&music.file), music))
     }
 
+    /// The game-over picture's music, as [`music`](MapPlay::music) gives the
+    /// map's.
+    pub fn game_over_music(&self) -> Option<(PathBuf, &MapMusic)> {
+        let music = self.map.game_over_music.as_ref()?;
+        let dir = Path::new(LEVEL_MAP).parent().unwrap_or(Path::new(""));
+        Some((self.root.join(dir).join(&music.file), music))
+    }
+
     fn legs(&self) -> &Legs {
         match &self.map.mode {
             Mode::Legs(legs) => legs,
@@ -499,6 +507,16 @@ impl MapPlay {
         self.two = false;
         self.second_leads = false;
         self.phase = MapPhase::GameOver(GameOver::new());
+    }
+
+    /// Whether the game-over picture's song has been cut by a press: on
+    /// the frame after the one on which the picture is black
+    /// (`music.md`, "Knocked out as the lead alone with no tries left").
+    pub fn game_over_song_cut(&self) -> bool {
+        match &self.phase {
+            MapPhase::GameOver(over) => over.black_from().is_some_and(|b| over.frame > b),
+            _ => false,
+        }
     }
 
     /// Whether the game-over picture is showing or about to.
