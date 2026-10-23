@@ -744,3 +744,49 @@ fn the_second_character_s_object_in_the_hands_of_a_pick_up_and_put_down() {
     assert_eq!(rows[9].thing, Vec2::new(x + f(12.0), f(FLOOR - 3.0)));
     assert_eq!(rows[10].phase, Phase::Ready);
 }
+
+/// carrying.md, "Picking up": pressing Action within reach while moving
+/// starts the pick-up on the press frame with no roll, whatever was
+/// happening on the frame before and whichever direction is held; out of
+/// reach it starts a roll on the press frame.
+#[test]
+fn pressing_action_within_reach_while_moving_picks_up_on_the_press_frame() {
+    // Walking for a while, then what the player does before the press:
+    // keep walking, slide (no direction), turn, or walk away.
+    let starts: [(&str, usize, &[Action], usize); 6] = [
+        ("walking", 12, &[Right], 0),
+        ("walking fast", 40, &[Right], 0),
+        ("sliding", 40, &[], 4),
+        ("sliding long", 40, &[], 6),
+        ("turning", 40, &[Left], 2),
+        ("walking away", 40, &[Left], 8),
+    ];
+    for (name, walk, after, n) in starts {
+        for held in [&[][..], &[Right][..], &[Left][..]] {
+            let mut play = Play::new(3000, 2000);
+            play.hold(&[Right], walk);
+            play.hold(after, n);
+            let x = play.world.player.pos.x.floor();
+            // Within reach: 20 px ahead of the player's facing.
+            let facing_right = play.world.player.facing == Facing::Right;
+            let at = if facing_right { x + 20 } else { x - 20 };
+            play.world.things[0].pos.x = Fixed::from_int(at as i32);
+            play.step(held); // lets the step before the press end in reach
+            let mut keys = held.to_vec();
+            keys.push(A);
+            let row = play.step(&keys);
+            assert!(!has(&row, Event::RollStart), "{name}: rolled");
+            assert_eq!(row.act, Some(Act::PickUp), "{name}: no pick-up on press");
+        }
+    }
+}
+
+#[test]
+fn pressing_action_out_of_reach_while_moving_rolls_on_the_press_frame() {
+    let mut play = Play::new(3000, 2000);
+    play.hold(&[Right], 12);
+    play.world.things[0].pos.x = play.world.player.pos.x + Fixed::from_int(60);
+    let row = play.step(&[Right, A]);
+    assert_eq!(row.act, None);
+    assert!(has(&row, Event::RollStart));
+}
