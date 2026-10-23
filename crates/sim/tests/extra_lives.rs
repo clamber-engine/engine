@@ -86,6 +86,67 @@ fn facing_left_the_ranges_are_three_px_further_left() {
     assert!(!taken_standing(18, 0, Facing::Left));
 }
 
+/// [`world`] with the second character as the player.
+fn second_world(at: &[(i32, i32)]) -> World {
+    let mut w = world(at, "");
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(clamber_pack::CharacterFeel {
+        physics: clamber_pack::Presets::builtin()
+            .slot("classic-1", 1)
+            .unwrap(),
+        abilities: feel.roster[0].abilities.clone(),
+    });
+    w.feel = Arc::new(feel);
+    w.player.character = 1;
+    w
+}
+
+/// Whether the second character, standing facing `facing`, takes an
+/// item at `X - xf` = `dx` and `D` = `below` on the first step.
+fn second_takes(dx: i32, below: i32, facing: Facing, keys: &[Action]) -> bool {
+    let mut w = second_world(&[(X - dx, F - below)]);
+    w.player.facing = facing;
+    step_keys(&mut w, keys)
+}
+
+#[test]
+fn the_second_character_standing_has_its_own_ranges() {
+    // extra-lives.md, "The second character leading": I -17 to 13, D -31
+    // to 33; facing left, the mirror image 3 px further left.
+    for (i, d) in [(-17, -31), (13, 33), (-17, 33), (13, -31)] {
+        assert!(second_takes(i, d, Facing::Right, &[]), "I = {i}, D = {d}");
+    }
+    for (i, d) in [(-18, 0), (14, 0), (0, -32), (0, 34)] {
+        assert!(!second_takes(i, d, Facing::Right, &[]), "I = {i}, D = {d}");
+    }
+    assert!(second_takes(-16, 0, Facing::Left, &[]));
+    assert!(second_takes(14, 0, Facing::Left, &[]));
+    assert!(!second_takes(-17, 0, Facing::Left, &[]));
+    assert!(!second_takes(15, 0, Facing::Left, &[]));
+}
+
+#[test]
+fn the_second_character_crouching_has_its_own_ranges() {
+    let mut w = second_world(&[(X, F)]);
+    // Crouch first, with the item out of reach, then move the item in.
+    w.things[0].pos.x = Fixed::from_int(X + 100);
+    for _ in 0..30 {
+        assert!(!step_keys(&mut w, &[Action::Down]));
+    }
+    for (i, d, want) in [
+        (-24, -30, true),
+        (16, 20, true),
+        (-25, 0, false),
+        (0, 21, false),
+    ] {
+        w.things[0].pos.x = Fixed::from_int(X - i);
+        w.things[0].pos.y = Fixed::from_int(F - d);
+        assert_eq!(step_keys(&mut w, &[Action::Down]), want, "I = {i}, D = {d}");
+        w.things[0].active = true;
+        w.things[0].phase = Phase::Ready;
+    }
+}
+
 #[test]
 fn taking_an_item_gives_its_lives_on_that_step_and_it_is_gone() {
     for lives in [1u8, 2, 3] {

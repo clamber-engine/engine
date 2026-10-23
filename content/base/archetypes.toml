@@ -1339,10 +1339,11 @@ land_hold = 0
 # (spec/behavior/exits.md); not taken, it's there again. The ranges are
 # extra-lives.md's: the standing ones for the first six frames of a
 # jump, and facing left they're measured from 3 px left of it.
-# Falling without a jump, landing and the second character weren't
-# measured, so those use the jump's later row, the standing row from
-# the frame it lands, and the first character's ranges. The size is
-# Clamber's own and only draws it.
+# Falling without a jump and landing weren't measured, so those use
+# the jump's later row and the standing row from the frame it lands,
+# also with the second character leading, whose own ranges are the
+# second table (extra-lives.md, "The second character leading"). The
+# size is Clamber's own and only draws it.
 [archetypes.heart]
 behavior = "collect"
 size = [20, 20]
@@ -1363,6 +1364,17 @@ jump = [-20, 23, -29, 35]
 air = [-20, 20, -8, 52]
 air_below = []
 jump_early = 6
+land_hold = 0
+
+[[archetypes.heart.reach]]
+stand = [-17, 13, -31, 33]
+walk = [-23, 14, -27, 33]
+crouch = [-24, 16, -30, 20]
+roll = [-23, 14, -27, 33]
+jump = [-23, 14, -27, 33]
+air = [-23, 14, -27, 33]
+air_below = []
+jump_early = 0
 land_hold = 0
 
 # title-1's critter (spec/behavior/critter.md). The size is Clamber's
