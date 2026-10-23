@@ -1,6 +1,7 @@
 //! Walkers and the follower in Classic 1 (spec/behavior/following.md,
 //! "Walkers and the follower"): a walker neither hurts the follower nor
-//! gives it a bounce, and walks on as if it weren't there.
+//! gives it a bounce, and walks on as if it weren't there; and the follower
+//! repeats a bounce of the lead off a walker.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -27,7 +28,7 @@ fn fx(v: f64) -> Fixed {
 /// Classic 1 with both characters on flat floor at y = 400: the lead far
 /// from the follower, which rests just behind the lead, to its right, and a walker at `walker_x`
 /// heading left, if there is one.
-fn world(walker_x: Option<i32>) -> World {
+fn world(walker_x: Option<i32>, lead_y: i32) -> World {
     let entities = walker_x
         .map(|x| {
             format!(
@@ -45,7 +46,7 @@ fn world(walker_x: Option<i32>) -> World {
         format = 1
         name = "arena"
         size = [1000, 600]
-        start = [330, 400]
+        start = [330, {lead_y}]
 
         [[collision]]
         shape = "rect"
@@ -74,8 +75,8 @@ fn world(walker_x: Option<i32>) -> World {
 
 #[test]
 fn a_walker_passing_through_the_follower_changes_nothing() {
-    let mut with = world(Some(520));
-    let mut without = world(None);
+    let mut with = world(Some(520), 400);
+    let mut without = world(None, 400);
     let mut met = false;
     for frame in 0..200 {
         for w in [&mut with, &mut without] {
@@ -94,4 +95,30 @@ fn a_walker_passing_through_the_follower_changes_nothing() {
         assert_eq!(with.other, without.other, "frame {frame}");
     }
     assert!(met, "the walker never met the follower");
+}
+
+#[test]
+fn the_follower_repeats_the_leads_bounce_off_a_walker() {
+    // The lead drops onto a walker; the follower, resting behind, goes
+    // through the same stretch of the trail and rises where the lead did.
+    let mut w = world(Some(330), 300);
+    let mut bounced = false;
+    let mut rose = false;
+    for _ in 0..200 {
+        step(
+            &mut w,
+            &InputFrame::single(Frame::after(Actions::NONE, Actions::NONE)),
+        );
+        bounced |= w.events.contains(&Event::Bounce);
+        if bounced && w.other.as_ref().unwrap().pos.y < fx(390.0) {
+            rose = true;
+            break;
+        }
+    }
+    assert!(
+        bounced,
+        "the lead never bounced: {:?} {:?} {:?}",
+        w.player.state, w.player.pos, w.things[0].pos
+    );
+    assert!(rose, "the follower never rose after the lead's bounce");
 }
