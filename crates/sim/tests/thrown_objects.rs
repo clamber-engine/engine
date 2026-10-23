@@ -1180,3 +1180,74 @@ fn passes_through_the_other_character() {
         }
     }
 }
+
+/// [`Play::new`] with the second character under control.
+fn second_play(src: &str) -> Play {
+    let level = Arc::new(Level::from_toml_str(src, "thrown").unwrap());
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: feel.roster[0].abilities.clone(),
+    });
+    let mut world = World::new(level, Arc::new(feel));
+    world.player.character = 1;
+    let mut play = Play {
+        world,
+        held: Actions::NONE,
+    };
+    play.hold(&[], 2);
+    play.hold(&[A], 21);
+    assert!(play.world.player.hands.is_some());
+    play
+}
+
+/// thrown-objects.md, "The second character": the object leaves on Q +
+/// 18 and t = 1 is Q + 19, so the larger area holds through Q + 34 and
+/// the smaller one from Q + 35.
+#[test]
+fn hits_a_walker_by_the_second_character_s_object_three_frames_sooner() {
+    let medium = SMALL_WALKER.replace(
+        "size = [20, 12], offset = 0.5",
+        "size = [25, 25], offset = 5.0",
+    );
+    let entity =
+        format!("[[entities]]\ntype = \"crawler\"\nat = [300, 400]\nparams = {{ {medium} }}");
+    let mut play = second_play(&level(&format!("{FLAT}\n{entity}")));
+    play.throw_to(18);
+    let start = play.world.things[0].pos;
+    play.world.things[1].pos.x = start.x + f(200.25);
+    let mut k = None;
+    let mut i = 0;
+    for n in 19..=60 {
+        play.step(&[]);
+        let w = &play.world.things[1];
+        let before = i;
+        i = play.world.things[0].pos.x.floor() - w.pos.x.floor();
+        if k.is_none() && w.phase != Phase::Ready {
+            assert_eq!((n, i), (34, -51));
+            assert!(before < -55, "{before}");
+            k = Some(n);
+        }
+    }
+    assert!(k.is_some());
+}
+
+/// The same, further away: a small walker is hit only by the smaller
+/// area, from Q + 35 on.
+#[test]
+fn hits_a_walker_by_the_second_character_s_object_later_by_the_smaller_area() {
+    let entity =
+        format!("[[entities]]\ntype = \"crawler\"\nat = [300, 400]\nparams = {{ {SMALL_WALKER} }}");
+    let mut play = second_play(&level(&format!("{FLAT}\n{entity}")));
+    play.throw_to(18);
+    let start = play.world.things[0].pos;
+    play.world.things[1].pos.x = start.x + f(200.25);
+    let mut hit = None;
+    for n in 19..=60 {
+        play.step(&[]);
+        if hit.is_none() && play.world.things[1].phase != Phase::Ready {
+            hit = Some(n);
+        }
+    }
+    assert!(hit.is_some_and(|n| n >= 35), "{hit:?}");
+}
