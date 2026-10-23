@@ -46,6 +46,8 @@ pub enum ObjectPalette {
     OneLife,
     /// The first character's leading palette.
     FirstLeading,
+    /// The second character's leading palette.
+    SecondLeading,
 }
 
 /// One sheet: its name and its pictures by label, picture hash and palette.
@@ -70,6 +72,7 @@ impl ObjectPalette {
             ObjectPalette::Stinger => Data::StingerPalette,
             ObjectPalette::OneLife => Data::OneLifePalette,
             ObjectPalette::FirstLeading => Data::FirstLeadingPalette,
+            ObjectPalette::SecondLeading => Data::SecondLeadingPalette,
         }
     }
 }
@@ -142,6 +145,7 @@ impl ObjectDecoder {
             ObjectPalette::Stinger,
             ObjectPalette::OneLife,
             ObjectPalette::FirstLeading,
+            ObjectPalette::SecondLeading,
         ];
         let palettes = all
             .into_iter()

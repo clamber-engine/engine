@@ -650,6 +650,76 @@ pub(super) const SHEETS: &[ObjectSheet] = &[
                 "dabcb8239729663951a60e3fe5e44f26d33b9bd42397e5dcbb587d76c36eb28e",
                 FirstLeading,
             ),
+            (
+                "rider2-1",
+                "0dbb9575884f04a5a16daaebee28e1bd7f2fe3738f79e678f9ad6bf0f073bf77",
+                SecondLeading,
+            ),
+            (
+                "rider2-2",
+                "14674da2273016d31b8d911320d5fe013f4545d190c70618336b53713d1629cf",
+                SecondLeading,
+            ),
+            (
+                "rider2-3",
+                "9bf1b3b1576e20c30fd1a3138aa7b8be04bffe7b5fe252502653c56b8abbc5b8",
+                SecondLeading,
+            ),
+            (
+                "rider2-4",
+                "735b97b200c7dc45c542f1c2cf04130737992f85dcb7a223bad407c9a26a2bfb",
+                SecondLeading,
+            ),
+            (
+                "rider2-5",
+                "629feec9eed9c918f7eb7b690d7f053deaad0fb73cbdba719b6140f4a438665e",
+                SecondLeading,
+            ),
+            (
+                "rider2-6",
+                "761aca2755ceee7dc6338d9dfd53749bdad5ce7d0da85a932b69f0f9795e9d51",
+                SecondLeading,
+            ),
+            (
+                "rider2-7",
+                "15b89a799c22307242e775748f459df25c244094164f3894059eaa1463a7503a",
+                SecondLeading,
+            ),
+            (
+                "rider2-8",
+                "f3dc1463de87a6402c91c05d937bcfcebd23b524353e352572d556b464397e1e",
+                SecondLeading,
+            ),
+            (
+                "rider2-9",
+                "a2dc0c2f5943f8f716c99c1881589958e6d160493cb636b31bcb662ee82676a8",
+                SecondLeading,
+            ),
+            (
+                "rider2-10",
+                "6ec04a5173d827901b9d758ccceff24e02a4e9ce1ee51ce4d3a8a919aab4016d",
+                SecondLeading,
+            ),
+            (
+                "rider2-11",
+                "9121d214a7b6e02b5020d584d5931ffc34ff738723608a3edb2baa88883c3868",
+                SecondLeading,
+            ),
+            (
+                "rider2-12",
+                "95faf279cb0034de55c2f7cff49f5d39d40a8f7f8946e9aac14331e43ef0ed24",
+                SecondLeading,
+            ),
+            (
+                "rider2-13",
+                "542b9c01387d5c19070c939c1ec2d4686a21b7a3c18085933932e7d864350010",
+                SecondLeading,
+            ),
+            (
+                "rider2-14",
+                "26b6663ace6d7998c0d1a5cc85fc0a027d767a1f378b39d5fb462eb3370cf1fc",
+                SecondLeading,
+            ),
         ],
     },
     ObjectSheet {
@@ -1090,3 +1160,31 @@ pub(super) const SHEETS: &[ObjectSheet] = &[
         ],
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_second_characters_rider_pictures_are_in_the_crate_sheet() {
+        let sheet = SHEETS.iter().find(|s| s.name == "crate-pictures").unwrap();
+        let spec = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../spec/behavior/riding.md"
+        ))
+        .unwrap();
+        for n in 1..=14 {
+            let label = format!("rider2-{n}");
+            let &(_, hash, palette) = sheet
+                .pictures
+                .iter()
+                .find(|p| p.0 == label)
+                .unwrap_or_else(|| panic!("{label} is missing"));
+            assert_eq!(palette, SecondLeading, "{label}");
+            assert!(
+                spec.contains(&format!("| `{label}` | `{hash}` |")),
+                "{label}"
+            );
+        }
+    }
+}
