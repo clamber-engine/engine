@@ -181,7 +181,8 @@ impl Cast {
             return;
         }
         if let Some(shown) = pose.ride.shown()
-            && self.has_group(hutch_pictures::SHEET, &ride_pictures::RIDER)
+            && ride_pictures::rider_group(shown.rider)
+                .is_some_and(|group| self.has_group(hutch_pictures::SHEET, group))
             && let Some(sprite) = self.ride_sprite(shown.rider, shown, (x, y))
         {
             self.bank.draw(canvas, &sprite);
@@ -918,7 +919,7 @@ impl Cast {
     ) -> Option<Sprite> {
         let &id = self.kinds.get(hutch_pictures::SHEET)?;
         let frame = *self.bank.sheet(id).animation(label)?.frames.first()?;
-        let d = if label.starts_with("rider-") {
+        let d = if ride_pictures::rider_group(label).is_some() {
             shown.d
         } else {
             0
@@ -2638,6 +2639,45 @@ mod tests {
         // Without a group of them the engine's art stays.
         groups.pop();
         assert_eq!(draw(&cast(&groups)), [none, none, R, none]);
+    }
+
+    #[test]
+    fn a_rider_is_drawn_from_its_own_characters_group() {
+        let sheet_with = |labels: &[&str]| {
+            Cast::new(vec![(
+                hutch_pictures::SHEET.to_string(),
+                labelled_sheet(labels, 4),
+            )])
+        };
+        let none = Color::default();
+        let draw = |cast: &Cast, rider: &'static str| {
+            let mut world = world();
+            world.player.character = if rider.starts_with("rider2-") { 1 } else { 0 };
+            let pose = Pose {
+                ride: ride_pictures::Clock::showing(ride_pictures::Shown {
+                    animal: "ride-walk-1",
+                    rider,
+                    d: 0,
+                    flip: false,
+                }),
+                ..Pose::default()
+            };
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_player(&mut canvas, &world, &pose, 2.0, 0.0);
+            [0, 1, 2, 3].map(|x| canvas.get(x, 0).unwrap())
+        };
+        // Only the first character's group: the second character shows
+        // none of it.
+        let first = sheet_with(&ride_pictures::RIDER);
+        assert_eq!(draw(&first, "rider-14"), [none, B, none, none]);
+        assert_eq!(draw(&first, "rider2-6"), [none; 4]);
+        // Only the second character's group.
+        let second = sheet_with(&ride_pictures::RIDER2);
+        assert_eq!(draw(&second, "rider2-6"), [none, B, none, none]);
+        assert_eq!(draw(&second, "rider-14"), [none; 4]);
+        // A group short of one picture is not drawn.
+        let short = sheet_with(&ride_pictures::RIDER2[1..]);
+        assert_eq!(draw(&short, "rider2-6"), [none; 4]);
     }
 
     #[test]

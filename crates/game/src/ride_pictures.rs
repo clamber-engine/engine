@@ -9,10 +9,14 @@
 //! the rider's 284-frame loop), walking (the 15-step stride and the
 //! rider's moving cycle), a turn, a jump, and a charge with its end.
 //!
+//! The second character has its own rider pictures, loop, cycle and
+//! heights ("Pictures with the second character"); [`Clock`] follows
+//! them when the player is not the first character.
+//!
 //! The pictures are in the pack's [`hutch_pictures::SHEET`]. The
-//! animal's ([`ANIMAL_GROUPS`]) and the rider's ([`RIDER`]) are shown
-//! only when the sheet has the whole group; otherwise the engine's art
-//! stays.
+//! animal's ([`ANIMAL_GROUPS`]) and the rider's ([`RIDER`], or
+//! [`RIDER2`] for the second character) are shown only when the sheet
+//! has the whole group; otherwise the engine's art stays.
 
 use clamber_sim::{Player, RidePart};
 
@@ -57,9 +61,33 @@ pub const RIDER: [&str; 16] = [
     "rider-9", "rider-10", "rider-11", "rider-12", "rider-13", "rider-14", "rider-15", "rider-16",
 ];
 
-/// The rider's picture `n` of 1 to 16.
-fn rider(n: usize) -> &'static str {
-    RIDER[n - 1]
+/// The second character's rider pictures.
+pub const RIDER2: [&str; 14] = [
+    "rider2-1",
+    "rider2-2",
+    "rider2-3",
+    "rider2-4",
+    "rider2-5",
+    "rider2-6",
+    "rider2-7",
+    "rider2-8",
+    "rider2-9",
+    "rider2-10",
+    "rider2-11",
+    "rider2-12",
+    "rider2-13",
+    "rider2-14",
+];
+
+/// The rider group a rider picture `label` belongs to.
+pub fn rider_group(label: &str) -> Option<&'static [&'static str]> {
+    if RIDER.contains(&label) {
+        Some(&RIDER)
+    } else if RIDER2.contains(&label) {
+        Some(&RIDER2)
+    } else {
+        None
+    }
 }
 
 /// The animal's picture of the standing cycle, by the place in its 60
@@ -90,6 +118,33 @@ const LOOP_START: u16 = 187;
 /// The rider's moving cycle: pictures `rider-14`, `rider-15`,
 /// `rider-16`, `rider-15`.
 const CYCLE: [usize; 4] = [14, 15, 16, 15];
+
+/// The second character's standing loop: its picture and the frames it
+/// shows.
+const LOOP2: [(usize, u16); 12] = [
+    (1, 40),
+    (2, 8),
+    (3, 8),
+    (4, 40),
+    (3, 8),
+    (2, 6),
+    (3, 6),
+    (4, 6),
+    (5, 20),
+    (4, 8),
+    (3, 8),
+    (2, 8),
+];
+const LOOP2_FRAMES: u16 = 166;
+/// Where the second character's loop is on S in general: its first frame
+/// is spent (`rider2-1` shows 39 frames, not 40).
+const LOOP2_START: u16 = 1;
+/// Where it is on S after a charge: the 5th frame of entry 1.
+const LOOP2_AFTER_CHARGE: u16 = 4;
+
+/// The second character's moving cycle: pictures `rider2-6` to
+/// `rider2-9` and back, 6 frames each.
+const CYCLE2: [usize; 6] = [6, 7, 8, 9, 8, 7];
 
 /// The rider's height `d` by stride step.
 const HEIGHT: [i32; 15] = [1, 1, 0, 0, -1, -2, -2, -3, -3, -3, -2, -2, -1, 0, 1];
@@ -174,6 +229,8 @@ pub struct Frame {
 /// Follows a rider to say which pictures it shows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Clock {
+    /// The player is the second character.
+    second: bool,
     last: Option<RidePart>,
     gait: Gait,
     /// Frames since the rider's moving cycle started.
@@ -187,13 +244,16 @@ pub struct Clock {
     /// entry it was in, still shown as the jump's end picture.
     saved: Option<u16>,
     ending: Option<usize>,
+    /// The standing loop is to resume after a charge.
+    charged: bool,
     shown: Option<Shown>,
 }
 
 /// The loop entry the place `pos` is in.
-fn entry(pos: u16) -> usize {
+fn entry(pos: u16, second: bool) -> usize {
     let mut left = pos;
-    for (i, &(_, frames)) in LOOP.iter().enumerate() {
+    let table: &[(usize, u16)] = if second { &LOOP2 } else { &LOOP };
+    for (i, &(_, frames)) in table.iter().enumerate() {
         if left < frames {
             return i;
         }
@@ -208,12 +268,22 @@ impl Clock {
         self.shown
     }
 
+    /// A clock showing `shown`.
+    #[cfg(test)]
+    pub fn showing(shown: Shown) -> Clock {
+        Clock {
+            shown: Some(shown),
+            ..Clock::default()
+        }
+    }
+
     /// Moves on to `player` as it is after a logic frame.
     pub fn update(&mut self, player: &Player) {
         let Some(r) = player.riding else {
             *self = Clock::default();
             return;
         };
+        self.second = player.character != 0;
         let dir = match player.target.to_bits().signum() {
             1 => 1,
             -1 => -1,
@@ -244,7 +314,8 @@ impl Clock {
         let forward = f.dir != 0 && (f.steered || f.dir == f.facing);
         let after_turn = matches!(prev, Some(RidePart::Turn(a)) if a + 1 >= f.turn);
         let walking = matches!(self.gait, Gait::Walking { .. });
-        let (animal, rider_n);
+        let animal;
+        let mut rider_n;
         match f.part {
             RidePart::Turn(age) => {
                 if age == 0 {
@@ -262,11 +333,12 @@ impl Clock {
                 self.gait = Gait::None;
                 self.saved = None;
                 self.ending = None;
+                self.charged = false;
                 animal = TURN[match age {
                     2..=5 => 1,
                     _ => 0,
                 }];
-                rider_n = CYCLE[(self.cycle as usize + 1) / 8 % 4];
+                rider_n = self.moving();
             }
             RidePart::Jump(age) => {
                 if age == 0 {
@@ -274,7 +346,8 @@ impl Clock {
                         Gait::Standing { pos, .. } => Some(pos),
                         _ => None,
                     };
-                    self.ending = self.saved.map(entry);
+                    self.ending = self.saved.map(|pos| entry(pos, self.second));
+                    self.charged = false;
                     self.flight = Some(Flight::default());
                 }
                 self.gait = Gait::None;
@@ -305,19 +378,46 @@ impl Clock {
                     _ if late => (JUMP[4], 12),
                     _ => (JUMP[3], 11),
                 };
+                if self.second {
+                    // The rider's last picture starts a frame before the
+                    // animal's (S1 - 1).
+                    let next = matches!(
+                        (flight.fell, flight.low),
+                        (Some(fell), Some(low)) if age + 1 >= fell + 2 && age + 1 > low
+                    );
+                    let fell = flight.fell.is_some();
+                    let (n, d) = match age {
+                        a if a < f.crouch => (10, 2),
+                        _ if since < 3 => (11, 0),
+                        _ if since < 6 => (11, -2),
+                        _ if next => (14, -2),
+                        _ if fell => (13, -3),
+                        _ => (12, -4),
+                    };
+                    rider_n = n;
+                    self.d = Some(d);
+                }
             }
             RidePart::Landing(age) => {
                 self.gait = Gait::None;
                 (animal, rider_n) = if age < 3 { (JUMP[5], 13) } else { (JUMP[0], 9) };
+                if self.second {
+                    (rider_n, self.d) = if age < 3 {
+                        (13, Some(2))
+                    } else {
+                        (11, Some(3))
+                    };
+                }
             }
             RidePart::Charge { age: 0, .. } => {
-                self.d = Some(1);
+                self.d = Some(if self.second { 4 } else { 1 });
                 self.charge = Some(0);
+                self.charged = true;
                 self.gait = Gait::None;
                 self.saved = None;
                 self.ending = None;
                 animal = CHARGE[0];
-                rider_n = 9;
+                rider_n = if self.second { 10 } else { 9 };
             }
             RidePart::Rush { .. } => {
                 // The frame a charge is started on: nothing changes.
@@ -337,17 +437,37 @@ impl Clock {
                     RidePart::Charge { age, .. } if age < 10 => CHARGE[0],
                     _ => CHARGE[1],
                 };
-                rider_n = match c {
-                    0..=5 => 9,
-                    6..=8 => 10,
-                    9..=32 => 11,
-                    33..=37 => 10,
-                    _ => 9,
+                rider_n = if self.second {
+                    if c >= 10 {
+                        self.d = Some(1);
+                    }
+                    match c {
+                        0..=1 => 10,
+                        2..=4 => 11,
+                        5..=7 => 12,
+                        8..=10 => 13,
+                        11..=26 => 14,
+                        27..=29 => 13,
+                        30..=32 => 12,
+                        33..=35 => 11,
+                        _ => 1,
+                    }
+                } else {
+                    match c {
+                        0..=5 => 9,
+                        6..=8 => 10,
+                        9..=32 => 11,
+                        33..=37 => 10,
+                        _ => 9,
+                    }
                 };
             }
             RidePart::Riding | RidePart::Settling => {
                 let first = !matches!(prev, Some(RidePart::Riding | RidePart::Settling));
-                self.charge = None;
+                let from_charge = self.charge.take().is_some();
+                if from_charge {
+                    self.charged = true;
+                }
                 let mut gait = self.gait;
                 if after_turn {
                     self.d = Some(1);
@@ -362,7 +482,7 @@ impl Clock {
                         } else {
                             Gait::Standing {
                                 n: n + 1,
-                                pos: (pos + 1) % LOOP_FRAMES,
+                                pos: (pos + 1) % self.loop_frames(),
                             }
                         };
                     }
@@ -373,7 +493,7 @@ impl Clock {
                         gait = if stand && f.dir == 0 {
                             Gait::Standing {
                                 n: 0,
-                                pos: LOOP_START,
+                                pos: self.loop_start(),
                             }
                         } else if stand && forward {
                             Gait::Walking {
@@ -410,6 +530,7 @@ impl Clock {
                     self.cycle = 0;
                     self.saved = None;
                     self.ending = None;
+                    self.charged = false;
                 } else if walking || matches!(gait, Gait::Walking { .. }) {
                     self.cycle += 1;
                 }
@@ -421,26 +542,36 @@ impl Clock {
                     Gait::Walking { step, .. } => {
                         self.d = Some(HEIGHT[usize::from(step) - 1]);
                         animal = WALK[usize::from(step.min(14)) - 1];
-                        rider_n = CYCLE[(self.cycle as usize + 1) / 8 % 4];
+                        rider_n = self.moving();
                     }
                     Gait::Standing { .. } | Gait::None => {
                         let (n, pos) = match gait {
                             Gait::Standing { n, pos } => (n, pos),
-                            _ => (0, LOOP_START),
+                            _ => (0, self.loop_start()),
                         };
                         animal = hutch_pictures::STANDING[STANDING_CYCLE[(n as usize / 6) % 10]];
-                        let at = entry(pos);
+                        let at = entry(pos, self.second);
                         if self.ending.is_some_and(|e| e != at) {
                             self.ending = None;
                         }
-                        rider_n = if self.ending.is_some() { 9 } else { LOOP[at].0 };
+                        rider_n = if self.ending.is_some() {
+                            if self.second { 11 } else { 9 }
+                        } else if self.second {
+                            LOOP2[at].0
+                        } else {
+                            LOOP[at].0
+                        };
                     }
                 }
             }
         }
         self.shown = Some(Shown {
             animal,
-            rider: rider(rider_n),
+            rider: if self.second {
+                RIDER2[rider_n - 1]
+            } else {
+                RIDER[rider_n - 1]
+            },
             d: self.d.unwrap_or(1),
             flip,
         });
@@ -451,14 +582,40 @@ impl Clock {
     fn resume_pos(&mut self) -> u16 {
         match self.saved.take() {
             Some(pos) => {
-                let next = (pos + 1) % LOOP_FRAMES;
-                self.ending = self.ending.filter(|&e| e == entry(next));
+                let next = (pos + 1) % self.loop_frames();
+                self.ending = self.ending.filter(|&e| e == entry(next, self.second));
                 next
             }
             None => {
                 self.ending = None;
-                LOOP_START
+                if self.second && std::mem::take(&mut self.charged) {
+                    LOOP2_AFTER_CHARGE
+                } else {
+                    self.loop_start()
+                }
             }
+        }
+    }
+
+    fn loop_frames(&self) -> u16 {
+        if self.second {
+            LOOP2_FRAMES
+        } else {
+            LOOP_FRAMES
+        }
+    }
+
+    fn loop_start(&self) -> u16 {
+        if self.second { LOOP2_START } else { LOOP_START }
+    }
+
+    /// The picture number of the rider's moving cycle.
+    fn moving(&self) -> usize {
+        let m = self.cycle as usize + 1;
+        if self.second {
+            CYCLE2[m / 6 % 6]
+        } else {
+            CYCLE[m / 8 % 4]
         }
     }
 }
@@ -677,5 +834,127 @@ mod tests {
         assert_eq!((r(9), r(32)), ("rider-11", "rider-11"));
         assert_eq!((r(33), r(37)), ("rider-10", "rider-10"));
         assert_eq!((r(38), r(39)), ("rider-9", "rider-9"));
+    }
+
+    fn second() -> Clock {
+        Clock {
+            second: true,
+            ..Clock::default()
+        }
+    }
+
+    #[test]
+    fn the_second_characters_standing_loop_starts_a_frame_in() {
+        let mut clock = second();
+        let shown: Vec<_> = (0..48)
+            .map(|_| run(&mut clock, frame(RidePart::Riding, 0, 0)).rider)
+            .collect();
+        assert!(shown[..39].iter().all(|&r| r == "rider2-1"));
+        assert!(shown[39..47].iter().all(|&r| r == "rider2-2"));
+        assert_eq!(shown[47], "rider2-3");
+    }
+
+    #[test]
+    fn the_second_characters_loop_is_166_frames() {
+        let mut clock = second();
+        let shown: Vec<_> = (0..167)
+            .map(|_| run(&mut clock, frame(RidePart::Riding, 0, 0)).rider)
+            .collect();
+        // Entry 1 has 39 frames the first time, 40 after the loop.
+        assert_eq!(shown[164], "rider2-2");
+        assert!(shown[165..].iter().all(|&r| r == "rider2-1"));
+    }
+
+    #[test]
+    fn the_second_characters_jump_shows_the_spec_example() {
+        // P = 0, T = 5, F = 22, S1 = 24, L = 36.
+        let mut clock = second();
+        run(&mut clock, frame(RidePart::Riding, 0, 0));
+        let mut shown = Vec::new();
+        for age in 0..36u8 {
+            let mut f = frame(RidePart::Jump(age), 0, 0);
+            f.falling = age >= 22;
+            shown.push(run(&mut clock, f));
+        }
+        for age in 0..8 {
+            shown.push(run(&mut clock, frame(RidePart::Landing(age), 0, 0)));
+        }
+        let at = |n: usize| (shown[n].rider, shown[n].d);
+        assert_eq!(at(0), ("rider2-10", 2));
+        assert_eq!(at(4), ("rider2-10", 2));
+        assert_eq!(at(5), ("rider2-11", 0));
+        assert_eq!(at(7), ("rider2-11", 0));
+        assert_eq!(at(8), ("rider2-11", -2));
+        assert_eq!(at(10), ("rider2-11", -2));
+        assert_eq!(at(11), ("rider2-12", -4));
+        assert_eq!(at(21), ("rider2-12", -4));
+        assert_eq!(at(22), ("rider2-13", -3));
+        assert_eq!(at(23), ("rider2-14", -2));
+        assert_eq!(at(35), ("rider2-14", -2));
+        assert_eq!(at(36), ("rider2-13", 2));
+        assert_eq!(at(38), ("rider2-13", 2));
+        assert_eq!(at(39), ("rider2-11", 3));
+        assert_eq!(at(43), ("rider2-11", 3));
+        // The animal's pictures are the first character's.
+        assert_eq!(shown[24].animal, "ride-jump-5");
+        // The height stays 3 after the jump.
+        assert_eq!(run(&mut clock, frame(RidePart::Riding, 0, 0)).d, 3);
+    }
+
+    #[test]
+    fn the_second_characters_charge_and_the_standing_after_it() {
+        let mut clock = second();
+        run(&mut clock, frame(RidePart::Riding, 0, 0));
+        let mut shown = Vec::new();
+        for age in 0..28 {
+            let part = RidePart::Charge {
+                age,
+                steered: false,
+            };
+            shown.push(run(&mut clock, frame(part, 0, 0)));
+        }
+        for age in 0..12 {
+            let part = RidePart::ChargeEnd {
+                age,
+                steered: false,
+            };
+            shown.push(run(&mut clock, frame(part, 0, 0)));
+        }
+        let at = |n: usize| (shown[n].rider, shown[n].d);
+        assert_eq!(at(0), ("rider2-10", 4));
+        assert_eq!(at(1), ("rider2-10", 4));
+        assert_eq!(at(2), ("rider2-11", 4));
+        assert_eq!(at(5), ("rider2-12", 4));
+        assert_eq!(at(9), ("rider2-13", 4));
+        assert_eq!(at(10), ("rider2-13", 1));
+        assert_eq!(at(11), ("rider2-14", 1));
+        assert_eq!(at(26), ("rider2-14", 1));
+        assert_eq!(at(27).0, "rider2-13");
+        assert_eq!(at(30).0, "rider2-12");
+        assert_eq!(at(33).0, "rider2-11");
+        assert_eq!(at(35).0, "rider2-11");
+        assert_eq!(at(36).0, "rider2-1");
+        assert_eq!(at(39).0, "rider2-1");
+        // Standing starts on the 5th frame of the loop's first entry.
+        let after: Vec<_> = (0..37)
+            .map(|_| run(&mut clock, frame(RidePart::Riding, 0, 0)).rider)
+            .collect();
+        assert!(after[..36].iter().all(|&r| r == "rider2-1"));
+        assert_eq!(after[36], "rider2-2");
+    }
+
+    #[test]
+    fn the_second_characters_moving_cycle_is_six_frames_a_picture() {
+        let mut clock = second();
+        let shown: Vec<_> = (0..40)
+            .map(|_| run(&mut clock, frame(RidePart::Riding, 1, 512)).rider)
+            .collect();
+        assert!(shown[..5].iter().all(|&r| r == "rider2-6"));
+        assert!(shown[5..11].iter().all(|&r| r == "rider2-7"));
+        assert!(shown[11..17].iter().all(|&r| r == "rider2-8"));
+        assert!(shown[17..23].iter().all(|&r| r == "rider2-9"));
+        assert!(shown[23..29].iter().all(|&r| r == "rider2-8"));
+        assert!(shown[29..35].iter().all(|&r| r == "rider2-7"));
+        assert_eq!(shown[35], "rider2-6");
     }
 }
