@@ -439,15 +439,30 @@ enum OffRope {
     /// Jumping off, this many frames after P, and the frames since `vy`
     /// first was above 0.
     Jump { age: u8, falling: Option<u8> },
-    /// Sliding off the end, this many frames after the let-go frame.
+    /// Sliding off the end, this many frames after the let-go frame. The
+    /// list holds from F on, landed or not.
     Slide(u8),
 }
 
-/// The first character's rope pictures after a slide off the end, from F
-/// (`land-2`) by pairs of frames.
-const SLIDE: [&str; 7] = [
-    "land-1", "air-6", "air-5", "air-4", "air-3", "air-4", "air-5",
-];
+/// The first character's picture `k` frames after F, the first frame
+/// after the let-go frame of a slide off the end of a rope, for the 30
+/// frames F to F + 29 ("After the rope").
+fn slide_off(k: u8) -> &'static str {
+    const AIR: [&str; 5] = ["air-6", "air-5", "air-4", "air-3", "air-4"];
+    match k {
+        0 => "land-2",
+        1..=2 => "land-1",
+        3..=12 => AIR[usize::from(k - 3) / 2],
+        13..=15 => "air-5",
+        16..=19 => "air-6",
+        20..=23 => "land-1",
+        24..=26 => "land-2",
+        _ => "land-3",
+    }
+}
+
+/// Where the list of [`slide_off`] ends.
+const SLIDE_LAST: u8 = 29;
 
 /// The first character's being-hurt pictures: `hurt-1` to `hurt-14` and
 /// `lie-1` to `lie-4`.
@@ -984,6 +999,8 @@ struct Landed {
     n: u8,
     /// On the floor it took off from, or lower.
     not_above: bool,
+    /// After a jump off a rope: M is L.
+    rope: bool,
 }
 
 /// Follows the player to say which of its pictures it shows.
@@ -1144,8 +1161,16 @@ impl PictureClock {
         } else {
             None
         };
+        let off_rope_jump = matches!(self.off_rope, Some(OffRope::Jump { .. }));
         if events.contains(&Event::Land) {
             self.landed = landing_age.and_then(|age| {
+                if off_rope_jump {
+                    return Some(Landed {
+                        n: 0,
+                        not_above: true,
+                        rope: true,
+                    });
+                }
                 let land = age.saturating_add(1);
                 let approach = player.approach?;
                 let stages = stages(approach, &physics);
@@ -1154,6 +1179,7 @@ impl PictureClock {
                 Some(Landed {
                     n,
                     not_above: self.takeoff_y.is_some_and(|t| y >= t),
+                    rope: false,
                 })
             });
         } else if !player.grounded() || events.contains(&Event::JumpStart) {
@@ -1274,7 +1300,7 @@ impl PictureClock {
 
         let from_rope = before.is_some_and(|(set, _)| set == Set::Rope);
         let after_rope = if first {
-            self.after_rope(world, from_rope)
+            self.after_rope(world, from_rope, jump_next)
         } else {
             None
         };
@@ -1312,7 +1338,7 @@ impl PictureClock {
             getting_up(first, u)
         } else if let Some(landed) = self.landed {
             if first {
-                first_landing(landed, player.gait)
+                first_landing(landed, player.gait, player.since_land)
             } else {
                 second_landing(landed, player.since_land, player.gait, player.state)
             }
@@ -1455,10 +1481,23 @@ impl PictureClock {
 
     /// The first character's picture on the frames after it has left a
     /// rope ("After the rope"), where covered.
-    fn after_rope(&mut self, world: &World, from_rope: bool) -> Option<(Set, &'static str)> {
+    fn after_rope(
+        &mut self,
+        world: &World,
+        from_rope: bool,
+        jump_next: bool,
+    ) -> Option<(Set, &'static str)> {
         let player = &world.player;
         let events = &world.events;
-        if player.grounded() || events.contains(&Event::Land) || player.rope.is_some() {
+        let slide = matches!(self.off_rope, Some(OffRope::Slide(_)));
+        if player.rope.is_some()
+            || !slide && (player.grounded() || events.contains(&Event::Land))
+            // The list is left for a jump, a crouch or a roll after the
+            // landing.
+            || slide
+                && player.grounded()
+                && (jump_next || player.crouch.held > 0 || player.roll.is_some())
+        {
             self.off_rope = None;
         }
         if events.contains(&Event::RopeSlideOff) {
@@ -1473,7 +1512,10 @@ impl PictureClock {
             });
         } else {
             self.off_rope = match self.off_rope {
-                Some(OffRope::Slide(n)) if n < 15 => Some(OffRope::Slide(n + 1)),
+                // Later than F + 14 the list holds only on the floor.
+                Some(OffRope::Slide(n)) if n < SLIDE_LAST + 1 && (n < 15 || player.grounded()) => {
+                    Some(OffRope::Slide(n + 1))
+                }
                 Some(OffRope::Slide(_)) => None,
                 Some(OffRope::Jump { age, falling }) => {
                     let falling = match falling {
@@ -1490,8 +1532,7 @@ impl PictureClock {
         }
         let label = match self.off_rope? {
             OffRope::Slide(0) => return None,
-            OffRope::Slide(1) => "land-2",
-            OffRope::Slide(n) => SLIDE[usize::from(n - 2) / 2],
+            OffRope::Slide(n) => slide_off(n - 1),
             OffRope::Jump { age: 0, .. } => "land-1",
             OffRope::Jump {
                 falling: Some(m), ..
@@ -1919,7 +1960,17 @@ fn air(s: usize) -> &'static str {
 
 /// The first character on the frames from L until walking, running or
 /// standing starts.
-fn first_landing(landed: Landed, gait: Gait) -> Option<(Set, &'static str)> {
+fn first_landing(
+    landed: Landed,
+    gait: Gait,
+    since_land: Option<u8>,
+) -> Option<(Set, &'static str)> {
+    if landed.rope {
+        // M = L: three pictures each of `land-1`, `land-2` and `land-3`,
+        // whatever the gait says (`since_land` is 0 on L).
+        let label = *["land-1", "land-2", "land-3"].get(usize::from(since_land? / 3))?;
+        return Some((Set::Jump, label));
+    }
     let Gait::Landing(landing) = gait else {
         return None;
     };
@@ -4419,6 +4470,63 @@ mod tests {
             assert_eq!(run.shown[f + 1 + 2 * n], Some(label), "F + {}", 1 + 2 * n);
             assert_eq!(run.shown[f + 2 + 2 * n], Some(label), "F + {}", 2 + 2 * n);
         }
+    }
+
+    /// [`ROPE_LEVEL`] with the floor close below the rope.
+    fn low_rope_level(floor: u32) -> String {
+        ROPE_LEVEL.replace("700, 2000", &format!("{floor}, 2000"))
+    }
+
+    #[test]
+    fn landing_after_jumping_off_a_rope_with_nothing_held() {
+        // player-frames.md, "Landing after a rope": land-1, land-2 and
+        // land-3 three times each from L, then standing from L + 9.
+        let (keys, c) = rope_keys(
+            |k| match k {
+                2 => vec![Action::Jump, Action::Right],
+                _ => vec![],
+            },
+            120,
+        );
+        let r = run(world(&low_rope_level(330), 0), &keys);
+        let l = r.frames(Event::Land)[0];
+        assert!(l > c + 25, "a jump of 25 frames or more");
+        r.check(
+            l,
+            &[
+                ("land-1", 3),
+                ("land-2", 3),
+                ("land-3", 3),
+                ("stand-1", 3),
+                ("stand-2", 3),
+            ],
+        );
+    }
+
+    #[test]
+    fn landing_after_sliding_off_a_rope_shows_the_30_frame_list() {
+        let (keys, c) = rope_keys(|k| if k <= 11 { vec![Action::Down] } else { vec![] }, 120);
+        let r = run(world(&low_rope_level(190), 0), &keys);
+        let l = r.frames(Event::Land)[0];
+        let f = (c..keys.len())
+            .find(|&k| r.events[k].contains(&Event::RopeSlideOff))
+            .expect("slid off")
+            + 1;
+        assert!((f + 4..=f + 13).contains(&l), "F = {f}, L = {l}");
+        let mut want = vec![("land-2", 1), ("land-1", 2)];
+        for label in ["air-6", "air-5", "air-4", "air-3", "air-4"] {
+            want.push((label, 2));
+        }
+        want.extend([
+            ("air-5", 3),
+            ("air-6", 4),
+            ("land-1", 4),
+            ("land-2", 3),
+            ("land-3", 3),
+            ("stand-1", 3),
+            ("stand-2", 3),
+        ]);
+        r.check(f, &want);
     }
 
     /// All water, the first character in it.
