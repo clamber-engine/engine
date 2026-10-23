@@ -1275,6 +1275,11 @@ carry_stride_min = 0.3333333335
 carry_stride_scale = 0
 carry_stand_steps = [2, 7]
 carry_stand_speed = 0.1875
+# The object leaves the hands at 9 px above its `y` and is put down 12 px
+# ahead (carrying.md, "The object, second character"); its path in the
+# hands is `in_hands_second_*` (archetypes.toml).
+throw_lift = 9
+put_down_ahead = 12
 
 # Classic 2: the `title-2` values. Filled in so far: jump input timing
 # (jump-input.md and walk-off.md, "In `title-2`"), crouching on the

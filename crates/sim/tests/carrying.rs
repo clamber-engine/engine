@@ -588,3 +588,45 @@ fn the_second_character_s_carried_jump_has_the_first_character_s_values() {
     // Held since the press: gravity 0.28125.
     assert_eq!(rows[t + 1].vel.y - rows[t].vel.y, f(0.28125));
 }
+
+/// "The object, second character": the object leaves the hands on Q + 18,
+/// at the player's `x` and 9 px above its `y`, and is in the hands where
+/// the table says before.
+#[test]
+fn the_second_character_throws_from_nine_px_up_on_q_plus_18() {
+    let mut play = Play::second();
+    play.hold(&[A], 30);
+    let x = play.world.player.pos.x;
+    let rows = play.hold(&[], 20);
+    assert_eq!(rows[17].phase, Phase::Held);
+    assert_eq!(rows[17].thing, Vec2::new(x, f(FLOOR - 9.0)));
+    assert_eq!(rows[0].thing, Vec2::new(x + f(8.0), f(FLOOR - 11.0)));
+    assert_eq!(rows[3].thing, Vec2::new(x - f(7.0), f(FLOOR - 11.0)));
+    assert_eq!(rows[10].thing, Vec2::new(x - f(16.0), f(FLOOR - 9.0)));
+    assert_eq!(rows[14].thing, Vec2::new(x - f(12.0), f(FLOOR - 9.0)));
+    assert_eq!(rows[18].thing, Vec2::new(x, f(FLOOR - 9.0)));
+    match rows[18].phase {
+        Phase::Thrown(flight) => {
+            assert_eq!(flight.vx, f(16.0));
+            assert_eq!(flight.vy, f(1.0));
+        }
+        other => panic!("Q + 18: {other:?}"),
+    }
+}
+
+/// The pick-up's table starts on its second frame; a put-down ends 12 px
+/// ahead and 3 px above the floor on Q + 9.
+#[test]
+fn the_second_character_s_object_in_the_hands_of_a_pick_up_and_put_down() {
+    let mut play = Play::second();
+    let x = play.world.player.pos.x;
+    let rows = play.hold(&[A], 12);
+    assert_eq!(rows[1].thing, Vec2::new(x + f(12.0), f(FLOOR + 8.0)));
+    assert_eq!(rows[4].thing, Vec2::new(x + f(16.0), f(FLOOR + 1.0)));
+    assert_eq!(rows[9].thing, Vec2::new(x + f(12.0), f(FLOOR - 8.0)));
+    let rows = play.hold(&[Down], 11);
+    assert_eq!(rows[4].thing, Vec2::new(x + f(16.0), f(FLOOR + 1.0)));
+    assert_eq!(rows[9].phase, Phase::Placed);
+    assert_eq!(rows[9].thing, Vec2::new(x + f(12.0), f(FLOOR - 3.0)));
+    assert_eq!(rows[10].phase, Phase::Ready);
+}

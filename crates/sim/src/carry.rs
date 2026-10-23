@@ -253,11 +253,17 @@ pub(crate) fn in_hands(player: &Player, thing: &Thing) -> Vec2 {
     let place = match (player.hands, thing.archetype.map(|a| a.behavior)) {
         (Some(hands), Some(Behavior::Carry { in_hands, .. })) => {
             let n = usize::from(hands.frame);
+            let (pick_up, throw, put_down) = match in_hands.second {
+                Some(second) if player.character != 0 => {
+                    (second.pick_up, second.throw, second.put_down)
+                }
+                _ => (in_hands.pick_up, in_hands.throw, in_hands.put_down),
+            };
             match hands.act {
                 Act::PickUp if n == 0 => return thing.pos,
-                Act::PickUp => in_hands.pick_up.at(n - 1),
-                Act::Throw => in_hands.throw.at(n),
-                Act::PutDown => in_hands.put_down.at(n),
+                Act::PickUp => pick_up.at(n - 1),
+                Act::Throw => throw.at(n),
+                Act::PutDown => put_down.at(n),
                 Act::Carry => None,
             }
         }
