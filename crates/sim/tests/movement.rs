@@ -1325,6 +1325,29 @@ fn classic_2_jump_takes_off_two_frames_after_the_press() {
 }
 
 #[test]
+fn immediate_classic_2_jump_takes_off_on_the_press_frame() {
+    // #437: the two frames between a Classic 2 jump's start and its take-off
+    // are a delay after the press, so with the feel immediate it takes off
+    // on P (a tap included); without it, on P + 2.
+    for (immediate, take_off) in [(true, 0), (false, 2)] {
+        let mut feel = generic_feel("classic-2").unwrap();
+        feel.immediate = immediate;
+        let mut w = Play::new(feel);
+        let mut steps = hold(&mut w, &[Action::Jump], 1);
+        steps.extend(hold(&mut w, &[], 3));
+        assert_eq!(
+            first(&steps, Event::JumpStart),
+            Some(take_off),
+            "{immediate}"
+        );
+        let starts = all_events(&steps)
+            .into_iter()
+            .filter(|&e| e == Event::JumpStart);
+        assert_eq!(starts.count(), 1, "{immediate}");
+    }
+}
+
+#[test]
 fn classic_2_presses_around_landing() {
     // spec/behavior/jump-input.md, "Landing (`title-2`)": every row of
     // the table, with the landing frame L = LAND. The earliest start is

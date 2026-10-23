@@ -515,6 +515,7 @@ impl World {
             // A press is answered on its own frame (#437).
             physics.set(Param::JumpDelay, Fixed::ZERO);
             physics.set(Param::CarryJumpDelay, Fixed::ZERO);
+            physics.set(Param::TakeoffWait, Fixed::ZERO);
         }
         physics
     }
