@@ -231,7 +231,7 @@ impl Cast {
         flip_x: bool,
         at: (i32, i32),
     ) -> bool {
-        self.draw_map_picture(canvas, n % 10, flip_x, at)
+        self.draw_map_picture(canvas, &pictures::MAP, n % 10, flip_x, at)
     }
 
     /// Draws the other character's picture on the level map, `n` of 0 to
@@ -243,12 +243,26 @@ impl Cast {
         flip_x: bool,
         at: (i32, i32),
     ) -> bool {
-        self.draw_map_picture(canvas, 10 + n % 8, flip_x, at)
+        self.draw_map_picture(canvas, &pictures::MAP, 10 + n % 8, flip_x, at)
+    }
+
+    /// Draws picture `n` of `set` (one of the map's other sets: the
+    /// finish pictures of either character, or the start's) on the level
+    /// map, as [`Cast::draw_map_lead`], needing the whole set in the sheet.
+    pub fn draw_map_set(
+        &self,
+        canvas: &mut dyn Surface,
+        set: &[&str],
+        n: usize,
+        at: (i32, i32),
+    ) -> bool {
+        self.draw_map_picture(canvas, set, n % set.len(), false, at)
     }
 
     fn draw_map_picture(
         &self,
         canvas: &mut dyn Surface,
+        set: &[&str],
         which: usize,
         flip_x: bool,
         at: (i32, i32),
@@ -257,13 +271,10 @@ impl Cast {
             return false;
         };
         let sheet = self.bank.sheet(id);
-        if !pictures::MAP.iter().all(|l| sheet.animation(l).is_some()) {
+        if !set.iter().all(|l| sheet.animation(l).is_some()) {
             return false;
         }
-        let Some(&frame) = sheet
-            .animation(pictures::MAP[which])
-            .and_then(|a| a.frames.first())
-        else {
+        let Some(&frame) = sheet.animation(set[which]).and_then(|a| a.frames.first()) else {
             return false;
         };
         let sprite = Sprite {
@@ -1677,6 +1688,31 @@ mod tests {
         // mirrored about the origin, so the picture's pixels lie left of it
         assert_eq!(canvas.get(0, 0).unwrap(), R);
         assert_eq!(canvas.get(1, 0).unwrap(), Color::default());
+    }
+
+    #[test]
+    fn a_map_set_is_drawn_when_the_whole_set_is_there_whatever_else_is() {
+        let start = crate::pictures::MAP_START;
+        let finish = crate::pictures::MAP_LEAD_FINISH;
+        for (labels, start_drawn, finish_drawn) in [
+            ([&start[..], &finish[..]].concat(), true, true),
+            ([&start[..], &finish[..10]].concat(), true, false),
+            ([&start[..8], &finish[..]].concat(), false, true),
+        ] {
+            let cast = Cast::new(vec![(
+                pictures::MAP_SHEET.to_string(),
+                character_sheet(&labels),
+            )]);
+            let mut canvas = Canvas::new(4, 1);
+            assert_eq!(
+                cast.draw_map_set(&mut canvas, &start, 2, (1, 0)),
+                start_drawn
+            );
+            assert_eq!(
+                cast.draw_map_set(&mut canvas, &finish, 2, (1, 0)),
+                finish_drawn
+            );
+        }
     }
 
     #[test]

@@ -24,6 +24,7 @@ use clamber_worldmap::{
 
 use crate::canvas::{Color, rgb};
 use crate::cast::Cast;
+use crate::pictures;
 use crate::surface::Surface;
 
 /// Where a pack keeps the map a new game begins on.
@@ -54,6 +55,37 @@ pub enum MapPhase {
     },
 }
 
+/// Which pictures the characters begin with when the map appears
+/// (`level-map.md`, "When the map appears").
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Opening {
+    /// The ordinary cycle, from frame 1.
+    #[default]
+    Cycle,
+    /// A level finished for the first time: the finish pictures up to
+    /// frame 161, then the cycle with the still frames (the first and how
+    /// many) left out of the count.
+    Finish(u32, u32),
+    /// A new game's first map: the lead's own start pictures.
+    Start,
+}
+
+/// A character's picture on the map: its number in the set it is from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapLook {
+    /// The ordinary cycle: `map-lead-1` to `map-lead-10`, or `map-other-1`
+    /// to `map-other-8`.
+    Cycle(usize),
+    /// A finish picture, `map-lead-finish-1` to `map-lead-finish-11` (or
+    /// the other character's).
+    Finish(usize),
+    /// `map-start-1` to `map-start-9`.
+    Start(usize),
+}
+
+/// The last frame of the finish pictures.
+const FINISH_END: u64 = 161;
+
 /// What a frame on the map did.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MapStep {
@@ -80,6 +112,7 @@ pub struct MapPlay {
     /// Whether the second character is the lead: the pictures follow the
     /// characters, not the places (`level-map.md`, "Pictures").
     pub(crate) second_leads: bool,
+    pub(crate) opening: Opening,
 }
 
 /// What the lead's picture on the map depends on besides where it is
@@ -115,6 +148,7 @@ impl MapPlay {
             return None;
         };
         let screen = LegsScreen::new_game(&map, legs)?;
+        let opening = Self::new_game_opening(legs);
         Some(MapPlay {
             map,
             root: root.to_path_buf(),
@@ -124,7 +158,18 @@ impl MapPlay {
             other: LeadLook::default(),
             two: false,
             second_leads: false,
+            opening,
         })
+    }
+
+    /// A new game's map shows the start pictures if the lead walks off on
+    /// its own, as the map says.
+    fn new_game_opening(legs: &Legs) -> Opening {
+        if legs.new_game.is_some() {
+            Opening::Start
+        } else {
+            Opening::Cycle
+        }
     }
 
     fn legs(&self) -> &Legs {
@@ -144,6 +189,7 @@ impl MapPlay {
         self.progress = Progress::default();
         self.two = two;
         self.second_leads = false;
+        self.opening = Self::new_game_opening(self.legs());
         self.phase = MapPhase::Shown(Box::new(screen));
         self.lead = LeadLook::default();
         self.other = LeadLook::default();
@@ -178,6 +224,10 @@ impl MapPlay {
                 lead = lead.with_other();
             }
             self.phase = MapPhase::Shown(Box::new(LegsScreen::new(lead)));
+            self.opening = match times.still {
+                Some((from, n)) => Opening::Finish(from, n),
+                None => Opening::Cycle,
+            };
             self.lead = LeadLook::default();
             self.other = LeadLook::default();
         }
@@ -190,6 +240,10 @@ impl MapPlay {
         let buttons = buttons(held, self.enterable(node));
         let mut screen = (**screen).clone();
         let out = screen.step(&self.map, self.legs(), &self.progress, buttons);
+        if out.appeared.is_some() {
+            // the map again after a press, the cycle from its first frame
+            self.opening = Opening::Cycle;
+        }
         let page_width = i64::from(self.legs().page_width.max(1));
         let x = screen.lead.position().x.floor().rem_euclid(page_width);
         // the page changes on the next frame if a frame run now says so
@@ -274,20 +328,71 @@ impl MapPlay {
         };
     }
 
-    /// The lead's map picture on the frame last run, 0 to 9 for
-    /// `map-lead-1` to `map-lead-10` (0 to 7 for `map-other-1` to
-    /// `map-other-8` when the second character leads), and whether it is mirrored; None
-    /// when the map isn't shown or the lead isn't drawn, on the frames
-    /// around a page change (`level-map.md`, "Pictures").
-    pub fn lead_picture(&self) -> Option<(usize, bool)> {
+    /// The lead's map picture on the frame last run, with the set it is
+    /// from (the second character's pictures when it leads), and whether
+    /// it is mirrored; None when the map isn't shown or the lead isn't
+    /// drawn, on the frames around a page change (`level-map.md`,
+    /// "Pictures").
+    pub fn lead_picture(&self) -> Option<(MapLook, bool)> {
         let MapPhase::Shown(screen) = &self.phase else {
             return None;
         };
         let frame = screen.lead.frame();
         let covered = self.lead.about || self.lead.changed.is_some_and(|p| frame <= p + 1);
         let cycle = if self.second_leads { 8 } else { 10 };
-        let n = (frame.saturating_sub(1) / 4 % cycle) as usize;
-        (!covered).then_some((n, self.lead.left))
+        let look = self.look(frame, cycle, true);
+        let mirrored = self.lead.left && matches!(look, MapLook::Cycle(_));
+        (!covered).then_some((look, mirrored))
+    }
+
+    /// What a character with `cycle` pictures shows after `frame` frames
+    /// were run ("When the map appears"); `lead` if it is the one the
+    /// start pictures are for.
+    fn look(&self, frame: u64, cycle: u64, lead: bool) -> MapLook {
+        // the map's frames number from 0, and the cycle's pictures begin
+        // on frame 1
+        let number = frame.saturating_sub(1);
+        let counted = |c: u64| MapLook::Cycle((c.saturating_sub(1) / 4 % cycle) as usize);
+        match self.opening {
+            Opening::Cycle => counted(number),
+            Opening::Start if lead => MapLook::Start((number.saturating_sub(1) / 4 % 9) as usize),
+            Opening::Start => counted(number),
+            Opening::Finish(..) if number <= FINISH_END => MapLook::Finish(finish_picture(number)),
+            Opening::Finish(from, n) => {
+                let from = u64::from(from);
+                let still = (number + 1).saturating_sub(from).min(u64::from(n));
+                counted(number - FINISH_END - still)
+            }
+        }
+    }
+
+    /// Draws `look` of the lead (`lead`) or the other character with its
+    /// origin at `origin`, mirrored if `flip`; false unless the cast has
+    /// the pictures.
+    fn draw_look(
+        &self,
+        canvas: &mut dyn Surface,
+        cast: &Cast,
+        look: MapLook,
+        lead: bool,
+        flip: bool,
+        origin: (i32, i32),
+    ) -> bool {
+        // the pictures follow the character, not the place
+        let first = lead != self.second_leads;
+        match look {
+            MapLook::Cycle(n) if first => cast.draw_map_lead(canvas, n, flip, origin),
+            MapLook::Cycle(n) => cast.draw_map_other(canvas, n, flip, origin),
+            MapLook::Finish(n) => {
+                let set = if first {
+                    &pictures::MAP_LEAD_FINISH
+                } else {
+                    &pictures::MAP_OTHER_FINISH
+                };
+                cast.draw_map_set(canvas, set, n, origin)
+            }
+            MapLook::Start(n) => cast.draw_map_set(canvas, &pictures::MAP_START, n, origin),
+        }
     }
 
     /// Draws the other character at `at` if it is on the lead's page;
@@ -315,13 +420,10 @@ impl MapPlay {
             (px * scale - 1.0).floor() as i32,
             (py * scale + (f64::from(h) - height * scale) / 2.0).floor() as i32,
         );
-        let n = |cycle| (screen.lead.frame().saturating_sub(1) / 4 % cycle) as usize;
-        let drawn = if self.second_leads {
-            cast.draw_map_lead(canvas, n(10), self.other.left, origin)
-        } else {
-            cast.draw_map_other(canvas, n(8), self.other.left, origin)
-        };
-        if drawn {
+        let cycle = if self.second_leads { 10 } else { 8 };
+        let look = self.look(screen.lead.frame(), cycle, false);
+        let flip = self.other.left && matches!(look, MapLook::Cycle(_));
+        if self.draw_look(canvas, cast, look, false, flip, origin) {
             return;
         }
         let (bw, bh) = ((6.0 * scale) as i32, (10.0 * scale) as i32);
@@ -391,7 +493,7 @@ impl MapPlay {
             self.draw_other(canvas, cast, screen, at, (left_edge, scale, height));
         }
         let position = screen.lead.position();
-        let Some((n, left)) = self.lead_picture() else {
+        let Some((look, left)) = self.lead_picture() else {
             return;
         };
         let (px, py) = (position.x.floor() as f64, position.y.floor() as f64);
@@ -401,18 +503,28 @@ impl MapPlay {
             py * scale + (f64::from(h) - height * scale) / 2.0,
         );
         let origin = (origin.0.floor() as i32, origin.1.floor() as i32);
-        let drawn = if self.second_leads {
-            cast.draw_map_other(canvas, n, left, origin)
-        } else {
-            cast.draw_map_lead(canvas, n, left, origin)
-        };
-        if drawn {
+        if self.draw_look(canvas, cast, look, true, left, origin) {
             return;
         }
         let (x, y) = at(position);
         let (bw, bh) = ((6.0 * scale) as i32, (10.0 * scale) as i32);
         let x = x.round() as i32 - bw / 2;
         canvas.fill_rect(x, y.round() as i32 - bh, bw, bh, shade(LEAD));
+    }
+}
+
+/// The finish picture, 0 to 10, on frame `number` of 1 to 161: 1 up to 8,
+/// down to 2 and up again, each on 2 frames, then 9, 10 and 11
+/// (`level-map.md`, "When the map appears").
+fn finish_picture(number: u64) -> usize {
+    match number {
+        156..=157 => 8,
+        158..=159 => 9,
+        160.. => 10,
+        _ => {
+            let k = (number.saturating_sub(1) / 2 % 14) as usize;
+            if k < 8 { k } else { 14 - k }
+        }
     }
 }
 

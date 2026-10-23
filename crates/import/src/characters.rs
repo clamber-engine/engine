@@ -37,6 +37,11 @@ pub const MAP_SHEET: &str = "map-characters";
 /// The name of the picture set that goes in [`MAP_SHEET`].
 const MAP_SET: &str = "map";
 
+/// Whether the picture set `name` goes in the map's sheet.
+fn is_map_set(name: &str) -> bool {
+    name == MAP_SET || name.starts_with("map-")
+}
+
 /// Pictures that are shown together, by label and picture hash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PictureSet {
@@ -1378,6 +1383,145 @@ const FIRST: &[PictureSet] = &[
             ),
         ],
     },
+    PictureSet {
+        name: "map-lead-finish",
+        pictures: &[
+            (
+                "map-lead-finish-1",
+                "0e9a0893656a47577598fde6f06a4666700f6b32a1016873a358a4dc5f4e9e16",
+            ),
+            (
+                "map-lead-finish-2",
+                "86b8a6f76a899398f2e756ba68bc86ea1ac9c82c01cfea90b9255bdbfa8be9f2",
+            ),
+            (
+                "map-lead-finish-3",
+                "28e14d5f93ca9765f98e4b95fb518efb9b25162789944b06c030ff5d6fd33e60",
+            ),
+            (
+                "map-lead-finish-4",
+                "b723e18c62d93dd163fe6dd826a5da9a24d8ed52170ca3176b9a6795fb705cdf",
+            ),
+            (
+                "map-lead-finish-5",
+                "997ad879bf2543529ed8a18695f799c52a76f8039a7188c200edc1bfb56d8ba6",
+            ),
+            (
+                "map-lead-finish-6",
+                "bf776bf48204dbb0db0750f6101e93159b01b836bed7c6e99848f0d40e6a8cbd",
+            ),
+            (
+                "map-lead-finish-7",
+                "3b80bb3862c080c7294ca5eb6b9abd080c932b81c7ee24251d871a20038a1afe",
+            ),
+            (
+                "map-lead-finish-8",
+                "b4db8907f2ce92edfbc370946fb64e69a93c0f13fb7fb4794d970d44ee3deff3",
+            ),
+            (
+                "map-lead-finish-9",
+                "c86fcefcc1d39e3026e75442f797a1d0571ccf773bfccfbe32172205e6784d85",
+            ),
+            (
+                "map-lead-finish-10",
+                "a0a19ca32fcb0b5cdfcf801de63ecf94cc9bb11c0ffdb54d1b70ea429b049105",
+            ),
+            (
+                "map-lead-finish-11",
+                "e90170600442f1f7416f2b83ba5ad936fdda85c72bb0ffe9cbc7c15c5470a811",
+            ),
+        ],
+    },
+    PictureSet {
+        name: "map-other-finish",
+        pictures: &[
+            (
+                "map-other-finish-1",
+                "0fd451df8a014bf791b370fdbddaf584d88bbb3e77d4eb6e7195b1301f5003e8",
+            ),
+            (
+                "map-other-finish-2",
+                "8d67b9fa4dc5e17940cbf1437cad136a3d35f08d0a7974bacc1d7dd45c416cc4",
+            ),
+            (
+                "map-other-finish-3",
+                "4378267b16e19877da0e85fb876d4a13bf3d683a2d96fc62343ee84a2e3cf11a",
+            ),
+            (
+                "map-other-finish-4",
+                "9dcdd705577f69e9c458eb7dad5a10c5efdbd8d1ad64bfff43d39ab76f29858b",
+            ),
+            (
+                "map-other-finish-5",
+                "0a94ed0c9589a8d4f618d62fd367dd836fc0178a3a5005248b69bc574f4d8212",
+            ),
+            (
+                "map-other-finish-6",
+                "cf788812e5bc0a443a1cfeed3b93e14aa8aaeb039b4114708aabc1f0fe3faae4",
+            ),
+            (
+                "map-other-finish-7",
+                "22955006d275fce3e605de48b8320c363ea6f50fca6c68c75af68401db6ca88a",
+            ),
+            (
+                "map-other-finish-8",
+                "7198c9feb1ecc36540d7049c197f5ffeb19525e131f329a7c7f47137473bd6b4",
+            ),
+            (
+                "map-other-finish-9",
+                "6fc8a0928158f4f206032ef1d24d41f008209bdc34bc76a8cc53123bd604c60d",
+            ),
+            (
+                "map-other-finish-10",
+                "3a4a7b92a3413717ecb48f6a2a38fd09e733cdcce41e9e01a76d97ab327c6926",
+            ),
+            (
+                "map-other-finish-11",
+                "b3fc77a98f178973358c5c5332af87ab937fff2bce63fb78fd8b8d5f9e7aee8d",
+            ),
+        ],
+    },
+    PictureSet {
+        name: "map-start",
+        pictures: &[
+            (
+                "map-start-1",
+                "ddc0355dffabe444a1f5b7c0c0293bcdfbdb6c1514341f3a116ad4faadd06753",
+            ),
+            (
+                "map-start-2",
+                "e9e9e812ce528dd004336be296165e850051f4fc364cbee14e596921ad88022b",
+            ),
+            (
+                "map-start-3",
+                "37df88582985aaa0efb966c94592cabcd621c174fda785c88bb8ee72e255ffc9",
+            ),
+            (
+                "map-start-4",
+                "40c0273c31f3ff0630d1e88e9e6192d07f48f78ee5d3e8298136a22f24686b67",
+            ),
+            (
+                "map-start-5",
+                "3260617f228e045afbaa9e3ff824062b0ee9efce102e752c52de06496dc73e6b",
+            ),
+            (
+                "map-start-6",
+                "66c3ed8f19a6b86b094a7daba3885a26a47d8d9aa8a7b25208d77bfe98ff98e0",
+            ),
+            (
+                "map-start-7",
+                "752b0759437f2e627a19eb5d92a8c42d166d25e5c09f25cb58620f8427bc571d",
+            ),
+            (
+                "map-start-8",
+                "e04409d35f39a6ea7731cc010a708ec0ba02bd8ab04acad673cdb54811dfc870",
+            ),
+            (
+                "map-start-9",
+                "2021ebbb70e00956135ed0df51ff0a7ef4b7604652f9dcfe531b5bbba719bc45",
+            ),
+        ],
+    },
 ];
 
 /// The second character's sets, as [`FIRST`].
@@ -2412,7 +2556,7 @@ impl CharacterDecoder {
                     })
                     .collect();
                 match numbers {
-                    Some(numbers) if set.name == MAP_SET => map_frames.extend(numbers),
+                    Some(numbers) if is_map_set(set.name) => map_frames.extend(numbers),
                     Some(numbers) => frames.extend(numbers),
                     None => missing.push(set.name),
                 }

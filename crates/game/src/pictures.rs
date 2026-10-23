@@ -86,6 +86,12 @@ pub enum Set {
     Scene,
     /// The pictures of the characters on the level map.
     Map,
+    /// The lead's pictures on the map after a first finish.
+    MapLeadFinish,
+    /// The other character's pictures on the map after a first finish.
+    MapOtherFinish,
+    /// The lead's pictures on the map at a new game.
+    MapStart,
 }
 
 /// Each set's labels, for the first character (slot 0) and the second
@@ -139,6 +145,9 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
         (Set::Rope, &ROPE),
         (Set::Scene, &FIRST_SCENE),
         (Set::Map, &MAP),
+        (Set::MapLeadFinish, &MAP_LEAD_FINISH),
+        (Set::MapOtherFinish, &MAP_OTHER_FINISH),
+        (Set::MapStart, &MAP_START),
     ],
     &[
         (
@@ -174,6 +183,29 @@ pub const MAP: [&str; 18] = [
     "map-lead-1", "map-lead-2", "map-lead-3", "map-lead-4", "map-lead-5", "map-lead-6",
     "map-lead-7", "map-lead-8", "map-lead-9", "map-lead-10", "map-other-1", "map-other-2",
     "map-other-3", "map-other-4", "map-other-5", "map-other-6", "map-other-7", "map-other-8",
+];
+
+/// The lead's map pictures after a level is finished for the first time.
+#[rustfmt::skip]
+pub const MAP_LEAD_FINISH: [&str; 11] = [
+    "map-lead-finish-1", "map-lead-finish-2", "map-lead-finish-3", "map-lead-finish-4",
+    "map-lead-finish-5", "map-lead-finish-6", "map-lead-finish-7", "map-lead-finish-8",
+    "map-lead-finish-9", "map-lead-finish-10", "map-lead-finish-11",
+];
+
+/// The other character's, as [`MAP_LEAD_FINISH`].
+#[rustfmt::skip]
+pub const MAP_OTHER_FINISH: [&str; 11] = [
+    "map-other-finish-1", "map-other-finish-2", "map-other-finish-3", "map-other-finish-4",
+    "map-other-finish-5", "map-other-finish-6", "map-other-finish-7", "map-other-finish-8",
+    "map-other-finish-9", "map-other-finish-10", "map-other-finish-11",
+];
+
+/// The lead's map pictures at a new game, before the first level's map.
+#[rustfmt::skip]
+pub const MAP_START: [&str; 9] = [
+    "map-start-1", "map-start-2", "map-start-3", "map-start-4", "map-start-5", "map-start-6",
+    "map-start-7", "map-start-8", "map-start-9",
 ];
 
 /// The first character's pictures while it waits in the scene.
@@ -4173,6 +4205,9 @@ mod tests {
                     Set::Rope => "rope",
                     Set::Scene => "scene",
                     Set::Map => "map",
+                    Set::MapLeadFinish => "map-lead-finish",
+                    Set::MapOtherFinish => "map-other-finish",
+                    Set::MapStart => "map-start",
                     Set::Teeter => "teeter",
                 };
                 let theirs = character.sets.iter().find(|s| s.name == name).unwrap();

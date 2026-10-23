@@ -1508,7 +1508,7 @@ mod tests {
 
     use crate::camera::VIEW;
     use crate::canvas::Canvas;
-    use crate::map::{LEVEL_MAP, MapPhase};
+    use crate::map::{LEVEL_MAP, MapLook, MapPhase, Opening};
     use crate::mouse::Mouse;
 
     use super::*;
@@ -3327,9 +3327,11 @@ mod tests {
             map.step(Actions::NONE);
             pictures.push(map.lead_picture());
         }
-        assert_eq!(pictures[0], Some((0, false)));
-        assert_eq!(pictures[3], Some((0, false)));
-        assert_eq!(pictures[4], Some((1, false)));
+        // a new game's map shows the start pictures, `map-start-1` on
+        // frames 1 to 4 and `map-start-2` on 5 to 8
+        assert_eq!(pictures[1], Some((MapLook::Start(0), false)));
+        assert_eq!(pictures[4], Some((MapLook::Start(0), false)));
+        assert_eq!(pictures[5], Some((MapLook::Start(1), false)));
         let hidden: Vec<usize> = (0..140).filter(|&f| pictures[f].is_none()).collect();
         assert!(!hidden.is_empty(), "a page changes in the walk");
         let MapPhase::Shown(screen) = &map.phase else {
@@ -3341,8 +3343,8 @@ mod tests {
         assert_eq!(hidden[3] - hidden[0], 3);
         // the cycle goes on through them: the counted frame decides
         let after = hidden[3] + 1;
-        let counted = after - 1; // one lag frame before it
-        assert_eq!(pictures[after].unwrap().0, counted / 4 % 10);
+        let counted = after - 2; // frame 0, and one lag frame before it
+        assert_eq!(pictures[after].unwrap().0, MapLook::Start(counted / 4 % 9));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -3381,17 +3383,86 @@ mod tests {
         for _ in 0..40 {
             map.step(Actions::NONE);
         }
-        let first = map.lead_picture().unwrap().0;
+        // past the start pictures, as after the first press
+        map.opening = Opening::Cycle;
+        let Some((MapLook::Cycle(first), _)) = map.lead_picture() else {
+            panic!("a cycle picture");
+        };
         map.second_leads = true;
-        let second = map.lead_picture().unwrap().0;
+        let Some((MapLook::Cycle(second), _)) = map.lead_picture() else {
+            panic!("a cycle picture");
+        };
         let MapPhase::Shown(screen) = &map.phase else {
             panic!("shown");
         };
-        let counted = (screen.lead.frame() - 1) / 4;
+        let counted = (screen.lead.frame() - 2) / 4;
         assert_eq!(first as u64, counted % 10);
         assert_eq!(second as u64, counted % 8);
         map.new_game(true);
         assert!(!map.second_leads, "a new game starts with the first");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// spec/behavior/level-map.md, "When the map appears": after a first
+    /// finish the lead shows the eleven finish pictures to frame 161 and
+    /// then the cycle without the still frames; after a finish before,
+    /// the cycle from frame 1.
+    #[test]
+    fn the_map_after_a_finish_starts_with_the_finish_pictures_or_the_cycle() {
+        let dir = map_pack("map-finish-pictures");
+        for (again, want) in [
+            (
+                false,
+                vec![
+                    (2, MapLook::Finish(0)),
+                    (3, MapLook::Finish(1)),
+                    (4, MapLook::Finish(1)),
+                    (15, MapLook::Finish(7)),
+                    (17, MapLook::Finish(6)),
+                    (30, MapLook::Finish(0)),
+                    (31, MapLook::Finish(1)),
+                    (155, MapLook::Finish(7)),
+                    (156, MapLook::Finish(8)),
+                    (158, MapLook::Finish(9)),
+                    (161, MapLook::Finish(10)),
+                    (162, MapLook::Cycle(0)),
+                    (212, MapLook::Cycle(0)),
+                    (215, MapLook::Cycle(0)),
+                    (216, MapLook::Cycle(1)),
+                ],
+            ),
+            (
+                true,
+                vec![
+                    (1, MapLook::Cycle(0)),
+                    (4, MapLook::Cycle(0)),
+                    (5, MapLook::Cycle(1)),
+                    (40, MapLook::Cycle(9)),
+                    (41, MapLook::Cycle(0)),
+                ],
+            ),
+        ] {
+            let mut map = MapPlay::load(&dir).unwrap().unwrap();
+            map.new_game(false);
+            let node = map.map.node("f").unwrap();
+            if again {
+                map.progress.clear(&map.map.place(node), "normal");
+            }
+            map.phase = MapPhase::Playing(node);
+            map.finished(false, false);
+            // through the black frames to the map's frame 0
+            while !matches!(map.phase, MapPhase::Shown(_)) {
+                map.step(Actions::NONE);
+            }
+            let mut looks = vec![map.lead_picture().map(|(l, _)| l)];
+            for _ in 0..220 {
+                map.step(Actions::NONE);
+                looks.push(map.lead_picture().map(|(l, _)| l));
+            }
+            for (frame, look) in want {
+                assert_eq!(looks[frame], Some(look), "frame {frame}, again {again}");
+            }
+        }
         std::fs::remove_dir_all(dir).unwrap();
     }
 
