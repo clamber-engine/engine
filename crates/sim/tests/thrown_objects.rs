@@ -402,26 +402,38 @@ fn hits_a_medium_walker_which_falls_out_like_a_small_one() {
 /// thrown-objects.md, "When a walker is hit", "Two walkers in range on
 /// the same frame": only one of two large walkers is hit on a frame, the
 /// same one whatever the offset between them, the other on a later frame
-/// if still in range.
+/// if still in range. Since spec-v0.320.0 also with the object moving
+/// left, and for two medium walkers.
 #[test]
 fn hits_one_of_two_walkers_in_range_on_a_frame() {
+    for right in [true, false] {
+        one_of_two_walkers_in_range(right);
+    }
+}
+
+fn one_of_two_walkers_in_range(right: bool) {
     let large = SMALL_WALKER.replace(
         "size = [20, 12], offset = 0.5",
         "size = [25, 25], offset = 5.0",
     );
+    let x0 = if right { 300 } else { 100 };
     for offset in [-20.0, -8.0, 0.0, 8.0, 20.0] {
         let entities: String = (0..2)
             .map(|_| {
                 format!(
-                    "[[entities]]\ntype = \"crawler\"\nat = [300, 400]\nparams = {{ {large} }}\n"
+                    "[[entities]]\ntype = \"crawler\"\nat = [{x0}, 400]\nparams = {{ {large} }}\n"
                 )
             })
             .collect();
         let mut play = Play::new(&level(&format!("{FLAT}\n{entities}")));
+        if !right {
+            play.world.player.facing = Facing::Left;
+        }
         play.throw_to(21);
         let start = play.world.things[0].pos;
-        play.world.things[1].pos.x = start.x + f(200.25);
-        play.world.things[2].pos.x = start.x + f(200.25 + offset);
+        let ahead = if right { 200.25 } else { -200.25 };
+        play.world.things[1].pos.x = start.x + f(ahead);
+        play.world.things[2].pos.x = start.x + f(ahead + offset);
         let mut first = None;
         for _ in 22..=60 {
             play.step(&[]);
@@ -433,7 +445,7 @@ fn hits_one_of_two_walkers_in_range_on_a_frame() {
                 first = Some(*i);
             }
         }
-        assert!(first.is_some(), "offset {offset}");
+        assert!(first.is_some(), "right {right}, offset {offset}");
     }
 }
 
