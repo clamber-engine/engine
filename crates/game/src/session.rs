@@ -262,8 +262,8 @@ pub struct Session {
     pub ticks: u64,
     /// Logic frames after play came into another area that the song
     /// playing is cut, before the silence that leads to the new area's
-    /// own (`music.md`, "When the cut comes"). Only coming back to an
-    /// area was measured; entering one cuts at once.
+    /// own (`music.md`, "When the cut comes"). Entering a level from the
+    /// map and the cuts at the ends of a level aren't counted yet.
     pub song_cut: u32,
     /// The mouse pointer's place in the view, once it has moved over it.
     pub pointer: Option<(f32, f32)>,
@@ -999,9 +999,11 @@ impl Session {
             self.left.push((self.level_path.clone(), from));
         }
         self.level_path = path;
-        // Coming back: the picture is black two frames before the first
-        // frame here and the song is cut 7 after it (`music.md`).
-        self.song_cut = if back.is_some() { 5 } else { 0 };
+        // The picture is black two frames before the first frame here.
+        // Coming back the song is cut 7 frames after the black frame, and
+        // leaving through a wall exit 6 (`music.md`). Engine choice: the
+        // scene and the room, not measured, cut as the wall areas do.
+        self.song_cut = if back.is_some() { 5 } else { 4 };
         Ok(())
     }
 
@@ -3071,8 +3073,10 @@ mod tests {
         assert!(s.game.world.walking_in.is_some());
         assert_eq!(s.game.world.flow.lives, 7, "carried into the room");
         assert_eq!(s.left.len(), 1);
+        assert_eq!(s.song_cut, 4, "cut 6 frames after the black frame");
         s.game.world.flow.lives = 9;
         until_in(&mut s, Action::Right.into(), &level, 300);
+        assert_eq!(s.song_cut, 5, "cut 7 frames after the black frame");
         assert_eq!(s.game.world.level.name, "level");
         assert_eq!(s.game.world.frame, 0);
         assert_eq!(s.game.world.player.pos, clamber_level::Vec2::ints(600, 300));
