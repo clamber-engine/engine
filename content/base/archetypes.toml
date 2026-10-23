@@ -361,7 +361,8 @@
 #   `[[from, to], [from, to]]`, the range for facing right, then for
 #   facing left. A player in the air that moved down on a frame, not
 #   rolling, within `break_across` and `break_above` at the end of the
-#   frame breaks it, once, and bounces off it as off a walker (the
+#   frame breaks it (with `second_break_across` and `second_break_above`
+#   for the second character, if given), once, and bounces off it as off a walker (the
 #   preset's `bounce_speed` and `bounce_freeze`). `animal_after` frames
 #   later the animal comes out where it stood, `animal_hop = [px, ...]`
 #   above the crate's position on that frame and the ones after (up to
@@ -715,6 +716,10 @@ size = [32, 24]
 offset = 0
 break_across = [[-28, 40], [-42, 26]]
 break_above = [5, 36]
+# The second character's own ranges for breaking (animal-crate.md, "The
+# second character"); its bounce speed is its preset's.
+second_break_across = [[-38, 26], [-28, 36]]
+second_break_above = [5, 43]
 animal_after = 18
 animal_hop = [1.5625, 2.6875, 3.375, 3.625]
 mount_across = [[-27, 19], [-26, 20]]

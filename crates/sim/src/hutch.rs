@@ -139,13 +139,11 @@ fn offsets(world: &World, x: Fixed, y: Fixed) -> (i64, i64) {
 /// placed to break a crate at `(x, y)`.
 fn breaks(world: &World, hutch: &Hutch, x: Fixed, y: Fixed) -> bool {
     let player = &world.player;
-    falling(world)
-        && within(
-            hutch.break_across,
-            hutch.break_above,
-            player.facing,
-            offsets(world, x, y),
-        )
+    let (across, above) = match hutch.second_break {
+        Some(second) if player.character != 0 => (second.across, second.above),
+        _ => (hutch.break_across, hutch.break_above),
+    };
+    falling(world) && within(across, above, player.facing, offsets(world, x, y))
 }
 
 /// Whether the player, in the air after a jump or a bounce, moving down

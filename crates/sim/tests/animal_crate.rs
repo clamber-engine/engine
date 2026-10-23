@@ -1,11 +1,12 @@
 //! The animal crate in Classic 1: breaking it, the animal coming out,
 //! and mounting it (spec/behavior/animal-crate.md).
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
-use clamber_pack::Fixed;
+use clamber_pack::{CharacterFeel, Fixed, Presets};
 use clamber_sim::{Event, Facing, InputFrame, Phase, State, World, generic_feel, step};
 
 const L: Action = Action::Left;
@@ -42,8 +43,25 @@ struct Play {
 
 impl Play {
     fn new() -> Play {
+        Play::with(false)
+    }
+
+    /// With the second character as the player.
+    fn second() -> Play {
+        Play::with(true)
+    }
+
+    fn with(second: bool) -> Play {
         let level = Arc::new(Level::from_toml_str(LEVEL, "animal-crate").unwrap());
-        let world = World::new(level, Arc::new(generic_feel("classic-1").unwrap()));
+        let mut feel = generic_feel("classic-1").unwrap();
+        feel.roster.push(CharacterFeel {
+            physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+            abilities: BTreeMap::new(),
+        });
+        let mut world = World::new(level, Arc::new(feel));
+        if second {
+            world.player.character = 1;
+        }
         Play {
             world,
             held: Actions::NONE,
@@ -181,11 +199,21 @@ fn too_high_doesnt_mount() {
 /// player put in the air `(across, above)` from it, facing `facing`,
 /// falling at `vy`, rising if negative.
 fn try_break(across: i64, above: i64, vy: f64, facing: Facing) -> ((i64, i64), bool) {
-    let mut play = Play::new();
+    try_break_with(Play::new, across, above, vy, facing)
+}
+
+fn try_break_with(
+    new: fn() -> Play,
+    across: i64,
+    above: i64,
+    vy: f64,
+    facing: Facing,
+) -> ((i64, i64), bool) {
+    let mut play = new();
     let x = (XC + across) as f64 + 0.5;
     let y = (YC - above) as f64 - 0.25;
     play.fall_from(x, y, 0.0, vy, facing);
-    let mut without = Play::new();
+    let mut without = new();
     without.fall_from(x, y, 0.0, vy, facing);
     without.world.things[0].active = false;
     play.step(&[]);
@@ -206,6 +234,28 @@ fn the_crate_breaks_within_the_ranges_for_the_facing() {
             }
         }
     }
+}
+
+#[test]
+fn the_second_character_breaks_the_crate_within_its_own_ranges() {
+    for (facing, (from, to)) in [(Facing::Right, (-38, 26)), (Facing::Left, (-28, 36))] {
+        for across in from - 3..=to + 3 {
+            for above in [-2, 0, 4, 5, 20, 36, 43, 44, 50] {
+                let ((i, d), broke) = try_break_with(Play::second, across, above, 2.0, facing);
+                let want = (from..=to).contains(&i) && (5..=43).contains(&d);
+                assert_eq!(broke, want, "{facing:?} I {i} D {d}");
+            }
+        }
+    }
+}
+
+#[test]
+fn the_second_character_bounces_off_the_crate_at_its_own_speed() {
+    let mut play = Play::second();
+    play.fall_from(1000.5, 380.0, 0.0, 2.0, Facing::Right);
+    play.step(&[]);
+    assert_ne!(play.phase(), Phase::Ready);
+    assert_eq!(play.world.player.vel.y, f(-8.5));
 }
 
 #[test]

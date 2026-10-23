@@ -611,6 +611,9 @@ pub struct Throw {
 pub struct Hutch {
     pub break_across: [(i32, i32); 2],
     pub break_above: (i32, i32),
+    /// The ranges with the second character as the player, when they
+    /// differ (spec/behavior/animal-crate.md, "The second character").
+    pub second_break: Option<SecondBreak>,
     pub animal_after: u8,
     /// Only the first `hop_steps` are used.
     pub animal_hop: [Fixed; MAX_HOP_STEPS],
@@ -619,6 +622,14 @@ pub struct Hutch {
     pub mount_above: (i32, i32),
     pub mount_hold: u8,
     pub ride: Ride,
+}
+
+/// A crate's break ranges for the second character
+/// ([`Hutch::second_break`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SecondBreak {
+    pub across: [(i32, i32); 2],
+    pub above: (i32, i32),
 }
 
 /// The target speeds of the second character as the player riding
@@ -1736,6 +1747,8 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         "hutch" => &[
             "break_across",
             "break_above",
+            "second_break_across",
+            "second_break_above",
             "animal_after",
             "animal_hop",
             "mount_across",
@@ -3179,9 +3192,25 @@ fn parse_hutch(table: &Table, path: &str) -> Result<Hutch, String> {
         animal_hop[i] =
             clamber_pack::read_number(item, "", &format!("{at}[{i}]")).map_err(|e| e.message)?;
     }
+    let second_break = match (
+        table.get("second_break_across"),
+        table.get("second_break_above"),
+    ) {
+        (None, None) => None,
+        (Some(_), Some(above)) => Some(SecondBreak {
+            across: ranges("second_break_across")?,
+            above: parse_range(above, &format!("{path}.second_break_above"))?,
+        }),
+        _ => {
+            return Err(format!(
+                "{path}: `second_break_across` and `second_break_above` go together"
+            ));
+        }
+    };
     Ok(Hutch {
         break_across: ranges("break_across")?,
         break_above: parse_range(get("break_above")?, &format!("{path}.break_above"))?,
+        second_break,
         animal_after: frames("animal_after")?,
         animal_hop,
         hop_steps: items.len() as u8,
