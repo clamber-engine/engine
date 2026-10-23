@@ -371,3 +371,65 @@ fn the_second_character_poses_follow_the_spec() {
     }
     assert!(landed.is_some());
 }
+
+/// ball-contact.md, "Which pose the player has", the second character:
+/// teetering has the moving range from its first picture (the fifth
+/// standing step), the steps before it the standing range, and a turn
+/// away from the ledge standing again.
+#[test]
+fn the_second_character_teetering_has_the_moving_range() {
+    let src = r#"
+        format = 1
+        name = "ledge"
+        size = [3000, 600]
+        start = [440, 300]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 300, 450, 100]
+    "#;
+    let level = Arc::new(Level::from_toml_str(src, "ledge").unwrap());
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(feel.roster[0].clone());
+    let mut play = Play::new();
+    play.world = World::new(level, Arc::new(feel));
+    play.world.player.character = 1;
+    play.world.player.facing = Facing::Right;
+    play.step(&[]);
+    let mut seen = Vec::new();
+    for _ in 0..12 {
+        seen.push(play.second());
+        play.step(&[]);
+    }
+    assert!(
+        seen[..4].iter().all(|&p| p == SecondPose::Standing),
+        "{seen:?}"
+    );
+    assert!(
+        seen[5..].iter().all(|&p| p == SecondPose::Moving),
+        "{seen:?}"
+    );
+    play.step(&[Action::Left]);
+    assert_eq!(play.second(), SecondPose::Standing);
+}
+
+/// ball-contact.md, "Which pose the player has", the second character:
+/// the landing frames of a fall from a steep face keep the moving range
+/// while the landing gait lasts, and standing follows it.
+#[test]
+fn the_landing_of_a_face_fall_has_the_moving_range() {
+    use clamber_sim::{Gait, Landing};
+    let mut play = second_play();
+    assert_eq!(play.second(), SecondPose::Standing);
+    play.world.player.walked_off_face = true;
+    play.world.player.gait = Gait::Landing(Landing {
+        frame: 0,
+        switch: 7,
+        settle: 7,
+        fixed: true,
+        bounce: false,
+    });
+    assert_eq!(play.second(), SecondPose::Moving);
+    play.world.player.gait = Gait::Standing;
+    assert_eq!(play.second(), SecondPose::Standing);
+}

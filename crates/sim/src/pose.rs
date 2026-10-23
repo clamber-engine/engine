@@ -45,7 +45,7 @@ use clamber_fixed::Fixed;
 use clamber_pack::{Param, Physics};
 
 use crate::archetype::{Poses, SecondBall, WalkerContact};
-use crate::player::{Act, Player, State, frames};
+use crate::player::{Act, Gait, Player, State, frames};
 use crate::world::Event;
 
 /// A pose with its own ranges.
@@ -140,6 +140,10 @@ pub struct PoseClock {
     /// Steps since Down was last held on the ground, from 1 on the first
     /// without it; 0 while it is held.
     pub uncrouched: u8,
+    /// Standing at the end of a floor, decided once, on the fourth
+    /// standing step (`player-frames.md`, "Teetering at the end of a
+    /// floor"): the second character's teetering pictures start there.
+    pub teeters: bool,
 }
 
 impl Default for PoseClock {
@@ -159,6 +163,7 @@ impl Default for PoseClock {
             drop: Fixed::ZERO,
             carried_air: false,
             uncrouched: u8::MAX,
+            teeters: false,
         }
     }
 }
@@ -328,7 +333,18 @@ pub fn pose(player: &Player, poses: &Poses) -> Pose {
 /// moving, and a turn is standing; the crouching range is not given to
 /// the ground action.
 pub fn second_pose(player: &Player, second: &SecondBall) -> SecondPose {
-    second_pose_held(player, second.air_hold, second.crouch_hold)
+    let pose = second_pose_held(player, second.air_hold, second.crouch_hold);
+    // Teetering has the moving range from its first picture, and the
+    // landing of a fall from a steep face keeps it until the gait starts.
+    let teetering = player.pose.teeters && player.pose.standing.is_some_and(|n| n >= 4);
+    let face_landing = player.grounded()
+        && player.walked_off_face
+        && matches!(player.gait, Gait::Landing(l) if l.fixed && !l.bounce);
+    if pose == SecondPose::Standing && (teetering || face_landing) {
+        SecondPose::Moving
+    } else {
+        pose
+    }
 }
 
 /// [`second_pose`] with its two holds given: the frames the moving pose

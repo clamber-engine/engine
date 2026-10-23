@@ -134,6 +134,13 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     let previous_feet = previous.y;
     let physics = world.player_physics();
     pose::note(&mut world.player, &world.events, &physics);
+    match world.player.pose.standing {
+        Some(4) => {
+            world.player.pose.teeters = world.player_at_floor_end(12, world.player.character == 0);
+        }
+        Some(_) => {}
+        None => world.player.pose.teeters = false,
+    }
     let boxes = physics[Param::BounceWidth] > Fixed::ZERO;
     let hurt_boxes = physics[Param::HurtWidth] > Fixed::ZERO;
     let attack_boxes = physics[Param::RollAttackWidth] > Fixed::ZERO;
