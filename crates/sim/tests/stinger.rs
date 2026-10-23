@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use clamber_level::Level;
+use clamber_pack::{CharacterFeel, Presets};
 use clamber_sim::{Event, Fixed, InputFrame, Phase, View, World, generic_feel, step};
 
 fn f(v: f64) -> Fixed {
@@ -181,6 +182,40 @@ fn reaches_an_upright_player_within_its_ranges() {
     assert!(hurts(false, 0, -20));
     assert!(hurts(false, 0, 29));
     assert!(!hurts(false, 0, 30));
+}
+
+/// stinger.md, "The second character under control": the upright ranges
+/// at their ends, facing each way (I = -19 doesn't hurt, where the first
+/// character's -21 does).
+#[test]
+fn reaches_an_upright_second_character_within_its_smaller_ranges() {
+    let hurts = |left: bool, i: i32, a: i32| {
+        let mut w = world((1000 + i, 300), (1000, 300 - a), "");
+        let mut feel = generic_feel("classic-1").unwrap();
+        feel.roster.push(CharacterFeel {
+            physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+            abilities: feel.roster[0].abilities.clone(),
+        });
+        w.feel = Arc::new(feel);
+        w.player.character = 1;
+        if left {
+            w.player.facing = clamber_sim::Facing::Left;
+        }
+        (0..3).any(|_| {
+            step(&mut w, &InputFrame::default());
+            hurt(&w)
+        })
+    };
+    for (left, from, to) in [(false, -18, 22), (true, -17, 23)] {
+        assert!(!hurts(left, from - 1, 0), "{left} {from}");
+        assert!(hurts(left, from, 0), "{left} {from}");
+        assert!(hurts(left, to, 0), "{left} {to}");
+        assert!(!hurts(left, to + 1, 0), "{left} {to}");
+    }
+    assert!(!hurts(false, 0, -23));
+    assert!(hurts(false, 0, -22));
+    assert!(hurts(false, 0, 27));
+    assert!(!hurts(false, 0, 28));
 }
 
 /// stinger.md, "While the player is knocked out": the stinger that hurt

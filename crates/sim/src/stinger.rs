@@ -20,9 +20,9 @@
 use clamber_fixed::Fixed;
 use clamber_level::Vec2;
 
-use crate::archetype::{Behavior, Stinger};
-use crate::player::ceil;
-use crate::pose;
+use crate::archetype::{Behavior, Contact, Offsets, SecondReach, Stinger};
+use crate::player::{Facing, Player, State, ceil};
+use crate::pose::{self, Pose};
 use crate::world::{Phase, Thing, World};
 
 /// The grain a stinger's speeds ease by: 1/256 px per frame.
@@ -118,10 +118,40 @@ pub(crate) fn hurt_ahead(world: &World) -> Option<usize> {
                 return false;
             };
             let contact = stinger.contact;
-            let reach = contact.reach(pose::pose(player, &contact.poses), player.facing, 0);
+            let pose = pose::pose(player, &contact.poses);
+            let reach = match stinger.second {
+                Some(second) if player.character != 0 => {
+                    second_reach(&second, &contact, player, pose)
+                }
+                _ => contact.reach(pose, player.facing, 0),
+            };
             reach.contains(x - t.pos.x.floor(), y - ceil(t.pos.y))
         })
         .map(|t| t.index)
+}
+
+/// The offsets a stinger hurts a character other than the first from.
+/// Engine choice where the spec doesn't say: turning and the ground
+/// action count as upright, as for the first character; walking and
+/// running on the ground, and the first frames of a jump, as moving.
+fn second_reach(second: &SecondReach, contact: &Contact, player: &Player, pose: Pose) -> Offsets {
+    let moving = || player.jump_age.is_some() || player.state != State::Idle || player.pose.running;
+    let base = match pose {
+        Pose::Airborne | Pose::Rolling => second.moving,
+        Pose::Upright if moving() => second.moving,
+        Pose::Upright => second.upright,
+        Pose::Crouching => second.crouching,
+        Pose::Fidget => second.fidget,
+    };
+    let (from, to) = base.across;
+    let across = match player.facing {
+        Facing::Right => (from, to),
+        Facing::Left => (contact.mirror - to, contact.mirror - from),
+    };
+    Offsets {
+        across,
+        above: base.above,
+    }
 }
 
 #[cfg(test)]

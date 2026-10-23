@@ -258,7 +258,10 @@
 #   and is removed as a walker on its own does, coming back afresh: at
 #   its start, at `velocity`, not moving on the frame it appears. It
 #   hurts the player by its `contact` table, as a ball's, without a turn
-#   (`turn = []`). Nothing defeats it and it's never bounced on. While
+#   (`turn = []`), or by the `second` table (`upright`, `moving`,
+#   `crouching`, `fidget`, each `[across from, to, above from, to]`) when
+#   the character under control is not the first; facing left, those
+#   turn around by the contact's `mirror`. Nothing defeats it and it's never bounced on. While
 #   the player is knocked out, it holds still with the other enemies,
 #   also when it's the one that hurt the player.
 # - `collect`: a collectible the player takes by reaching it. It's then
@@ -827,6 +830,15 @@ upright_jump = 5
 land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }
 roll_after = [3, 9]
 fidget_time = [239, 180, 457]
+
+# The second character under control (stinger.md, "The second character
+# under control"): a smaller area. "moving" is walking, running, rolling
+# and being in the air; facing left turns around by `mirror` above.
+[archetypes.stinger.second]
+upright = [-18, 22, -22, 27]
+moving = [-24, 23, -18, 27]
+crouching = [-25, 25, -21, 14]
+fidget = [-18, 22, -22, 27]
 
 # title-1's tyre (spec/behavior/tyre.md). The size is Clamber's own: it's
 # what's drawn, and touches nothing.

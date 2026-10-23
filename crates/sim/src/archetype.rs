@@ -539,12 +539,26 @@ pub const MAX_SHAKE_STAGES: usize = 4;
 /// are `reach` whole px from its start: `(left, right, up, down)`. It
 /// starts at `velocity`, and its target speeds keep that size, changing
 /// sign at the turning points. It hurts the player as `contact` says,
-/// whose ranges don't move with a turn.
+/// whose ranges don't move with a turn, or as `second` says when the
+/// character under control is not the first (left out: as `contact`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Stinger {
     pub reach: (i32, i32, i32, i32),
     pub velocity: Vec2,
     pub contact: Contact,
+    pub second: Option<SecondReach>,
+}
+
+/// Where a stinger hurts a character other than the first
+/// (spec/behavior/stinger.md, "The second character under control"):
+/// one range for each pose, "moving" being walking, running, rolling and
+/// being in the air. Facing left they turn around as `contact`'s do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SecondReach {
+    pub upright: Offsets,
+    pub moving: Offsets,
+    pub crouching: Offsets,
+    pub fidget: Offsets,
 }
 
 /// One of a thrower's throws: on `frame` of its period, a ball at
@@ -1633,7 +1647,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "mount_hold",
             "ride",
         ],
-        "stinger" => &["reach", "velocity", "contact"],
+        "stinger" => &["reach", "velocity", "contact", "second"],
         "keg" => &[
             "contact",
             "pieces",
@@ -2210,6 +2224,10 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 reach,
                 velocity: pair("velocity")?,
                 contact: parse_contact(get("contact")?, &format!("{path}.contact"))?,
+                second: match table.get("second") {
+                    None => None,
+                    Some(v) => Some(parse_second_reach(v, &format!("{path}.second"))?),
+                },
             })
         }
         "keg" => Behavior::Keg(parse_keg(table, path)?),
@@ -3380,6 +3398,47 @@ fn parse_contact(value: &Value, path: &str) -> Result<Contact, String> {
         turn,
         turn_parts: parts.len() as u8,
         poses: parse_poses(table, path)?,
+    })
+}
+
+/// Reads a stinger's [`SecondReach`] table. Errors start with `path`.
+fn parse_second_reach(value: &Value, path: &str) -> Result<SecondReach, String> {
+    let Value::Table(table) = value else {
+        return Err(format!("{path}: expected a table"));
+    };
+    const KEYS: &[&str] = &["upright", "moving", "crouching", "fidget"];
+    if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
+        return Err(format!("{path}.{key}: no such value"));
+    }
+    let offsets = |key: &str| -> Result<Offsets, String> {
+        let at = format!("{path}.{key}");
+        let Some(Value::Array(items)) = table.get(key) else {
+            return Err(format!("{at}: expected a list of 4"));
+        };
+        let n = items
+            .iter()
+            .enumerate()
+            .map(|(i, v)| match v {
+                Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+                _ => Err(format!("{at}[{i}]: expected a whole number")),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if n.len() != 4 {
+            return Err(format!("{at}: expected a list of 4"));
+        }
+        if n[0] > n[1] || n[2] > n[3] {
+            return Err(format!("{at}: a range ends before it starts"));
+        }
+        Ok(Offsets {
+            across: (n[0], n[1]),
+            above: (n[2], n[3]),
+        })
+    };
+    Ok(SecondReach {
+        upright: offsets("upright")?,
+        moving: offsets("moving")?,
+        crouching: offsets("crouching")?,
+        fidget: offsets("fidget")?,
     })
 }
 
