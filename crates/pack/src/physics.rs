@@ -863,6 +863,23 @@ params! {
     /// How far the middle of the carrying pose's hurt box is in front of
     /// the player's position, px. Negative is behind.
     HurtCarryOffset => "hurt_carry_offset",
+    /// Above 0, a character other than the first is hurt by the poses of
+    /// a ball's second ranges (standing, moving, crouching) instead of
+    /// the airborne, fidget and crouching ones: the box is this wide
+    /// while moving (walking, running and any jump), `hurt_width` while
+    /// standing (the fidget pose too), `hurt_crouch_width` while
+    /// crouching, and the airborne lift is `hurt_jump_lift` whenever it
+    /// is off the ground. 0: every character has the same poses.
+    HurtMoveWidth => "hurt_move_width",
+    /// How far the middle of the moving pose's hurt box is in front of
+    /// the player's position, px. Negative is behind.
+    HurtMoveOffset => "hurt_move_offset",
+    /// After a jump from standing still lands, the moving pose goes on
+    /// up to this many frames after the landing frame. Whole frames.
+    HurtMoveHold => "hurt_move_hold",
+    /// The crouching pose goes on this many frames after Down is let go.
+    /// Whole frames.
+    HurtCrouchHold => "hurt_crouch_hold",
     /// A player standing still takes the fidget pose this many frames
     /// into standing, counting the first frame of standing as 0. Whole
     /// frames.
@@ -1853,6 +1870,8 @@ impl Param {
                 | Param::HurtOffset
                 | Param::HurtFidgetOffset
                 | Param::HurtCarryOffset
+                | Param::HurtCrouchOffset
+                | Param::HurtMoveOffset
                 | Param::HurtAirOffset
                 | Param::RollAttackOffset
                 | Param::GroundAttackOffset

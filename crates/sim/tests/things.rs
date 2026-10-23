@@ -2944,3 +2944,194 @@ fn classic_roll_defeat_as_a_walker_stops_at_a_wall_falls_straight_down() {
     }
     assert!(w.things[0].pos.y < Fixed::from_int(400));
 }
+
+// Classic 1: the second character being hurt by walkers (walker-contact.md,
+// "Being hurt (second character)").
+
+/// How the second character is placed for [`second_hurt_at`].
+#[derive(Clone, Copy)]
+enum Placed {
+    Standing,
+    /// In the fidget pose.
+    Fidget,
+    /// Down held on the ground since the frame before.
+    Crouching,
+    /// Rising fast in a jump, `u` px above the walker's floor at the end
+    /// of the frame.
+    Rising(i32),
+}
+
+/// Whether the second character leading, `i` px from a still walker made
+/// by `walker`, is about to be hurt at the end of the frame.
+fn second_hurt_at(
+    walker: fn(&str, &str, &str) -> String,
+    i: i32,
+    facing: Facing,
+    heading: &str,
+    placed: Placed,
+) -> bool {
+    let start = if matches!(placed, Placed::Rising(_)) {
+        0
+    } else {
+        400
+    };
+    let mut w = second_on([300 + i, start], &walker("300", "0", heading));
+    w.player.facing = facing;
+    match placed {
+        Placed::Standing => {}
+        Placed::Fidget => w.player.pose.standing = Some(238),
+        Placed::Crouching => {
+            hold(&mut w, [Action::Down].into_iter().collect(), 1);
+            return w.player.hurt_ahead.is_some();
+        }
+        Placed::Rising(u) => {
+            w.player.pos.y = Fixed::from_int(402 - u);
+            w.player.vel.y = fx(-2.0 - 0.4375);
+            w.player.jump_age = Some(9);
+            w.player.state = State::Jump;
+        }
+    }
+    step(&mut w, &InputFrame::default());
+    w.player.hurt_ahead.is_some()
+}
+
+#[test]
+#[allow(clippy::type_complexity)]
+fn second_hurt_ranges_by_pose() {
+    type Walker = fn(&str, &str, &str) -> String;
+    use Facing::{Left, Right};
+    // Walker, facing, heading, then the low and high ends standing,
+    // moving and crouching.
+    let table: [(Walker, Facing, &str, [(i32, i32); 3]); 12] = [
+        (
+            small_walker,
+            Right,
+            "left",
+            [(-16, 14), (-22, 15), (-23, 17)],
+        ),
+        (
+            small_walker,
+            Right,
+            "right",
+            [(-15, 15), (-21, 16), (-22, 18)],
+        ),
+        (
+            small_walker,
+            Left,
+            "left",
+            [(-15, 15), (-16, 21), (-18, 22)],
+        ),
+        (
+            small_walker,
+            Left,
+            "right",
+            [(-14, 16), (-15, 22), (-17, 23)],
+        ),
+        (
+            medium_walker,
+            Right,
+            "left",
+            [(-23, 12), (-29, 13), (-30, 15)],
+        ),
+        (
+            medium_walker,
+            Right,
+            "right",
+            [(-13, 22), (-19, 23), (-20, 25)],
+        ),
+        (
+            medium_walker,
+            Left,
+            "left",
+            [(-22, 13), (-23, 19), (-25, 20)],
+        ),
+        (
+            medium_walker,
+            Left,
+            "right",
+            [(-12, 23), (-13, 29), (-15, 30)],
+        ),
+        (
+            large_walker,
+            Right,
+            "left",
+            [(-19, 17), (-25, 18), (-26, 20)],
+        ),
+        (
+            large_walker,
+            Right,
+            "right",
+            [(-18, 18), (-24, 19), (-25, 21)],
+        ),
+        (
+            large_walker,
+            Left,
+            "left",
+            [(-18, 18), (-19, 24), (-21, 25)],
+        ),
+        (
+            large_walker,
+            Left,
+            "right",
+            [(-17, 19), (-18, 25), (-20, 26)],
+        ),
+    ];
+    for (n, (walker, facing, heading, ends)) in table.into_iter().enumerate() {
+        let poses = [Placed::Standing, Placed::Rising(2), Placed::Crouching];
+        for (placed, (low, high)) in poses.into_iter().zip(ends) {
+            for (i, hurt) in [
+                (low - 1, false),
+                (low, true),
+                (high, true),
+                (high + 1, false),
+            ] {
+                assert_eq!(
+                    second_hurt_at(walker, i, facing, heading, placed),
+                    hurt,
+                    "row {n}: I = {i}, facing {facing:?}, heading {heading}, pose {}",
+                    poses
+                        .iter()
+                        .position(|p| std::mem::discriminant(p) == std::mem::discriminant(&placed))
+                        .unwrap()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn second_fidget_pose_has_the_standing_range() {
+    for (i, hurt) in [(-17, false), (-16, true), (14, true), (15, false)] {
+        assert_eq!(
+            second_hurt_at(small_walker, i, Facing::Right, "left", Placed::Fidget),
+            hurt,
+            "I = {i}"
+        );
+    }
+}
+
+#[test]
+fn second_hurt_reach_in_the_air_is_two_px_lower() {
+    // Up to 9 px (small), 22 (medium) or 35 (large) above the walker's
+    // floor.
+    for (walker, top) in [
+        (small_walker as fn(&str, &str, &str) -> String, 9),
+        (medium_walker, 22),
+        (large_walker, 35),
+    ] {
+        assert!(second_hurt_at(
+            walker,
+            0,
+            Facing::Right,
+            "left",
+            Placed::Rising(top)
+        ));
+        assert!(!second_hurt_at(
+            walker,
+            0,
+            Facing::Right,
+            "left",
+            Placed::Rising(top + 1)
+        ));
+    }
+}

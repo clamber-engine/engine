@@ -328,9 +328,16 @@ pub fn pose(player: &Player, poses: &Poses) -> Pose {
 /// moving, and a turn is standing; the crouching range is not given to
 /// the ground action.
 pub fn second_pose(player: &Player, second: &SecondBall) -> SecondPose {
+    second_pose_held(player, second.air_hold, second.crouch_hold)
+}
+
+/// [`second_pose`] with its two holds given: the frames the moving pose
+/// goes on after a landing from a jump standing still, and the crouching
+/// one after Down.
+pub fn second_pose_held(player: &Player, air_hold: u8, crouch_hold: u8) -> SecondPose {
     let clock = player.pose;
     let held = matches!(clock.air, Air::Still | Air::Hop)
-        && clock.since_land.is_some_and(|n| n <= second.air_hold);
+        && clock.since_land.is_some_and(|n| n <= air_hold);
     if !player.grounded()
         || player.jump_age.is_some()
         || player.takeoff
@@ -341,7 +348,7 @@ pub fn second_pose(player: &Player, second: &SecondBall) -> SecondPose {
         return SecondPose::Moving;
     }
     if (player.crouch.held > 0 && player.ground_action.is_none())
-        || (1..=second.crouch_hold).contains(&clock.uncrouched)
+        || (1..=crouch_hold).contains(&clock.uncrouched)
     {
         return SecondPose::Crouching;
     }

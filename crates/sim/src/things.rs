@@ -109,7 +109,7 @@ use crate::hutch;
 use crate::join;
 use crate::keg::Burst;
 use crate::player::{Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, frames, is_wall};
-use crate::pose::{self, Stance};
+use crate::pose::{self, SecondPose, Stance};
 use crate::ride;
 use crate::rope;
 use crate::sections::Window;
@@ -1801,8 +1801,19 @@ fn hurt_ahead(world: &World, physics: &Physics, carried_into: Option<usize>) -> 
         physics[Param::HurtFidgetWidth] > Fixed::ZERO && pose::fidgeting(&player.pose, fidget_time);
     let carrying =
         physics[Param::HurtCarryWidth] > Fixed::ZERO && pose::hurt_carrying(player, physics);
+    let own_poses = physics[Param::HurtMoveWidth] > Fixed::ZERO;
+    let second_pose = (own_poses && !carrying).then(|| {
+        pose::second_pose_held(
+            player,
+            long(Param::HurtMoveHold).min(255) as u8,
+            long(Param::HurtCrouchHold).min(255) as u8,
+        )
+    });
     let (airborne, lifted) = if carrying {
         (false, false)
+    } else if own_poses {
+        // Off the ground the box is lifted; the poses are the ball's.
+        (false, !player.grounded())
     } else {
         pose::hurt_pose(player, physics)
     };
@@ -1811,6 +1822,18 @@ fn hurt_ahead(world: &World, physics: &Physics, carried_into: Option<usize>) -> 
             physics[Param::HurtCarryWidth],
             physics[Param::HurtCarryOffset],
         )
+    } else if let Some(pose) = second_pose {
+        match pose {
+            SecondPose::Standing => (physics[Param::HurtWidth], physics[Param::HurtOffset]),
+            SecondPose::Moving => (
+                physics[Param::HurtMoveWidth],
+                physics[Param::HurtMoveOffset],
+            ),
+            SecondPose::Crouching => (
+                physics[Param::HurtCrouchWidth],
+                physics[Param::HurtCrouchOffset],
+            ),
+        }
     } else if airborne && physics[Param::HurtAirWidth] > Fixed::ZERO {
         (physics[Param::HurtAirWidth], physics[Param::HurtAirOffset])
     } else if !airborne

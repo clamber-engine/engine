@@ -486,6 +486,10 @@ mod tests {
                     | Param::HurtCrouchOffset
                     | Param::HurtCarryWidth
                     | Param::HurtCarryOffset
+                    | Param::HurtMoveWidth
+                    | Param::HurtMoveOffset
+                    | Param::HurtMoveHold
+                    | Param::HurtCrouchHold
                     | Param::HurtAirWidth
                     | Param::HurtAirOffset
                     | Param::HurtLandHold

@@ -199,6 +199,10 @@ hurt_crouch_width = 0
 hurt_crouch_offset = 0
 hurt_carry_width = 0
 hurt_carry_offset = 0
+hurt_move_width = 0
+hurt_move_offset = 0
+hurt_move_hold = 0
+hurt_crouch_hold = 0
 hurt_air_width = 0
 hurt_air_offset = 0
 hurt_land_hold = 0
@@ -1247,6 +1251,23 @@ push_speed = 4
 push_end = 0.046875
 # The second character follows by where the first is now.
 follow_lag = 0
+# Being hurt by walkers (walker-contact.md, "Being hurt (second
+# character)"): the poses are the ball ranges' three, standing (and the
+# fidget pose), moving (walking, running and any jump from its press, to
+# 16 frames after a landing from a jump standing still) and crouching
+# (and 12 frames after Down). The hurt box is 11 wide, 0.5 ahead
+# standing, 18 wide, 3 ahead moving and 21 wide, 2.5 ahead crouching,
+# which give the spec's ranges against the three walkers; off the
+# ground its bottom is lifted 2 px (reach 9, 22 and 35 px up).
+hurt_width = 11
+hurt_offset = 0.5
+hurt_move_width = 18
+hurt_move_offset = 3
+hurt_move_hold = 16
+hurt_crouch_width = 21
+hurt_crouch_offset = 2.5
+hurt_crouch_hold = 12
+hurt_jump_lift = 2
 # The second character being hit isn't specified yet, so it's a hit with
 # one character, as before.
 lose_jump = 0
