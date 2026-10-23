@@ -52,6 +52,9 @@ pub enum MapPhase {
         frames: u32,
         node: usize,
         times: FinishTimes,
+        /// The lead was knocked out there instead: no way onward is
+        /// given and the level isn't counted as finished.
+        lost: bool,
     },
 }
 
@@ -222,14 +225,15 @@ impl MapPlay {
             frames,
             node,
             times,
+            lost,
         } = &mut self.phase
         {
             *frames = frames.saturating_sub(1);
             if *frames > 0 {
                 return MapStep::Stay;
             }
-            let (node, times) = (*node, times.clone());
-            let given = self.map.nodes[node].onward;
+            let (node, times, lost) = (*node, times.clone(), *lost);
+            let given = self.map.nodes[node].onward.filter(|_| !lost);
             let mut lead = LegWalker::after_finish(&self.map, self.legs(), node, &times, given);
             if self.two {
                 lead = lead.with_other();
@@ -337,6 +341,42 @@ impl MapPlay {
             frames: times.black.max(1),
             node,
             times,
+            lost: false,
+        };
+    }
+
+    /// The lead, alone, was knocked out in the level entered from the
+    /// map: shows the map after the black frames, as after a level
+    /// finished before, with the lead at the level's stop and nothing
+    /// recorded (`level-map.md`, "After a knock-out as the lead
+    /// alone"). Does nothing unless a level entered from the map is
+    /// being played.
+    pub fn knocked_out(&mut self) {
+        let MapPhase::Playing(node) = self.phase else {
+            return;
+        };
+        self.two = false;
+        self.second_leads = false;
+        self.again = true;
+        let legs = self.legs();
+        let times = match &legs.finish {
+            Some(f) => FinishTimes {
+                still: None,
+                ..f.again.clone()
+            },
+            None => FinishTimes {
+                black: 0,
+                still: None,
+                gate: legs.appear_wait,
+            },
+        };
+        self.phase = MapPhase::Black {
+            // the knock-out's step comes after the level's last, so the
+            // black frames are one fewer
+            frames: times.black.saturating_sub(1).max(1),
+            node,
+            times,
+            lost: true,
         };
     }
 

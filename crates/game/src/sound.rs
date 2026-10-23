@@ -171,6 +171,10 @@ const KNOCKOUT_END: u64 = 259;
 /// finishing a level that was finished before (`music.md`, "A change of
 /// song").
 const MAP_SILENCE_AGAIN: u64 = 47;
+/// Frames from the hit that knocks out the lead alone to the map's
+/// song, on the map that follows (`music.md`, "Knocked out as the lead
+/// alone": `H` + 307).
+const KNOCKOUT_MAP_SONG: u64 = 307;
 /// The same after a first finish: the map's song is first heard on its
 /// frame 212, `M` + 212 with `M` the map's first frame, which is 49
 /// frames after the level's last (`music.md`, "When the cut comes"). The
@@ -354,6 +358,13 @@ impl Audio {
                 let silence = u64::from(track.silence.unwrap_or(0));
                 self.cut_at = Some(hit + KNOCKOUT_CUT);
                 self.silent_until = Some(hit + KNOCKOUT_CUT + silence);
+                let to_map = session.pack.is_some()
+                    && session.map.as_ref().is_some_and(|m| m.playing())
+                    && session.game.world.flow.lives > 0;
+                if to_map {
+                    // The map follows, with its own song.
+                    self.silent_until = Some(hit + KNOCKOUT_MAP_SONG);
+                }
                 let play = Self::play_of(track, dir, &self.list);
                 self.knockout = Some((play, hit + KNOCKOUT_END));
             }

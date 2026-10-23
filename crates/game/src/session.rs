@@ -14,7 +14,7 @@ use clamber_import::{Importer, Installed, Replacements, Widescreen};
 
 use clamber_input::{Action, Actions, Device, Event, Frame, Input, Settings};
 use clamber_level::Arrival;
-use clamber_sim::{InputFrame, Outcome, World};
+use clamber_sim::{FlowEvent, InputFrame, LivesStart, Outcome, World};
 
 use crate::canvas::{Color, rgb};
 use crate::controls::{Controls, Request};
@@ -281,6 +281,9 @@ pub struct Session {
     /// alone").
     pub knockouts: u32,
     pub knockout_at: u64,
+    /// The tries left after the lead, alone, was knocked out in a level
+    /// entered from the map, for the level entered next.
+    pub tries_left: Option<u8>,
     /// The mouse pointer's place in the view, once it has moved over it.
     pub pointer: Option<(f32, f32)>,
     /// Presses the mouse adds to the next menu step.
@@ -322,6 +325,7 @@ impl Session {
             finishes: 0,
             knockouts: 0,
             knockout_at: 0,
+            tries_left: None,
             pointer: None,
             clicks: Actions::NONE,
             dragging: None,
@@ -544,6 +548,7 @@ impl Session {
             Item::Start if self.map.is_some() => {
                 if let Some(map) = &mut self.map {
                     map.new_game(self.game.world.other.is_some());
+                    self.tries_left = None;
                 }
                 self.screen = Screen::Map;
             }
@@ -890,6 +895,12 @@ impl Session {
                     let world = game.world.clone().with_characters_of(&self.game.world);
                     game.replace_world(world);
                 }
+                if let Some(lives) = self.tries_left.take() {
+                    // Entered again after a knock-out: the tries left.
+                    let mut world = game.world.clone();
+                    world.flow.lives = lives;
+                    game.replace_world(world);
+                }
                 self.game = game;
                 self.level_path = path;
                 // The map is black from `P` + 30 and this is `P` + 32;
@@ -1180,6 +1191,9 @@ impl Session {
             self.knockout_at = self.ticks;
         }
         self.cues.extend(cues(&self.game.world));
+        if self.knocked_out_to_map() {
+            return;
+        }
         match self.game.world.flow.outcome {
             Outcome::Complete => match &mut self.map {
                 Some(map) if map.playing() => {
@@ -1196,6 +1210,28 @@ impl Session {
             Outcome::Exited(exit) => self.leave_by(exit),
             Outcome::Ended => self.end_scene(),
             _ => {}
+        }
+    }
+
+    /// Goes to the level map if the lead, alone, lost a try to a
+    /// knock-out in a level of an imported game's map and play is about
+    /// to begin again (`level-map.md`, "After a knock-out as the lead
+    /// alone"). Clamber's own games restart in place. With no tries
+    /// left the game-over screen follows as before.
+    fn knocked_out_to_map(&mut self) -> bool {
+        let world = &self.game.world;
+        let lost = world.flow.events.contains(&FlowEvent::Respawn)
+            && world.flow.play_after == LivesStart::Knockout
+            && world.other.is_none();
+        let lives = world.flow.lives;
+        match &mut self.map {
+            Some(map) if lost && self.pack.is_some() && map.playing() => {
+                self.tries_left = Some(lives);
+                map.knocked_out();
+                self.screen = Screen::Map;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -3629,6 +3665,76 @@ mod tests {
         assert!(!walking(&s));
         s.step(&idle());
         assert!(walking(&s), "the gate is 64 when finished before");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// spec/behavior/level-map.md, "After a knock-out as the lead alone",
+    /// "With a try left": the map after the black frames with the lead at
+    /// the level's stop, nothing recorded, no walk, and a press from frame
+    /// 64 entering the level again with a try fewer.
+    #[test]
+    fn a_lone_lead_knocked_out_goes_back_to_the_map() {
+        let dir = map_pack("map-knock-out");
+        let walker = format!(
+            "{LEVEL}\n[[entities]]\ntype = \"crawler\"\nat = [540, 300]\nparams = {{ speed = 1 }}\n"
+        );
+        std::fs::write(dir.join("levels/level-1.level"), walker).unwrap();
+        let mut s = session(LEVEL);
+        s.game.world.feel = Arc::new(generic_feel("classic-1").unwrap());
+        s.map = MapPlay::load(&dir).unwrap();
+        s.pack = Some(Installed {
+            dir: dir.clone(),
+            manifest: clamber_import::Manifest {
+                format: clamber_import::FORMAT,
+                id: "test".into(),
+                name: "Test".into(),
+                title: "test".into(),
+                release: "test".into(),
+                importer: "test".into(),
+                redistribute: false,
+                pixel_art: false,
+                view: None,
+                widescreen: None,
+            },
+        });
+        s.step(&press(Action::Jump));
+        let jump = Actions::from(Action::Jump);
+        hold(&mut s, Actions::NONE, 273, |f| match f {
+            140 | 240 => jump,
+            _ => Actions::NONE,
+        });
+        assert_eq!(s.screen, Screen::Playing);
+        let tries = s.game.world.flow.lives;
+
+        let mut steps = 0;
+        while s.screen == Screen::Playing {
+            s.step(&idle());
+            steps += 1;
+            assert!(steps < 600, "never knocked out");
+        }
+        assert_eq!(s.screen, Screen::Map, "no restart in place");
+        assert_eq!(s.tries_left, Some(tries - 1));
+        assert!(!map_of(&s).progress.cleared_by("level-map:f", "normal"));
+        // the step of the loss comes after the level's last
+        assert_eq!(until_shown(&mut s), 51);
+        assert_eq!(lead(&s).0, "f");
+
+        // frame 0 was the last step; nothing is held, then Down is
+        let down = Actions::from(Action::Down);
+        hold(&mut s, Actions::NONE, 100, |_| down);
+        assert_eq!(lead(&s).0, "f", "no path is open, nothing walks");
+        let walking = match &map_of(&s).phase {
+            MapPhase::Shown(screen) => screen.lead.walking(),
+            _ => true,
+        };
+        assert!(!walking);
+
+        let before = hold(&mut s, Actions::NONE, 1, |_| jump);
+        hold(&mut s, before, 40, |_| Actions::NONE);
+        assert_eq!(s.screen, Screen::Playing);
+        assert!(s.game.world.frame < 40, "a new level");
+        assert_eq!(s.game.world.flow.lives, tries - 1);
+        assert_eq!(s.tries_left, None);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
