@@ -125,7 +125,9 @@ fn falling_out_of_the_level_costs_a_life_and_the_last_one_ends_the_game() {
         .replace("at = [900, 400]", "at = [1300, 100]");
     let mut w = world(&src);
     let right: Actions = Action::Right.into();
-    for lives in (0..START_LIVES).rev() {
+    // The lives are the extra ones: the last is lost with none left.
+    for lost in 1..=START_LIVES + 1 {
+        let lives = START_LIVES.saturating_sub(lost);
         // Pickups and the checkpoint come first, the first time round.
         while w.flow.outcome == Outcome::Playing {
             next_event(&mut w, right);
@@ -133,7 +135,7 @@ fn falling_out_of_the_level_costs_a_life_and_the_last_one_ends_the_game() {
         assert_eq!(w.flow.events, [FlowEvent::Die]);
         assert!(w.player.pos.y - clamber_sim::HEIGHT > Vec2::ints(0, 600).y);
         assert_eq!(w.flow.lives, lives);
-        let last = if lives == 0 {
+        let last = if lost > START_LIVES {
             FlowEvent::GameOver
         } else {
             FlowEvent::Respawn

@@ -375,7 +375,7 @@ impl Audio {
                 self.silent_until = Some(hit + KNOCKOUT_CUT + silence);
                 let to_map = session.pack.is_some()
                     && session.map.as_ref().is_some_and(|m| m.playing())
-                    && session.game.world.flow.lives > 0;
+                    && !session.game.world.flow.final_loss;
                 if to_map {
                     // The map follows, with its own song.
                     self.silent_until = Some(hit + KNOCKOUT_MAP_SONG);

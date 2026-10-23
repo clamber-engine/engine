@@ -3805,7 +3805,7 @@ mod tests {
             _ => Actions::NONE,
         });
         assert_eq!(s.screen, Screen::Playing);
-        s.game.world.flow.lives = 1;
+        s.game.world.flow.lives = 0;
 
         let mut steps = 0;
         while s.screen == Screen::Playing {

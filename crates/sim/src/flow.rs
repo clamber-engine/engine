@@ -21,8 +21,10 @@
 //! goes on that long after it (falling-out.md).
 //! The player stays where it was for [`DYING_FRAMES`], or is knocked out
 //! if the physics say so (`knockout_jump`), then comes back at the last
-//! checkpoint reached, or the level's start. Losing the last life ends
-//! the world with [`Outcome::GameOver`].
+//! checkpoint reached, or the level's start. The lives are the extra
+//! ones, so 0 is still playable: losing a life with 1 left leaves 0 and
+//! play comes back, and losing one with 0 left ends the world with
+//! [`Outcome::GameOver`], the count staying 0.
 //!
 //! With `resume_afresh` above 0, the level's things are as at its start
 //! when the player comes back ([`afresh`]), as restart-barrel.md has it
@@ -183,6 +185,9 @@ pub struct Flow {
     /// The last life lost, for the lives display, until play comes
     /// back.
     pub lost: Option<LostLife>,
+    /// Whether the life being lost was lost with no extra life left,
+    /// so the world ends when the player's time out of play is over.
+    pub final_loss: bool,
     /// The image of the relic taken last, for
     /// [`World::relic_image`](crate::World::relic_image).
     pub relic_flight: Option<RelicFlight>,
@@ -238,7 +243,7 @@ pub(crate) fn dying(world: &mut World) -> bool {
     if left > 1 {
         world.player.vel = Vec2::default();
         world.flow.outcome = Outcome::Dying(left - 1);
-    } else if world.flow.lives == 0 {
+    } else if world.flow.final_loss {
         world.flow.outcome = Outcome::GameOver;
         world.flow.events.push(FlowEvent::GameOver);
     } else {
@@ -262,6 +267,7 @@ pub(crate) fn dying(world: &mut World) -> bool {
             _ => LivesStart::Knockout,
         };
         world.flow.lost = None;
+        world.flow.final_loss = false;
         world.flow.events.push(FlowEvent::Respawn);
     }
     true
@@ -427,6 +433,8 @@ pub(crate) fn update(world: &mut World, hurt_by: Option<usize>, facing: Facing) 
     if hurt || fell {
         flow.recovery = None;
         let before = flow.lives;
+        // With none left, the count stays and the world ends.
+        flow.final_loss = before == 0;
         flow.lives = flow.lives.saturating_sub(1);
         let physics = &world.feel.world;
         let (into, burst) = if fell {

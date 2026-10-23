@@ -187,8 +187,8 @@ impl World {
     /// reached, a keg is broken, and play comes back there as it does
     /// after any lost life, inside the keg for a keg. Whatever was under
     /// way at the level's start, such as an entrance, is over, and the
-    /// rest of the level is as it was. A world with no lives left gets
-    /// one, so play doesn't end. Returns false, changing nothing, if the
+    /// rest of the level is as it was. A game over due, from a life lost
+    /// with none left, is called off, so play doesn't end. Returns false, changing nothing, if the
     /// thing isn't a restart point.
     pub fn come_back_at(&mut self, index: usize) -> bool {
         if !self.restart_points().contains(&index) {
@@ -202,7 +202,7 @@ impl World {
         let flow = &mut self.flow;
         flow.checkpoints.retain(|&i| i != index);
         flow.checkpoints.push(index);
-        flow.lives = flow.lives.max(1);
+        flow.final_loss = false;
         flow.lost = None;
         flow.outcome = Outcome::Dying(1);
         self.player.knockout = None;
