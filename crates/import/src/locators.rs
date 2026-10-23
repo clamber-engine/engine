@@ -40,6 +40,7 @@ pub enum Data {
     ThrowerPalette,
     CritterPalette,
     StingerPalette,
+    OneLifePalette,
     MapPalette,
     PlacementList,
     CollectibleGroups,
@@ -85,7 +86,7 @@ pub enum Data {
 }
 
 impl Data {
-    pub const ALL: [Data; 71] = [
+    pub const ALL: [Data; 72] = [
         Data::SampleTable,
         Data::SharedSampleList,
         Data::SampleSetTable,
@@ -115,6 +116,7 @@ impl Data {
         Data::ThrowerPalette,
         Data::CritterPalette,
         Data::StingerPalette,
+        Data::OneLifePalette,
         Data::MapPalette,
         Data::PlacementList,
         Data::CollectibleGroups,
@@ -197,6 +199,7 @@ impl Data {
             Data::ThrowerPalette => "Sprite palettes: the thrower's palette",
             Data::CritterPalette => "Sprite palettes: the critters' palette",
             Data::StingerPalette => "Sprite palettes: the stinger's palette",
+            Data::OneLifePalette => "Sprite palettes: the one-life item palette",
             Data::MapPalette => "Sprite palettes: the level map's palette",
             Data::PlacementList => "Placements: the first level's placement list",
             Data::CollectibleGroups => "Single collectibles: the first level's group list",
@@ -291,6 +294,7 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
         ("title-1", Data::ThrowerPalette) => (0xFC, 0x86D4),
         ("title-1", Data::CritterPalette) => (0xFC, 0x894A),
         ("title-1", Data::StingerPalette) => (0xFC, 0x8DBE),
+        ("title-1", Data::OneLifePalette) => (0xFC, 0x8878),
         ("title-1", Data::MapPalette) => (0xF9, 0xBFC5),
         ("title-1", Data::PlacementList) => (0xFD, 0x95DC),
         ("title-1", Data::CollectibleGroups) => (0xF8, 0xC2ED),
