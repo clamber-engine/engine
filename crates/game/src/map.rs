@@ -491,7 +491,8 @@ impl MapPlay {
         }
         self.draw_lead(canvas, cast, screen, (left_edge, scale, height));
         // the other is in front of the lead where they overlap
-        // (`level-map.md`, "Where the two characters overlap")
+        // (`level-map.md`, "Where the two characters overlap"), whichever
+        // character leads
         if let Some(at) = screen.lead.other_position() {
             self.draw_other(canvas, cast, screen, at, (left_edge, scale, height));
         }
