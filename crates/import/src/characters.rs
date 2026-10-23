@@ -1251,6 +1251,71 @@ const FIRST: &[PictureSet] = &[
         ],
     },
     PictureSet {
+        name: "swim",
+        pictures: &[
+            (
+                "swim-1",
+                "5b5446baa955dbbcecd0274424d88115d7622f270ce586df5b1488fddaaea667",
+            ),
+            (
+                "swim-2",
+                "cff859f90724a1a0e79fee41bc6b36086a73c0752841c79758a6fc54d29ab50a",
+            ),
+            (
+                "swim-3",
+                "ec8277d3ca0e6768312201d3db4243924bf47fa5f7225fcb37e74feff608e1c5",
+            ),
+            (
+                "swim-4",
+                "60ee871167c4f2ac3846f19bd67470aac31bc2d52f21ec58c5f1c485aa2f44e6",
+            ),
+            (
+                "swim-5",
+                "ebca381e106119f7b9ea38cebf218f741a2ad9a9a48d62e755d120ac55fad744",
+            ),
+            (
+                "swim-6",
+                "a46df6c88d7affa97581b748832d043527ddda32fb684704ae0d16dd4a69b07b",
+            ),
+            (
+                "swim-7",
+                "0464246314228b6869640b575ec6a0dd14a6c2756ca6879ac1250fd616e6bb61",
+            ),
+            (
+                "swim-8",
+                "8ba8b67c29c6d453f9fd0f52fbcee88d4995bf2d7893510607b0a8ede9bd390e",
+            ),
+            (
+                "swim-9",
+                "1b31c1a69b3961f99d4169fb6f6455999d6cb4c49a03a36b9316e1aae0f76fab",
+            ),
+            (
+                "swim-10",
+                "5aea94cdb63c0bdd00965ccb6c333c2ce5d8aa97048464fcc211372abcab2f1e",
+            ),
+            (
+                "swim-11",
+                "968457668898f6dc157a77d4b08ce1a4a53fe6813fb20eb0903330cfd0cde0b0",
+            ),
+            (
+                "swim-12",
+                "24605da0c75659d916def1541c4028c9fdcf2dab0fa29f793f971d16b9de22d4",
+            ),
+            (
+                "swim-13",
+                "48b623516e63cf92273cf10e0ffe68c916ef8b1def259ec3449d656fb789566d",
+            ),
+            (
+                "swim-14",
+                "0cacd30e3ed27488f53b771fb0024a1d78c7a1f92fa9e819dc7a9414c24f53ff",
+            ),
+            (
+                "swim-15",
+                "34a4cc92cefdd42a131d7ad0585638a73cf1f57c0497b7482c60aa4ee8313a6a",
+            ),
+        ],
+    },
+    PictureSet {
         name: "scene",
         pictures: &[
             (

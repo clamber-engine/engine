@@ -82,6 +82,8 @@ pub enum Set {
     Act,
     /// The first character on a rope.
     Rope,
+    /// The first character swimming.
+    Swim,
     /// The pictures the leading character waits with in a scene.
     Scene,
     /// The pictures of the characters on the level map.
@@ -143,6 +145,7 @@ pub const SETS: [&[(Set, &[&str])]; 2] = [
         (Set::Hurt, &HURT),
         (Set::Act, &ACT),
         (Set::Rope, &ROPE),
+        (Set::Swim, &SWIM),
         (Set::Scene, &FIRST_SCENE),
         (Set::Map, &MAP),
         (Set::MapLeadFinish, &MAP_LEAD_FINISH),
@@ -322,6 +325,12 @@ const ACT: [&str; 30] = [
     "act-29", "act-30",
 ];
 
+/// The first character's swimming pictures.
+const SWIM: [&str; 15] = [
+    "swim-1", "swim-2", "swim-3", "swim-4", "swim-5", "swim-6", "swim-7", "swim-8", "swim-9",
+    "swim-10", "swim-11", "swim-12", "swim-13", "swim-14", "swim-15",
+];
+
 /// The first character's rope pictures.
 const ROPE: [&str; 12] = [
     "rope-hang-1",
@@ -361,6 +370,52 @@ const CLIMB: [&str; 10] = [
     "rope-climb-3",
     "rope-climb-2",
 ];
+
+/// The first character's swimming cycle ("Swimming"): a counter that
+/// falls by a rate each frame and is reloaded by 1024 when it reaches 0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Swim {
+    /// Index into [`SWIM`].
+    picture: usize,
+    counter: i32,
+    /// Frames since the last stroke, 0 on its frame.
+    stroked: Option<u32>,
+}
+
+impl Swim {
+    /// The cycle on a swimming frame, given the frame before's, if it
+    /// was swimming too. Where it stands on the first swimming frame
+    /// isn't covered: the first picture with a full counter.
+    fn next(before: Option<Swim>, stroke: bool) -> Swim {
+        let Some(before) = before else {
+            return Swim {
+                picture: 0,
+                counter: 1024,
+                stroked: stroke.then_some(0),
+            };
+        };
+        let stroked = if stroke {
+            Some(0)
+        } else {
+            before.stroked.map(|k| k.saturating_add(1))
+        };
+        let rate = stroked.map_or(256, |k| 256.max(752 - 16 * i64::from(k.min(31)))) as i32;
+        let counter = before.counter - rate;
+        if counter > 0 {
+            Swim {
+                counter,
+                stroked,
+                ..before
+            }
+        } else {
+            Swim {
+                picture: (before.picture + 1) % SWIM.len(),
+                counter: counter + 1024,
+                stroked,
+            }
+        }
+    }
+}
 
 /// What the first character does on a rope, as the pictures follow it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -705,6 +760,7 @@ pub fn stand_in(slot: usize, state: State, has: impl Fn(&str) -> bool) -> Option
         State::Hurt => &[Set::Hurt],
         State::GroundAction => &[Set::Act, Set::Crouch],
         State::Hold => &[Set::Rope],
+        State::Swim => &[Set::Swim],
         _ => &[],
     };
     let air = |labels: &[&'static str]| match state {
@@ -971,6 +1027,8 @@ pub struct PictureClock {
     rope: Option<OnRope>,
     /// Leaving a rope.
     off_rope: Option<OffRope>,
+    /// The swimming cycle on the frame before.
+    swim: Option<Swim>,
     /// What the player shows on this frame.
     shown: Option<(Set, &'static str)>,
 }
@@ -1157,6 +1215,18 @@ impl PictureClock {
             } else {
                 (Set::Act, ACT[usize::from((action.frame + 3) / 2) - 1])
             });
+            return;
+        }
+
+        self.swim = if first && player.state == State::Swim {
+            Some(Swim::next(self.swim, events.contains(&Event::Stroke)))
+        } else {
+            None
+        };
+        if let Some(swim) = self.swim {
+            self.standing = None;
+            self.landed = None;
+            self.shown = Some((Set::Swim, SWIM[swim.picture]));
             return;
         }
 
@@ -4203,6 +4273,40 @@ mod tests {
         }
     }
 
+    /// All water, the first character in it.
+    const POOL: &str = r#"
+        format = 1
+        size = [4096, 2000]
+        start = [1000, 1000]
+
+        [[regions]]
+        rect = [0, 0, 4096, 2000]
+        water = true
+    "#;
+
+    #[test]
+    fn the_first_character_swims_by_the_specs_example() {
+        // player-frames.md, "Swimming": Jump pressed on frame 2.
+        let keys: Vec<Vec<Action>> = (0..13)
+            .map(|k| if k == 2 { vec![Action::Jump] } else { vec![] })
+            .collect();
+        let run = run(world(POOL, 0), &keys);
+        let expect = [1, 1, 1, 2, 3, 4, 4, 5, 6, 6, 7, 7, 8];
+        for (k, n) in expect.iter().enumerate() {
+            assert_eq!(run.shown[k], Some(SWIM[n - 1]), "frame {k}");
+        }
+    }
+
+    #[test]
+    fn the_second_character_keeps_the_engine_s_art_swimming() {
+        let run = run(world(POOL, 1), &vec![vec![]; 10]);
+        assert!(
+            run.shown
+                .iter()
+                .all(|l| !l.is_some_and(|l| l.starts_with("swim-")))
+        );
+    }
+
     #[test]
     fn the_second_character_keeps_the_engine_s_art_on_a_rope() {
         let (keys, c) = rope_keys(|_| vec![], 20);
@@ -4232,6 +4336,7 @@ mod tests {
                     Set::Hurt => "hurt",
                     Set::Act => "act",
                     Set::Rope => "rope",
+                    Set::Swim => "swim",
                     Set::Scene => "scene",
                     Set::Map => "map",
                     Set::MapLeadFinish => "map-lead-finish",
