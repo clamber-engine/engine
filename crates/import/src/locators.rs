@@ -77,11 +77,15 @@ pub enum Data {
     SecondWallAreaViewLimits,
     MapPoints,
     MapCorners,
+    MapPageTileMaps,
+    MapPageTileSets,
+    MapPagePaletteSets,
+    MapFirstPalette,
     PackedMap,
 }
 
 impl Data {
-    pub const ALL: [Data; 67] = [
+    pub const ALL: [Data; 71] = [
         Data::SampleTable,
         Data::SharedSampleList,
         Data::SampleSetTable,
@@ -148,6 +152,10 @@ impl Data {
         Data::SecondWallAreaViewLimits,
         Data::MapPoints,
         Data::MapCorners,
+        Data::MapPageTileMaps,
+        Data::MapPageTileSets,
+        Data::MapPagePaletteSets,
+        Data::MapFirstPalette,
         Data::PackedMap,
     ];
 
@@ -242,6 +250,10 @@ impl Data {
             }
             Data::MapPoints => "Level map: point tables",
             Data::MapCorners => "Level map: corner records",
+            Data::MapPageTileMaps => "Level map: the page picture tile-map table",
+            Data::MapPageTileSets => "Level map: the page picture tile-set table",
+            Data::MapPagePaletteSets => "Level map: the page picture palette-set table",
+            Data::MapFirstPalette => "Level map: the first page's palette set",
             Data::PackedMap => "Level ground: the first level's packed map",
         }
     }
@@ -316,6 +328,10 @@ pub fn locate(title: &str, data: Data) -> Option<Location> {
         ("title-1", Data::SecondWallAreaViewLimits) => (0xFC, 0x97EC),
         ("title-1", Data::MapPoints) => (0xFC, 0xF47B),
         ("title-1", Data::MapCorners) => (0xC0, 0xD13C),
+        ("title-1", Data::MapPageTileMaps) => (0xC0, 0xE170),
+        ("title-1", Data::MapPageTileSets) => (0xC0, 0xE13C),
+        ("title-1", Data::MapPagePaletteSets) => (0xC0, 0xE1A4),
+        ("title-1", Data::MapFirstPalette) => (0xF9, 0xBE03),
         ("title-2", Data::PackedMap) => (0xE3, 0xE006),
         ("title-2", Data::TypeTable) => (0xFC, 0x6154),
         _ => return None,

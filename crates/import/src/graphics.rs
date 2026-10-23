@@ -1024,6 +1024,57 @@ impl Background {
     }
 }
 
+/// Columns and rows of tile entries in a map page picture.
+pub const PAGE_COLUMNS: usize = 32;
+pub const PAGE_ROWS: usize = 28;
+
+/// Bytes in a map page picture's tile map and tile set
+/// (`spec/formats/level-map.md`, "The pages' pictures").
+pub const PAGE_MAP_BYTES: usize = 2 * PAGE_COLUMNS * PAGE_ROWS;
+pub const PAGE_SET_BYTES: usize = 896 * 32;
+
+/// A map page picture, 256 × 224 px: its tile map's 32 × 28 entries
+/// drawn with its tile set and palette set, the backdrop (colour 0 of
+/// row 0) where a tile is transparent.
+pub fn page_picture(
+    map: &[u8],
+    tiles: &TileSet,
+    palettes: &PaletteSet,
+) -> Result<RgbaImage, String> {
+    if map.len() != PAGE_MAP_BYTES {
+        return Err(format!(
+            "a page's tile map is {PAGE_MAP_BYTES} bytes, not {}",
+            map.len()
+        ));
+    }
+    let entries: Vec<TileEntry> = words(map).into_iter().map(TileEntry).collect();
+    if let Some(e) = entries
+        .iter()
+        .find(|e| usize::from(e.tile()) >= tiles.len())
+    {
+        return Err(format!(
+            "a page's tile map shows tile {}, past the {} tiles",
+            e.tile(),
+            tiles.len()
+        ));
+    }
+    let [r, g, b] = rgb(palettes.colour(0, 0));
+    let mut image = RgbaImage::new(PAGE_COLUMNS as u32 * TILE, PAGE_ROWS as u32 * TILE);
+    for (i, &entry) in entries.iter().enumerate() {
+        let (sx, sy) = ((i % PAGE_COLUMNS) as u32, (i / PAGE_COLUMNS) as u32);
+        for y in 0..TILE {
+            for x in 0..TILE {
+                let mut p = shown(tiles, palettes, entry, x, y);
+                if p[3] == 0 {
+                    p = [r, g, b, 255];
+                }
+                image.set(sx * TILE + x, sy * TILE + y, p);
+            }
+        }
+    }
+    Ok(image)
+}
+
 fn layer(name: &str, parallax: Vec2, offset: Vec2, content: LayerContent) -> Layer {
     Layer {
         name: name.to_string(),

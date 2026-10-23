@@ -8,7 +8,13 @@
 //! [`LevelMapDecoder`]. How the lead walks a route
 //! (`behavior/level-map.md`) is up to the world map's walker.
 
-use crate::{Data, Decoder, FIRST_LEVEL, Image, Known, LEVELS, PackWriter, locate};
+use clamber_sprite::encode_png;
+
+use crate::graphics::{PAGE_MAP_BYTES, PAGE_SET_BYTES, page_picture};
+use crate::{
+    Data, Decoder, FIRST_LEVEL, Image, Known, LEVELS, Location, PackWriter, PaletteSet, TileSet,
+    locate,
+};
 
 /// The folder in a pack that holds its world maps.
 pub const MAPS: &str = "maps";
@@ -32,6 +38,90 @@ pub const CORNER_SIZE: usize = 4;
 
 /// How far right of a stop's position its appearance point is.
 pub const APPEARANCE_OFFSET: u32 = 8;
+
+/// How many pages the map has, numbered from 0 (`level-map.md`, "The
+/// pages' pictures").
+pub const PAGES: usize = 13;
+
+/// Where one page picture's three parts are in the image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PageLocations {
+    pub tile_map: Location,
+    pub tile_set: Location,
+    pub palette_set: Location,
+}
+
+/// Reads the locations of the first `pages` pages from the three page
+/// tables. A palette set is in the bank of `first_palette`.
+pub fn page_locations(
+    tile_maps: &[u8],
+    tile_sets: &[u8],
+    palette_sets: &[u8],
+    first_palette: Location,
+    pages: usize,
+) -> Result<Vec<PageLocations>, String> {
+    let short = |what| format!("the level map's {what} table runs past the end of the image");
+    let location = |table: &[u8], page: usize, what| {
+        let entry = table
+            .get(4 * page..4 * page + 3)
+            .ok_or_else(|| short(what))?;
+        Ok::<_, String>(Location::from_stored([entry[0], entry[1], entry[2]]))
+    };
+    (0..pages)
+        .map(|page| {
+            let palette = palette_sets
+                .get(2 * page..2 * page + 2)
+                .ok_or_else(|| short("palette-set"))?;
+            Ok(PageLocations {
+                tile_map: location(tile_maps, page, "tile-map")?,
+                tile_set: location(tile_sets, page, "tile-set")?,
+                palette_set: first_palette.in_bank(u16::from_le_bytes([palette[0], palette[1]])),
+            })
+        })
+        .collect()
+}
+
+/// The file in a pack of page `page`'s picture.
+pub fn page_picture_path(page: usize) -> String {
+    format!("{MAPS}/{LEVEL_MAP}-page-{page}.png")
+}
+
+/// The pictures of the map's pages of an image of `title`, as PNG, page
+/// 0 first.
+pub fn page_pictures(image: &Image, title: &str) -> Result<Vec<Vec<u8>>, String> {
+    let at = |data| {
+        let location = locate(title, data)
+            .ok_or_else(|| format!("the spec doesn't say where {title}'s page pictures are"))?;
+        image
+            .at(location)
+            .ok_or_else(|| "the level map's page pictures aren't in the image".to_string())
+    };
+    let first = locate(title, Data::MapFirstPalette)
+        .ok_or_else(|| format!("the spec doesn't say where {title}'s page pictures are"))?;
+    let pages = page_locations(
+        at(Data::MapPageTileMaps)?,
+        at(Data::MapPageTileSets)?,
+        at(Data::MapPagePaletteSets)?,
+        first,
+        PAGES,
+    )?;
+    let part = |location, len, what, page| {
+        image
+            .at(location)
+            .and_then(|bytes| bytes.get(..len))
+            .ok_or_else(|| format!("page {page}'s {what} runs past the end of the image"))
+    };
+    pages
+        .iter()
+        .enumerate()
+        .map(|(page, p)| {
+            let map = part(p.tile_map, PAGE_MAP_BYTES, "tile map", page)?;
+            let tiles = TileSet::new(part(p.tile_set, PAGE_SET_BYTES, "tile set", page)?)?;
+            let palettes = PaletteSet::new(part(p.palette_set, 256, "palette set", page)?)?;
+            Ok(encode_png(&page_picture(map, &tiles, &palettes)?))
+        })
+        .collect()
+}
 
 /// A direction that can start a walk from a stop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -535,7 +625,13 @@ impl Decoder for LevelMapDecoder {
         let map = LevelMap::from_image(image, &self.title)?;
         map.check()?;
         let text = map.to_title_world_map(LEVEL_MAP, &rules)?;
-        pack.write(&format!("{MAPS}/{LEVEL_MAP}.map"), text.as_bytes())
+        pack.write(&format!("{MAPS}/{LEVEL_MAP}.map"), text.as_bytes())?;
+        if locate(&self.title, Data::MapPageTileMaps).is_some() {
+            for (page, png) in page_pictures(image, &self.title)?.iter().enumerate() {
+                pack.write(&page_picture_path(page), png)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -580,6 +676,44 @@ mod tests {
             Direction::Up => "up",
             Direction::Down => "down",
         }
+    }
+
+    #[test]
+    fn page_locations_match_the_spec_vectors() {
+        let table = |address: usize| -> Vec<u8> {
+            let line = vector("page-tables.hex")
+                .lines()
+                .find(|l| l.starts_with(&format!("{address:x}:")))
+                .unwrap()
+                .to_string();
+            line.split_once(':')
+                .unwrap()
+                .1
+                .split_whitespace()
+                .map(|b| u8::from_str_radix(b, 16).unwrap())
+                .collect()
+        };
+        let pages = page_locations(
+            &table(0xa000),
+            &table(0xa100),
+            &table(0xa200),
+            Location::new(0xf9, 0xbe03),
+            3,
+        )
+        .unwrap();
+        let hex16 = |s: &str| u16::from_str_radix(s, 16).unwrap();
+        let hex8 = |s: &str| u8::from_str_radix(s, 16).unwrap();
+        for (page, row) in vector("page-locations.tsv").lines().skip(1).enumerate() {
+            let c: Vec<&str> = row.split('\t').collect();
+            assert_eq!(c[0], page.to_string());
+            let expected = PageLocations {
+                tile_map: Location::new(hex8(c[1]), hex16(c[2])),
+                tile_set: Location::new(hex8(c[3]), hex16(c[4])),
+                palette_set: Location::new(hex8(c[5]), hex16(c[6])),
+            };
+            assert_eq!(pages[page], expected, "page {page}");
+        }
+        assert!(page_locations(&table(0xa000), &[], &[], Location::new(0xf9, 0), 1).is_err());
     }
 
     #[test]
@@ -965,6 +1099,59 @@ mod tests {
             .position(bytes.len())
             .unwrap();
         bytes[at..at + 7 * TABLE_SIZE].copy_from_slice(&title_1_like().tables);
+        // every page shows the same picture: tile 1 at the top left,
+        // whose first pixel is colour 1
+        let put = |bytes: &mut Vec<u8>, data, offset: usize, value: &[u8]| {
+            let at = locate("title-1", data)
+                .unwrap()
+                .position(bytes.len())
+                .unwrap();
+            bytes[at + offset..at + offset + value.len()].copy_from_slice(value);
+        };
+        let (map, set, palette): (_, _, u16) = (
+            Location::new(0xC1, 0x0100),
+            Location::new(0xC1, 0x0800),
+            0x8000,
+        );
+        for page in 0..PAGES {
+            put(
+                &mut bytes,
+                Data::MapPageTileMaps,
+                4 * page,
+                &[0x00, 0x01, map.bank, 0],
+            );
+            put(
+                &mut bytes,
+                Data::MapPageTileSets,
+                4 * page,
+                &[0x00, 0x08, set.bank, 0],
+            );
+            put(
+                &mut bytes,
+                Data::MapPagePaletteSets,
+                2 * page,
+                &palette.to_le_bytes(),
+            );
+        }
+        let place = |bytes: &mut Vec<u8>, at: Location, offset: usize, value: &[u8]| {
+            let at = at.position(bytes.len()).unwrap() + offset;
+            bytes[at..at + value.len()].copy_from_slice(value);
+        };
+        place(&mut bytes, map, 0, &1u16.to_le_bytes());
+        place(&mut bytes, set, 32, &[0x80]);
+        let first = locate("title-1", Data::MapFirstPalette).unwrap();
+        place(
+            &mut bytes,
+            first.in_bank(palette),
+            0,
+            &0x7C00u16.to_le_bytes(),
+        );
+        place(
+            &mut bytes,
+            first.in_bank(palette),
+            2,
+            &0x001Fu16.to_le_bytes(),
+        );
         let dir = std::env::temp_dir().join(format!("clamber-level-map-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut pack = PackWriter {
@@ -980,6 +1167,16 @@ mod tests {
         let text = std::fs::read_to_string(dir.join("maps/level-map.map")).unwrap();
         let world = clamber_worldmap::WorldMap::from_toml_str(&text, "level-map.map").unwrap();
         assert_eq!(world, title_1_world_map());
+        for page in 0..PAGES {
+            let png = std::fs::read(dir.join(page_picture_path(page))).unwrap();
+            let clamber_sprite::Image::Rgba(picture) = clamber_sprite::decode_png(&png).unwrap()
+            else {
+                panic!("a page picture is RGBA")
+            };
+            assert_eq!((picture.width, picture.height), (256, 224));
+            assert_eq!(picture.get(0, 0), [255, 0, 0, 255], "page {page}");
+            assert_eq!(picture.get(1, 0), [0, 0, 255, 255], "page {page}");
+        }
         std::fs::remove_dir_all(&dir).unwrap();
 
         // an image whose map has no start point
