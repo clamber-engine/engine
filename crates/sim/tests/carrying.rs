@@ -505,6 +505,49 @@ fn action_during_a_throw() {
     assert_eq!(rolls(&[(5, 40)]), None);
 }
 
+/// carrying.md, "The second character", Jump and Action during a throw:
+/// the first character's table three frames earlier.
+#[test]
+fn jumps_and_actions_during_the_second_character_s_throw() {
+    let thrown = || {
+        let mut play = Play::second();
+        play.hold(&[A], 21);
+        assert_eq!(play.world.player.hands.unwrap().act, Act::Carry);
+        play
+    };
+    // Jump pressed before Q + 19: nothing, now or later.
+    let mut play = thrown();
+    let mut rows = play.hold(&[], 10);
+    rows.extend(play.hold(&[Jump], 30));
+    assert!(rows.iter().all(|r| !has(r, Event::JumpStart)));
+
+    // Pressed on Q + 19: a jump taking off on the next frame, with the
+    // second character's own values.
+    let mut play = thrown();
+    play.hold(&[], 19);
+    assert!(!has(&play.step(&[Jump]), Event::JumpStart));
+    let take_off = play.step(&[Jump]);
+    assert!(has(&take_off, Event::JumpStart));
+    assert_ne!(take_off.vel.y, f(-7.0));
+
+    let rolls = |presses: &[(usize, usize)]| {
+        let mut play = thrown();
+        let rows: Vec<Row> = (0..60)
+            .map(|n| {
+                let held = presses.iter().any(|&(from, to)| (from..to).contains(&n));
+                play.step(if held { &[A][..] } else { &[] })
+            })
+            .collect();
+        rows.iter().position(|r| has(r, Event::RollStart))
+    };
+    assert_eq!(rolls(&[(19, 30)]), Some(19));
+    assert_eq!(rolls(&[(30, 38)]), Some(30));
+    assert_eq!(rolls(&[(12, 30)]), Some(19));
+    assert_eq!(rolls(&[(11, 40)]), None);
+    assert_eq!(rolls(&[(13, 17)]), None);
+    assert_eq!(rolls(&[(5, 40)]), None);
+}
+
 #[test]
 fn putting_down() {
     let mut play = Play::carrying();

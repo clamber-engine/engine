@@ -1294,6 +1294,9 @@ carry_held_gravity = 0.28125
 throw_time = 40
 throw_still = 19
 throw_release = 18
+# Jump and Action during the throw follow the first character's table
+# three frames earlier (carrying.md, "The second character").
+throw_roll_press = 12
 put_down_time = 10
 carry_stride_steps = 8
 carry_stride = 0
