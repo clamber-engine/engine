@@ -41,6 +41,9 @@ pub struct Level {
     pub surfaces: BTreeMap<String, Surface>,
     /// What plays during the level.
     pub music: Option<Track>,
+    /// What plays when the lead, alone, is knocked out: the level's song
+    /// is cut and this one starts after its `silence`.
+    pub knockout_music: Option<Track>,
     /// How art with normal maps is shaded.
     pub lighting: Lighting,
     /// Point lights placed in the level.
@@ -559,6 +562,7 @@ struct File {
     #[serde(default)]
     surfaces: BTreeMap<String, SurfaceFile>,
     music: Option<TrackFile>,
+    knockout_music: Option<TrackFile>,
     lighting: Option<LightingFile>,
     #[serde(default)]
     lights: Vec<LightFile>,
@@ -993,6 +997,10 @@ impl Reader<'_> {
         rule.limits.get_or_insert(bounds);
 
         let music = f.music.map(|m| self.track("music", m)).transpose()?;
+        let knockout_music = f
+            .knockout_music
+            .map(|m| self.track("knockout_music", m))
+            .transpose()?;
         let lighting = match f.lighting {
             Some(l) => self.lighting("lighting", l)?,
             None => Lighting::default(),
@@ -1018,6 +1026,7 @@ impl Reader<'_> {
             camera: Camera { rule },
             surfaces,
             music,
+            knockout_music,
             lighting,
             lights,
             sections,
@@ -1637,7 +1646,11 @@ impl Level {
             t.insert("camera".into(), Value::Table(camera));
         }
 
-        if let Some(m) = &self.music {
+        for (key, track) in [
+            ("music", &self.music),
+            ("knockout_music", &self.knockout_music),
+        ] {
+            let Some(m) = track else { continue };
             let mut mt = Table::new();
             mt.insert("file".into(), Value::String(m.file.clone()));
             for (key, n) in [("loop_start", m.loop_start), ("loop_length", m.loop_length)] {
@@ -1649,7 +1662,7 @@ impl Level {
             if let Some(n) = m.silence {
                 mt.insert("silence".into(), Value::Integer(n.into()));
             }
-            t.insert("music".into(), Value::Table(mt));
+            t.insert(key.into(), Value::Table(mt));
         }
 
         if let Some(s) = &self.scene {

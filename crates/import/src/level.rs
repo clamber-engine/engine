@@ -108,6 +108,9 @@ pub struct LevelParts {
     pub view_limits: Option<Location>,
     /// The level's song, if it has its music.
     pub song: Option<LevelSong>,
+    /// The song when the lead alone is knocked out (`music.md`, "The
+    /// songs"), if the level has it.
+    pub knockout_song: Option<LevelSong>,
     /// Whether the rightmost of the level's extra-life items giving 3
     /// lives is late, as the right one of the first level's two is
     /// (`extra-lives.md`, "Late items").
@@ -713,7 +716,8 @@ impl LevelDecoder {
                 level.entities.len()
             ));
         }
-        if let Some(song) = p.song {
+        for (song, name) in [(p.song, "music"), (p.knockout_song, "knockout-music")] {
+            let Some(song) = song else { continue };
             let read = |at| image.at(at);
             let converted = crate::optional(|| {
                 let music = song.music(read)?;
@@ -730,13 +734,18 @@ impl LevelDecoder {
                             None => "ends",
                         }
                     ));
-                    let file = format!("{}-music.ogg", self.file);
-                    level.music = Some(Track {
+                    let file = format!("{}-{name}.ogg", self.file);
+                    let track = Track {
                         file: file.clone(),
                         loop_start: music.looping.map(|l| l.start as u64),
                         loop_length: music.looping.map(|l| l.length as u64),
                         silence: crate::silent_frames(song.song),
-                    });
+                    };
+                    if name == "music" {
+                        level.music = Some(track);
+                    } else {
+                        level.knockout_music = Some(track);
+                    }
                     files.insert(file, ogg);
                 }
                 Err(reason) => skipped.push(Skipped {

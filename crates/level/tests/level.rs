@@ -716,3 +716,13 @@ fn music_may_have_a_silence_before_it_starts() {
     let back = Level::from_toml_str(&l.to_toml_string(), "saved").unwrap();
     assert_eq!(back.music, l.music);
 }
+
+#[test]
+fn a_level_may_have_a_knock_out_song() {
+    let src = "format = 1\nsize = [100, 100]\nstart = [10, 10]\n[knockout_music]\nfile = \"k.ogg\"\nsilence = 30\n";
+    let l = Level::from_toml_str(src, "test").unwrap();
+    assert_eq!(l.music, None);
+    assert_eq!(l.knockout_music.as_ref().unwrap().silence, Some(30));
+    let back = Level::from_toml_str(&l.to_toml_string(), "saved").unwrap();
+    assert_eq!(back.knockout_music, l.knockout_music);
+}

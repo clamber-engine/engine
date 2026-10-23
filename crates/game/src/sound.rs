@@ -160,6 +160,13 @@ const MUSIC_OUT: f32 = 0.75;
 /// Logic frames from the last frame of a finished level to the cut of
 /// its song (`music.md`, "When the cut comes").
 const FINISH_CUT: u64 = 3;
+/// Frames from the hit that knocks out the lead alone to the cut of the
+/// level's song (`music.md`, "Knocked out as the lead alone"; the pause
+/// is counted).
+const KNOCKOUT_CUT: u64 = 9;
+/// Frames from that hit to the cut of the knock-out's song, 2 after the
+/// level's last frame.
+const KNOCKOUT_END: u64 = 259;
 /// Logic frames of silence from that cut to the map's song, after
 /// finishing a level that was finished before (`music.md`, "A change of
 /// song").
@@ -197,6 +204,11 @@ pub struct Audio {
     entries_seen: u32,
     /// The level finishes seen so far.
     finishes_seen: u32,
+    /// The song for a knock-out of the lead alone, once one has begun,
+    /// and the session's tick on which it is cut again.
+    knockout: Option<(TrackToPlay, u64)>,
+    /// The knock-outs seen so far.
+    knockouts_seen: u32,
     /// The volumes last set on the mixer, from the prefs.
     volume: Option<Volume>,
 }
@@ -255,6 +267,8 @@ impl Audio {
             cut_at: None,
             entries_seen: 0,
             finishes_seen: 0,
+            knockout: None,
+            knockouts_seen: 0,
             volume: None,
         }
     }
@@ -278,6 +292,12 @@ impl Audio {
                 .map(|t| TrackToPlay::new(t.file.clone(), Some(t)));
             return;
         };
+        self.level = Some(Self::play_of(track, dir, list));
+    }
+
+    /// `track`, whose file is relative to `dir`, with the loop and volume
+    /// `list` gives it unless the track gives a loop.
+    fn play_of(track: &Track, dir: &Path, list: &MusicList) -> TrackToPlay {
         let path = dir.join(&track.file);
         let mut play = TrackToPlay::new(path.clone(), list.find(&path));
         if let Some(start) = track.loop_start {
@@ -286,7 +306,7 @@ impl Audio {
                 length: track.loop_length,
             });
         }
-        self.level = Some(play);
+        play
     }
 
     /// Cues with a sound.
@@ -323,6 +343,28 @@ impl Audio {
                 };
                 self.silent_until = Some(session.ticks + FINISH_CUT + silence);
             }
+        }
+        // The lead alone knocked out: the level's song is cut, and after
+        // the silence the knock-out's song plays until its own cut
+        // (`music.md`, "Knocked out as the lead alone").
+        if session.knockouts != self.knockouts_seen {
+            self.knockouts_seen = session.knockouts;
+            if let Some(track) = session.game.world.level.knockout_music.as_ref() {
+                let hit = session.knockout_at;
+                let silence = u64::from(track.silence.unwrap_or(0));
+                self.cut_at = Some(hit + KNOCKOUT_CUT);
+                self.silent_until = Some(hit + KNOCKOUT_CUT + silence);
+                let play = Self::play_of(track, dir, &self.list);
+                self.knockout = Some((play, hit + KNOCKOUT_END));
+            }
+        }
+        if self
+            .knockout
+            .as_ref()
+            .is_some_and(|(_, end)| session.ticks >= *end)
+        {
+            self.knockout = None;
+            self.handle.stop_music(0);
         }
         let other = seen.is_none_or(|(d, m)| d != dir || m != music);
         if entered || other {
@@ -376,7 +418,9 @@ impl Audio {
         let fade = self.frames(if playing { CROSSFADE } else { MUSIC_IN });
         let out = self.frames(MUSIC_OUT);
         let rate = self.rate;
+        let knocked = self.knockout.as_mut().map(|(t, _)| t);
         let wanted = match session.tune() {
+            Some(Tune::Level) if knocked.is_some() => knocked,
             Some(Tune::Title) => self.title.as_mut(),
             Some(Tune::Level) => self.level.as_mut(),
             Some(Tune::Map) => self.map.as_mut(),
@@ -884,6 +928,44 @@ mod tests {
         }
         audio.update(&s, |w| panic!("{w}"));
         assert_eq!(last(&mut mixer, 10), 0.0, "cut 3 frames on");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_lone_lead_s_knock_out_cuts_the_song_for_the_knock_out_song_until_its_own_cut() {
+        let dir = folder("knockout");
+        std::fs::write(dir.join("first.wav"), level_wav(RATE as usize, 16384)).unwrap();
+        std::fs::write(dir.join("hit.wav"), level_wav(RATE as usize, -16384)).unwrap();
+        let (handle, mut mixer) = mixer(8);
+        let mut audio = Audio::new(handle, RATE, &SoundList::default(), |w| panic!("{w}"));
+        audio.set_title_music(&MusicList::default());
+        let src = format!(
+            "{LEVEL}\n[music]\nfile = \"first.wav\"\n[knockout_music]\nfile = \"hit.wav\"\nsilence = 30\n"
+        );
+        let level = Level::from_toml_str(&src, "test").unwrap();
+        audio.set_music(level.music.as_ref(), &dir, &MusicList::default());
+        let mut s = session();
+        s.level_path = dir.join("first.level");
+        s.game = Game::new(World::new(Arc::new(level), s.game.world.feel.clone()));
+        s.step(&press(Action::Jump));
+        audio.update(&s, |w| panic!("{w}"));
+        assert!(last(&mut mixer, 800) > 0.2, "playing at first");
+
+        s.knockouts += 1;
+        s.knockout_at = s.ticks;
+        let hit = s.ticks;
+        for _ in 0..265 {
+            audio.update(&s, |w| panic!("{w}"));
+            let heard = last(&mut mixer, 800);
+            let at = s.ticks - hit;
+            match at {
+                0..=8 => assert!(heard > 0.2, "the level's song goes on to H + 9: {at}"),
+                9..=38 => assert_eq!(heard, 0.0, "silent from H + 9 to H + 39: {at}"),
+                39..=258 => assert!(heard < -0.2, "the knock-out's song: {at}"),
+                259.. => assert!(heard >= 0.0, "cut on H + 259, then the level's again: {at}"),
+            }
+            s.ticks += 1;
+        }
         std::fs::remove_dir_all(dir).unwrap();
     }
 

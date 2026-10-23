@@ -399,6 +399,14 @@ pub fn first_level(title: &str) -> Option<LevelParts> {
         }),
         // `extra-lives.md`, "Late items": of its two `extra-life-3`
         // items, the right one.
+        // `music.md`: song 17 when the lead alone is knocked out.
+        knockout_song: Some(LevelSong {
+            sample_table: at(Data::SampleTable)?,
+            shared_samples: at(Data::SharedSampleList)?,
+            sample_sets: at(Data::SampleSetTable)?,
+            song_table: at(Data::SongTable)?,
+            song: 17,
+        }),
         late_life_item: true,
     })
 }
@@ -449,6 +457,7 @@ pub fn first_room(title: &str) -> Option<LevelParts> {
             song_table: at(Data::SongTable)?,
             song: 23,
         }),
+        knockout_song: None,
         late_life_item: false,
     })
 }
@@ -501,6 +510,7 @@ pub fn first_scene(title: &str) -> Option<LevelParts> {
             song_table: at(Data::SongTable)?,
             song: 25,
         }),
+        knockout_song: None,
         late_life_item: false,
     })
 }

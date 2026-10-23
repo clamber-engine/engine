@@ -266,7 +266,7 @@ pub struct Session {
     /// Logic frames after play came into another area that the song
     /// playing is cut, before the silence that leads to the new area's
     /// own (`music.md`, "When the cut comes"). The cuts at the ends of a
-    /// level are counted in `finishes`; a knock-out's isn't yet.
+    /// level are counted in `finishes`, a knock-out's in `knockouts`.
     pub song_cut: u32,
     /// How many times play has entered a level from the map, each of
     /// which starts the level's song over after its cut and silence even
@@ -276,6 +276,11 @@ pub struct Session {
     /// which cuts the level's song 3 frames after the level's last frame
     /// (`music.md`, "When the cut comes").
     pub finishes: u32,
+    /// How many times the lead, alone, has been knocked out, and the tick
+    /// of the last one's hit frame (`music.md`, "Knocked out as the lead
+    /// alone").
+    pub knockouts: u32,
+    pub knockout_at: u64,
     /// The mouse pointer's place in the view, once it has moved over it.
     pub pointer: Option<(f32, f32)>,
     /// Presses the mouse adds to the next menu step.
@@ -315,6 +320,8 @@ impl Session {
             song_cut: 0,
             map_entries: 0,
             finishes: 0,
+            knockouts: 0,
+            knockout_at: 0,
             pointer: None,
             clicks: Actions::NONE,
             dragging: None,
@@ -1163,8 +1170,14 @@ impl Session {
             self.cues.push(Cue::Pause);
             return;
         }
+        let hurt_before = self.game.world.player.knockout.is_some();
         if !self.game.step(input) {
             return;
+        }
+        let world = &self.game.world;
+        if !hurt_before && world.player.knockout.is_some() && world.other.is_none() {
+            self.knockouts += 1;
+            self.knockout_at = self.ticks;
         }
         self.cues.extend(cues(&self.game.world));
         match self.game.world.flow.outcome {

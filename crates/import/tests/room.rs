@@ -54,6 +54,7 @@ fn parts() -> LevelParts {
         scene_of: None,
         view_limits: None,
         song: None,
+        knockout_song: None,
         late_life_item: false,
     }
 }
