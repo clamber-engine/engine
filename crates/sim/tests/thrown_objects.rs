@@ -399,6 +399,44 @@ fn hits_a_medium_walker_which_falls_out_like_a_small_one() {
     assert!(k.is_some());
 }
 
+/// thrown-objects.md, "When a walker is hit", "Two walkers in range on
+/// the same frame": only one of two large walkers is hit on a frame, the
+/// same one whatever the offset between them, the other on a later frame
+/// if still in range.
+#[test]
+fn hits_one_of_two_walkers_in_range_on_a_frame() {
+    let large = SMALL_WALKER.replace(
+        "size = [20, 12], offset = 0.5",
+        "size = [25, 25], offset = 5.0",
+    );
+    for offset in [-20.0, -8.0, 0.0, 8.0, 20.0] {
+        let entities: String = (0..2)
+            .map(|_| {
+                format!(
+                    "[[entities]]\ntype = \"crawler\"\nat = [300, 400]\nparams = {{ {large} }}\n"
+                )
+            })
+            .collect();
+        let mut play = Play::new(&level(&format!("{FLAT}\n{entities}")));
+        play.throw_to(21);
+        let start = play.world.things[0].pos;
+        play.world.things[1].pos.x = start.x + f(200.25);
+        play.world.things[2].pos.x = start.x + f(200.25 + offset);
+        let mut first = None;
+        for _ in 22..=60 {
+            play.step(&[]);
+            let hit: Vec<usize> = (1..=2)
+                .filter(|&i| play.world.flow.events.contains(&FlowEvent::Defeat(i)))
+                .collect();
+            assert!(hit.len() <= 1, "offset {offset}: {hit:?}");
+            if let (None, [i]) = (first, hit.as_slice()) {
+                first = Some(*i);
+            }
+        }
+        assert!(first.is_some(), "offset {offset}");
+    }
+}
+
 /// A thrower at `(x, y)` that throws nothing for a long while.
 fn thrower(x: i32, y: i32) -> String {
     format!(

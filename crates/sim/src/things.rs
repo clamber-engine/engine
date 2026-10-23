@@ -903,7 +903,8 @@ fn knocked(
 /// Defeats the walkers thrown objects hit, with everything where it is
 /// after moving this step: a walker that's walking is hit when its box
 /// overlaps an object's hit box (see [`Behavior::Carry`]). An object
-/// hits at most one walker a step; which of two in reach at once isn't
+/// hits at most one walker a step (thrown-objects.md, "Two walkers in
+/// range on the same frame"); which of two in reach at once isn't
 /// in the spec, so it's the first placed. The object goes on as it was,
 /// unless it holds the missing character: then it breaks.
 ///
