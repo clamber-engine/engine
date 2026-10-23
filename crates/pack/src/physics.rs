@@ -512,6 +512,10 @@ params! {
     /// Above 0, a jump started during a timed roll waits to take off
     /// under `held_jump_gravity`, whether jump is held or not.
     RollJumpHeldGravity => "roll_jump_held_gravity",
+    /// Above 0, the gravity of a jump off a rope while jump has been
+    /// held on every frame since its press, in place of
+    /// `held_jump_gravity`.
+    RopeHeldGravity => "rope_held_gravity",
     /// Above 0, after a timed roll's stop in the air no roll starts on
     /// the frame after landing. An action press on it, or one in the
     /// air, starts one on the next frame if action is held until then.

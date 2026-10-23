@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
+use clamber_pack::{CharacterFeel, Presets};
 use clamber_sim::{Event, Facing, Fixed, InputFrame, State, World, generic_feel, record, step};
 use clamber_trace::{Decimal, Scenario};
 
@@ -613,5 +614,38 @@ fn sliding_off_the_end_in_a_trace() {
         .expect("landed");
     for r in &rows[off + 1..land] {
         assert_eq!((r.state.name(), &r.events[..]), ("fall", &[][..]));
+    }
+}
+
+#[test]
+fn the_second_character_jumps_off_like_the_first_in_gravity_with_its_own_speeds() {
+    // ropes.md, "The second character", "Example": facing left, Jump and
+    // Left pressed on P and held.
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: feel.roster[0].abilities.clone(),
+    });
+    let mut w = World::new(Arc::new(level((505.0, 300.0), &[500])), Arc::new(feel));
+    w.player.character = 1;
+    let rows = play_until_caught(&mut w, 0, |_| vec![J]);
+    assert!(rows.len() > 1);
+    let rows = play(&mut w, 8, |k| if k < 4 { vec![] } else { vec![J, L] });
+    let p = 4;
+    assert_eq!((rows[p].vx, rows[p].vy), (Fixed::ZERO, fx(-6.125)));
+    for (k, (vy, vx)) in [
+        (fx(-5.84375), fx(-0.421875)),
+        (fx(-5.5625), fx(-0.7890625)),
+        (fx(-5.28125), fx(-1.109375)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(
+            (rows[p + 1 + k].vy, rows[p + 1 + k].vx),
+            (vy, vx),
+            "P + {}",
+            k + 1
+        );
     }
 }

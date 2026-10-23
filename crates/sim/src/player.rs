@@ -1880,7 +1880,10 @@ impl Player {
             // A spring's throw, or a spring jump, has its own gravity.
             self.vel.y = arc.fall(self.vel.y, held(Action::Jump));
         } else if airborne {
-            let held_gravity = physics[Param::HeldJumpGravity];
+            let held_gravity = match physics[Param::RopeHeldGravity] {
+                rope if self.rope_run && rope > Fixed::ZERO => rope,
+                _ => physics[Param::HeldJumpGravity],
+            };
             // A jump pressed during a roll in the air falls under the
             // held gravity from its press.
             let jump_hold =

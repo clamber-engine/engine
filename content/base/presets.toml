@@ -130,6 +130,7 @@ roll_edge_ahead = 0
 roll_edge_depth = 0
 roll_edge_push = 0
 roll_jump_held_gravity = 0
+rope_held_gravity = 0
 roll_air_stop_wait = 0
 roll_stop_air = 0
 roll_attack_width = 0
@@ -1165,6 +1166,9 @@ top_speed = 3.375
 jump_speed = 8.3515625
 jump_release_speed = 8.3515625
 held_jump_gravity = 0.3515625
+# A jump off a rope has the first character's gravity (ropes.md, "The
+# second character").
+rope_held_gravity = 0.28125
 crouch_min = 9
 crouch_recovery = 13
 swap_wait = 39
