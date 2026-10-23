@@ -489,9 +489,26 @@ impl MapPlay {
             let (x, y, r) = (x.round() as i32, y.round() as i32, r.round() as i32);
             canvas.fill_rect(x - r, y - r, 2 * r, 2 * r, shade(color));
         }
+        self.draw_lead(canvas, cast, screen, (left_edge, scale, height));
+        // the other is in front of the lead where they overlap
+        // (`level-map.md`, "Where the two characters overlap")
         if let Some(at) = screen.lead.other_position() {
             self.draw_other(canvas, cast, screen, at, (left_edge, scale, height));
         }
+    }
+
+    /// Draws the lead; `view` is the page's left edge, the scale and the
+    /// map's height.
+    fn draw_lead(
+        &self,
+        canvas: &mut dyn Surface,
+        cast: &Cast,
+        screen: &LegsScreen,
+        view: (f64, f64, f64),
+    ) {
+        let legs = self.legs();
+        let (left_edge, scale, height) = view;
+        let (_, h) = canvas.view();
         let position = screen.lead.position();
         let Some((look, left)) = self.lead_picture() else {
             return;
@@ -506,10 +523,19 @@ impl MapPlay {
         if self.draw_look(canvas, cast, look, true, left, origin) {
             return;
         }
-        let (x, y) = at(position);
+        let y = position.y.to_f64();
+        let y = if legs.y_up { height - y } else { y };
+        let x = (position.x.to_f64() - left_edge) * scale;
+        let y = y * scale + (f64::from(h) - height * scale) / 2.0;
         let (bw, bh) = ((6.0 * scale) as i32, (10.0 * scale) as i32);
         let x = x.round() as i32 - bw / 2;
-        canvas.fill_rect(x, y.round() as i32 - bh, bw, bh, shade(LEAD));
+        canvas.fill_rect(
+            x,
+            y.round() as i32 - bh,
+            bw,
+            bh,
+            dim(LEAD, screen.brightness(legs)),
+        );
     }
 }
 
