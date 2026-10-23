@@ -355,10 +355,15 @@ pub struct Rope {
 /// `steer_response` of the gap to `steer` toward the direction held, or
 /// to 0, rounded toward zero to a 1/256 px per frame, and its speed down
 /// grows by `gravity` up to `max_fall`. After a catch it catches no one
-/// for `rest` frames.
+/// for `rest` frames. A character other than the first is caught by
+/// `second`'s reach and steers toward its `steer` (left out: as the
+/// first's), and the first character standing for a `long_stand` has its
+/// stand row changed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Sling {
     pub reach: Reach,
+    pub second: Option<SecondSling>,
+    pub long_stand: Option<LongStand>,
     pub left_shift: i32,
     pub hold: u8,
     pub shot: Vec2,
@@ -369,6 +374,24 @@ pub struct Sling {
     pub steer_response: Fixed,
     pub gravity: Fixed,
     pub max_fall: Fixed,
+}
+
+/// What differs for a character other than the first in a launch barrel
+/// (launch-barrel.md, "The second character").
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SecondSling {
+    pub reach: Reach,
+    pub steer: Fixed,
+}
+
+/// The first character's standing catch range changes partway through a
+/// long stand (launch-barrel.md, "A long stand"): on the steps `from` to
+/// `to` into the standing pose it's `span` instead of `reach.stand`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct LongStand {
+    pub from: u32,
+    pub to: u32,
+    pub span: Span,
 }
 
 /// A critter (spec/behavior/critter.md): scenery that flies towards a
@@ -1735,6 +1758,8 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         ],
         "sling" => &[
             "reach",
+            "second",
+            "long_stand",
             "left_shift",
             "hold",
             "shot",
@@ -2675,8 +2700,81 @@ fn parse_sling(table: &Table, path: &str) -> Result<Sling, String> {
     if steer.is_negative() {
         return Err(format!("{path}.steer: must not be negative"));
     }
+    let second = match table.get("second") {
+        None => None,
+        Some(Value::Table(t)) => {
+            if let Some(key) = t.keys().find(|k| !["reach", "steer"].contains(&k.as_str())) {
+                return Err(format!("{path}.second.{key}: no such value"));
+            }
+            let at = format!("{path}.second");
+            let reach = t
+                .get("reach")
+                .ok_or_else(|| format!("{at}: missing `reach`"))?;
+            let steer = t
+                .get("steer")
+                .ok_or_else(|| format!("{at}: missing `steer`"))?;
+            let steer = read(steer, &format!("{at}.steer"))?;
+            if steer.is_negative() {
+                return Err(format!("{at}.steer: must not be negative"));
+            }
+            Some(SecondSling {
+                reach: parse_reach(reach, &format!("{at}.reach"))?,
+                steer,
+            })
+        }
+        Some(_) => return Err(format!("{path}.second: expected a table")),
+    };
+    let long_stand = match table.get("long_stand") {
+        None => None,
+        Some(Value::Table(t)) => {
+            let at = format!("{path}.long_stand");
+            if let Some(key) = t
+                .keys()
+                .find(|k| !["from", "to", "span"].contains(&k.as_str()))
+            {
+                return Err(format!("{at}.{key}: no such value"));
+            }
+            let step = |key: &str| match t.get(key) {
+                Some(Value::Integer(n)) if u32::try_from(*n).is_ok() => Ok(*n as u32),
+                _ => Err(format!("{at}.{key}: expected a number of steps")),
+            };
+            let (from, to) = (step("from")?, step("to")?);
+            if from > to {
+                return Err(format!("{at}: `from` is after `to`"));
+            }
+            let n = match t.get("span") {
+                Some(Value::Array(items)) if items.len() == 4 => items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| match v {
+                        Value::Integer(n) if i32::try_from(*n).is_ok() => Ok(*n as i32),
+                        _ => Err(format!("{at}.span[{i}]: expected a whole number of px")),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+                _ => {
+                    return Err(format!(
+                        "{at}.span: expected [past from, to, below from, to]"
+                    ));
+                }
+            };
+            if n[0] > n[1] || n[2] > n[3] {
+                return Err(format!("{at}.span: a range ends before it starts"));
+            }
+            Some(LongStand {
+                from,
+                to,
+                span: Span {
+                    past: (n[0], n[1]),
+                    below: (n[2], n[3]),
+                },
+            })
+        }
+        Some(_) => return Err(format!("{path}.long_stand: expected a table")),
+    };
     Ok(Sling {
         reach: parse_reach(get("reach")?, &format!("{path}.reach"))?,
+        second,
+        long_stand,
         left_shift,
         hold: frames("hold")?,
         shot,

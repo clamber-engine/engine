@@ -23,6 +23,10 @@
 //!   reach is the one for the nearest pose in the spec's table, as for a
 //!   collectible.
 //! - The other character follows as usual.
+//! - The down-launch barrel, which the spec has only for the first
+//!   character, catches the second as the left one does.
+//! - A long stand's range replaces the first character's stand row only
+//!   when that's the row in use (standing, not carrying or in the air).
 //! - Hurt or bounced before landing, the player is no longer shot, and
 //!   goes on by the usual rules. Springs don't catch it before it lands.
 //! - Walls and ceilings stop the player as in the air; on the frames
@@ -104,7 +108,26 @@ pub(crate) fn catch(world: &mut World) {
         };
         let below = feet - at.1;
         let (past, below) = (i32::try_from(past).ok()?, i32::try_from(below).ok()?);
-        let span = collect::span(&values.reach, player, crouch_start, set_down);
+        let mut values = values;
+        let reach = match values.second {
+            Some(second) if player.character != 0 => {
+                values.steer = second.steer;
+                second.reach
+            }
+            _ => values.reach,
+        };
+        let mut span = collect::span(&reach, player, crouch_start, set_down);
+        if let Some(long) = values.long_stand
+            && player.character == 0
+            && span == reach.stand
+            && player
+                .pose
+                .standing
+                // The clock is as of the last step, one step behind.
+                .is_some_and(|n| (long.from..=long.to).contains(&n.saturating_add(1)))
+        {
+            span = long.span;
+        }
         span.contains(past, below).then_some(Slung {
             thing: i,
             values,

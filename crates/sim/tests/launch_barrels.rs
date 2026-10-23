@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
+use clamber_pack::{CharacterFeel, Presets};
 use clamber_sim::{Facing, Fixed, InputFrame, Phase, World, generic_feel, step};
 
 use Action::{Down, Jump, Left, Right, Up};
@@ -285,4 +286,79 @@ fn the_down_barrel_in_the_air_falls_at_8_and_steers() {
     assert_eq!(speeds[32], (px256(69), Fixed::from_int(8)));
     assert_eq!(w.player.facing, Facing::Right);
     assert!(w.player.grounded());
+}
+
+/// Makes the second character the one under control.
+fn second(w: &mut World) {
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: feel.roster[0].abilities.clone(),
+    });
+    w.feel = Arc::new(feel);
+    w.player.character = 1;
+}
+
+/// launch-barrel.md, "The second character": a standing second character
+/// has I from −21 to 17 and D from −36 to 30.
+#[test]
+fn a_standing_second_character_is_caught_inside_its_own_ranges() {
+    let caught_second = |dx: i32, d: i32| {
+        let x = 600;
+        let mut w = world(x, (x - dx, F - d), "");
+        second(&mut w);
+        still(&mut w);
+        caught(&w)
+    };
+    for (i, d) in [(-21, -36), (17, 30), (-21, 30), (17, -36)] {
+        assert!(caught_second(i, d), "I = {i}, D = {d}");
+    }
+    for (i, d) in [(-22, 0), (18, 0), (0, -37), (0, 31)] {
+        assert!(!caught_second(i, d), "I = {i}, D = {d}");
+    }
+}
+
+/// The second character's flight target is ±3.375.
+#[test]
+fn the_second_character_steers_toward_3_375() {
+    let run = |keys: &[Action]| {
+        let x = 600;
+        let mut w = world(x - 300, (x, F - 75), "");
+        second(&mut w);
+        w.player.pos = clamber_level::Vec2::ints(x, F - 75);
+        w.player.ground = None;
+        still(&mut w);
+        assert!(caught(&w));
+        let mut speeds = Vec::new();
+        while w.player.sling.is_some() {
+            step_keys(&mut w, keys, keys);
+            speeds.push(w.player.vel.x);
+        }
+        speeds
+    };
+    assert_eq!(run(&[Left])[39..42], [-2127, -2088, -2050].map(px256));
+    assert_eq!(run(&[Right])[39..42], [-2073, -1982, -1894].map(px256));
+    assert_eq!(run(&[])[39], px256(-2100));
+}
+
+/// launch-barrel.md, "A long stand": on steps 239 to 418 of a stand the
+/// first character has I from −14 to 30 and D from −33 to 36.
+#[test]
+fn a_long_stand_changes_the_first_characters_standing_range() {
+    let caught_at = |standing: u32, dx: i32, d: i32| {
+        let x = 600;
+        let mut w = world(x, (x - dx, F - d), "");
+        // The clock reads one step less on the step of the catch.
+        w.player.pose.standing = Some(standing - 1);
+        still(&mut w);
+        caught(&w)
+    };
+    assert!(caught_at(238, -24, 0));
+    assert!(caught_at(239, -14, 0));
+    assert!(!caught_at(239, -15, 0));
+    assert!(!caught_at(239, -24, 0));
+    assert!(caught_at(418, 30, 36));
+    assert!(!caught_at(418, 31, 0));
+    assert!(!caught_at(418, 0, -34));
+    assert!(caught_at(419, -24, -34));
 }

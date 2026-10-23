@@ -533,7 +533,10 @@
 #   the way held (to 0 with neither), rounded toward zero to 1/256 px a
 #   frame, and its speed down grows by `gravity` up to `max_fall`. Nothing
 #   held makes a difference before the flight. After a catch, the sling
-#   catches no one for `rest` frames.
+#   catches no one for `rest` frames. A character other than the first is
+#   caught by `second.reach` and steers toward `second.steer`; the first
+#   character standing for steps `long_stand.from` to `.to` into the
+#   standing pose is caught by `long_stand.span` instead of its stand row.
 # - `critter`: scenery that flies. It appears as scenery does, but
 #   somewhere across the top of the picture, at a random speed across of
 #   up to 2 px a frame either way and down of up to 2 px a frame, and
@@ -906,6 +909,30 @@ steer = 3
 steer_response = 0.03125
 gravity = 0.4375
 max_fall = 8
+
+# The second character leading (launch-barrel.md, "The second character"):
+# its catch ranges, and a flight target of 3.375 either way. One row for
+# the whole jump; a fall without a jump keeps the first character's `air`.
+[archetypes.sling.second]
+steer = 3.375
+
+[archetypes.sling.second.reach]
+stand = [-21, 17, -36, 30]
+walk = [-27, 18, -32, 30]
+crouch = [-28, 20, -35, 17]
+roll = [-27, 18, -32, 30]
+jump = [-27, 18, -32, 30]
+air = [-24, 24, -13, 49]
+air_below = []
+jump_early = 255
+land_hold = 0
+
+# The first character's standing range during a long stand ("A long
+# stand"): steps 239 to 418 into the standing pose.
+[archetypes.sling.long_stand]
+from = 239
+to = 418
+span = [-14, 30, -33, 36]
 
 [archetypes.sling.reach]
 stand = [-24, 27, -34, 32]
