@@ -26,6 +26,7 @@ use crate::characters::Files;
 use crate::{
     Data, Decoder, FrameTable, Image, Known, Location, Mirror, PackWriter, SPRITES, Sha256Hash,
     SpritePalette, TABLE_ENTRY_SIZE, find_pictures, locate, read_frames, sprite_sheet_in,
+    with_dim_colours,
 };
 
 /// The sprite palettes that colour objects' pictures.
@@ -237,7 +238,25 @@ impl ObjectDecoder {
                 pictures.push((label.to_string(), picture));
             }
             let sheet_image = format!("{}.png", sheet.name);
-            let files_for = sprite_sheet_in(&pictures, &colours, &[], &sheet_image)?;
+            // The shared palette's colours 1 to 15 and the first
+            // character's leading palette's 1 to 14 dim
+            // (`spec/behavior/dimming.md`, "Sprite colours").
+            let dims: Vec<(u8, u8)> = used
+                .iter()
+                .enumerate()
+                .filter_map(|(group, palette)| {
+                    let first = u8::try_from(16 * group).ok()? + 1;
+                    match palette {
+                        ObjectPalette::Shared => Some((first, first + 14)),
+                        ObjectPalette::FirstLeading => Some((first, first + 13)),
+                        _ => None,
+                    }
+                })
+                .collect();
+            let files_for = with_dim_colours(
+                sprite_sheet_in(&pictures, &colours, &[], &sheet_image)?,
+                &dims,
+            )?;
             files.push((
                 format!("{SPRITES}/{}.json", sheet.name),
                 files_for.json.into_bytes(),
@@ -378,6 +397,8 @@ mod tests {
         let meta = clamber_sprite::Sheet::from_json_str(json, "mixed.json").unwrap();
         let names: Vec<&str> = meta.animations.iter().map(|a| a.name.as_str()).collect();
         assert_eq!(names, ["a", "b"]);
+        // Only the shared palette's colours 1 to 15 dim.
+        assert_eq!(meta.dim_colours, [(1, 15)]);
         let shared = SpritePalette::new(&hex(&vector("palette.hex"))).unwrap();
         let image = decode_png(&files[1].1).unwrap();
         let sheet = SpriteSheet::new(meta, image).unwrap();

@@ -600,6 +600,20 @@ pub fn sprite_sheet_in(
     })
 }
 
+/// `files` with the palette indices in `ranges` (first and last, both
+/// included) marked as the colours that change with the level's dimming
+/// (`meta.clamber.dimColours`).
+pub fn with_dim_colours(files: SheetFiles, ranges: &[(u8, u8)]) -> Result<SheetFiles, String> {
+    if ranges.is_empty() {
+        return Ok(files);
+    }
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&files.json).map_err(|e| e.to_string())?;
+    meta["meta"]["clamber"]["dimColours"] = json!(ranges);
+    let json = serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?;
+    Ok(SheetFiles { json, ..files })
+}
+
 /// Frames by number, read through `table` from `bank_at`, which gives the
 /// bytes from a location to the end of the image.
 pub fn read_frames<'a>(

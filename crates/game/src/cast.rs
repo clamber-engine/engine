@@ -146,6 +146,11 @@ impl Cast {
         self.player.is_some()
     }
 
+    /// Draws the colours that dim in those of the dimming's `step`.
+    pub fn set_dim(&self, step: u32) {
+        self.bank.set_dim(step);
+    }
+
     /// Whether any character has a sheet of its own pictures.
     pub fn has_pictures(&self) -> bool {
         !self.characters.is_empty()

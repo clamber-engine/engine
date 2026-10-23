@@ -106,7 +106,7 @@ pub use sound::{
 pub use sprites::{
     Form, Frame, FrameTable, HASHED_OPAQUE, Header, LAST_SHORT, Mirror, Picture, Piece, Runs,
     SheetFiles, Size, SpritePalette, TABLE_ENTRY_SIZE, TableEntry, find_pictures, read_frames,
-    sprite_sheet, sprite_sheet_in,
+    sprite_sheet, sprite_sheet_in, with_dim_colours,
 };
 
 pub use view_limits::{VIEW_HEIGHT, VIEW_WIDTH, VerticalLimit, ViewLimits};

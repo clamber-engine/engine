@@ -402,6 +402,7 @@ impl Game {
         canvas.light(&lighting(level, origin, canvas.view()));
         let behind = self.world.behind_scenery();
         let dim = self.world.dim_step();
+        self.drawn_cast().set_dim(dim.0);
         let time = (self.world.frame as f64 + alpha) / clamber_sim::STEPS_PER_SECOND as f64;
         let viewing = Viewing {
             origin,

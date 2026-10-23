@@ -24,6 +24,10 @@
 //!   scene's lights. Each texel is a normal with x right, y up and z
 //!   towards the viewer, stored as `0.5 + 0.5 * n` in red, green and
 //!   blue. Variants share it. Without one the sheet is drawn unlit.
+//! - `meta.clamber.dimColours`: ranges `[first, last]` of palette indices
+//!   of the sheet's own image whose colours change with the level's
+//!   dimming (`spec/behavior/dimming.md`, "Sprite colours"). The named
+//!   palettes and variants don't.
 //!
 //! Slices carry per-frame geometry. A slice key applies from its frame
 //! until the slice's next key; a key with zero width or height means the
@@ -63,6 +67,8 @@ pub struct Sheet {
     pub scale: u32,
     /// Drawn with sharp texel edges rather than filtered smoothly.
     pub pixel_art: bool,
+    /// Inclusive ranges of the image's palette indices that dim.
+    pub dim_colours: Vec<(u8, u8)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -170,6 +176,8 @@ struct Extensions {
     scale: Option<u32>,
     #[serde(default)]
     pixel_art: bool,
+    #[serde(default)]
+    dim_colours: Vec<(u8, u8)>,
 }
 
 #[derive(Deserialize)]
@@ -377,8 +385,9 @@ fn parse(file: File) -> Result<Sheet, String> {
         });
     }
 
-    let (raw_palettes, variants, normals) =
-        ext.map_or_else(Default::default, |e| (e.palettes, e.variants, e.normals));
+    let (raw_palettes, variants, normals, dim_colours) = ext.map_or_else(Default::default, |e| {
+        (e.palettes, e.variants, e.normals, e.dim_colours)
+    });
     if let Some(name) = variants.keys().find(|n| raw_palettes.contains_key(*n)) {
         return Err(format!(
             "meta.clamber.variants.{name}: also the name of a palette"
@@ -405,6 +414,7 @@ fn parse(file: File) -> Result<Sheet, String> {
         normals,
         scale,
         pixel_art,
+        dim_colours,
     })
 }
 

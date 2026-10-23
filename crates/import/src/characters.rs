@@ -22,6 +22,7 @@ use std::collections::{BTreeMap, HashSet};
 use crate::{
     Data, Decoder, FrameTable, Image, Known, Location, Mirror, PackWriter, SPRITES, Sha256Hash,
     SpritePalette, TABLE_ENTRY_SIZE, find_pictures, locate, read_frames, sprite_sheet,
+    with_dim_colours,
 };
 
 /// What a character's sheet is named, before its roster slot.
@@ -2598,6 +2599,10 @@ impl CharacterDecoder {
                 &[(FOLLOWING, &following)],
                 &format!("{name}.png"),
             )?;
+            // The first character's leading colours 1 to 14 dim
+            // (`spec/behavior/dimming.md`, "Sprite colours").
+            let sheet =
+                with_dim_colours(sheet, if character.slot == 0 { &[(1, 14)] } else { &[] })?;
             files.extend(sheet_files(&name, sheet));
         }
         files.extend(map_sheet);
@@ -2841,6 +2846,17 @@ mod tests {
             panic!("not indexed");
         };
         assert_eq!(palette, &leading.palette());
+        assert!(sheet.sheet.dim_colours.is_empty(), "the second character's");
+    }
+
+    #[test]
+    fn the_first_characters_leading_colours_1_to_14_dim() {
+        let mut decoder = decoder(vec![set("one", vec![("a", hash(35))])]);
+        decoder.characters[0].slot = 0;
+        let (files, _) = decoder.sheets(&image()).unwrap();
+        let json = std::str::from_utf8(&files[0].1).unwrap();
+        let meta = clamber_sprite::Sheet::from_json_str(json, "character-0.json").unwrap();
+        assert_eq!(meta.dim_colours, [(1, 14)]);
     }
 
     #[test]

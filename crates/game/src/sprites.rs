@@ -10,9 +10,11 @@
 //! and lights the sheet whatever colours it's drawn in.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
-use clamber_sprite::{Image, Rgba, Sheet, SpriteSheet};
+use clamber_sprite::{Image, Palette, Rgba, Sheet, SpriteSheet};
 
+use crate::dim::{SPRITE_STEPS, sprite as dim_sprite};
 use crate::surface::{Flip, Quad, Surface, Texture};
 
 /// A sheet added to a [`SpriteBank`].
@@ -32,6 +34,9 @@ struct Entry {
     /// `textures`, in name order.
     named: Vec<(String, PaletteId)>,
     normals: Option<Arc<Texture>>,
+    /// The sheet's own image after each of the dimming's steps 1 to
+    /// [`SPRITE_STEPS`], if the sheet has colours that dim.
+    dimmed: Vec<Arc<Texture>>,
 }
 
 /// Collects sheets for a [`SpriteBank`].
@@ -55,7 +60,31 @@ impl SpriteBankBuilder {
                 .normals
                 .as_ref()
                 .map(|n| Texture::new(n.to_rgba(), pixel_art)),
+            dimmed: Vec::new(),
         };
+        if let (Image::Indexed { indices, palette }, false) =
+            (&sprite.image, sprite.sheet.dim_colours.is_empty())
+        {
+            let dims = |i: usize| {
+                let i = i as u8;
+                sprite
+                    .sheet
+                    .dim_colours
+                    .iter()
+                    .any(|&(a, b)| (a..=b).contains(&i))
+            };
+            entry.dimmed = (1..=SPRITE_STEPS)
+                .map(|step| {
+                    let colours = palette
+                        .0
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &c)| if dims(i) { dim_sprite(c, step) } else { c })
+                        .collect();
+                    Texture::new(Palette(colours).apply(indices), pixel_art)
+                })
+                .collect();
+        }
         if let Image::Indexed { indices, .. } = &sprite.image {
             for (name, palette) in &sprite.sheet.palettes {
                 entry
@@ -82,6 +111,7 @@ impl SpriteBankBuilder {
     pub fn build(self) -> SpriteBank {
         SpriteBank {
             sheets: self.sheets,
+            dim: Arc::default(),
         }
     }
 }
@@ -90,6 +120,9 @@ impl SpriteBankBuilder {
 #[derive(Clone, Debug, Default)]
 pub struct SpriteBank {
     sheets: Vec<Entry>,
+    /// The dimming's step the sheets' dimming colours are drawn in,
+    /// set before drawing ([`SpriteBank::set_dim`]).
+    dim: Arc<AtomicU32>,
 }
 
 /// One sprite to draw.
@@ -146,13 +179,25 @@ impl SpriteBank {
         self.sheets[id.0].named.iter().map(|&(_, id)| id)
     }
 
+    /// Draws the sheets' colours that dim in the colours of the
+    /// dimming's `step` from now on (0: as they are). Steps past
+    /// [`SPRITE_STEPS`] look as the last does.
+    pub fn set_dim(&self, step: u32) {
+        self.dim.store(step, Ordering::Relaxed);
+    }
+
     pub fn draw(&self, surface: &mut dyn Surface, sprite: &Sprite) {
         let entry = &self.sheets[sprite.sheet.0];
         let frame = &entry.sheet.frames[sprite.frame];
+        let step = self.dim.load(Ordering::Relaxed).min(SPRITE_STEPS) as usize;
+        let own = match entry.dimmed.get(step.wrapping_sub(1)) {
+            Some(dimmed) if sprite.palette.is_none() => dimmed,
+            _ => &entry.textures[0],
+        };
         let texture = sprite
             .palette
             .and_then(|p| entry.textures.get(p.0))
-            .unwrap_or(&entry.textures[0]);
+            .unwrap_or(own);
         let scale = entry.sheet.scale as f32;
         let (w, h) = (frame.rect.w as f32 / scale, frame.rect.h as f32 / scale);
         let offset = (frame.offset.0 as f32 / scale, frame.offset.1 as f32 / scale);
@@ -258,6 +303,41 @@ mod tests {
         let mut builder = SpriteBankBuilder::new();
         let id = builder.add(sheet);
         (builder.build(), id)
+    }
+
+    #[test]
+    fn colours_that_dim_are_drawn_in_the_steps_colours() {
+        let mut sheet = indexed();
+        sheet.sheet.dim_colours = vec![(1, 1)];
+        let (bank, id) = bank(&sheet);
+        let sprite = Sprite::new(id, 0, 3.0, 3.0);
+        let red = |step| {
+            bank.set_dim(step);
+            let [r, g, b, _] = crate::dim::sprite(RED, step);
+            (draw(&bank, sprite)[1][2], rgb(r, g, b))
+        };
+        // Colour 1 changes with the step, colour 2 (blue) never does.
+        assert_eq!(red(0), (R, R));
+        for step in [1, 8, 9] {
+            let (shown, expected) = red(step);
+            assert_eq!(shown, expected, "step {step}");
+            assert_ne!(shown, R);
+            assert_eq!(draw(&bank, sprite)[1][3], B, "step {step}");
+        }
+        // A palette of the sheet's is never dimmed.
+        let alt = bank.palette(id, "alt");
+        assert_eq!(
+            draw(
+                &bank,
+                Sprite {
+                    palette: alt,
+                    ..sprite
+                }
+            )[1][3],
+            B
+        );
+        bank.set_dim(0);
+        assert_eq!(draw(&bank, sprite)[1][2], R);
     }
 
     #[test]

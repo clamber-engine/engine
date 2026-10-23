@@ -171,6 +171,21 @@ fn scale_and_pixel_art_default_to_plain_texels_filtered_smoothly() {
 }
 
 #[test]
+fn dim_colours_are_ranges_of_indices() {
+    let plain = Sheet::from_json_str(&sheet_with(FRAME, ""), "test").unwrap();
+    assert!(plain.dim_colours.is_empty());
+    let dims = Sheet::from_json_str(
+        &sheet_with(
+            FRAME,
+            r#", "clamber": { "dimColours": [[1, 14], [17, 31]] }"#,
+        ),
+        "test",
+    )
+    .unwrap();
+    assert_eq!(dims.dim_colours, [(1, 14), (17, 31)]);
+}
+
+#[test]
 fn variants_name_images_and_not_palettes() {
     let s = Sheet::from_json_str(
         &sheet_with(

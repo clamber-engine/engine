@@ -39,6 +39,28 @@ pub fn dim(colour: Rgba, step: u32, steps: u32) -> Rgba {
     [r, g, b, a]
 }
 
+/// The steps `spec/behavior/dimming.md` gives the sprites' colours for.
+pub const SPRITE_STEPS: u32 = 8;
+
+/// A sprite colour after `step` of the dimming, worked at 5 bits a
+/// channel (`spec/behavior/dimming.md`, "Sprite colours"): red loses
+/// `R / 64` a step, green `⌊G / 2⌋ / 32` and blue moves towards green by
+/// `(G - B) / 64`, each rounded down after the steps. Steps past
+/// [`SPRITE_STEPS`] are not covered; the colour stays as it is at the last.
+pub fn sprite(colour: Rgba, step: u32) -> Rgba {
+    let [r, g, b, a] = colour;
+    let k = i64::from(step.min(SPRITE_STEPS));
+    if k == 0 || a == 0 {
+        return colour;
+    }
+    let [r, g, b] = [r, g, b].map(narrow);
+    let red = (64 * r - k * r).div_euclid(64);
+    let green = (32 * g - k * (g / 2)).div_euclid(32);
+    let blue = (64 * b + k * (g - b)).div_euclid(64);
+    let [r, g, b] = [red, green, blue].map(wide);
+    [r, g, b, a]
+}
+
 /// `colour` after `step` of `steps` going in equal steps to `night`,
 /// worked at 5 bits a channel and rounded down, keeping its alpha
 /// (`spec/behavior/dimming.md`, "The backdrop and the horizon layer").
@@ -114,6 +136,19 @@ mod tests {
     fn colour([r, g, b]: [u8; 3]) -> Rgba {
         let wide = |c: u8| ((u32::from(c) * 255 + 15) / 31) as u8;
         [wide(r), wide(g), wide(b), 255]
+    }
+
+    #[test]
+    fn the_sprite_colours_in_the_spec() {
+        // dimming.md, "Sprite colours" and its example.
+        let first = colour([20, 12, 6]);
+        assert_eq!(sprite(first, 0), first);
+        assert_eq!(sprite(first, 1), colour([19, 11, 6]));
+        assert_eq!(sprite(first, 8), colour([17, 10, 6]));
+        let white = colour([31, 31, 31]);
+        assert_eq!(sprite(white, 1), colour([30, 30, 31]));
+        assert_eq!(sprite(white, 8), colour([27, 27, 31]));
+        assert_eq!(sprite(white, 20), sprite(white, 8), "held at the 8th");
     }
 
     #[test]
