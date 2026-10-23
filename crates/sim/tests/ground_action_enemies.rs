@@ -471,3 +471,57 @@ fn two_walkers_in_reach_knock_out_one_whichever_way_they_and_the_player_face() {
         assert!(both > 0, "{facing:?} {heading}: nothing in reach");
     }
 }
+
+#[test]
+fn two_large_walkers_or_a_mix_knock_out_one() {
+    // "Two things in reach", spec-v0.305.0: two large walkers, or a medium
+    // and a large one in either order, still knock out at most one, the
+    // same one whatever the offsets. The classic-1 boxes have no medium
+    // size of their own here, so a taller box stands for it.
+    const MEDIUM: &str = "size = [22, 24], offset = 0.5";
+    for (first_size, second_size) in [
+        (LARGE, LARGE),
+        (MEDIUM, MEDIUM),
+        (MEDIUM, LARGE),
+        (LARGE, MEDIUM),
+    ] {
+        let mut both = 0;
+        for a in (10..=60_i32).step_by(10) {
+            for b in (10..=60).step_by(10) {
+                let mut chosen = Vec::new();
+                for (first, second) in [(a, b), (b, a)] {
+                    let walkers: String = [(first_size, first), (second_size, second)]
+                        .iter()
+                        .map(|(size, _)| {
+                            format!(
+                                r#"
+                                [[entities]]
+                                type = "crawler"
+                                at = [400, 400]
+                                params = {{ speed = 1, facing = "left", {size}, {CLASSIC_WALKER} }}
+                                "#
+                            )
+                        })
+                        .collect();
+                    let mut w = world_with(300, Facing::Right, &walkers);
+                    let put = [
+                        (0, 0, 300.0 + f64::from(first)),
+                        (0, 1, 300.0 + f64::from(second)),
+                    ];
+                    let rows = act(&mut w, &[D, A], &put, 70);
+                    let hit: Vec<usize> = rows.iter().flat_map(|r| r.struck.clone()).collect();
+                    assert!(
+                        hit.len() <= 1,
+                        "{first_size} {second_size} {first} {second}"
+                    );
+                    chosen.push(hit);
+                }
+                if a == b && chosen[0].len() == 1 && chosen[1].len() == 1 {
+                    both += 1;
+                    assert_eq!(chosen[0], chosen[1], "{first_size} {second_size} {a}");
+                }
+            }
+        }
+        assert!(both > 0, "{first_size} {second_size}: nothing in reach");
+    }
+}
