@@ -49,7 +49,8 @@
 //! world: an exit's `area` param names another area of the pack
 //! ([`area`]), and its `arrival` param the [`Arrival`] there, or in this
 //! level without an `area`, that play comes into next
-//! ([`World::arriving`]). Coming back to the level keeps some of what
+//! ([`World::arriving`]). An exit with its `once` param true is used up
+//! by taking over the lead, for the rest of the visit ([`once`]). Coming back to the level keeps some of what
 //! happened in it ([`World::coming_back_from`]), and play carries some
 //! of it from area to area ([`World::carrying`]).
 //!
@@ -102,6 +103,14 @@ pub const EXIT: &str = "exit";
 /// level without `.level`. Its `arrival` param names the arrival there.
 pub fn area(entity: &Entity) -> Option<&str> {
     entity.params.get("area")?.as_str()
+}
+
+/// Whether `entity` takes the lead only once in a visit to the level: its
+/// `once` param is true. Once it has, it's gone for the rest of the visit,
+/// also coming back to the level from the area it led to; a level that
+/// begins again has it back (exits.md, "The upper exit again").
+fn once(entity: &Entity) -> bool {
+    entity.params.get("once").and_then(|v| v.as_bool()) == Some(true)
 }
 
 /// The kind of entity that takes the lead out of the area to the right
@@ -314,6 +323,12 @@ pub(crate) fn take_over(world: &mut World) {
     let Some((exit, way)) = exit else {
         return;
     };
+    if once(&world.level.entities[exit])
+        && let Some(thing) = world.things.get_mut(exit)
+    {
+        thing.active = false;
+        thing.phase = Phase::Gone;
+    }
     let ye = world.level.entities[exit].at.y.floor() + 1;
     world.player.pos.y = Fixed::from_int(i32::try_from(ye).unwrap_or(i32::MAX));
     world.leaving = Some(Leaving {

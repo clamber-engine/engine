@@ -398,3 +398,59 @@ fn presets_without_exits_ignore_them() {
     }
     assert!(play.x() < i64::from(XE - 20));
 }
+
+/// A level with two exits, the left one with `once` (exits.md, "The upper
+/// exit again"), and an arrival to come back at, right of both.
+fn once_world() -> World {
+    let src = r#"
+        format = 1
+        name = "once"
+        size = [3000, 700]
+        start = [600, 449]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 449, 3000, 100]
+
+        [[entities]]
+        type = "exit"
+        at = [300, 449]
+        params = { once = true }
+
+        [[entities]]
+        type = "exit"
+        at = [100, 449]
+
+        [[arrivals]]
+        name = "back"
+        at = [600, 449]
+        "#;
+    let level = Arc::new(Level::from_toml_str(src, "once").unwrap());
+    World::new(level, Arc::new(generic_feel("classic-1").unwrap()))
+}
+
+#[test]
+fn an_exit_with_once_is_used_up_for_the_rest_of_the_visit() {
+    let mut play = Play::new(once_world());
+    assert!(play.until_taken(&[L], 400));
+    assert_eq!(play.world.leaving.unwrap().exit, 0);
+    let arrival = play.world.level.arrival("back").unwrap().clone();
+    // Coming back, it is gone: the lead walks on to the exit past it.
+    let mut again = Play::new(play.world.coming_back_from(&arrival, &play.world));
+    assert!(again.until_taken(&[L], 800));
+    assert_eq!(again.world.leaving.unwrap().exit, 1);
+    // Coming back once more, that one is still there, as it isn't used up.
+    let mut third = Play::new(once_world().coming_back_from(&arrival, &again.world));
+    assert!(third.until_taken(&[L], 400));
+    assert_eq!(third.world.leaving.unwrap().exit, 0);
+}
+
+#[test]
+fn a_level_that_begins_again_has_its_used_up_exit_back() {
+    let mut play = Play::new(once_world());
+    assert!(play.until_taken(&[L], 400));
+    let level = play.world.level.clone();
+    let mut fresh = Play::new(World::new(level, play.world.feel.clone()));
+    assert!(fresh.until_taken(&[L], 400));
+    assert_eq!(fresh.world.leaving.unwrap().exit, 0);
+}

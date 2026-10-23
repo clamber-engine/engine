@@ -273,6 +273,12 @@ fn lead_exits(entities: &mut [Entity], scene: bool, room: bool, into: Leads) {
         };
         if let Some((area, arrival)) = leads {
             lead(exit, area, arrival);
+            // exits.md, "The upper exit again": the room is entered once
+            // in a visit, the scene each time.
+            if Some(i) != floor && room {
+                exit.params
+                    .insert("once".into(), toml::Value::Boolean(true));
+            }
         }
     }
 }
@@ -898,6 +904,10 @@ mod tests {
         assert_eq!(leads(&entities[0]), Some(ROOM_RETURN));
         assert_eq!(leads(&entities[1]), None);
         assert_eq!(leads(&entities[2]), Some(SCENE_RETURN));
+        // Only the room's exit is used up by taking it.
+        let once = |e: &Entity| e.params.get("once").and_then(|v| v.as_bool());
+        assert_eq!(once(&entities[0]), Some(true));
+        assert_eq!(once(&entities[2]), None);
         let mut entities = [entity(EXIT, 300), entity(EXIT, 400)];
         lead_exits(&mut entities, false, true, Leads::default());
         assert_eq!(leads(&entities[0]), Some(ROOM_RETURN));
