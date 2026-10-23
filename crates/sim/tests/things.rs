@@ -973,7 +973,7 @@ fn second_bounce_speed_and_gravity_hold_from_b() {
     assert_eq!(vy(&|_| false), (fx(-8.5), fx(-8.5 + 0.4375)));
     assert_eq!(vy(&|n| n >= b), (fx(-8.5), fx(-8.5 + 0.3515625)));
     assert_eq!(
-        vy(&|n| n >= b + 1),
+        vy(&|n| n > b),
         (fx(-8.5), fx(-8.5 + 0.4375)),
         "not held on B"
     );
