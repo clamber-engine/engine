@@ -40,13 +40,13 @@ pub fn dim(colour: Rgba, step: u32, steps: u32) -> Rgba {
 }
 
 /// The steps `spec/behavior/dimming.md` gives the sprites' colours for.
-pub const SPRITE_STEPS: u32 = 8;
+pub const SPRITE_STEPS: u32 = 32;
 
 /// A sprite colour after `step` of the dimming, worked at 5 bits a
 /// channel (`spec/behavior/dimming.md`, "Sprite colours"): red loses
 /// `R / 64` a step, green `⌊G / 2⌋ / 32` and blue moves towards green by
 /// `(G - B) / 64`, each rounded down after the steps. Steps past
-/// [`SPRITE_STEPS`] are not covered; the colour stays as it is at the last.
+/// [`SPRITE_STEPS`], the dimming's last, hold the last's colour.
 pub fn sprite(colour: Rgba, step: u32) -> Rgba {
     let [r, g, b, a] = colour;
     let k = i64::from(step.min(SPRITE_STEPS));
@@ -148,7 +148,13 @@ mod tests {
         let white = colour([31, 31, 31]);
         assert_eq!(sprite(white, 1), colour([30, 30, 31]));
         assert_eq!(sprite(white, 8), colour([27, 27, 31]));
-        assert_eq!(sprite(white, 20), sprite(white, 8), "held at the 8th");
+        assert_eq!(sprite(white, 40), sprite(white, 32), "held at the last");
+        // The table's formulas worked by hand, past the 8th step.
+        assert_eq!(sprite(first, 16), colour([15, 9, 7]));
+        assert_eq!(sprite(first, 32), colour([10, 6, 9]));
+        assert_eq!(sprite(white, 32), colour([15, 16, 31]));
+        let second = colour([3, 25, 28]);
+        assert_eq!(sprite(second, 32), colour([1, 13, 26]));
     }
 
     #[test]
