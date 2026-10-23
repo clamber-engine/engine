@@ -32,6 +32,19 @@ pub struct WorldMap {
     pub paths: Vec<Path>,
     /// Animated elements drawn on the map.
     pub decorations: Vec<Decoration>,
+    /// The music played while the map is shown.
+    pub music: Option<MapMusic>,
+}
+
+/// A map's music track: an audio file relative to the map file, and
+/// where it loops.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MapMusic {
+    pub file: String,
+    /// Where the loop starts, in frames at the file's sample rate.
+    pub loop_start: Option<u64>,
+    /// The loop's length in frames; without it the loop runs to the end.
+    pub loop_length: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -466,6 +479,15 @@ struct File {
     path_list: Vec<PathFile>,
     #[serde(default)]
     decorations: Vec<DecorationFile>,
+    music: Option<MusicFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MusicFile {
+    file: String,
+    loop_start: Option<u64>,
+    loop_length: Option<u64>,
 }
 
 fn paths() -> String {
@@ -797,6 +819,25 @@ impl Reader<'_> {
                     at: v2(d.at),
                 })
                 .collect(),
+            music: f
+                .music
+                .map(|m| {
+                    if m.file.is_empty() {
+                        return Err(MapError::new(self.origin, "music.file is empty"));
+                    }
+                    if m.loop_length.is_some() && m.loop_start.is_none() {
+                        return Err(MapError::new(
+                            self.origin,
+                            "music.loop_length needs `loop_start`",
+                        ));
+                    }
+                    Ok(MapMusic {
+                        file: m.file,
+                        loop_start: m.loop_start,
+                        loop_length: m.loop_length,
+                    })
+                })
+                .transpose()?,
         })
     }
 

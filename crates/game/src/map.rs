@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 
 use clamber_input::{Action, Actions};
 use clamber_worldmap::{
-    Buttons, FinishTimes, LegWalker, Legs, LegsScreen, Mode, NodeKind, Progress, WorldMap,
+    Buttons, FinishTimes, LegWalker, Legs, LegsScreen, MapMusic, Mode, NodeKind, Progress, WorldMap,
 };
 
 use crate::canvas::{Color, rgb};
@@ -113,6 +113,8 @@ pub struct MapPlay {
     /// characters, not the places (`level-map.md`, "Pictures").
     pub(crate) second_leads: bool,
     pub(crate) opening: Opening,
+    /// Whether the level last finished had been finished before.
+    pub(crate) again: bool,
 }
 
 /// What the lead's picture on the map depends on besides where it is
@@ -159,6 +161,7 @@ impl MapPlay {
             two: false,
             second_leads: false,
             opening,
+            again: false,
         })
     }
 
@@ -170,6 +173,14 @@ impl MapPlay {
         } else {
             Opening::Cycle
         }
+    }
+
+    /// The map's music: its file, in the folder of the map file, and the
+    /// map's description of it.
+    pub fn music(&self) -> Option<(PathBuf, &MapMusic)> {
+        let music = self.map.music.as_ref()?;
+        let dir = Path::new(LEVEL_MAP).parent().unwrap_or(Path::new(""));
+        Some((self.root.join(dir).join(&music.file), music))
     }
 
     fn legs(&self) -> &Legs {
@@ -304,6 +315,7 @@ impl MapPlay {
         self.second_leads = second_leads;
         let place = self.map.place(node);
         let again = self.progress.is_cleared(&place);
+        self.again = again;
         let exit = match &self.map.nodes[node].kind {
             NodeKind::Level { exits, .. } => exits.first().cloned(),
             _ => None,

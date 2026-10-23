@@ -278,3 +278,21 @@ fn warps_checked_across_maps() {
     let doubled = [overworld(), overworld()];
     assert!(check_warps(&doubled).contains(&"map id `overworld` is used twice".to_string()));
 }
+
+#[test]
+fn reads_the_maps_music() {
+    assert_eq!(overworld().music, None);
+    let src = "format = 1\nid = \"m\"\nsize = [100, 100]\nstart = \"a\"\n\
+         [[nodes]]\nid = \"a\"\nkind = \"waypoint\"\nat = [0, 0]\n\
+         [music]\nfile = \"m.ogg\"\nloop_start = 10\nloop_length = 20\n";
+    let music = WorldMap::from_toml_str(src, "m.map")
+        .unwrap()
+        .music
+        .unwrap();
+    assert_eq!(music.file, "m.ogg");
+    assert_eq!((music.loop_start, music.loop_length), (Some(10), Some(20)));
+    let err = map_err("[music]\nfile = \"\"\n");
+    assert!(err.contains("music.file"), "{err}");
+    let err = map_err("[music]\nfile = \"m.ogg\"\nloop_length = 5\n");
+    assert!(err.contains("loop_start"), "{err}");
+}

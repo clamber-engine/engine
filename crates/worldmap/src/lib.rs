@@ -28,7 +28,7 @@ pub use legs::{
     Buttons, Dir, FULL, Finish, FinishTimes, LegWalker, Legs, LegsScreen, NewGame, ScreenStep, Step,
 };
 pub use map::{
-    Condition, Decoration, Exit, FORMAT, Free, MapError, Mode, Node, NodeKind, Path, Vehicle,
-    WorldMap, check_warps,
+    Condition, Decoration, Exit, FORMAT, Free, MapError, MapMusic, Mode, Node, NodeKind, Path,
+    Vehicle, WorldMap, check_warps,
 };
 pub use progress::{Position, Progress};

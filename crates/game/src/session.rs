@@ -126,6 +126,8 @@ pub enum Tune {
     Title,
     /// The level's own.
     Level,
+    /// The level map's, which a pack's map gives.
+    Map,
 }
 
 /// An item on the options screen.
@@ -173,12 +175,13 @@ impl Screen {
 
     /// The music this screen plays: the title's on the title screen and
     /// those opened from it, the level's in play and through pausing it,
-    /// and none once the level is over.
+    /// the map's on the level map, and none once the level is over.
     pub fn tune(&self) -> Option<Tune> {
         match self {
             Screen::Title(_) => Some(Tune::Title),
             Screen::Playing | Screen::Paused(_) => Some(Tune::Level),
-            Screen::Complete(_) | Screen::GameOver(_) | Screen::Map => None,
+            Screen::Map => Some(Tune::Map),
+            Screen::Complete(_) | Screen::GameOver(_) => None,
             Screen::Controls(_, from)
             | Screen::Movement(_, from)
             | Screen::Options(_, from)
@@ -1185,7 +1188,10 @@ impl Session {
 
     /// The music that should be playing.
     pub fn tune(&self) -> Option<Tune> {
-        self.screen.tune()
+        match self.screen.tune() {
+            Some(Tune::Map) if self.map.as_ref().is_none_or(|m| m.music().is_none()) => None,
+            tune => tune,
+        }
     }
 
     /// Draws the screen. During play, `alpha` is how far to draw between

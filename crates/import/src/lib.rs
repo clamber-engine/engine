@@ -453,6 +453,7 @@ impl Importer {
             {
                 decoders.push(Box::new(LevelMapDecoder {
                     title: known.title.clone(),
+                    audio_quality,
                 }));
             }
         }

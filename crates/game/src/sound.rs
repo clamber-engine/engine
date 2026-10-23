@@ -160,6 +160,15 @@ const MUSIC_OUT: f32 = 0.75;
 /// Logic frames from the last frame of a finished level to the cut of
 /// its song (`music.md`, "When the cut comes").
 const FINISH_CUT: u64 = 3;
+/// Logic frames of silence from that cut to the map's song, after
+/// finishing a level that was finished before (`music.md`, "A change of
+/// song").
+const MAP_SILENCE_AGAIN: u64 = 47;
+/// The same after a first finish: the map's song is first heard on its
+/// frame 212, `M` + 212 with `M` the map's first frame, which is 49
+/// frames after the level's last (`music.md`, "When the cut comes"). The
+/// finishing tune that fills the time isn't imported, so it is silent.
+const MAP_SILENCE_FIRST: u64 = 49 + 212 - FINISH_CUT;
 
 /// Plays a session's cues, and the music for its screen, on a mixer.
 pub struct Audio {
@@ -168,6 +177,8 @@ pub struct Audio {
     effects: BTreeMap<Cue, Sound>,
     title: Option<TrackToPlay>,
     level: Option<TrackToPlay>,
+    /// The level map's song, from the pack's map.
+    map: Option<TrackToPlay>,
     /// The loops and volumes of music, from [`set_title_music`].
     ///
     /// [`set_title_music`]: Audio::set_title_music
@@ -237,6 +248,7 @@ impl Audio {
             effects,
             title: None,
             level: None,
+            map: None,
             list: MusicList::default(),
             level_seen: None,
             silent_until: None,
@@ -288,6 +300,7 @@ impl Audio {
     /// Music that can't be opened is passed to `warn`, once. When the
     /// session plays another level, its music becomes the level's.
     pub fn update(&mut self, session: &Session, mut warn: impl FnMut(String)) {
+        self.follow_map(session);
         let dir = session.level_path.parent().unwrap_or(Path::new(""));
         let music = &session.game.world.level.music;
         let seen = self.level_seen.as_ref();
@@ -295,10 +308,20 @@ impl Audio {
         self.entries_seen = session.map_entries;
         // The song of a level with a silence plays through the walk-out
         // and the fade, and is cut 3 frames after the level's last frame.
+        // The map's song, when the map has one, starts after a silence.
         if session.finishes != self.finishes_seen {
             self.finishes_seen = session.finishes;
-            if music.as_ref().is_some_and(|m| m.silence.is_some()) {
+            let map_again = session.map.as_ref().map(|m| m.again);
+            if music.as_ref().is_some_and(|m| m.silence.is_some()) || self.map.is_some() {
                 self.cut_at = Some(session.ticks + FINISH_CUT);
+            }
+            if self.map.is_some() {
+                let silence = if map_again == Some(true) {
+                    MAP_SILENCE_AGAIN
+                } else {
+                    MAP_SILENCE_FIRST
+                };
+                self.silent_until = Some(session.ticks + FINISH_CUT + silence);
             }
         }
         let other = seen.is_none_or(|(d, m)| d != dir || m != music);
@@ -356,6 +379,7 @@ impl Audio {
         let wanted = match session.tune() {
             Some(Tune::Title) => self.title.as_mut(),
             Some(Tune::Level) => self.level.as_mut(),
+            Some(Tune::Map) => self.map.as_mut(),
             None => None,
         };
         let silent = match self.silent_until {
@@ -366,7 +390,7 @@ impl Audio {
             }
             None => false,
         };
-        let wanted = wanted.filter(|_| !silent || session.tune() != Some(Tune::Level));
+        let wanted = wanted.filter(|_| !silent || session.tune() == Some(Tune::Title));
         let Some(track) = wanted.filter(|t| !t.failed) else {
             if playing {
                 self.handle.stop_music(out);
@@ -385,6 +409,25 @@ impl Audio {
                 self.handle.stop_music(out);
             }
         }
+    }
+
+    /// Keeps the map's song that of the session's map.
+    fn follow_map(&mut self, session: &Session) {
+        let Some((path, music)) = session.map.as_ref().and_then(|m| m.music()) else {
+            self.map = None;
+            return;
+        };
+        if self.map.as_ref().is_some_and(|m| m.path == path) {
+            return;
+        }
+        let mut play = TrackToPlay::new(path.clone(), self.list.find(&path));
+        if let Some(start) = music.loop_start {
+            play.looping = Some(Looping::From {
+                start,
+                length: music.loop_length,
+            });
+        }
+        self.map = Some(play);
     }
 
     fn frames(&self, seconds: f32) -> u32 {
@@ -842,6 +885,101 @@ mod tests {
         audio.update(&s, |w| panic!("{w}"));
         assert_eq!(last(&mut mixer, 10), 0.0, "cut 3 frames on");
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A session on a pack whose level map has the song `map.wav`.
+    fn map_session(dir: &Path) -> Session {
+        std::fs::create_dir_all(dir.join("maps")).unwrap();
+        std::fs::write(dir.join("maps/map.wav"), level_wav(RATE as usize, 16384)).unwrap();
+        let map = r#"
+            format = 1
+            id = "level-map"
+            size = [512, 256]
+            mode = "legs"
+            start = "s"
+
+            [legs]
+            leg_frames = 64
+            remember = 31
+            page_width = 256
+            page_wait = 64
+            appear_offset = [8, 0]
+            appear_wait = 64
+            y_up = true
+            fade_step = 2
+
+            [legs.finish.first]
+            black = 49
+            gate = 242
+
+            [legs.finish.again]
+            black = 52
+            gate = 64
+
+            [[nodes]]
+            id = "s"
+            kind = "waypoint"
+            at = [100, 40]
+
+            [[nodes]]
+            id = "f"
+            kind = "level"
+            level = "levels/level-1.level"
+            exits = ["normal"]
+            at = [172, 40]
+            onward = "right"
+
+            [[paths]]
+            from = "s"
+            to = "f"
+            leave = ["right"]
+            back = ["left"]
+
+            [music]
+            file = "map.wav"
+        "#;
+        std::fs::write(dir.join(crate::map::LEVEL_MAP), map).unwrap();
+        let mut s = session();
+        s.map = crate::map::MapPlay::load(dir).unwrap();
+        assert!(s.map.is_some(), "the map loads");
+        s.screen = Screen::Map;
+        s
+    }
+
+    #[test]
+    fn the_map_s_song_plays_and_starts_after_a_finish_once_its_silence_is_over() {
+        for (again, silence) in [(true, MAP_SILENCE_AGAIN), (false, MAP_SILENCE_FIRST)] {
+            let dir = folder("map-song");
+            let mut s = map_session(&dir);
+            let (handle, mut mixer) = mixer(8);
+            let mut audio = Audio::new(handle, RATE, &SoundList::default(), |w| panic!("{w}"));
+            audio.update(&s, |w| panic!("{w}"));
+            assert!(last(&mut mixer, 800) > 0.2, "the map plays its song");
+
+            // a finished level: the song is cut after 3 frames, and the
+            // map's starts after its silence
+            let map = s.map.as_mut().unwrap();
+            let node = map.map.nodes.iter().position(|n| n.id == "f").unwrap();
+            if again {
+                map.progress.clear(&map.map.place(node), "normal");
+            }
+            map.phase = crate::map::MapPhase::Playing(node);
+            map.finished(false, false);
+            s.finishes += 1;
+            for n in 0..FINISH_CUT + silence {
+                audio.update(&s, |w| panic!("{w}"));
+                let heard = last(&mut mixer, 10);
+                if n < FINISH_CUT {
+                    assert!(heard > 0.2, "{again}: still playing on frame {n}");
+                } else {
+                    assert_eq!(heard, 0.0, "{again}: silent on frame {n}");
+                }
+                s.ticks += 1;
+            }
+            audio.update(&s, |w| panic!("{w}"));
+            assert!(last(&mut mixer, 800) > 0.2, "{again}: the song starts");
+            std::fs::remove_dir_all(dir).unwrap();
+        }
     }
 
     #[test]

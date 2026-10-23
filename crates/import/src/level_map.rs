@@ -12,8 +12,8 @@ use clamber_sprite::encode_png;
 
 use crate::graphics::{PAGE_MAP_BYTES, PAGE_SET_BYTES, page_picture};
 use crate::{
-    Data, Decoder, FIRST_LEVEL, Image, Known, LEVELS, Location, PackWriter, PaletteSet, TileSet,
-    locate,
+    Data, Decoder, FIRST_LEVEL, Image, Known, LEVELS, LevelSong, Location, Optional, PackWriter,
+    PaletteSet, Skipped, TileSet, locate,
 };
 
 /// The folder in a pack that holds its world maps.
@@ -608,6 +608,41 @@ impl LevelMap {
 /// [`LEVEL_MAP`], with the spec's [`Rules`].
 pub struct LevelMapDecoder {
     pub title: String,
+    /// Vorbis quality (-1 to 10) of the map's song.
+    pub audio_quality: f32,
+}
+
+/// The map's song (`behavior/music.md`, "The songs").
+const MAP_SONG: u16 = 12;
+
+impl LevelMapDecoder {
+    /// The map's song as an Ogg file and the `[music]` table of the world
+    /// map that names it, or why it couldn't be converted.
+    fn song(&self, image: &Image, file: &str) -> Result<(Vec<u8>, String, String), String> {
+        let at = |data| locate(&self.title, data).ok_or("the spec doesn't place the songs");
+        let song = LevelSong {
+            sample_table: at(Data::SampleTable)?,
+            shared_samples: at(Data::SharedSampleList)?,
+            sample_sets: at(Data::SampleSetTable)?,
+            song_table: at(Data::SongTable)?,
+            song: MAP_SONG,
+        };
+        let read = |at| image.at(at);
+        let music = song.music(read)?;
+        let ogg = music.ogg(self.audio_quality)?;
+        let mut table = format!("\n[music]\nfile = \"{file}\"\n");
+        if let Some(l) = music.looping {
+            table += &format!("loop_start = {}\nloop_length = {}\n", l.start, l.length);
+        }
+        let note = format!(
+            "song {MAP_SONG}: {}",
+            match music.looping {
+                Some(_) => music.fit.describe(),
+                None => "ends",
+            }
+        );
+        Ok((ogg, table, note))
+    }
 }
 
 impl Decoder for LevelMapDecoder {
@@ -624,7 +659,22 @@ impl Decoder for LevelMapDecoder {
             .ok_or_else(|| format!("the spec doesn't say what {}'s stops are", self.title))?;
         let map = LevelMap::from_image(image, &self.title)?;
         map.check()?;
-        let text = map.to_title_world_map(LEVEL_MAP, &rules)?;
+        let mut text = map.to_title_world_map(LEVEL_MAP, &rules)?;
+        // the song's file is next to the map's
+        let file = format!("{LEVEL_MAP}-music.ogg");
+        match crate::optional(|| self.song(image, &file)) {
+            Ok((ogg, table, note)) => {
+                text += &table;
+                pack.write(&format!("{MAPS}/{file}"), &ogg)?;
+                pack.note(note);
+            }
+            Err(reason) => pack.skip(Skipped {
+                part: Optional::Song,
+                name: format!("song {MAP_SONG}"),
+                reason,
+                diagnostics: Vec::new(),
+            }),
+        }
         pack.write(&format!("{MAPS}/{LEVEL_MAP}.map"), text.as_bytes())?;
         if locate(&self.title, Data::MapPageTileMaps).is_some() {
             for (page, png) in page_pictures(image, &self.title)?.iter().enumerate() {
@@ -1162,6 +1212,7 @@ mod tests {
         };
         let decoder = LevelMapDecoder {
             title: "title-1".into(),
+            audio_quality: 3.0,
         };
         decoder.decode(&Image::new(bytes), &mut pack).unwrap();
         let text = std::fs::read_to_string(dir.join("maps/level-map.map")).unwrap();
@@ -1182,6 +1233,7 @@ mod tests {
         // an image whose map has no start point
         let decoder = LevelMapDecoder {
             title: "title-1".into(),
+            audio_quality: 3.0,
         };
         let mut pack = PackWriter {
             dir: dir.clone(),
