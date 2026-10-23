@@ -203,6 +203,7 @@ impl Player {
         {
             ride.speed = second.speed;
             ride.run_speed = second.run_speed;
+            ride.off_landing = second.off_landing;
         }
         let held = |a| input.held.contains(a);
         let pressed = |a| input.pressed.contains(a);
@@ -466,11 +467,11 @@ impl Player {
             self.facing = facing_of(dir);
             events.push(Event::Turn);
         }
-        let gravity = if light {
-            physics[Param::HeldJumpGravity]
-        } else {
-            physics[Param::Gravity]
+        let held = match ride.second {
+            Some(second) if !jump && self.character != 0 => second.hop_gravity,
+            _ => physics[Param::HeldJumpGravity],
         };
+        let gravity = if light { held } else { physics[Param::Gravity] };
         self.riding = None;
         self.launch(Vec2::new(vx, gravity - ride.off_rise), events);
         self.jump_hold = light;

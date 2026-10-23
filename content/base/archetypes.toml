@@ -379,7 +379,8 @@
 #   jump), in whole 1/256 px. Holding the way it doesn't face turns it in
 #   `turn` frames, facing changing on frame `turn_face`. With the second
 #   character as the player, `ride.second` gives `speed` and `run_speed`
-#   instead. A Jump press,
+#   instead, with `ride.second.hop_gravity` for a hop off's held gravity
+#   and its own `off_landing`. A Jump press,
 #   or one up to `jump_memory` frames before still held, starts a jump
 #   from the floor: `crouch` frames, then `jump_speed` up, then the
 #   preset's jump gravity, and `landing` frames after landing. An Action
@@ -770,6 +771,10 @@ drop_land = 5
 [archetypes.hutch.ride.second]
 speed = 2.25
 run_speed = 3.9375
+# Getting off (getting-off.md, "The second character"): a hop keeps the
+# first character's lighter gravity, and its landing frames last to L + 16.
+hop_gravity = 0.28125
+off_landing = 17
 
 # title-1's thrower and balls (spec/behavior/thrower.md). The spec
 # doesn't say how big either is; the sizes are Clamber's own and only

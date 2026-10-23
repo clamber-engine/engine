@@ -627,6 +627,11 @@ pub struct Hutch {
 pub struct SecondRide {
     pub speed: Fixed,
     pub run_speed: Fixed,
+    /// The gravity of a hop off while Jump stays held (a jump off has the
+    /// character's own `held_jump_gravity`).
+    pub hop_gravity: Fixed,
+    /// The landing frames after a hop off.
+    pub off_landing: u8,
 }
 
 /// How a player rides an animal (spec/behavior/riding.md; see
@@ -3297,10 +3302,9 @@ fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
             None => None,
             Some(Value::Table(t)) => {
                 let at = format!("{path}.second");
-                if let Some(key) = t
-                    .keys()
-                    .find(|k| !["speed", "run_speed"].contains(&k.as_str()))
-                {
+                if let Some(key) = t.keys().find(|k| {
+                    !["speed", "run_speed", "hop_gravity", "off_landing"].contains(&k.as_str())
+                }) {
                     return Err(format!("{at}.{key}: no such value"));
                 }
                 let read = |key: &str| {
@@ -3310,6 +3314,15 @@ fn parse_ride(value: &Value, path: &str) -> Result<Ride, String> {
                 Some(SecondRide {
                     speed: read("speed")?,
                     run_speed: read("run_speed")?,
+                    hop_gravity: read("hop_gravity")?,
+                    off_landing: match t.get("off_landing") {
+                        Some(Value::Integer(n)) if (0..=i64::from(u8::MAX)).contains(n) => *n as u8,
+                        _ => {
+                            return Err(format!(
+                                "{at}.off_landing: expected a whole number of frames, 0 to 255"
+                            ));
+                        }
+                    },
                 })
             }
             Some(_) => return Err(format!("{path}.second: expected a table")),

@@ -5,8 +5,11 @@
 
 use std::sync::Arc;
 
+use std::collections::BTreeMap;
+
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
+use clamber_pack::{CharacterFeel, Presets};
 use clamber_sim::{
     Behavior, Event, Facing, Fixed, InputFrame, Phase, RidePart, Riding, World, generic_feel, step,
 };
@@ -502,5 +505,63 @@ fn landing_after_a_jump_off() {
         }
         let running = matches!(play.world.player.gait, clamber_sim::Gait::Running(_));
         assert_eq!(running, action);
+    }
+}
+
+impl Play {
+    /// The second character as the player.
+    fn second(mut self) -> Play {
+        let mut feel = (*self.world.feel).clone();
+        feel.roster.push(CharacterFeel {
+            physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+            abilities: BTreeMap::new(),
+        });
+        self.world.feel = Arc::new(feel);
+        self.world.player.character = 1;
+        self
+    }
+}
+
+/// "The second character": a hop has the first character's gravity and
+/// lands on P + 25, with landing frames to L + 16; on-foot play (a turn
+/// here) starts on L + 17.
+#[test]
+fn the_second_characters_hop() {
+    let mut play = Play::riding(1000.0, 0, Facing::Right, &[]).second();
+    play.step(&[T, R]);
+    assert_eq!(play.row().3, fx(-5.5625));
+    for frame in 1..=42 {
+        play.step(&[L]);
+        assert_eq!(play.landed(), frame == 25, "frame P + {frame}");
+        assert_eq!(
+            play.world.player.turn.is_some(),
+            frame == 25 + 17,
+            "frame P + {frame}"
+        );
+    }
+}
+
+/// "The second character": the jump-off has its own jump, landing on
+/// P + 39 with Jump held 1 frame and Right from P + 1, on P + 47 with Jump
+/// held 30 frames.
+#[test]
+fn the_second_characters_jump_off() {
+    let mut play = Play::riding(1000.0, 0, Facing::Right, &[]).second();
+    play.step(&[T, J]);
+    assert_eq!(play.row().3, fx(-5.6484375));
+    play.step(&[R]);
+    assert!(play.jumped());
+    assert_eq!(play.row().3, fx(-2138.0 / 256.0));
+    for frame in 2..=39 {
+        play.step(&[R]);
+        assert_eq!(play.landed(), frame == 39, "frame P + {frame}");
+    }
+    for (held, lands) in [(5, 41), (10, 42), (30, 47)] {
+        let mut play = Play::riding(1000.0, 0, Facing::Right, &[]).second();
+        play.step(&[T, J]);
+        for frame in 1..=lands {
+            play.step(if frame < held { &[R, J] } else { &[R] });
+            assert_eq!(play.landed(), frame == lands, "{held} held, P + {frame}");
+        }
     }
 }
