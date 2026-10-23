@@ -182,7 +182,15 @@ struct Landing {
 }
 
 fn landing(keys: impl Fn(u32) -> Vec<Action>) -> (Landing, Play) {
+    landing_with(false, keys)
+}
+
+fn landing_with(immediate: bool, keys: impl Fn(u32) -> Vec<Action>) -> (Landing, Play) {
     let mut play = Play::new(1);
+    play.world.feel = Arc::new(clamber_pack::Feel {
+        immediate,
+        ..clamber_pack::Feel::clone(&play.world.feel)
+    });
     let mut seen = Landing {
         left_from: None,
         jump: None,
@@ -268,6 +276,22 @@ fn jumps_use_the_bounce_window() {
         (l - 4, l, None),
     ] {
         let (seen, _) = landing(held(&[J], from, to));
+        assert_eq!(seen.jump, jump, "Jump held {from} to {to}");
+    }
+}
+
+/// #437: with presses answered on their own frame, a press on L + 2
+/// starts the jump on L + 2, not L + 3; the window before it is as is.
+#[test]
+fn an_immediate_jump_press_after_the_landing_starts_on_its_frame() {
+    let l = LANDING;
+    for (from, to, jump) in [
+        (l + 2, l + 2, Some(l + 2)),
+        (l + 5, l + 5, Some(l + 5)),
+        (l - 10, l + 1, Some(l + 2)),
+        (l, l, None),
+    ] {
+        let (seen, _) = landing_with(true, held(&[J], from, to));
         assert_eq!(seen.jump, jump, "Jump held {from} to {to}");
     }
 }
