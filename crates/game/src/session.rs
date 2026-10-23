@@ -3823,6 +3823,71 @@ mod tests {
         }
     }
 
+    /// #437, input to picture: a press read by a step is in the picture
+    /// drawn for that step, so the engine adds no frame of its own. With
+    /// the original timing off the Jump press starts the jump on its own
+    /// step; on, the preset's frame more.
+    #[test]
+    fn a_jump_press_is_in_the_picture_of_its_step() {
+        for original in [false, true] {
+            let level = Level::from_toml_str(LEVEL, "test").unwrap();
+            let mut s = Session::new(Game::new(World::new(
+                Arc::new(level),
+                Arc::new(generic_feel("classic-1").unwrap()),
+            )));
+            s.prefs.original_timing = original;
+            s.step(&press(Action::Jump));
+            let idle = Actions::NONE;
+            for _ in 0..60 {
+                s.step(&input(idle, idle));
+            }
+            const HUD_BOTTOM: f32 = 60.0;
+            let shown = |s: &Session| {
+                let mut list = crate::DrawList::new(s.look().view);
+                s.draw(&mut list, 1.0);
+                list.items
+                    .iter()
+                    .filter_map(|item| match item {
+                        // The count display at the top pulses on its own.
+                        crate::Drawn::Quad(q) if q.dst[1] < HUD_BOTTOM => None,
+                        crate::Drawn::Quad(q) => {
+                            Some(format!("{} {:?} {:?}", q.texture.id(), q.src, q.dst))
+                        }
+                        other => Some(format!("{other:?}")),
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let before = shown(&s);
+            s.step(&input(idle, idle));
+            assert_eq!(shown(&s), before, "still before the press");
+            let jump = Actions::from(Action::Jump);
+            s.step(&input(idle, jump));
+            let mut held = jump;
+            let (mut started, mut changed) = (None, None);
+            for n in 0..6 {
+                if n > 0 {
+                    s.step(&input(held, jump));
+                }
+                held = jump;
+                if s.game.world.events.contains(&clamber_sim::Event::JumpStart) {
+                    started.get_or_insert(n);
+                }
+                if shown(&s) != before {
+                    changed.get_or_insert(n);
+                }
+            }
+            // The arc's own take-off frame (jump-arc.md) leaves the
+            // player where it was, so the picture moves a step later;
+            // the engine adds nothing.
+            let late = original as u32;
+            assert_eq!(
+                (started, changed),
+                (Some(late), Some(late + 1)),
+                "original {original}"
+            );
+        }
+    }
+
     /// The map's first frame on the step `black` after the level's last.
     fn until_shown(s: &mut Session) -> u32 {
         let mut steps = 0;
