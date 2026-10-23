@@ -538,3 +538,25 @@ fn on_a_slope() {
     let rows = play(&mut w, 62, |f| if f == 0 { vec![D, A] } else { vec![] });
     assert!(rows.iter().all(|r| r.x == 0.0 && r.vx == 0.0 && r.grounded));
 }
+
+#[test]
+fn a_jump_during_the_action_takes_off_on_its_press_when_immediate() {
+    // #437: the spec has take-off on Q + 1; with the feel immediate it is
+    // on Q, and the action still ends on Q.
+    let take_off = |immediate: bool| {
+        let mut w = ground(|_| Some(0), 100.0);
+        w.feel = Arc::new(clamber_pack::Feel {
+            immediate,
+            ..clamber_pack::Feel::clone(&w.feel)
+        });
+        let rows = play(
+            &mut w,
+            30,
+            pressed_on_5(|f| if f == 20 { vec![J] } else { vec![] }),
+        );
+        assert_eq!(acting(&rows), (5..20).collect::<Vec<_>>());
+        rows.iter().position(|r| r.has(Event::JumpStart))
+    };
+    assert_eq!(take_off(false), Some(21));
+    assert_eq!(take_off(true), Some(20));
+}
