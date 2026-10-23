@@ -4504,6 +4504,30 @@ mod tests {
     }
 
     #[test]
+    fn landing_after_sliding_off_a_rope_with_a_direction_held_on_l() {
+        // player-frames.md, "After sliding off the end": Left or Right
+        // held on L alone changes nothing: the list, then standing from
+        // F + 30.
+        for side in [Action::Left, Action::Right] {
+            let (mut keys, c) =
+                rope_keys(|k| if k <= 11 { vec![Action::Down] } else { vec![] }, 120);
+            let level = low_rope_level(190);
+            let l = run(world(&level, 0), &keys).frames(Event::Land)[0];
+            keys[l] = vec![side];
+            let r = run(world(&level, 0), &keys);
+            assert_eq!(r.frames(Event::Land)[0], l);
+            let f = (c..keys.len())
+                .find(|&k| r.events[k].contains(&Event::RopeSlideOff))
+                .expect("slid off")
+                + 1;
+            r.check(
+                f + 24,
+                &[("land-2", 3), ("land-3", 3), ("stand-1", 3), ("stand-2", 3)],
+            );
+        }
+    }
+
+    #[test]
     fn landing_after_sliding_off_a_rope_shows_the_30_frame_list() {
         let (keys, c) = rope_keys(|k| if k <= 11 { vec![Action::Down] } else { vec![] }, 120);
         let r = run(world(&low_rope_level(190), 0), &keys);
