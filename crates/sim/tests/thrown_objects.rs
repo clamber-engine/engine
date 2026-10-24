@@ -996,6 +996,43 @@ fn breaks_on_a_ball_while_carried() {
     assert!(play.world.player.hands.is_none());
 }
 
+/// thrown-objects.md, "Hitting a ball", "The ball placed in the level":
+/// a ball placed with speeds (thrower.md, "Balls placed in a level") is
+/// hit by the same ranges as the thrower's balls: carried facing left, it
+/// breaks the object at 21 px and not at 22.
+#[test]
+fn breaks_on_a_placed_ball_while_carried() {
+    let placed = "[[entities]]\ntype = \"ball\"\nat = [1000, 100]\n\
+        params = { velocity = [-1.171875, -3] }";
+    let mut play = Play::new(&level(&format!("{FLAT}\n{placed}")));
+    play.world.player.facing = Facing::Left;
+    play.world.view = None;
+    let mut control = Play {
+        world: play.world.clone(),
+        held: play.held,
+    };
+    control.world.things[1].active = false;
+    control.step(&[A]);
+    let head = control.world.things[0].pos;
+    let up = |v: Fixed| -(-v).floor();
+    let at = |i: i64| {
+        Vec2::new(
+            Fixed::from_int((head.x.floor() - i) as i32),
+            Fixed::from_int(up(head.y) as i32),
+        )
+    };
+    for (i, hit) in [(22, false), (21, true)] {
+        let mut trial = Play {
+            world: play.world.clone(),
+            held: play.held,
+        };
+        put_ball(&mut trial, at(i), Fixed::ZERO, 0);
+        trial.step(&[A]);
+        assert_eq!(trial.world.things[0].active, !hit, "I {i}");
+        assert_eq!(trial.world.things[1].active, !hit, "I {i}");
+    }
+}
+
 /// A 64 px vertical step up to the left at x = 100: floor at y = 336
 /// left of it, the upper side, and at y = 400 from it on, the lower side.
 const STEP_UP: &str = "[[collision]]\nshape = \"polygon\"\n\
