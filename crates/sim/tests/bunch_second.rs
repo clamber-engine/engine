@@ -100,34 +100,50 @@ fn standing_and_crouching_have_the_second_characters_ranges() {
 
 #[test]
 fn a_landing_has_the_walking_ranges_to_l_plus_16() {
-    // Dropped from 100 px up, with a bunch 10 px below the feet: it's in
-    // the standing row only, so it's first taken when that row applies
-    // again, on L + 17.
-    let drop = |at: Option<(i32, i32)>| {
-        let mut w = world(at);
-        w.player.pos.y = Fixed::from_int(300);
-        let mut landed = None;
-        for n in 0..80 {
-            step(
-                &mut w,
-                &InputFrame::single(Frame::after(Actions::NONE, Actions::NONE)),
-            );
-            if landed.is_none() && w.player.grounded() {
+    // Nudged off a platform `up` px high (Right for 3 frames), with
+    // a bunch 10 px below the feet where it lands: it's in the standing
+    // row only, so it's first taken when that row applies again, on
+    // L + 17, or on L + 18 after a drop of more than 64 px (176 px was
+    // measured).
+    let drop = |up: i32, at: Option<(i32, i32)>| {
+        let platform = format!(
+            "[[collision]]\nshape = \"rect\"\nrect = [0, {}, 402, {up}]\n",
+            400 - up
+        );
+        let mut w = world_with(&platform, at);
+        w.player.pos.y = Fixed::from_int(400 - up);
+        let (mut landed, mut aired, mut taken, mut x) = (None, false, None, 0);
+        let mut held = Actions::NONE;
+        for n in 0..120 {
+            aired |= !w.player.grounded();
+            let now: Actions = if aired || n > 2 {
+                Actions::NONE
+            } else {
+                Action::Right.into()
+            };
+            step(&mut w, &InputFrame::single(Frame::after(held, now)));
+            held = now;
+            if aired && landed.is_none() && w.player.grounded() {
                 landed = Some(n);
             }
-            if w.flow
-                .events
-                .iter()
-                .any(|e| matches!(e, FlowEvent::Collect(_)))
+            if landed.is_some_and(|l| n == l + 17) {
+                x = w.player.pos.x.floor() as i32;
+            }
+            if taken.is_none()
+                && w.flow
+                    .events
+                    .iter()
+                    .any(|e| matches!(e, FlowEvent::Collect(_)))
             {
-                return (landed, Some(n));
+                taken = Some(n);
             }
         }
-        (landed, None)
+        (landed.unwrap(), x, taken)
     };
-    let (l, _) = drop(None);
-    let l = l.unwrap();
-    assert_eq!(drop(Some((400, 410))).1, Some(l + 17));
+    for (up, more) in [(40, 17), (176, 18)] {
+        let (l, x, _) = drop(up, None);
+        assert_eq!(drop(up, Some((x, 410))).2, Some(l + more), "{up}");
+    }
 }
 
 /// One step of a bounce off a small walker: the character's place, its

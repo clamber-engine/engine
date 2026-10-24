@@ -1294,9 +1294,10 @@ carry = [-14, 16, -8, 40]
 # The second character leading (bunches.md, "Second character leading"
 # and "Landing, second character leading"): its jumps have one row, the
 # walking one, held for the 17 frames of its landing. The spec measured
-# the landing only onto the floor the jump started from; other landings
-# hold it the same here. Running with Action released and falling
-# without a jump aren't covered either and take the nearest row.
+# the landing onto the floor the jump started from and one jump onto the
+# floor 176 px lower; other landings hold it the same here. Running with
+# Action released and falling without a jump aren't covered either and
+# take the nearest row.
 # Its bounce off a walker has its own box, and the landing after it
 # goes straight to the ranges on the ground (bunches.md, "Bouncing off
 # a walker, second character leading"; measured off a small walker on
@@ -1312,6 +1313,11 @@ air_below = []
 jump_early = 0
 land_hold = 17
 land_ran = 17
+# One frame longer after a jump off a ledge's end onto the floor 176 px
+# lower (bunches.md, "Landing, second character leading"); measured for
+# that one jump, and more than 64 px lower is Clamber's own cut, as for
+# the first character.
+land_drop = [64, 1]
 bounce = [-23, 19, -10, 32]
 
 # A letter of the level's word (spec/behavior/letters.md): entities set
