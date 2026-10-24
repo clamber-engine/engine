@@ -525,3 +525,103 @@ fn two_large_walkers_or_a_mix_knock_out_one() {
         assert!(both > 0, "{first_size} {second_size}: nothing in reach");
     }
 }
+
+/// The other character's `x` on each of 72 frames from P, with both characters at `x`, the player having walked right
+/// for `walk` frames first (`walk` = 0: standing), pressing the ground
+/// action on P and, if `walker` is set, a small walker put at `walker` px
+/// ahead of the player before frame `at`. Returns the frames the walker
+/// was knocked out on and the other's `x` for each frame.
+fn with_other(walk: usize, walker: Option<(usize, f64)>) -> (Vec<usize>, Vec<Fixed>) {
+    use clamber_pack::CharacterFeel;
+    use clamber_pack::Presets;
+    use std::collections::BTreeMap;
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: BTreeMap::new(),
+    });
+    let src = r#"
+        format = 1
+        size = [2000, 600]
+        start = [400, 400]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, 400, 2000, 200]
+
+        [[entities]]
+        type = "crawler"
+        at = [500, 400]
+        params = { speed = 1, facing = "left", size = [20, 12], offset = 0.5, response = 0.125, turn_delay = 4, defeat_jump = 6, defeat_gravity = 0.4375, defeat_max_fall = 8 }
+    "#;
+    let level = Level::from_toml_str(src, "test").unwrap();
+    let mut w = World::new(Arc::new(level), Arc::new(feel));
+    for _ in 0..4 {
+        step(&mut w, &InputFrame::default());
+    }
+    w.player.facing = Facing::Right;
+    let lead = w.player.pos;
+    w.other = Some(clamber_sim::Other::new(
+        1,
+        clamber_level::Vec2::new(lead.x - fx(27.0), lead.y),
+        Facing::Right,
+        lead,
+    ));
+    let mut last = Actions::NONE;
+    let mut go = |w: &mut World, now: Actions| {
+        step(w, &InputFrame::single(Frame::after(last, now)));
+        last = now;
+    };
+    for _ in 0..walk {
+        // The walker keeps its distance.
+        w.things[0].pos.x = w.player.pos.x + fx(150.0);
+        go(&mut w, [R].into_iter().collect());
+    }
+    let (mut hit, mut xs) = (vec![], vec![]);
+    for k in 0..72 {
+        if let Some((at, ahead)) = walker
+            && at == k
+        {
+            w.things[0].pos.x = w.player.pos.x + fx(ahead);
+        }
+        if walker.is_none() {
+            w.things[0].pos.x = w.player.pos.x + fx(150.0);
+        }
+        let now: Actions = match (k, walk > 0) {
+            (0, true) => [D, A, R].into_iter().collect(),
+            (0, false) => [D, A].into_iter().collect(),
+            _ => Actions::NONE,
+        };
+        go(&mut w, now);
+        if w.flow
+            .events
+            .iter()
+            .any(|e| matches!(e, FlowEvent::Defeat(_)))
+        {
+            hit.push(k);
+        }
+        xs.push(w.other.as_ref().map_or(Fixed::ZERO, |o| o.pos.x));
+    }
+    (hit, xs)
+}
+
+#[test]
+fn the_other_character_is_held_two_frames_and_carries_on_two_frames_later() {
+    for walk in [0, 60] {
+        // The walker is out of reach in the base run.
+        let (_, base) = with_other(walk, None);
+        // Some distance ahead puts the walker in the knock-out range.
+        let (hit, xs) = (40..90)
+            .map(|d| with_other(walk, Some((17, f64::from(d) + 0.5))))
+            .find(|r| r.0.len() == 1 && r.0[0] <= 30)
+            .expect("a knock-out");
+        assert_eq!(hit.len(), 1, "walk {walk}: {hit:?}");
+        let k = hit[0];
+        for j in 1..=2 {
+            assert_eq!(xs[k + j], xs[k], "walk {walk}: K + {j}");
+        }
+        for j in 0..30 {
+            assert_eq!(xs[k + j + 2], base[k + j], "walk {walk}: K + {j} + 2");
+        }
+    }
+}
