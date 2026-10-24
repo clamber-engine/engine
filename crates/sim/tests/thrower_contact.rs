@@ -589,3 +589,100 @@ fn the_second_character_bounce_range() {
         );
     }
 }
+
+/// thrower-contact.md, "Crouching and the fidget pose": a crouching
+/// player on the ledge is hurt by I from −29 to 24 facing right and −23
+/// to 30 facing left (first character), −30 to 26 and −25 to 31 (second).
+#[test]
+fn a_crouching_player_has_its_own_hurt_range() {
+    for second in [false, true] {
+        let (right, left) = if second {
+            ((-30, 26), (-25, 31))
+        } else {
+            ((-29, 24), (-23, 30))
+        };
+        for (facing, (low, high)) in [(Facing::Right, right), (Facing::Left, left)] {
+            for i in (low - 2)..=(high + 2) {
+                let mut play = if second {
+                    second_play(900, 380)
+                } else {
+                    Play::new(900, 380)
+                };
+                play.settle();
+                play.stand_at(1000.0 - 100.0, facing);
+                // Down for a few frames, so the crouch has begun,
+                for _ in 0..4 {
+                    play.step(&[Action::Down]);
+                }
+                play.stand_at(1000.0 + f64::from(i), facing);
+                play.world.things[0].clock = 60;
+                assert!(!play.step(&[Action::Down]), "{second} {facing:?} {i}");
+                let hurt = play.step(&[Action::Down]);
+                assert_eq!(hurt, (low..=high).contains(&i), "{second} {facing:?} I {i}");
+            }
+        }
+    }
+}
+
+/// The same, after Down is let go: the crouching range goes on to U + 7
+/// (first character) or U + 10 (second), U the first frame without Down.
+#[test]
+fn the_crouching_range_goes_on_after_down_is_let_go() {
+    for (second, last) in [(false, 7), (true, 10)] {
+        // I −29 is in the crouching range of both, outside the standing
+        // one of the first.
+        let i = -29;
+        for after in 0..=last + 3 {
+            let mut play = if second {
+                second_play(900, 380)
+            } else {
+                Play::new(900, 380)
+            };
+            play.settle();
+            play.stand_at(900.0, Facing::Right);
+            for _ in 0..20 {
+                play.step(&[Action::Down]);
+            }
+            // Down is let go on U; the player is put in place at the end
+            // of U + `after`.
+            for _ in 0..after {
+                play.step(&[]);
+            }
+            play.stand_at(1000.0 + f64::from(i), Facing::Right);
+            play.world.things[0].clock = 60;
+            play.step(&[]);
+            let hurt = play.step(&[]);
+            assert_eq!(hurt, after <= last, "{second} U + {after}");
+        }
+    }
+}
+
+/// thrower-contact.md, "Crouching and the fidget pose": the first
+/// character in the fidget pose is hurt by I from −16 to 36 facing
+/// right; the second character's range is its standing one.
+#[test]
+fn the_fidget_pose_has_its_own_hurt_range() {
+    for (second, i, hurts) in [
+        (false, 35, true),
+        (false, 37, false),
+        (false, -17, false),
+        (false, -16, true),
+        (true, 24, false),
+        (true, 23, true),
+    ] {
+        let mut play = if second {
+            second_play(900, 380)
+        } else {
+            Play::new(900, 380)
+        };
+        play.settle();
+        play.stand_at(900.0, Facing::Right);
+        for _ in 0..260 {
+            play.step(&[]);
+            play.world.things[0].clock = 60;
+        }
+        play.stand_at(1000.0 + f64::from(i), Facing::Right);
+        play.step(&[]);
+        assert_eq!(play.step(&[]), hurts, "{second} I {i}");
+    }
+}

@@ -40,12 +40,11 @@
 //! other enemies. A ball passes through walls, and rising into a floor
 //! from below, through that, which the spec doesn't cover either.
 //!
-//! Engine choices where thrower-contact.md says nothing: crouching, the
-//! fidget pose and the ball's rolling pose after a roll take the upright
-//! range; a knocked-out thrower touches nothing on the frames from its
+//! Engine choices where thrower-contact.md says nothing: crouching and
+//! the fidget pose away from the ledge take the upright `above`, and the
+//! ball's rolling pose after a roll takes the upright range; a knocked-out thrower touches nothing on the frames from its
 //! knock-out on, not only from the fourth, and isn't removed on the
-//! frames it holds still; for the second character, crouching takes the
-//! standing range, the moving range goes on 16 frames after the landing
+//! frames it holds still; for the second character, the moving range goes on 16 frames after the landing
 //! of a jump standing still as it does against balls, and a roll into a
 //! thrower defeats it as the first character's does; and a rider, or a player on a bounce's frozen
 //! frames, doesn't bounce on it.
@@ -54,7 +53,7 @@ use clamber_fixed::Fixed;
 use clamber_level::{Level, Vec2};
 use clamber_pack::{Feel, Param, Physics};
 
-use crate::archetype::{Archetypes, Ball, Behavior};
+use crate::archetype::{Archetypes, Ball, Behavior, Offsets};
 use crate::columns;
 use crate::player::{Facing, State, ceil, frames};
 use crate::pose::{self, Pose, SecondPose};
@@ -367,17 +366,24 @@ pub(crate) fn thrower_hurt_ahead(world: &World) -> Option<usize> {
             }
             let range = match contact.second {
                 Some(second) if player.character != 0 => {
-                    match pose::second_pose_for(player, second.air_hold, 0) {
+                    match pose::second_pose_for(player, second.air_hold, second.crouch_hold) {
                         SecondPose::Moving => second.moving,
-                        SecondPose::Standing | SecondPose::Crouching => second.standing,
+                        SecondPose::Standing => second.standing,
+                        SecondPose::Crouching => with_across(second.standing, second.crouching),
                     }
                 }
-                _ => match pose::pose(player, &contact.poses) {
-                    Pose::Airborne => contact.airborne,
-                    Pose::Upright | Pose::Rolling | Pose::Crouching | Pose::Fidget => {
-                        contact.upright
+                _ => {
+                    let held = (1..=contact.crouch_hold).contains(&player.pose.uncrouched);
+                    match pose::pose(player, &contact.poses) {
+                        Pose::Airborne => contact.airborne,
+                        Pose::Crouching => with_across(contact.upright, contact.crouching),
+                        Pose::Upright if held && player.grounded() => {
+                            with_across(contact.upright, contact.crouching)
+                        }
+                        Pose::Fidget => with_across(contact.upright, contact.fidget),
+                        Pose::Upright | Pose::Rolling => contact.upright,
                     }
-                },
+                }
             };
             let mut range = contact.facing(range, player.facing);
             let above = y - ceil(t.pos.y);
@@ -390,6 +396,14 @@ pub(crate) fn thrower_hurt_ahead(world: &World) -> Option<usize> {
             range.contains(x - t.pos.x.floor(), above)
         })
         .map(|t| t.index)
+}
+
+/// `offsets` with `across` replaced, if given.
+fn with_across(offsets: Offsets, across: Option<(i32, i32)>) -> Offsets {
+    Offsets {
+        across: across.unwrap_or(offsets.across),
+        above: offsets.above,
+    }
 }
 
 /// The thrower the player bounces off on this step, if any: one with a

@@ -944,6 +944,14 @@ pub struct ThrowerContact {
     pub roll: Option<Offsets>,
     pub mirror: i32,
     pub poses: Poses,
+    /// The `across` range of a crouching first character, and of one in
+    /// the fidget pose, if not upright's (thrower-contact.md, "Crouching
+    /// and the fidget pose"); `above` is upright's.
+    pub crouching: Option<(i32, i32)>,
+    pub fidget: Option<(i32, i32)>,
+    /// The crouching range goes on for this many frames after Down is
+    /// let go.
+    pub crouch_hold: u8,
     /// How it reaches a character other than the first, if differently.
     pub second: Option<SecondThrower>,
 }
@@ -962,6 +970,46 @@ pub struct SecondThrower {
     /// The moving range goes on up to this many frames after the
     /// landing frame of a jump standing still.
     pub air_hold: u8,
+    /// The `across` range while crouching, if not `standing`'s; `above`
+    /// is `standing`'s.
+    pub crouching: Option<(i32, i32)>,
+    /// The crouching range goes on for this many frames after Down is
+    /// let go.
+    pub crouch_hold: u8,
+}
+
+/// Reads an optional `[from, to]` list under `key` in `table`.
+fn parse_across(table: &Table, key: &str, path: &str) -> Result<Option<(i32, i32)>, String> {
+    let Some(value) = table.get(key) else {
+        return Ok(None);
+    };
+    let at = format!("{path}.{key}");
+    let n = match value {
+        Value::Array(items) if items.len() == 2 => items
+            .iter()
+            .map(|v| match v {
+                Value::Integer(n) if i32::try_from(*n).is_ok() => Some(*n as i32),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>(),
+        _ => None,
+    }
+    .ok_or_else(|| format!("{at}: expected a list of 2 whole numbers"))?;
+    if n[0] > n[1] {
+        return Err(format!("{at}: a range ends before it starts"));
+    }
+    Ok(Some((n[0], n[1])))
+}
+
+/// Reads an optional `crouch_hold` in `table`: 0 if missing.
+fn parse_crouch_hold(table: &Table, path: &str) -> Result<u8, String> {
+    match table.get("crouch_hold") {
+        None => Ok(0),
+        Some(Value::Integer(n)) if (0..=254).contains(n) => Ok(*n as u8),
+        _ => Err(format!(
+            "{path}.crouch_hold: expected a whole number, 0 to 254"
+        )),
+    }
 }
 
 impl ThrowerContact {
@@ -3870,7 +3918,14 @@ fn parse_second_thrower(value: &Value, path: &str) -> Result<SecondThrower, Stri
     let Value::Table(table) = value else {
         return Err(format!("{path}: expected a table"));
     };
-    const KEYS: &[&str] = &["standing", "moving", "bounce", "air_hold"];
+    const KEYS: &[&str] = &[
+        "standing",
+        "moving",
+        "bounce",
+        "air_hold",
+        "crouching",
+        "crouch_hold",
+    ];
     if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
         return Err(format!("{path}.{key}: no such value"));
     }
@@ -3909,6 +3964,8 @@ fn parse_second_thrower(value: &Value, path: &str) -> Result<SecondThrower, Stri
         moving: offsets("moving")?,
         bounce: offsets("bounce")?,
         air_hold,
+        crouching: parse_across(table, "crouching", path)?,
+        crouch_hold: parse_crouch_hold(table, path)?,
     })
 }
 
@@ -3928,6 +3985,9 @@ fn parse_thrower_contact(value: &Value, path: &str) -> Result<ThrowerContact, St
         "land_hold",
         "roll_after",
         "fidget_time",
+        "crouching",
+        "fidget",
+        "crouch_hold",
         "second",
     ];
     if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
@@ -3974,6 +4034,9 @@ fn parse_thrower_contact(value: &Value, path: &str) -> Result<ThrowerContact, St
         },
         mirror: whole("mirror")?,
         poses: parse_poses(table, path)?,
+        crouching: parse_across(table, "crouching", path)?,
+        fidget: parse_across(table, "fidget", path)?,
+        crouch_hold: parse_crouch_hold(table, path)?,
         second: match table.get("second") {
             None => None,
             Some(v) => Some(parse_second_thrower(v, &format!("{path}.second"))?),

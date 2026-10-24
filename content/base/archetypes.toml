@@ -202,12 +202,16 @@
 #   preset's attack box, which knocks it out; on the roll's first frame
 #   the offsets from where the player was before it count too. Facing
 #   left, each `across` turns around as a ball's, by `mirror`. Knocked
-#   out, it touches nothing. With a `contact.second` table (`standing`,
+#   out, it touches nothing. `crouching` and `fidget` (each `[across
+#   from, to]`, `above` being upright's) are the first character's
+#   ranges crouching, and for `crouch_hold` frames after Down is let go,
+#   and in the fidget pose. With a `contact.second` table (`standing`,
 #   `moving`, `bounce`, each `[across from, to, above from, to]`, and
-#   `air_hold`), a character other than the first is hurt by `standing`
-#   (standing still on the ground, crouching included) or `moving`
-#   (the rest, and `air_hold` frames after landing from a jump standing
-#   still), and bounces off it by `bounce`; the rest is as above.
+#   `air_hold`; `crouching` as above and `crouch_hold`), a character
+#   other than the first is hurt by `standing` (standing still on the
+#   ground) or `moving` (the rest, and `air_hold` frames after landing
+#   from a jump standing still), by `crouching` while crouching, and
+#   bounces off it by `bounce`; the rest is as above.
 #   Without `contact`, it doesn't touch the player; its balls can.
 # - `ball`: falls under `gravity`, up to `max_fall`; nothing changes its
 #   speed across. Its floor is the highest in the 1-px column of its x
@@ -829,6 +833,12 @@ upright_jump = 5
 land_hold = { still = 6, hop = 3, moving = 4, roll = 1, fall = 8 }
 roll_after = [3, 9]
 fidget_time = [239, 180, 457]
+# Crouching and the fidget pose (thrower-contact.md, "Crouching and the
+# fidget pose"): only `across` is given, on the ledge; off it the
+# upright `above` is used. The crouching range goes on to U + 7.
+crouching = [-29, 24]
+fidget = [-16, 36]
+crouch_hold = 8
 
 # The second character under control (thrower-contact.md, "The second
 # character under control"): standing still on the ground has one hurt
@@ -842,6 +852,8 @@ standing = [-23, 23, -16, 31]
 moving = [-29, 24, -12, 31]
 bounce = [-38, 29, -34, 13]
 air_hold = 16
+crouching = [-30, 26]
+crouch_hold = 11
 
 [archetypes.ball]
 behavior = "ball"
