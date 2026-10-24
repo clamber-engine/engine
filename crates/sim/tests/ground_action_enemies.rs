@@ -529,9 +529,14 @@ fn two_large_walkers_or_a_mix_knock_out_one() {
 /// The other character's `x` on each of 72 frames from P, with both characters at `x`, the player having walked right
 /// for `walk` frames first (`walk` = 0: standing), pressing the ground
 /// action on P and, if `walker` is set, a small walker put at `walker` px
-/// ahead of the player before frame `at`. Returns the frames the walker
-/// was knocked out on and the other's `x` for each frame.
-fn with_other(walk: usize, walker: Option<(usize, f64)>) -> (Vec<usize>, Vec<Fixed>) {
+/// ahead of the player before frame `at`. With `jump` set, the player
+/// presses Jump on that frame of the walk. Returns the frames the walker
+/// was knocked out on and the other's `x` and `y` for each frame.
+fn with_other(
+    walk: usize,
+    jump: Option<usize>,
+    walker: Option<(usize, f64)>,
+) -> (Vec<usize>, Vec<Fixed>, Vec<Fixed>) {
     use clamber_pack::CharacterFeel;
     use clamber_pack::Presets;
     use std::collections::BTreeMap;
@@ -572,12 +577,17 @@ fn with_other(walk: usize, walker: Option<(usize, f64)>) -> (Vec<usize>, Vec<Fix
         step(w, &InputFrame::single(Frame::after(last, now)));
         last = now;
     };
-    for _ in 0..walk {
+    for i in 0..walk {
         // The walker keeps its distance.
         w.things[0].pos.x = w.player.pos.x + fx(150.0);
-        go(&mut w, [R].into_iter().collect());
+        let now: Actions = if jump == Some(i) {
+            [R, Action::Jump].into_iter().collect()
+        } else {
+            [R].into_iter().collect()
+        };
+        go(&mut w, now);
     }
-    let (mut hit, mut xs) = (vec![], vec![]);
+    let (mut hit, mut xs, mut ys) = (vec![], vec![], vec![]);
     for k in 0..72 {
         if let Some((at, ahead)) = walker
             && at == k
@@ -601,18 +611,19 @@ fn with_other(walk: usize, walker: Option<(usize, f64)>) -> (Vec<usize>, Vec<Fix
             hit.push(k);
         }
         xs.push(w.other.as_ref().map_or(Fixed::ZERO, |o| o.pos.x));
+        ys.push(w.other.as_ref().map_or(Fixed::ZERO, |o| o.pos.y));
     }
-    (hit, xs)
+    (hit, xs, ys)
 }
 
 #[test]
 fn the_other_character_is_held_two_frames_and_carries_on_two_frames_later() {
     for walk in [0, 60] {
         // The walker is out of reach in the base run.
-        let (_, base) = with_other(walk, None);
+        let (_, base, _) = with_other(walk, None, None);
         // Some distance ahead puts the walker in the knock-out range.
-        let (hit, xs) = (40..90)
-            .map(|d| with_other(walk, Some((17, f64::from(d) + 0.5))))
+        let (hit, xs, _) = (40..90)
+            .map(|d| with_other(walk, None, Some((17, f64::from(d) + 0.5))))
             .find(|r| r.0.len() == 1 && r.0[0] <= 30)
             .expect("a knock-out");
         assert_eq!(hit.len(), 1, "walk {walk}: {hit:?}");
@@ -624,4 +635,44 @@ fn the_other_character_is_held_two_frames_and_carries_on_two_frames_later() {
             assert_eq!(xs[k + j + 2], base[k + j], "walk {walk}: K + {j} + 2");
         }
     }
+}
+
+#[test]
+fn the_other_character_in_the_air_on_the_way_down_is_held_and_lands_two_frames_later() {
+    // The player jumps early in the walk and has landed when it acts; the
+    // other follows and repeats the jump, so some runs have it in the air
+    // on K.
+    let mut checked = 0;
+    for walk in 30..60 {
+        let (_, bx, by) = with_other(walk, Some(2), None);
+        for d in (40..90).step_by(3) {
+            let (hit, xs, ys) = with_other(walk, Some(2), Some((17, f64::from(d) + 0.5)));
+            if hit.len() != 1 || hit[0] > 30 {
+                continue;
+            }
+            let k = hit[0];
+            // In the air and on the way down: lower than on the frame before.
+            if k == 0 || ys[k] >= fx(400.0) || ys[k] <= ys[k - 1] {
+                continue;
+            }
+            checked += 1;
+            for j in 1..=2 {
+                assert_eq!(xs[k + j], xs[k], "walk {walk} d {d}: x on K + {j}");
+                assert_eq!(ys[k + j], ys[k], "walk {walk} d {d}: y on K + {j}");
+            }
+            for j in 0..30 {
+                assert_eq!(
+                    xs[k + j + 2],
+                    bx[k + j],
+                    "walk {walk} d {d}: x, K + {j} + 2"
+                );
+                assert_eq!(
+                    ys[k + j + 2],
+                    by[k + j],
+                    "walk {walk} d {d}: y, K + {j} + 2"
+                );
+            }
+        }
+    }
+    assert!(checked > 0, "the other was never in the air on K");
 }
