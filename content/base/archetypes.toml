@@ -52,7 +52,10 @@
 #   whose preset has a `bounce_back_rise` doesn't bounce on it: it's
 #   thrown back and the walker is pushed (neither is defeated). With `hurt_jump_lift` (left out:
 #   the preset's), the preset's hurt box rises that far above the feet
-#   against it when the airborne pose lifts it. Hit by a thrown object, it's knocked
+#   against it when the airborne pose lifts it. With `thrown_lower =
+#   [early, late]`, a thrown object hits it only down to that many px
+#   below its feet, early on (its `hit_early_time`) and later; without
+#   it the object's `hit` box limits that. Hit by a thrown object, it's knocked
 #   back the way the object came at `defeat_knock`, its speed easing
 #   toward `defeat_knock_glide` in that direction, as it moves by
 #   `response`: on the next frame along the floor, then jumping up at
@@ -633,9 +636,10 @@ size = [32, 24]
 offset = 0
 reach = { right = [-7, 38], left = [-33, 12], below = [-22, 32] }
 # title-1's (spec/behavior/thrown-objects.md, "Hitting walkers"), with
-# its small walker's box (`size = [20, 12]`, `offset = 0.5`). Hits from
-# more than 12 px below a walker aren't covered; `above` allows up to
-# just under 13.
+# its small walker's box (`size = [20, 12]`, `offset = 0.5`). A walker
+# with a `thrown_lower` sets how far below it a thrown object still hits
+# (the importer gives the walkers one); `above` is the limit for the
+# others, up to just under 13.
 hit = [18, 13, 13, 18]
 hit_early = [19, 38, 13, 51]
 hit_early_time = 16
@@ -1293,6 +1297,10 @@ carry = [-14, 16, -8, 40]
 # the landing only onto the floor the jump started from; other landings
 # hold it the same here. Running with Action released and falling
 # without a jump aren't covered either and take the nearest row.
+# Its bounce off a walker has its own box, and the landing after it
+# goes straight to the ranges on the ground (bunches.md, "Bouncing off
+# a walker, second character leading"; measured off a small walker on
+# flat ground, taken for every bounce).
 [[archetypes.cluster.reach]]
 stand = [-12, 11, -10, 38]
 walk = [-18, 12, -6, 38]
@@ -1304,6 +1312,7 @@ air_below = []
 jump_early = 0
 land_hold = 17
 land_ran = 17
+bounce = [-23, 19, -10, 32]
 
 # A letter of the level's word (spec/behavior/letters.md): entities set
 # which with `letter`, from 1 to the preset's `letter_count`. It's

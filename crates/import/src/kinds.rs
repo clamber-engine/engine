@@ -226,6 +226,18 @@ impl Kind {
                     _ => ([26, 38], 0.5),
                 };
                 set("rider", self.rider());
+                // thrown-objects.md, "When a walker is hit": how far
+                // below the walker a thrown object still hits it, early
+                // on and later.
+                let lower = match self {
+                    Kind::SmallWalker => [51, 27],
+                    Kind::MediumWalker => [48, 24],
+                    _ => [52, 28],
+                };
+                set(
+                    "thrown_lower",
+                    Value::Array(lower.map(Value::Integer).into()),
+                );
                 // walker-contact.md, "The second character": the large
                 // walker throws the second character back.
                 if self == Kind::LargeWalker {

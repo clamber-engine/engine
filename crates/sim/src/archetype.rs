@@ -49,8 +49,12 @@ pub enum Behavior {
     /// airborne pose lifts it, instead of the preset's `hurt_jump_lift`. A player riding an
     /// animal meets it as `rider` says instead (see [`ride`](crate::ride)).
     /// With a `drop`, it walks off ledges and drops onto the floor from a
-    /// start above it, as that says, instead of stopping at ledges. Its
-    /// `pictures` names the kind of pictures it's drawn with, which
+    /// start above it, as that says, instead of stopping at ledges. With
+    /// a `thrown_lower` `(early, late)`, a thrown object hits it only
+    /// down to that many px below its feet, for the object's first
+    /// `hit_early_time` frames out of the hands and after them
+    /// (thrown-objects.md, "When a walker is hit"); without one, only
+    /// the object's `hit` box limits it. Its `pictures` names the kind of pictures it's drawn with, which
     /// doesn't change how it behaves.
     Walker {
         speed: Fixed,
@@ -64,6 +68,7 @@ pub enum Behavior {
         hurt_jump_lift: Option<Fixed>,
         rider: RiderReach,
         drop: Option<WalkerDrop>,
+        thrown_lower: Option<(Fixed, Fixed)>,
         facing: Facing,
         turn_delay: u8,
         appear_wait: u8,
@@ -1726,6 +1731,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "hurt_jump_lift",
             "rider",
             "drop",
+            "thrown_lower",
             "pictures",
         ],
         "patrol" => &["path", "period"],
@@ -1978,6 +1984,16 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                     Some(v)
                 }
             };
+            let thrown_lower = match table.get("thrown_lower") {
+                None => None,
+                Some(_) => {
+                    let v = pair("thrown_lower")?;
+                    if v.x.is_negative() || v.y.is_negative() {
+                        return Err(format!("{path}.thrown_lower: must not be negative"));
+                    }
+                    Some((v.x, v.y))
+                }
+            };
             let frames = |key: &str| match get(key)? {
                 Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
                 _ => Err(format!(
@@ -2032,6 +2048,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                     None => None,
                     Some(v) => Some(parse_walker_drop(v, &format!("{path}.drop"))?),
                 },
+                thrown_lower,
                 facing,
                 turn_delay,
                 appear_wait,

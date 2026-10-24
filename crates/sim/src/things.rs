@@ -953,7 +953,7 @@ fn throw_hits(world: &mut World) -> Vec<Vec2> {
         let early = flight.age <= hit_early_time;
         let pos = object.pos;
         let reach = if early { hit_early } else { hit }.bounds(pos, right);
-        let walker = hit_walker(world, reach, right).is_some();
+        let walker = hit_walker(world, reach, right, Some((pos.y, early))).is_some();
         if walker && holder.is_some() {
             world.things[i].active = false;
             freed.push(pos);
@@ -1035,13 +1035,25 @@ fn hit_walker(
     world: &mut World,
     reach: (Fixed, Fixed, Fixed, Fixed),
     right: bool,
+    thrown: Option<(Fixed, bool)>,
 ) -> Option<usize> {
     let walker = world.things.iter_mut().find(|t| {
         t.active
             && t.phase == Phase::Ready
             && t.archetype.is_some_and(|a| {
-                matches!(a.behavior, Behavior::Walker { .. })
-                    && in_reach(reach, &a, t.pos, t.facing)
+                let Behavior::Walker { thrown_lower, .. } = a.behavior else {
+                    return false;
+                };
+                // A thrown object's lowest hit is the walker's own limit
+                // rather than the box's.
+                let (reach, lowest) = match (thrown, thrown_lower) {
+                    (Some((y, early)), Some((soon, late))) => (
+                        (reach.0, y - Fixed::from_int(1000), reach.2, reach.3),
+                        y - t.pos.y <= if early { soon } else { late },
+                    ),
+                    _ => (reach, true),
+                };
+                lowest && in_reach(reach, &a, t.pos, t.facing)
             })
     });
     let walker = walker?;
@@ -1148,7 +1160,7 @@ fn hands_hits(world: &mut World, physics: &Physics) -> (Option<Vec2>, Option<usi
         let Some(reach) = reach else {
             return (None, None);
         };
-        walker = hit_walker(world, reach, true);
+        walker = hit_walker(world, reach, true, None);
         if walker.is_none() {
             return (None, None);
         }
@@ -2003,6 +2015,47 @@ mod tests {
             .resolve(&entity, "test", "e")
             .unwrap()
             .unwrap()
+    }
+
+    /// thrown-objects.md, "When a walker is hit": the lower height limits
+    /// of U, a limit itself a hit and a hair below it not.
+    #[test]
+    fn thrown_objects_hit_walkers_down_to_their_lower_limits() {
+        let object = resolve("crate", "");
+        let Behavior::Carry { hit, hit_early, .. } = object.behavior else {
+            panic!("{object:?}");
+        };
+        use crate::generic_feel;
+        use std::sync::Arc;
+        let kinds = [
+            ("size = [20, 12]\noffset = 0.5", 51, 27),
+            ("size = [25, 25]\noffset = 5.0", 48, 24),
+            ("size = [26, 38]\noffset = 0.5", 52, 28),
+        ];
+        for (size, soon, late) in kinds {
+            let params = format!("{size}\nthrown_lower = [{soon}, {late}]");
+            let src = format!(
+                "format = 1\nname = \"w\"\nsize = [800, 600]\nstart = [100, 400]\n\
+                 [[collision]]\nshape = \"rect\"\nrect = [0, 400, 800, 200]\n\
+                 [[entities]]\ntype = \"crawler\"\nat = [400, 400]\nparams = {{ {} }}\n",
+                params.replace('\n', ", ")
+            );
+            for (early, limit, hit) in [(true, soon, hit_early), (false, late, hit)] {
+                // The object beside the walker, `below` px under its feet.
+                let hits = |below: Fixed| {
+                    let level = Arc::new(Level::from_toml_str(&src, "w").unwrap());
+                    let mut world = World::new(level, Arc::new(generic_feel("classic-1").unwrap()));
+                    world.things[0].active = true;
+                    let pos = Vec2::new(Fixed::from_int(400), Fixed::from_int(400) + below);
+                    let reach = hit.bounds(pos, true);
+                    hit_walker(&mut world, reach, true, Some((pos.y, early))).is_some()
+                };
+                let eighth = Fixed::from_ratio_pow2(1, 3);
+                assert!(hits(Fixed::from_int(limit)), "{size} {early}");
+                assert!(!hits(Fixed::from_int(limit) + eighth), "{size} {early}");
+                assert!(hits(Fixed::from_int(limit) - eighth), "{size} {early}");
+            }
+        }
     }
 
     /// thrown-objects.md, "When a walker is hit": the ranges of I and the
