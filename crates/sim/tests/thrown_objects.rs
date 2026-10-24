@@ -403,7 +403,9 @@ fn hits_a_medium_walker_which_falls_out_like_a_small_one() {
 /// the same frame": only one of two large walkers is hit on a frame, the
 /// same one whatever the offset between them, the other on a later frame
 /// if still in range. Since spec-v0.320.0 also with the object moving
-/// left, and for two medium walkers.
+/// left, and for two medium walkers. Since spec-v0.323.0 also for a
+/// large and a medium walker: the engine's walkers differ only in their
+/// size parameters, and the rule here doesn't look at them.
 #[test]
 fn hits_one_of_two_walkers_in_range_on_a_frame() {
     for right in [true, false] {
