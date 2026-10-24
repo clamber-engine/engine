@@ -1162,6 +1162,9 @@ params! {
     /// target speed is 0 whatever is held. The object is set down on
     /// the last. Whole frames.
     PutDownTime => "put_down_time",
+    /// The frame of a put-down, counting from 0 on letting go, on which
+    /// the object is set down and rests from the next. Whole frames.
+    PutDownSet => "put_down_set",
     /// How far in front of the player's feet an object is set down, px.
     PutDownAhead => "put_down_ahead",
     /// How far above the floor an object is set down, the frame before

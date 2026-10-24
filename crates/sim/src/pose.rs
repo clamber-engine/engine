@@ -446,7 +446,7 @@ pub fn hurt_crouching(player: &Player) -> bool {
 /// walker in the air until the player lands (thrown-objects.md, "A
 /// carried object"). Engine choice: a pick-up in the air has it too.
 pub fn hurt_carrying(player: &Player, physics: &Physics) -> bool {
-    let set_down = frames(physics[Param::PutDownTime]).saturating_sub(1);
+    let set_down = frames(physics[Param::PutDownSet]);
     player
         .hands
         .is_some_and(|h| h.act != Act::PutDown || h.frame < set_down)

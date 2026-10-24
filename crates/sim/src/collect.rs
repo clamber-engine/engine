@@ -1113,7 +1113,7 @@ fn take(world: &mut World, start: Option<View>) {
     let half = world.feel.world[Param::RelicSize].floor() / 2;
     let player = &world.player;
     let crouch_start = frames(world.player_physics()[Param::CrouchStart]);
-    let set_down = frames(world.player_physics()[Param::PutDownTime]).saturating_sub(1);
+    let set_down = frames(world.player_physics()[Param::PutDownSet]);
     let walking_out = world.ending.is_some();
     let arrive = whole(world.feel.world[Param::LifeItemLivesArrive]);
     let x = player.pos.x.floor();
@@ -1336,7 +1336,12 @@ fn land_hold(reach: &Reach, player: &Player) -> u8 {
         .land_drop
         .filter(|&(below, _)| clock.drop > Fixed::from_int(below))
         .map_or(0, |(_, more)| more);
-    hold.saturating_add(more)
+    let held = clock.jump_held;
+    let longer = reach.land_held[..usize::from(reach.land_held_rows)]
+        .iter()
+        .find(|&&(from, to, _)| (from..=to).contains(&held))
+        .map_or(0, |&(_, _, more)| more);
+    hold.saturating_add(more).saturating_add(longer)
 }
 
 /// `air`, with its lowest `below` lifted for the vertical speed `vy`.

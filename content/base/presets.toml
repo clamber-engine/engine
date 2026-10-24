@@ -291,6 +291,7 @@ throw_land_margin = 0
 throw_bounce_min = 0
 throw_bounce = 0
 put_down_time = 0
+put_down_set = 0
 put_down_ahead = 0
 put_down_lift = 0
 put_down_regrab = 0
@@ -869,9 +870,10 @@ throw_land_margin = 5
 throw_bounce_min = 1
 throw_bounce = 0.5
 put_down_time = 14
+put_down_set = 13
 put_down_ahead = 16
 put_down_lift = 3
-put_down_regrab = 2
+put_down_regrab = 1
 # An object still in the hands at a knock-out (knock-out.md, "An object
 # in the hands") is let go on the hit frame: 1 px a frame across the way
 # the player faces and 4 up, falling by `throw_gravity` up to
@@ -1297,7 +1299,8 @@ throw_release = 18
 # Jump and Action during the throw follow the first character's table
 # three frames earlier (carrying.md, "The second character").
 throw_roll_press = 12
-put_down_time = 10
+put_down_time = 11
+put_down_set = 9
 carry_stride_steps = 8
 carry_stride = 0
 carry_stride_min = 0.3333333335

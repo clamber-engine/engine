@@ -892,3 +892,73 @@ fn the_four_letter_ending_steps_on_g_with_or_without_items() {
     let shown = played(&mut w, 5, &[670], 900, |w, n| last_letter(w, n, 500));
     assert_eq!(steps(&shown, 507), [663, 714, 730, 746]);
 }
+
+/// The last frame after the landing frame `L` (0 for `L` itself) on which
+/// an item `past` px behind the player and `above` px above the feet
+/// line, one only the jumping row reaches, is taken after a jump in
+/// place with Jump held for `hold` frames; `None` if it is not taken on
+/// `L` either.
+fn last_taken_after_landing(mut w: World, hold: usize, past: i32, above: i32) -> Option<usize> {
+    let jump: Actions = [Action::Jump].into_iter().collect();
+    let none = Actions::default();
+    let mut before = none;
+    let mut landed = false;
+    let mut after_landing = Vec::new();
+    for n in 0..200 {
+        let held = if n < hold { jump } else { none };
+        let mut next = w.clone();
+        step(&mut next, &InputFrame::single(Frame::after(before, held)));
+        if landed || next.events.contains(&clamber_sim::Event::Land) {
+            // The step from `w` is one of the landing's.
+            after_landing.push((w.clone(), before, held));
+            landed = true;
+            if after_landing.len() > 24 {
+                break;
+            }
+        }
+        w = next;
+        before = held;
+    }
+    let mut last = None;
+    for (k, (mut w, before, held)) in after_landing.into_iter().enumerate() {
+        w.things[0].pos.x = w.player.pos.x - Fixed::from_int(past);
+        w.things[0].pos.y = Fixed::from_int(F - above);
+        step(&mut w, &InputFrame::single(Frame::after(before, held)));
+        if w.flow.events.contains(&FlowEvent::Collect(0)) {
+            last = Some(k);
+        }
+    }
+    last
+}
+
+/// extra-lives.md, "Landing": the jumping row goes on up to `L` + 3, or
+/// `L` + 5 or `L` + 6 after Jump was held for 8 to 15 frames.
+#[test]
+fn the_jumping_row_goes_on_after_a_landing() {
+    for hold in 1..=40 {
+        let w = world(&[(X + 60, F - 45)], "");
+        let up_to = match hold {
+            8 | 9 | 14 | 15 => 6,
+            10..=13 => 5,
+            _ => 3,
+        };
+        assert_eq!(
+            last_taken_after_landing(w, hold, 0, 45),
+            Some(up_to),
+            "Jump held for {hold}"
+        );
+    }
+}
+
+/// "The second character leading": one row through `L` + 16.
+#[test]
+fn the_second_character_s_row_goes_on_through_l_plus_16() {
+    for hold in [1, 4, 10, 20, 30] {
+        let w = second_world(&[(X + 60, F - 45)]);
+        assert_eq!(
+            last_taken_after_landing(w, hold, -20, 0),
+            Some(16),
+            "Jump held for {hold}"
+        );
+    }
+}

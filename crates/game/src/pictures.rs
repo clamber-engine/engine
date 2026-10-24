@@ -1035,8 +1035,8 @@ pub struct PictureClock {
     moved: bool,
     /// Frames standing with an object from S, 0 on S.
     holding: Option<u32>,
-    /// The put-down's last frame, Q + 13, was shown on the frame before:
-    /// it is S.
+    /// The put-down's last frame, Q + 13 (Q + 10 for the second
+    /// character), was shown on the frame before: it is S.
     put_down_end: bool,
     /// Frames since a jump carrying an object landed, 0 on L, while it
     /// stays on the ground.
@@ -1313,14 +1313,11 @@ impl PictureClock {
             self.put_down_end = hands.act == Act::PutDown
                 && i64::from(hands.frame) + 1 == physics[Param::PutDownTime].floor()
                 && player.grounded();
-            if self.put_down_end && first {
+            if self.put_down_end {
                 standing(first, 0)
             } else {
                 self.handling(hands, world, jump_in, hold)
             }
-        } else if put_down_end && !first && player.grounded() {
-            // Q + 10 is S, whatever is held.
-            standing(first, 0)
         } else if jump_next {
             Some((Set::Jump, if first { "jump-1" } else { "s-jump-1" }))
         } else if let Some((n, _)) = player.since_bounce.filter(|_| !player.grounded()) {
@@ -1355,7 +1352,7 @@ impl PictureClock {
         // walking, running or turning, on the landing frame after a
         // bounce, or once up from crouching. After a walk-off without a
         // face it starts, or goes on, in the air.
-        let standing_now = (self.shown.is_none() || put_down_end && !first)
+        let standing_now = (self.shown.is_none() || put_down_end)
             && hands.is_none()
             && (player.grounded()
                 && matches!(player.state, State::Idle | State::Walk | State::Run)
@@ -1379,9 +1376,9 @@ impl PictureClock {
                 .or((crouched || !first && moved).then_some(0)),
         };
         if put_down_end && standing_now {
-            // The first character's Q + 13 was S; Q + 14 is S + 1. The
-            // second's S is Q + 10, the frame after its put-down.
-            self.standing = Some(u32::from(first));
+            // The last frame of a put-down, Q + 13 (the second
+            // character's Q + 10), is S; the next is S + 1.
+            self.standing = Some(1);
         }
         match self.standing {
             Some(c) => {

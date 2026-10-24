@@ -213,7 +213,7 @@ pub(crate) fn after(world: &mut World) {
     thing.phase = Phase::Held;
     thing.pos = in_hands(p, thing);
     let release = frames(physics[Param::ThrowRelease]);
-    let set_down = frames(physics[Param::PutDownTime]).saturating_sub(1);
+    let set_down = frames(physics[Param::PutDownSet]);
     match hands.act {
         Act::Throw if hands.frame == release => {
             thing.pos = Vec2::new(x, at(physics[Param::ThrowLift]));

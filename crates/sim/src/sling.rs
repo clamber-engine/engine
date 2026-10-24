@@ -91,7 +91,7 @@ pub(crate) fn catch(world: &mut World) {
         return;
     }
     let crouch_start = frames(world.player_physics()[Param::CrouchStart]);
-    let set_down = frames(world.player_physics()[Param::PutDownTime]).saturating_sub(1);
+    let set_down = frames(world.player_physics()[Param::PutDownSet]);
     let x = player.pos.x.floor();
     let feet = ceil(player.pos.y);
     let caught = world.things.iter().enumerate().find_map(|(i, t)| {

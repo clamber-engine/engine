@@ -295,7 +295,9 @@
 #   `land_ran` with Action and a direction held on the landing frame; left
 #   out, `land_hold`; `land_drop = [px, frames]` adds that many frames
 #   after landing more than so many px below where the player went into
-#   the air). `roll_after = [on, stopped]` (left out: `[0, 0]`) keeps
+#   the air; `land_held = [[from, to, frames], ...]`, up to 4 rows, adds
+#   frames after a jump Jump was held for `from` to `to` frames).
+#   `roll_after = [on, stopped]` (left out: `[0, 0]`) keeps
 #   `roll` for so many frames after a roll ends, counting the first one
 #   after it, when it ran on into a run or not. With `upright_fall =
 #   true`, a fall after walking off a ledge without a face, and the
@@ -1400,10 +1402,11 @@ land_hold = 0
 # (spec/behavior/exits.md); not taken, it's there again. The ranges are
 # extra-lives.md's: the standing ones for the first six frames of a
 # jump, and facing left they're measured from 3 px left of it.
-# Falling without a jump and landing weren't measured, so those use
-# the jump's later row and the standing row from the frame it lands,
-# also with the second character leading, whose own ranges are the
-# second table (extra-lives.md, "The second character leading"). The
+# Falling without a jump isn't covered, so it uses the jump's later row
+# and the standing row from the frame it lands; every landing has the
+# rows of a jump in place (extra-lives.md, "Landing"), also with the
+# second character leading, whose own ranges are the second table
+# (extra-lives.md, "The second character leading"). The
 # size is Clamber's own and only draws it.
 [archetypes.heart]
 behavior = "collect"
@@ -1425,7 +1428,10 @@ jump = [-20, 23, -29, 35]
 air = [-20, 20, -8, 52]
 air_below = []
 jump_early = 6
-land_hold = 0
+# A jump in place: the jumping row up to L + 3, or L + 5 or L + 6 after
+# Jump was held for 8 to 15 frames (extra-lives.md, "Landing").
+land_hold = 4
+land_held = [[7, 8, 3], [9, 12, 2], [13, 14, 3]]
 
 [[archetypes.heart.reach]]
 stand = [-17, 13, -31, 33]
@@ -1436,7 +1442,8 @@ jump = [-23, 14, -27, 33]
 air = [-23, 14, -27, 33]
 air_below = []
 jump_early = 0
-land_hold = 0
+# The one row goes on through L + 16 whatever the hold.
+land_hold = 17
 
 # title-1's critter (spec/behavior/critter.md). The size is Clamber's
 # own: it's what's drawn, and touches nothing.

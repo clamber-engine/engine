@@ -1092,7 +1092,7 @@ fn hands_hits(world: &mut World, physics: &Physics) -> (Option<Vec2>, Option<usi
         return (None, None);
     };
     let release = frames(physics[Param::ThrowRelease]);
-    let set_down = frames(physics[Param::PutDownTime]).saturating_sub(1);
+    let set_down = frames(physics[Param::PutDownSet]);
     let throwing = hands.act == Act::Throw && hands.frame > 0 && hands.frame < release;
     let lifting = match hands.act {
         Act::PickUp => hands.frame > 0,

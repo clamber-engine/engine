@@ -574,6 +574,7 @@ mod tests {
                     | Param::ThrowBounceMin
                     | Param::ThrowBounce
                     | Param::PutDownTime
+                    | Param::PutDownSet
                     | Param::PutDownAhead
                     | Param::PutDownLift
                     | Param::PutDownRegrab

@@ -1158,6 +1158,11 @@ pub struct Reach {
     /// More than this many px lower, so many frames more. `None`: no
     /// landing is longer.
     pub land_drop: Option<(i32, u8)>,
+    /// A landing after a jump Jump was held for a number of frames in
+    /// `from..=to` is `more` frames longer, for the first such row; the
+    /// rows past `land_held_rows` are not used.
+    pub land_held: [(u8, u8, u8); MAX_LAND_HELD],
+    pub land_held_rows: u8,
     /// `roll` goes on for so many frames after a roll ends, counting the
     /// first one after it: when it runs on into a run, then when it
     /// doesn't.
@@ -1178,6 +1183,9 @@ pub struct Reach {
 
 /// The most `air_below` steps a [`Reach`] can have.
 pub const MAX_AIR_STEPS: usize = 8;
+
+/// How many rows of [`Reach::land_held`] there can be.
+pub const MAX_LAND_HELD: usize = 4;
 
 /// Offsets from a collectible a player takes it from, in whole px, ends
 /// included: how far the player is past it the way the player faces,
@@ -4026,6 +4034,7 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         "land_hold",
         "land_ran",
         "land_drop",
+        "land_held",
         "roll_after",
         "upright_fall",
         "bounce",
@@ -4112,6 +4121,33 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         }
         Some(_) => return Err(format!("{path}.land_drop: expected [px, frames]")),
     };
+    let mut land_held = [(1, 0, 0); MAX_LAND_HELD];
+    let mut land_held_rows = 0;
+    match table.get("land_held") {
+        None => {}
+        Some(Value::Array(rows)) if rows.len() <= MAX_LAND_HELD => {
+            for (i, row) in rows.iter().enumerate() {
+                let at = format!("{path}.land_held[{i}]");
+                let n = |v: &Value| match v {
+                    Value::Integer(n) if (0..=i64::from(u8::MAX)).contains(n) => Ok(*n as u8),
+                    _ => Err(format!("{at}: expected [from, to, frames], each 0 to 255")),
+                };
+                let Value::Array(row) = row else {
+                    return Err(format!("{at}: expected [from, to, frames]"));
+                };
+                let [from, to, more] = row.as_slice() else {
+                    return Err(format!("{at}: expected [from, to, frames]"));
+                };
+                land_held[i] = (n(from)?, n(to)?, n(more)?);
+            }
+            land_held_rows = rows.len() as u8;
+        }
+        Some(_) => {
+            return Err(format!(
+                "{path}.land_held: expected up to {MAX_LAND_HELD} rows of [from, to, frames]"
+            ));
+        }
+    }
     let roll_after = match table.get("roll_after") {
         None => (0, 0),
         Some(Value::Array(pair)) if pair.len() == 2 => {
@@ -4143,6 +4179,8 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         land_hold,
         land_ran,
         land_drop,
+        land_held,
+        land_held_rows,
         roll_after,
         upright_fall,
         bounce: match table.get("bounce") {

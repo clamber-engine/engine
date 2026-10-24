@@ -577,7 +577,7 @@ fn picking_up_again_after_putting_down() {
         play.step(&[Down]);
         play
     };
-    // A press on Q + 2 to Q + 13 still held on Q + 14 picks it up then.
+    // A press on Q + 1 to Q + 13 still held on Q + 14 picks it up then.
     let mut play = put_down();
     play.hold(&[], 4);
     let rows = play.hold(&[A], 10);
@@ -585,17 +585,89 @@ fn picking_up_again_after_putting_down() {
     assert_eq!(rows[9].act, Some(Act::PickUp));
     assert!(rows.iter().all(|r| !has(r, Event::RollStart)));
 
-    // On Q + 1, it doesn't. Held on, it's picked up on Q + 15 by
-    // "Picking up": the put-down is over at the end of Q + 14.
+    // On Q + 1 too.
     let mut play = put_down();
     let rows = play.hold(&[A], 20);
-    assert_eq!(rows[13].act, None);
-    assert_eq!(rows[14].act, Some(Act::PickUp));
+    assert!(rows[..13].iter().all(|r| r.act == Some(Act::PutDown)));
+    assert_eq!(rows[13].act, Some(Act::PickUp));
+    // Let go before Q + 14, nothing.
+    let mut play = put_down();
+    play.hold(&[A], 5);
+    let rows = play.hold(&[], 20);
+    assert!(rows.iter().all(|r| r.act != Some(Act::PickUp)));
     // A press within reach later does, on the press frame.
     let mut play = put_down();
     play.hold(&[], 20);
     play.step(&[]);
     assert_eq!(play.step(&[A]).act, Some(Act::PickUp));
+}
+
+/// The rows from a put-down's first frame `Q` on, with `key` pressed on
+/// `Q` + `n` and held for `len` frames (`n` is 0 for a press on `Q`
+/// itself, with Down), nothing else held.
+fn put_down_then_press(second: bool, key: Action, n: usize, len: usize) -> Vec<Row> {
+    let mut play = if second { Play::second() } else { Play::near() };
+    play.hold(&[A], 30);
+    let mut rows = Vec::new();
+    if n == 0 {
+        rows.push(play.step(&[Down, key]));
+        rows.extend(play.hold(&[key], len - 1));
+    } else {
+        rows.push(play.step(&[Down]));
+        rows.extend(play.hold(&[], n - 1));
+        rows.extend(play.hold(&[key], len));
+    }
+    rows.extend(play.hold(&[], 60));
+    rows
+}
+
+/// carrying.md, "Putting down" and "The second character": Jump pressed
+/// from Q through the last frame of the put-down does nothing, now or
+/// later, let go at once or held; on the frame the player is free it is a
+/// jump (on the next, with the spec's timing).
+#[test]
+fn jump_during_a_put_down_does_nothing() {
+    for (second, free) in [(false, 14), (true, 11)] {
+        for n in 0..free + 3 {
+            for len in [1, 20] {
+                // The second character's one exception (pressed on Q and
+                // held through Q + 11) is not covered.
+                if second && n == 0 && len > 1 {
+                    continue;
+                }
+                let rows = put_down_then_press(second, Jump, n, len);
+                let start = rows.iter().position(|r| has(r, Event::JumpStart));
+                let want = (n >= free).then_some(n + 1);
+                assert_eq!(start, want, "second {second}: Jump on Q + {n} for {len}");
+            }
+        }
+    }
+}
+
+/// Action pressed on Q + 1 up to the last frame of the put-down and
+/// still held when the player is free picks the object up on that
+/// frame; let go before, nothing. A press on the free frame or later
+/// picks it up on the press frame.
+#[test]
+fn action_during_a_put_down() {
+    for (second, free) in [(false, 14), (true, 11)] {
+        for n in 1..free + 3 {
+            let held = put_down_then_press(second, A, n, 40);
+            let picked = held.iter().position(|r| r.act == Some(Act::PickUp));
+            assert_eq!(
+                picked,
+                Some(n.max(free)),
+                "second {second}: Action on Q + {n}"
+            );
+            if n < free {
+                let tapped = put_down_then_press(second, A, n, free - 1 - n);
+                assert!(
+                    tapped.iter().all(|r| r.act != Some(Act::PickUp)),
+                    "second {second}: Action on Q + {n}, let go before Q + {free}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -680,12 +752,12 @@ fn the_second_character_picks_up_carries_and_throws_with_its_own_timing() {
     assert_eq!(row.act, None);
 }
 
-/// "The second character": a put-down of 10 frames.
+/// "The second character": a put-down of 11 frames.
 #[test]
-fn the_second_character_s_put_down_lasts_ten_frames() {
+fn the_second_character_s_put_down_lasts_eleven_frames() {
     let mut play = Play::second();
     play.hold(&[A], 30);
-    let rows = play.hold(&[Down], 10);
+    let rows = play.hold(&[Down], 11);
     assert!(rows.iter().all(|r| r.act == Some(Act::PutDown)));
     assert_eq!(play.step(&[Down]).act, None);
 }
@@ -789,4 +861,21 @@ fn pressing_action_out_of_reach_while_moving_rolls_on_the_press_frame() {
     let row = play.step(&[Right, A]);
     assert_eq!(row.act, None);
     assert!(has(&row, Event::RollStart));
+}
+
+/// "Putting down" and "The second character": a held direction starts
+/// moving on the frame the player is free, Q + 14 and Q + 11.
+#[test]
+fn a_held_direction_moves_the_player_when_the_put_down_is_over() {
+    for (second, free) in [(false, 14), (true, 11)] {
+        let mut play = if second { Play::second() } else { Play::near() };
+        play.hold(&[A], 30);
+        let mut rows = vec![play.step(&[Down, Right])];
+        rows.extend(play.hold(&[Down, Right], free + 2));
+        assert!(
+            rows[..free].iter().all(|r| r.vel.x == Fixed::ZERO),
+            "{second}"
+        );
+        assert!(rows[free].vel.x != Fixed::ZERO, "second {second}");
+    }
 }
