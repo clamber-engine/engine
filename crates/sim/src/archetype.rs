@@ -973,6 +973,9 @@ pub struct SecondThrower {
     /// The `across` range while crouching, if not `standing`'s; `above`
     /// is `standing`'s.
     pub crouching: Option<(i32, i32)>,
+    /// The `across` range in which its roll defeats the thrower, if not
+    /// the contact's `roll`; `above` is the contact's.
+    pub roll: Option<(i32, i32)>,
     /// The crouching range goes on for this many frames after Down is
     /// let go.
     pub crouch_hold: u8,
@@ -3924,6 +3927,7 @@ fn parse_second_thrower(value: &Value, path: &str) -> Result<SecondThrower, Stri
         "bounce",
         "air_hold",
         "crouching",
+        "roll",
         "crouch_hold",
     ];
     if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
@@ -3965,6 +3969,7 @@ fn parse_second_thrower(value: &Value, path: &str) -> Result<SecondThrower, Stri
         bounce: offsets("bounce")?,
         air_hold,
         crouching: parse_across(table, "crouching", path)?,
+        roll: parse_across(table, "roll", path)?,
         crouch_hold: parse_crouch_hold(table, path)?,
     })
 }

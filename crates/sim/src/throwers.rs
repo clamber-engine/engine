@@ -53,7 +53,7 @@ use clamber_fixed::Fixed;
 use clamber_level::{Level, Vec2};
 use clamber_pack::{Feel, Param, Physics};
 
-use crate::archetype::{Archetypes, Ball, Behavior, Offsets};
+use crate::archetype::{Archetypes, Ball, Behavior, Offsets, SecondThrower};
 use crate::columns;
 use crate::player::{Facing, State, ceil, frames};
 use crate::pose::{self, Pose, SecondPose};
@@ -476,6 +476,12 @@ pub(crate) fn rolled_into(world: &World, physics: &Physics, before: Vec2) -> Opt
             };
             let Some(roll) = contact.roll else {
                 return false;
+            };
+            let roll = match contact.second {
+                Some(SecondThrower {
+                    roll: Some(across), ..
+                }) if player.character != 0 => Offsets { across, ..roll },
+                _ => roll,
             };
             let range = contact.facing(roll, player.facing);
             let (across, above) = offsets(player.pos, t);

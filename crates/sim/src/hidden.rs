@@ -30,14 +30,19 @@
 //! is standing, not in the hands or thrown, is removed once it's outside
 //! the window placed objects appear in, and doesn't come back.
 //!
+//! One attack frame strikes at most one hidden object; another in range
+//! is struck on the next attack frame, with a second pause. Which of two
+//! in range is struck first is not specified: the engine takes the
+//! first placed.
+//!
 //! Engine choices where the spec says nothing:
 //!
 //! - The second character has no ground action and its roll doesn't
 //!   strike; it's set off by a long fall by `second` ranges if the
 //!   object has them (hidden-objects.md, "The second character").
 //! - Only the character under control sets off hidden objects, and not
-//!   while riding the animal. Every object in range on a frame is set
-//!   off, with one pause.
+//!   while riding the animal. Every object landed on in one step is set
+//!   off, with one bounce.
 //! - The window an item leaves by is the one placed objects appear in,
 //!   by where the view is at the end of the step, across only, as for
 //!   most entries (placements.md). An item is also removed once it's
@@ -121,6 +126,7 @@ pub(crate) fn strike(world: &mut World, physics: &Physics) -> bool {
         {
             set_off(&mut world.things[i], &h);
             struck = true;
+            break;
         }
     }
     struck

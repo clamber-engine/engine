@@ -686,3 +686,30 @@ fn the_fidget_pose_has_its_own_hurt_range() {
         assert_eq!(play.step(&[]), hurts, "{second} I {i}");
     }
 }
+
+/// thrower-contact.md, "Rolling into the thrower": the second
+/// character's defeat range, I at the end of the frame, is −29 to 24
+/// facing right and −23 to 30 facing left.
+#[test]
+fn the_second_character_roll_has_its_own_defeat_range() {
+    for (way, start, facing, range) in [
+        (Action::Right, 900, Facing::Right, -29..=24),
+        (Action::Left, 1100, Facing::Left, -23..=30),
+    ] {
+        let mut seen = (false, false);
+        for n in 0..240 {
+            let mut play = second_play(start, 380);
+            play.settle();
+            play.roll_to_frame_5(way);
+            play.world.player.pos.x = f(955.0 + f64::from(n) * 0.375);
+            assert!(!play.step(&[way]));
+            let across = play.across();
+            assert_eq!(play.world.player.facing, facing);
+            let inside = range.contains(&across);
+            assert_eq!(play.knocked_out(), inside, "{facing:?} I {across}");
+            seen.0 |= across == *range.start();
+            seen.1 |= across == *range.end();
+        }
+        assert!(seen.0 && seen.1, "{facing:?}");
+    }
+}

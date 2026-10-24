@@ -210,8 +210,8 @@
 #   `air_hold`; `crouching` as above and `crouch_hold`), a character
 #   other than the first is hurt by `standing` (standing still on the
 #   ground) or `moving` (the rest, and `air_hold` frames after landing
-#   from a jump standing still), by `crouching` while crouching, and
-#   bounces off it by `bounce`; the rest is as above.
+#   from a jump standing still), by `crouching` while crouching, its roll defeats it within
+#   `roll` (`across` only, else the contact's), and it bounces off it by `bounce`; the rest is as above.
 #   Without `contact`, it doesn't touch the player; its balls can.
 # - `ball`: falls under `gravity`, up to `max_fall`; nothing changes its
 #   speed across. Its floor is the highest in the 1-px column of its x
@@ -853,6 +853,8 @@ moving = [-29, 24, -12, 31]
 bounce = [-38, 29, -34, 13]
 air_hold = 16
 crouching = [-30, 26]
+# Its roll's defeat range ("Rolling into the thrower"), `across` only.
+roll = [-29, 24]
 crouch_hold = 11
 
 [archetypes.ball]

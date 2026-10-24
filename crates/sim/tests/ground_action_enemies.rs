@@ -770,3 +770,70 @@ fn a_jump_released_on_k_plus_1_and_pressed_again_on_k_plus_3_ends_the_action() {
     assert!(rows[35].jumped);
     assert_ne!(rows[34].state, State::GroundAction);
 }
+
+/// The ground action on P = 0 with Down and Action, then `extra` held on
+/// the frames of `frames`, against a thrower on its ledge 45 px ahead
+/// (K = 17) or a large walker 59 px ahead heading left (K = 17).
+fn with_extra_against(
+    thrower: bool,
+    extra: &[Action],
+    frames: std::ops::RangeInclusive<usize>,
+) -> Vec<Row> {
+    let mut w = if thrower {
+        world_with(
+            355,
+            Facing::Right,
+            "[[entities]]\ntype = \"thrower\"\nat = [400, 399]\n",
+        )
+    } else {
+        world(300, Facing::Right, LARGE, "left", 1)
+    };
+    let put: &[(usize, usize, f64)] = if thrower { &[] } else { &[(30, 0, 359.5)] };
+    act_with(
+        &mut w,
+        &|k| {
+            let mut v = if k == 0 { vec![D, A] } else { Vec::new() };
+            if frames.contains(&k) {
+                v.extend_from_slice(extra);
+            }
+            v
+        },
+        put,
+        90,
+    )
+}
+
+#[test]
+fn inputs_on_the_pause_frames_of_a_thrower_or_a_large_walker_change_nothing() {
+    for thrower in [true, false] {
+        let base = with_extra_against(thrower, &[], 0..=0);
+        let k = struck(&base)[0];
+        assert!(k > 0, "thrower {thrower}: nothing struck");
+        for from in [k + 1, k + 2] {
+            for to in [from, k + 3, 89] {
+                let rows = with_extra_against(thrower, &[J], from..=to);
+                assert_eq!(
+                    track(&rows),
+                    track(&base),
+                    "thrower {thrower}: Jump on {from}..={to}"
+                );
+            }
+        }
+        for extra in [L, R, D, S, A] {
+            for at in [k + 1, k + 2] {
+                let rows = with_extra_against(thrower, &[extra], at..=at);
+                assert_eq!(
+                    track(&rows),
+                    track(&base),
+                    "thrower {thrower}: {extra:?} on {at}"
+                );
+            }
+        }
+        // Afresh from K + 3, a Jump starts on its press frame.
+        let rows = with_extra_against(thrower, &[J], k + 3..=k + 3);
+        assert!(
+            rows[k + 4].jumped || rows[k + 3].jumped,
+            "thrower {thrower}"
+        );
+    }
+}

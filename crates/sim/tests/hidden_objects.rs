@@ -470,3 +470,40 @@ fn the_second_character_never_strikes_a_hidden_bunch() {
         });
     }
 }
+
+/// The steps on which hidden objects at the offsets `at` (their `x`
+/// less the player's, all on the floor) are struck by a standing ground
+/// action, and the step the action ends on.
+fn strikes_of(at: &[i32]) -> (Vec<Option<usize>>, usize) {
+    let hidden: Vec<(i32, i32)> = at.iter().map(|d| (500 + d, 300)).collect();
+    let mut w = world((500.0, 300.0), &hidden, "{}");
+    settle(&mut w, Facing::Right);
+    let mut struck = vec![None; at.len()];
+    let mut end = 0;
+    play(&mut w, &[D, A], 90, |k, w| {
+        for (i, s) in struck.iter_mut().enumerate() {
+            if s.is_none() && w.things[i].phase != Phase::Ready {
+                *s = Some(k);
+            }
+        }
+        if w.player.state == State::GroundAction {
+            end = k + 1;
+        }
+    });
+    (struck, end)
+}
+
+#[test]
+fn one_attack_frame_strikes_one_hidden_object() {
+    // Two in range on t = 25: one then, the other 8 frames later (t = 31
+    // after the pause), and E = P + 63.
+    let (struck, end) = strikes_of(&[20, 40]);
+    let mut at: Vec<_> = struck.iter().map(|s| s.unwrap()).collect();
+    at.sort_unstable();
+    assert_eq!(at, [25, 33]);
+    assert_eq!(end, 63);
+    // One of them out of range: one strike, E = P + 61.
+    let (struck, end) = strikes_of(&[80, 40]);
+    assert_eq!(struck, [None, Some(25)]);
+    assert_eq!(end, 61);
+}
