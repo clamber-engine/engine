@@ -779,6 +779,18 @@ fn with_extra_against(
     extra: &[Action],
     frames: std::ops::RangeInclusive<usize>,
 ) -> Vec<Row> {
+    with_inputs_against(thrower, &|k| {
+        let mut v = if k == 0 { vec![D, A] } else { Vec::new() };
+        if frames.contains(&k) {
+            v.extend_from_slice(extra);
+        }
+        v
+    })
+}
+
+/// [`with_extra_against`] with the keys held on each frame given by
+/// `keys`.
+fn with_inputs_against(thrower: bool, keys: &dyn Fn(usize) -> Vec<Action>) -> Vec<Row> {
     let mut w = if thrower {
         world_with(
             355,
@@ -789,18 +801,7 @@ fn with_extra_against(
         world(300, Facing::Right, LARGE, "left", 1)
     };
     let put: &[(usize, usize, f64)] = if thrower { &[] } else { &[(30, 0, 359.5)] };
-    act_with(
-        &mut w,
-        &|k| {
-            let mut v = if k == 0 { vec![D, A] } else { Vec::new() };
-            if frames.contains(&k) {
-                v.extend_from_slice(extra);
-            }
-            v
-        },
-        put,
-        90,
-    )
+    act_with(&mut w, keys, put, 90)
 }
 
 #[test]
@@ -835,5 +836,53 @@ fn inputs_on_the_pause_frames_of_a_thrower_or_a_large_walker_change_nothing() {
             rows[k + 4].jumped || rows[k + 3].jumped,
             "thrower {thrower}"
         );
+    }
+}
+
+/// ground-action-enemies.md, pause frames: Left, Right, Up, Down and Swap
+/// released on K + 1 or K + 2, and Action pressed with Down held over the
+/// pause, change nothing up to E (P + 61 for the thrower).
+#[test]
+fn releases_and_action_with_down_held_on_the_pause_frames_change_nothing() {
+    for thrower in [true, false] {
+        let base = with_extra_against(thrower, &[], 0..=0);
+        let k = struck(&base)[0];
+        let end = 60;
+        for extra in [L, R, Action::Up, D, S] {
+            for last in [k, k + 1] {
+                let rows = with_inputs_against(thrower, &|n| {
+                    let mut v = if n == 0 { vec![D, A] } else { Vec::new() };
+                    if (1..=last).contains(&n) {
+                        v.push(extra);
+                    }
+                    v
+                });
+                assert_eq!(
+                    track(&rows[..=end]),
+                    track(&base[..=end]),
+                    "thrower {thrower}: {extra:?} released on {}",
+                    last + 1
+                );
+            }
+        }
+        for press in [k + 1, k + 2, k + 3] {
+            for len in [1, 2] {
+                let rows = with_inputs_against(thrower, &|n| {
+                    let mut v = if n == 0 { vec![D, A] } else { Vec::new() };
+                    if (1..=press + len - 1).contains(&n) {
+                        v.push(D);
+                    }
+                    if (press..press + len).contains(&n) {
+                        v.push(A);
+                    }
+                    v
+                });
+                assert_eq!(
+                    track(&rows[..=end]),
+                    track(&base[..=end]),
+                    "thrower {thrower}: Action on {press} for {len}"
+                );
+            }
+        }
     }
 }

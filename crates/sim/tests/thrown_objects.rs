@@ -8,7 +8,9 @@ use std::sync::Arc;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Feel, Fixed, Presets};
-use clamber_sim::{Facing, Flight, FlowEvent, InputFrame, Phase, View, World, generic_feel, step};
+use clamber_sim::{
+    Event, Facing, Flight, FlowEvent, InputFrame, Phase, View, World, generic_feel, step,
+};
 
 const A: Action = Action::Action;
 
@@ -504,6 +506,34 @@ fn knocks_out_the_thrower_and_goes_on() {
             .iter()
             .all(|e| *e != FlowEvent::Defeat(1))
     );
+}
+
+/// thrower-contact.md, "The knocked-out thrower": after a hit by an
+/// object, on each frame from K + 2 to K + 44 the thrower neither hurts
+/// the player nor gives a bounce, wherever the player is around it.
+#[test]
+fn the_thrower_an_object_knocked_out_touches_nothing() {
+    let mut play = Play::new(&level(&format!("{FLAT}\n{}", thrower(315, 366))));
+    play.throw_to(21);
+    for n in 22..=70 {
+        let thrower = play.world.things[1].pos;
+        if n >= 28 {
+            for (dx, dy, vy) in [(0, 0, 2.0), (-20, 10, 2.0), (14, -6, -1.0), (30, 30, 2.0)] {
+                let mut probe = Play {
+                    world: play.world.clone(),
+                    held: play.held,
+                };
+                let player = &mut probe.world.player;
+                player.pos = Vec2::new(thrower.x + f(dx as f64), thrower.y + f(dy as f64));
+                player.vel = Vec2::new(Fixed::ZERO, f(vy));
+                probe.step(&[]);
+                let events = &probe.world.events;
+                assert!(!events.contains(&Event::Hurt), "Q + {n} {dx} {dy}");
+                assert!(!events.contains(&Event::Bounce), "Q + {n} {dx} {dy}");
+            }
+        }
+        play.step(&[]);
+    }
 }
 
 /// Throws the crate, right or left, and on Q + `n` (from 22) puts the
