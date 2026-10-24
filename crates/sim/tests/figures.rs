@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use clamber_fixed::Fixed;
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
 use clamber_sim::{
@@ -240,4 +241,80 @@ fn the_taken_figure_rests_then_rises_out_of_the_picture() {
 #[test]
 fn without_a_relic_image_none_is_shown() {
     assert!(images(X, F - 4, "default", 60).iter().all(Option::is_none));
+}
+
+/// [`world`] with the second character as the player.
+fn second_world(at: &[(i32, i32)]) -> World {
+    let mut w = world(at);
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(clamber_pack::CharacterFeel {
+        physics: clamber_pack::Presets::builtin()
+            .slot("classic-1", 1)
+            .unwrap(),
+        abilities: feel.roster[0].abilities.clone(),
+    });
+    w.feel = Arc::new(feel);
+    w.player.character = 1;
+    w
+}
+
+/// The last frame after the landing frame `L` (0 for `L` itself) on which
+/// a figure 20 px ahead of the player at the feet line, one only the
+/// jumping row reaches, is taken after a jump in place with Jump held for
+/// `hold` frames; `None` if it is not taken on `L` either.
+fn last_taken_after_landing(mut w: World, hold: usize) -> Option<usize> {
+    let jump: Actions = [Jump].into_iter().collect();
+    let none = Actions::default();
+    let mut before = none;
+    let mut landed = false;
+    let mut after_landing = Vec::new();
+    for n in 0..200 {
+        let held = if n < hold { jump } else { none };
+        let mut next = w.clone();
+        step(&mut next, &InputFrame::single(Frame::after(before, held)));
+        if landed || next.events.contains(&Event::Land) {
+            after_landing.push((w.clone(), before, held));
+            landed = true;
+            if after_landing.len() > 24 {
+                break;
+            }
+        }
+        w = next;
+        before = held;
+    }
+    let mut last = None;
+    for (k, (mut w, before, held)) in after_landing.into_iter().enumerate() {
+        w.things[0].pos.x = w.player.pos.x + Fixed::from_int(20);
+        w.things[0].pos.y = Fixed::from_int(F);
+        step(&mut w, &InputFrame::single(Frame::after(before, held)));
+        if w.flow.events.contains(&FlowEvent::Collect(0)) {
+            last = Some(k);
+        }
+    }
+    last
+}
+
+/// figure.md, "Second character leading", "Landing": its jumping row
+/// goes on through `L` + 16, whatever the length of the jump, and the
+/// standing row applies from `L` + 17.
+#[test]
+fn the_second_character_s_jumping_row_goes_on_through_l_plus_16() {
+    for hold in [1, 4, 10, 20, 30] {
+        let w = second_world(&[(X + 60, F)]);
+        assert_eq!(last_taken_after_landing(w, hold), Some(16), "hold {hold}");
+    }
+}
+
+/// Its ranges standing and in a jump (one row, no change at `T` + 6).
+#[test]
+fn the_second_character_has_its_own_ranges() {
+    for (dx, below, taken) in [
+        (-19, 0, true),
+        (-20, 0, false),
+        (21, 0, true),
+        (22, 0, false),
+    ] {
+        let mut w = second_world(&[(X - dx, F - below)]);
+        assert_eq!(step_keys(&mut w, &[], &[]), taken, "I = {dx}");
+    }
 }

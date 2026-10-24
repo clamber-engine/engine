@@ -1374,9 +1374,12 @@ land_ran = 17
 # relic count (the spec's figure count) and nothing to the collectible
 # count. Its ranges are figure.md's: the standing ones for the first six
 # frames of a jump, and facing left they're measured from 3 px right of
-# it. Falling without a jump, landing and the second character weren't
-# measured, so those use the jump's later row, the standing row from the
-# frame it lands, and the first character's ranges. How the taken figure
+# it. Falling without a jump and landing weren't measured for the first
+# character, so those use the jump's later row and the standing row from
+# the frame it lands. With the second character leading, the second
+# table is figure.md's: one row for a jump, which goes on through L + 16
+# of a landing after a jump from standing. Its other landings weren't
+# measured, so they use the same. How the taken figure
 # is shown flying away isn't drawn yet. The size is Clamber's own and
 # only draws it. The spec doesn't cover whether a taken figure is there
 # again when play comes back to the level from another area: here it
@@ -1402,6 +1405,19 @@ air = [-22, 28, -6, 54]
 air_below = []
 jump_early = 6
 land_hold = 0
+
+[[archetypes.idol.reach]]
+stand = [-19, 21, -29, 35]
+walk = [-25, 22, -25, 35]
+crouch = [-26, 24, -28, 22]
+roll = [-25, 22, -25, 35]
+jump = [-25, 22, -25, 35]
+air = [-25, 22, -25, 35]
+air_below = []
+jump_early = 0
+# The one row goes on through L + 16 whatever the hold.
+land_hold = 17
+land_ran = 17
 
 # An extra-life item (spec/behavior/extra-lives.md): taken, it gives
 # one more life, or more with `lives`; with `rise = 0.00390625` (1/256

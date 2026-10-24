@@ -2552,7 +2552,8 @@ impl Player {
     /// `bounce_landing_switch` the landing is a bounce's
     /// (level-start.md, "The landing"): the landing lockout counts from
     /// the landing frame, with `bounce_keeps_facing` a gait starts on it,
-    /// and an Action press on it waits a frame for a roll. Without, it's
+    /// and an Action press on it starts no roll, however long it is held
+    /// (a press on the frame after does). Without, it's
     /// a thrown player's landing ([`Player::land_from_throw`]).
     fn land_from_entrance(&mut self, input: &Frame, physics: &Physics) {
         if physics[Param::BounceLandingSwitch] == Fixed::ZERO {
@@ -2569,9 +2570,6 @@ impl Player {
         self.lockout = frames(physics[Param::LandingLockout]).saturating_sub(1);
         if physics[Param::BounceKeepsFacing] > Fixed::ZERO {
             self.start_bounce_gait(held(Action::Action), held_dir);
-        }
-        if input.pressed.contains(Action::Action) {
-            self.roll_press = Some((0, 1, true));
         }
     }
 

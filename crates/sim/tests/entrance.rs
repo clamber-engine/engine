@@ -296,16 +296,18 @@ fn an_immediate_jump_press_after_the_landing_starts_on_its_frame() {
     }
 }
 
-/// An Action press on L still held on L + 1 starts a roll on L + 1; one
-/// in the air isn't remembered, even held through L.
+/// A press of Action on L starts no roll, however long it is held, and
+/// one in the air isn't remembered; a press on L + 1 or later rolls on
+/// that frame (spec-v0.328.0).
 #[test]
 fn rolls_start_from_presses_on_the_ground() {
     let l = LANDING;
     for (from, to, roll) in [
         (l, l, None),
-        (l, l + 1, Some(l + 1)),
-        (l - 3, l + 3, None),
+        (l, l + 33, None),
+        (l - 2, l + 3, None),
         (l + 1, l + 1, Some(l + 1)),
+        (l + 2, l + 2, Some(l + 2)),
     ] {
         let (seen, play) = landing(held(&[A], from, to));
         assert_eq!(seen.roll, roll, "Action held {from} to {to}");
@@ -347,6 +349,32 @@ fn the_second_character_is_a_frame_behind() {
     let (x, y) = at(&play);
     assert_eq!(y, 380.0);
     assert!((180.0..play.at().0).contains(&x), "{x}");
+}
+
+/// "The second character" after the landing: on L + 1 it stays where it
+/// was on L, on L + 2 it is at the lead's position of L, rounded down,
+/// then it follows as usual (spec-v0.328.0).
+#[test]
+fn the_second_character_stays_on_the_frame_after_the_landing() {
+    let mut play = Play::new(2);
+    let other = |play: &Play| {
+        let o = play.world.other.as_ref().unwrap().pos;
+        (o.x.to_f64(), o.y.to_f64())
+    };
+    let mut lead_before = play.at();
+    while !play.world.player.grounded() {
+        lead_before = play.at();
+        play.step(&[]);
+    }
+    let l = play.world.frame - 1;
+    assert_eq!(l, LANDING);
+    let lead_at_l = play.at();
+    assert_eq!(other(&play), (lead_before.0.floor(), lead_before.1.floor()));
+    let on_l = other(&play);
+    play.step(&[]);
+    assert_eq!(other(&play), on_l, "L + 1");
+    play.step(&[]);
+    assert_eq!(other(&play), (lead_at_l.0.floor(), play.at().1), "L + 2");
 }
 
 /// "The picture": after frame `f` the brightness is ⌊f / 3⌋ fifteenths,
