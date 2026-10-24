@@ -402,3 +402,56 @@ fn a_falling_player_is_caught_only_near_the_top() {
     assert_eq!(rows[c].u.floor(), 18, "the fraction is kept");
     assert!(rows[c - 1].u.floor() > 18, "above the top before");
 }
+
+/// Flat ground, the player standing 190 px from a spring at x = 200,
+/// and a small walker heading left across it, with or without the spring.
+fn walker_world(with_spring: bool) -> World {
+    let spring = if with_spring {
+        r#"
+        [[entities]]
+        type = "spring"
+        at = [200, 300]
+        "#
+    } else {
+        ""
+    };
+    let src = format!(
+        r#"
+        format = 1
+        size = [2000, 600]
+        start = [390, {FLOOR}]
+
+        [[collision]]
+        shape = "rect"
+        rect = [0, {FLOOR}, 2000, 300]
+
+        {spring}
+
+        [[entities]]
+        type = "crawler"
+        at = [330, {FLOOR}]
+        params = {{ speed = 1, facing = "left", size = [20, 12], offset = 0.5 }}
+        "#
+    );
+    let level = Level::from_toml_str(&src, "test").unwrap();
+    World::new(
+        Arc::new(level),
+        Arc::new(generic_feel("classic-1").unwrap()),
+    )
+}
+
+#[test]
+fn a_small_walker_crossing_a_spring_is_unaffected_and_leaves_it_at_rest() {
+    let mut with = walker_world(true);
+    let mut without = walker_world(false);
+    let mut crossed = false;
+    for k in 0..200 {
+        step(&mut with, &InputFrame::default());
+        step(&mut without, &InputFrame::default());
+        let (a, b) = (&with.things[1], &without.things[0]);
+        assert_eq!((a.pos, a.phase), (b.pos, b.phase), "frame {k}");
+        assert_eq!(with.things[0].phase, Phase::Ready, "frame {k}");
+        crossed |= a.pos.x < fx(190.0);
+    }
+    assert!(crossed, "the walker walked across the spring's place");
+}

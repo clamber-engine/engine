@@ -9,7 +9,7 @@ use clamber_sim::{
     Event, Facing, Fixed, FlowEvent, InputFrame, Phase, State, World, generic_feel, step,
 };
 
-use Action::{Action as A, Down as D, Right as R};
+use Action::{Action as A, Down as D, Jump as J, Left as L, Right as R, Swap as S};
 
 /// Walkers as walker-contact.md's, with the sizes the classic-1 boxes go
 /// with.
@@ -74,6 +74,8 @@ struct Row {
     vx: Fixed,
     state: State,
     hurt: bool,
+    /// Whether a jump started on this frame.
+    jumped: bool,
     /// The walkers knocked out on this frame.
     struck: Vec<usize>,
     /// Each walker's `x`, `y` and its `vy` if it's falling.
@@ -88,6 +90,21 @@ struct Row {
 /// `put`, walker `n` is put at `x`, so `x` is where it is at the end of
 /// frame `k - 1`. Returns `frames` rows from P.
 fn act(w: &mut World, on_p: &[Action], put: &[(usize, usize, f64)], frames: usize) -> Vec<Row> {
+    act_with(
+        w,
+        &|k| if k == 0 { on_p.to_vec() } else { Vec::new() },
+        put,
+        frames,
+    )
+}
+
+/// As `act`, with `held(k)` the actions held on frame P + k.
+fn act_with(
+    w: &mut World,
+    held: &dyn Fn(usize) -> Vec<Action>,
+    put: &[(usize, usize, f64)],
+    frames: usize,
+) -> Vec<Row> {
     // Settle on the ground first.
     for _ in 0..4 {
         step(w, &InputFrame::default());
@@ -101,11 +118,7 @@ fn act(w: &mut World, on_p: &[Action], put: &[(usize, usize, f64)], frames: usiz
                     w.things[n].pos.x = fx(x);
                 }
             }
-            let now: Actions = if k == 0 {
-                on_p.iter().copied().collect()
-            } else {
-                Actions::NONE
-            };
+            let now: Actions = held(k).into_iter().collect();
             step(w, &InputFrame::single(Frame::after(last, now)));
             last = now;
             Row {
@@ -113,6 +126,7 @@ fn act(w: &mut World, on_p: &[Action], put: &[(usize, usize, f64)], frames: usiz
                 vx: w.player.vel.x,
                 state: w.player.state,
                 hurt: w.events.contains(&Event::Hurt),
+                jumped: w.events.contains(&Event::JumpStart),
                 struck: w
                     .flow
                     .events
@@ -675,4 +689,84 @@ fn the_other_character_in_the_air_on_the_way_down_is_held_and_lands_two_frames_l
         }
     }
     assert!(checked > 0, "the other was never in the air on K");
+}
+
+/// The ground action on P = 0 with Down and Action, then `extra` held on
+/// the frames of `frames`, a small walker knocked out on K = 31 (the
+/// action would end on 60). Returns 70 rows from P.
+fn with_extra(extra: &[Action], frames: std::ops::RangeInclusive<usize>) -> Vec<Row> {
+    let mut w = world(300, Facing::Right, SMALL, "left", 1);
+    act_with(
+        &mut w,
+        &|k| {
+            let mut v = if k == 0 { vec![D, A] } else { Vec::new() };
+            if frames.contains(&k) {
+                v.extend_from_slice(extra);
+            }
+            v
+        },
+        &[(30, 0, 364.5)],
+        70,
+    )
+}
+
+type Track = Vec<(Fixed, Fixed, State, Vec<(Fixed, Fixed, Option<Fixed>)>)>;
+
+/// What the player and the walker did, frame by frame.
+fn track(rows: &[Row]) -> Track {
+    rows.iter()
+        .map(|r| (r.x, r.vx, r.state, r.walkers.clone()))
+        .collect()
+}
+
+#[test]
+fn inputs_on_the_pause_frames_change_nothing() {
+    let base = with_extra(&[], 0..=0);
+    assert_eq!(struck(&base), [31]);
+    assert_eq!(acting(&base), (0..=60).collect::<Vec<_>>());
+    // A Jump press on K + 1 or K + 2, for one frame or held up to K + 3 or
+    // to the end of the run: no jump, the action goes on to its end.
+    for from in [32, 33] {
+        for to in [from, 34, 69] {
+            let rows = with_extra(&[J], from..=to);
+            assert_eq!(track(&rows), track(&base), "Jump on {from}..={to}");
+        }
+    }
+    // Direction and Swap presses, and an Action press, change nothing.
+    for extra in [L, R, D, S, A] {
+        for k in [32, 33] {
+            let rows = with_extra(&[extra], k..=k);
+            assert_eq!(track(&rows), track(&base), "{extra:?} on {k}");
+        }
+    }
+}
+
+#[test]
+fn a_jump_pressed_afresh_from_k_plus_3_ends_the_action() {
+    let base = with_extra(&[], 0..=0);
+    for press in [34, 35] {
+        let rows = with_extra(&[J], press..=press);
+        assert_eq!(rows[press - 1].state, State::GroundAction);
+        assert!(rows[press + 1].jumped, "pressed on {press}");
+        assert_ne!(rows[press].state, State::GroundAction);
+        assert_eq!(track(&rows[..press]), track(&base[..press]));
+    }
+}
+
+#[test]
+fn a_jump_released_on_k_plus_1_and_pressed_again_on_k_plus_3_ends_the_action() {
+    let mut w = world(300, Facing::Right, SMALL, "left", 1);
+    let rows = act_with(
+        &mut w,
+        &|k| match k {
+            0 => vec![D, A],
+            32 | 34 => vec![J],
+            _ => Vec::new(),
+        },
+        &[(30, 0, 364.5)],
+        70,
+    );
+    assert_eq!(rows[33].state, State::GroundAction);
+    assert!(rows[35].jumped);
+    assert_ne!(rows[34].state, State::GroundAction);
 }
