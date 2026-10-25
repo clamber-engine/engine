@@ -80,7 +80,6 @@ impl ObjectPalette {
 /// The sheets the game reads for objects whose pictures the importer
 /// can't write yet, with what they hold.
 pub const PENDING_SHEETS: &[(&str, &str)] = &[
-    ("metal-pictures", "the metal barrel"),
     ("sign-pictures", "the signs"),
     ("hidden-patch", "the hidden barrels' patch"),
     ("barrel-pictures", "the launch barrels"),
@@ -446,6 +445,7 @@ mod tests {
             "critter",
             "stinger",
             "extra-lives",
+            "metal-barrel",
         ];
         let mut spec = Vec::new();
         for doc in docs {
@@ -478,7 +478,7 @@ mod tests {
         }
         // Every written sheet is in the table, once.
         let names: Vec<&str> = written_sheets().collect();
-        assert_eq!(names.len(), 13);
+        assert_eq!(names.len(), 14);
     }
 
     #[test]

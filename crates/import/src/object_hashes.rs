@@ -1159,6 +1159,56 @@ pub(super) const SHEETS: &[ObjectSheet] = &[
             ),
         ],
     },
+    ObjectSheet {
+        name: "metal-pictures",
+        pictures: &[
+            (
+                "metal-lying",
+                "9c43f4706ed498044b71edffa8da2da48d5a2d222a040095f61eba2f0b11afaa",
+                Animal,
+            ),
+            (
+                "metal-thrown-1",
+                "634434fd17cc5de33861a590f3ef9d62bb69512754abc917c213b3164fc9667b",
+                Animal,
+            ),
+            (
+                "metal-thrown-2",
+                "363bb924b954f93f4a74a2d3314713e9ed13f82038ede805af2c4d6db517f592",
+                Animal,
+            ),
+            (
+                "metal-thrown-3",
+                "3c218ed7645a3ba08c06ce889c4499a2bb6c62ffbee13f425a3498219fe0b389",
+                Animal,
+            ),
+            (
+                "metal-thrown-4",
+                "da92b2ad468de5fa8271fc41e544e4d685b07145255b7cebada3dab1527e4768",
+                Animal,
+            ),
+            (
+                "metal-thrown-5",
+                "5396967b9f3d1ee3a9644ce23278d24fef05de82ebee3297639a40233ea01db0",
+                Animal,
+            ),
+            (
+                "metal-thrown-6",
+                "5bca3b2a2b2ac6012e4e3cc80a8c929361b9b8bf81d38beb995058aac4a72ab9",
+                Animal,
+            ),
+            (
+                "metal-thrown-7",
+                "6f402c16846dacb6165c832a190fbb73fdc9d874d7e8155f628586555b560157",
+                Animal,
+            ),
+            (
+                "metal-thrown-8",
+                "e627fdb2e8fb95999c946f2a9d2c9e54c78e5b080ea116c4db8cbd1932647c84",
+                Animal,
+            ),
+        ],
+    },
 ];
 
 #[cfg(test)]
@@ -1186,5 +1236,12 @@ mod tests {
                 "{label}"
             );
         }
+    }
+
+    #[test]
+    fn the_metal_barrels_pictures_use_the_animals_palette() {
+        let sheet = SHEETS.iter().find(|s| s.name == "metal-pictures").unwrap();
+        assert_eq!(sheet.pictures.len(), 9);
+        assert!(sheet.pictures.iter().all(|p| p.2 == Animal));
     }
 }
