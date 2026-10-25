@@ -24,6 +24,11 @@
 //! A Jump press that began on C, C - 1 or C - 2 and is still held on C + 2
 //! jumps on C + 2; one begun on C + 1 never does.
 //!
+//! A barrel still in the air after a throw catches the same way, the second
+//! character too (spec v0.350.0); one standing on the floor is never
+//! touched. Only barrels moving right catch: a barrel moving left isn't
+//! in the spec's measured ride, so it catches no one.
+//!
 //! A barrel with a rider falls more slowly: its downward speed grows by
 //! 0.3125 px each frame instead of the free barrel's `throw_gravity`
 //! (the spec saw 0.3086 once; the engine uses 0.3125 throughout).

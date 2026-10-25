@@ -322,3 +322,44 @@ fn a_barrel_in_the_air_with_a_rider_falls_more_slowly() {
     assert_eq!(barrel_vy(&play) - caught, f(0.625));
     assert_eq!(play.world.player.state, State::Astride);
 }
+
+/// A second-character play with the barrel in the air, 30 px above the
+/// floor, thrown right.
+fn second_in_air(x: f64, y: f64) -> Play {
+    let mut play = second(100.0, x, y);
+    let Phase::Thrown(flight) = &mut play.world.things[0].phase else {
+        unreachable!();
+    };
+    flight.rolling = false;
+    play.world.things[0].pos.y = f(370.0);
+    play
+}
+
+#[test]
+fn a_barrel_in_the_air_catches_a_falling_second_character_and_carries_it() {
+    let mut play = second_in_air(150.0, 290.0);
+    play.until_caught();
+    let barrel = play.barrel();
+    assert_eq!(play.gap(), f(8.15));
+    assert_eq!(play.world.player.pos.y, barrel.y - f(16.7));
+    // 11.5 to 12.0 ahead from C + 1 on, then it goes with the barrel.
+    play.step(&[]);
+    assert_eq!(play.gap(), f(8.15 + 3.5));
+    let before = play.world.player.pos.x;
+    play.step(&[]);
+    assert_eq!(play.world.player.pos.x - before, f(3.5));
+}
+
+#[test]
+fn a_barrel_in_the_air_does_not_touch_a_second_character_on_the_floor() {
+    let mut play = second_in_air(180.0, 400.0);
+    for _ in 0..3 {
+        play.step(&[]);
+    }
+    let at = play.world.player.pos;
+    for _ in 0..12 {
+        play.step(&[]);
+        assert_eq!(play.world.player.state, State::Idle);
+        assert_eq!(play.world.player.pos, at);
+    }
+}
