@@ -1069,8 +1069,9 @@ item_touch = 5
 
 # A metal barrel: what a hidden metal barrel's item becomes. Picked up and
 # carried as a barrel (carrying.md); thrown, it flies as one and turns back
-# at a wall instead of breaking (metal-barrel.md). What it meets besides
-# walls isn't covered; until it is, it's the crate's values.
+# at a wall instead of breaking, and defeats walkers as a barrel does
+# (metal-barrel.md). What else it meets isn't covered; until it is, it's
+# the crate's values.
 [archetypes.canister]
 behavior = "carry"
 turns_at_walls = true

@@ -367,6 +367,46 @@ fn hits_a_walker_in_its_first_frames_out_of_the_hands() {
     assert!(!play.world.things[1].active);
 }
 
+/// metal-barrel.md, "Walkers": a metal barrel thrown at a walker on the
+/// floor defeats it as a barrel does, with the same knock-off and removal,
+/// and goes on as it was, for each walker size, heading and throw side.
+#[test]
+fn a_metal_barrel_defeats_walkers_as_a_barrel_does() {
+    let medium = SMALL_WALKER.replace(
+        "size = [20, 12], offset = 0.5",
+        "size = [25, 25], offset = 5.0",
+    );
+    let large = SMALL_WALKER.replace("size = [20, 12]", "size = [26, 38]");
+    let run = |kind: &str, walker_params: &str, facing: &str, distance: f64| {
+        let params = walker_params.replace("facing = \"left\"", &format!("facing = \"{facing}\""));
+        let entity =
+            format!("[[entities]]\ntype = \"crawler\"\nat = [300, 400]\nparams = {{ {params} }}");
+        let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", kind);
+        let mut play = Play::new(&src);
+        play.throw_to(21);
+        let start = play.world.things[0].pos;
+        play.world.things[1].pos.x = start.x + f(distance);
+        let mut rows = Vec::new();
+        let mut defeats = 0;
+        for _ in 0..60 {
+            play.hold(&[], 1);
+            defeats += play.world.flow.events.contains(&FlowEvent::Defeat(1)) as u32;
+            let (o, w) = (&play.world.things[0], &play.world.things[1]);
+            rows.push((o.pos, o.active, walker(&play), w.active));
+        }
+        (rows, defeats)
+    };
+    for params in [SMALL_WALKER, medium.as_str(), large.as_str()] {
+        for facing in ["left", "right"] {
+            let (barrel, hits) = run("\"crate\"", params, facing, 150.0);
+            let (metal, metal_hits) = run("\"canister\"", params, facing, 150.0);
+            assert_eq!(hits, 1, "{params} {facing}");
+            assert_eq!(metal_hits, 1, "{params} {facing}");
+            assert_eq!(barrel, metal, "{params} {facing}");
+        }
+    }
+}
+
 /// The same example's second case: 40 px further right, it's hit after
 /// the object's first bounce, on Q + 43, by the smaller area.
 #[test]
