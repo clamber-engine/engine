@@ -288,3 +288,37 @@ fn the_second_character_is_caught_in_a_band_by_where_the_frame_began() {
     // Over 46.5 px above: not caught.
     assert!(!caught_from(1, 350.0));
 }
+
+fn barrel_vy(play: &Play) -> Fixed {
+    match play.world.things[0].phase {
+        Phase::Thrown(flight) => flight.vy,
+        other => panic!("not thrown: {other:?}"),
+    }
+}
+
+#[test]
+fn a_barrel_in_the_air_with_a_rider_falls_more_slowly() {
+    let mut play = Play::new(&level(""), 100.0, 130.0, 186.0);
+    let Phase::Thrown(flight) = &mut play.world.things[0].phase else {
+        unreachable!();
+    };
+    flight.rolling = false;
+    play.world.things[0].pos.y = f(200.0);
+    // Free, it grows by throw_gravity.
+    let mut free = Play::new(&level(""), 100.0, 2000.0, 0.0);
+    let Phase::Thrown(flight) = &mut free.world.things[0].phase else {
+        unreachable!();
+    };
+    flight.rolling = false;
+    free.world.things[0].pos.y = f(200.0);
+    free.step(&[]);
+    assert_eq!(barrel_vy(&free), f(0.4375));
+    play.until_caught();
+    assert_eq!(play.gap(), f(7.75));
+    let caught = barrel_vy(&play);
+    play.step(&[]);
+    assert_eq!(barrel_vy(&play) - caught, f(0.3125));
+    play.step(&[]);
+    assert_eq!(barrel_vy(&play) - caught, f(0.625));
+    assert_eq!(play.world.player.state, State::Astride);
+}

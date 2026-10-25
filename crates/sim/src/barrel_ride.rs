@@ -24,6 +24,10 @@
 //! A Jump press that began on C, C - 1 or C - 2 and is still held on C + 2
 //! jumps on C + 2; one begun on C + 1 never does.
 //!
+//! A barrel with a rider falls more slowly: its downward speed grows by
+//! 0.3125 px each frame instead of the free barrel's `throw_gravity`
+//! (the spec saw 0.3086 once; the engine uses 0.3125 throughout).
+//!
 //! Engine choices where the spec says nothing:
 //!
 //! - Only the characters under control catch, and not while holding an
@@ -37,12 +41,12 @@
 use clamber_fixed::Fixed;
 use clamber_input::{Action, Frame};
 use clamber_level::Vec2;
-use clamber_pack::Param;
+use clamber_pack::{Param, Physics};
 
 use crate::archetype::Behavior;
 use crate::columns;
 use crate::player::{Astride, Facing, State};
-use crate::world::{Event, Phase, World};
+use crate::world::{Event, Phase, Thing, World};
 
 /// How high above the barrel's `y` the first character's feet are.
 const RISE: f64 = 16.5;
@@ -55,6 +59,9 @@ const GAP_SECOND: f64 = 8.15;
 /// The band the second character's `y` at the start of a frame is in, in
 /// px above the barrel's `y`, for the barrel to catch it.
 const BAND_SECOND: (f64, f64) = (12.795, 46.515);
+/// How much a barrel's downward speed grows each frame while it carries
+/// a rider, in px, instead of `throw_gravity`.
+const RIDER_GRAVITY: f64 = 0.3125;
 /// The lowest a falling character's feet can end a frame, above the
 /// barrel's `y`, for the barrel to catch it.
 const REACH: f64 = 17.5;
@@ -92,6 +99,19 @@ fn rolling_right(world: &World, thing: usize) -> Option<Fixed> {
     match thing.phase {
         Phase::Thrown(f) if thing.active && turns && f.vx > Fixed::ZERO => Some(f.vx),
         _ => None,
+    }
+}
+
+/// Sets the gravity of a thrown barrel `thing` for its next fall: the
+/// rider's when it `carries` one, the preset's `throw_gravity` again once
+/// it doesn't.
+pub(crate) fn weigh(thing: &mut Thing, physics: &Physics, carries: bool) {
+    if let Phase::Thrown(f) = &mut thing.phase {
+        if carries {
+            f.gravity = fx(RIDER_GRAVITY);
+        } else if f.gravity == fx(RIDER_GRAVITY) {
+            f.gravity = physics[Param::ThrowGravity];
+        }
     }
 }
 

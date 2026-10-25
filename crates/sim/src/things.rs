@@ -99,6 +99,7 @@ use clamber_level::{Dir, Level, Vec2};
 use clamber_pack::{Param, Physics};
 
 use crate::archetype::{Archetype, Behavior, Fall, Hit, Offsets, Response, Stinger, WalkerDrop};
+use crate::barrel_ride;
 use crate::carry;
 use crate::columns;
 use crate::critter;
@@ -323,7 +324,13 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         held.is_some() || waiting || held_by_bounce || held_by_roll || held_by_bounce_all;
     let mut freed = Vec::new();
     let mut broken = Vec::new();
-    for thing in world.things.iter_mut().filter(|t| t.active) {
+    let ridden = world.player.astride.map(|a| a.thing);
+    for (at, thing) in world
+        .things
+        .iter_mut()
+        .enumerate()
+        .filter(|(_, t)| t.active)
+    {
         if let Some(Behavior::Critter(critter)) = thing.archetype.map(|a| a.behavior) {
             if !critters_held && let Some(entity) = world.level.entities.get(thing.index) {
                 thing.still = false;
@@ -369,6 +376,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         }
         let moves = if catch_up && enemy { wait + 1 } else { 1 };
         thing.still = false;
+        barrel_ride::weigh(thing, &physics, ridden == Some(at));
         for _ in 0..moves {
             let flying = match thing.phase {
                 Phase::Thrown(f) if f.thrown && thing.active => Some(f.right()),
