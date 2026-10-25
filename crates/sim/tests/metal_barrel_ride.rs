@@ -435,10 +435,39 @@ fn a_barrel_rolling_left_catches_within_its_own_ranges() {
 }
 
 #[test]
-fn a_barrel_rolling_left_does_not_catch_the_second_character() {
-    let mut play = second(200.0, 215.0, 300.0).rolling_left();
-    for _ in 0..40 {
-        play.step(&[]);
-        assert_ne!(play.world.player.state, State::Astride);
+fn a_barrel_rolling_left_catches_the_second_character_by_whole_pixels() {
+    // d is the character's x rounded up minus the barrel's rounded down,
+    // at the end of the catch frame.
+    for (facing, low, high) in [
+        (clamber_sim::Facing::Left, -16, 27),
+        (clamber_sim::Facing::Right, -22, 21),
+    ] {
+        let mut ds = Vec::new();
+        for step_x in 0..1200 {
+            let x = 100.0 + f64::from(step_x) * 0.125;
+            let mut play = second(200.0, x, 300.0).rolling_left();
+            play.world.player.facing = facing;
+            for _ in 0..40 {
+                play.step(&[]);
+                if play.world.player.state == State::Astride {
+                    let b = play.barrel().x.to_f64();
+                    ds.push(x.ceil() as i64 - b.floor() as i64);
+                    break;
+                }
+            }
+        }
+        assert!(!ds.is_empty());
+        assert_eq!(ds.iter().min(), Some(&low), "{facing:?}");
+        assert_eq!(ds.iter().max(), Some(&high), "{facing:?}");
     }
+}
+
+#[test]
+fn the_second_character_rides_a_barrel_rolling_left_on_its_right() {
+    let mut play = second(200.0, 150.0, 300.0).rolling_left();
+    play.until_caught();
+    assert_eq!(play.world.player.pos.y, f(400.0 - 16.7));
+    assert_eq!(play.gap(), f(-8.2));
+    play.step(&[]);
+    assert_eq!(play.gap(), f(-8.2 - 3.5));
 }

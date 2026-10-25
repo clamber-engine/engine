@@ -28,8 +28,9 @@
 //! character too (spec v0.350.0); one standing on the floor is never
 //! touched. A barrel rolling left catches the first character the same
 //! way, mirrored, with ranges of its own and the character 8.4 px to its
-//! right on the catch frame (spec v0.352.0); it catches no second
-//! character, which the spec has not measured.
+//! right on the catch frame (spec v0.352.0). The second character, coming
+//! down onto it, is caught by whole-pixel distances and a band of heights
+//! of its own (spec v0.356.0).
 //!
 //! A barrel with a rider falls more slowly: its downward speed grows by
 //! 0.3125 px each frame instead of the free barrel's `throw_gravity`
@@ -69,6 +70,12 @@ const GAP_SECOND: f64 = 8.15;
 /// The band the second character's `y` at the start of a frame is in, in
 /// px above the barrel's `y`, for the barrel to catch it.
 const BAND_SECOND: (f64, f64) = (12.795, 46.515);
+/// The same for a barrel rolling left (the spec saw 16.04 to 45.53 caught,
+/// 8.04 and 51.82 not; the middle of each gap).
+const BAND_SECOND_LEFT: (f64, f64) = (12.04, 48.675);
+/// The same for the second character on a barrel rolling left: seen 7.51
+/// to 8.98 px.
+const GAP_SECOND_LEFT: f64 = 8.2;
 /// How much a barrel's downward speed grows each frame while it carries
 /// a rider, in px, instead of `throw_gravity`.
 const RIDER_GRAVITY: f64 = 0.3125;
@@ -90,6 +97,16 @@ fn range(character: usize, facing: Facing, left: bool) -> (Fixed, Fixed) {
         (0, Facing::Right) => (fx(-23.084), fx(27.477)),
         (_, Facing::Left) => (fx(-20.533), fx(23.664)),
         (_, Facing::Right) => (fx(-26.111), fx(17.9255)),
+    }
+}
+
+/// Whether the second character is in range of a barrel rolling left, by
+/// whole pixels: its `x` rounded up minus the barrel's rounded down.
+fn whole(x: Fixed, barrel_x: Fixed, facing: Facing) -> bool {
+    let d = -(-x).floor() - barrel_x.floor();
+    match facing {
+        Facing::Left => (-16..=27).contains(&d),
+        Facing::Right => (-22..=21).contains(&d),
     }
 }
 
@@ -238,15 +255,14 @@ fn catch(world: &mut World, start_y: Fixed) {
     }
     let found = (0..world.things.len()).find_map(|i| {
         let vx = rolling(world, i)?;
-        // Only the first character is known to be caught by a barrel
-        // rolling left.
         let left = vx < Fixed::ZERO;
-        if left && p.character != 0 {
-            return None;
-        }
-        let (low, high) = range(p.character, p.facing, left);
-        let caught = {
-            let barrel = world.things[i].pos;
+        let barrel = world.things[i].pos;
+        let caught = if left && p.character != 0 {
+            let above = barrel.y - start_y;
+            let band = BAND_SECOND_LEFT;
+            whole(p.pos.x, barrel.x, p.facing) && fx(band.0) <= above && above <= fx(band.1)
+        } else {
+            let (low, high) = range(p.character, p.facing, left);
             let d = p.pos.x - barrel.x;
             let height = if p.character == 0 {
                 p.pos.y >= barrel.y - fx(REACH)
@@ -267,7 +283,11 @@ fn catch(world: &mut World, start_y: Fixed) {
     } else {
         (fx(GAP_SECOND), rise(1))
     };
-    let gap = if left { -fx(GAP_LEFT) } else { gap };
+    let gap = match (left, world.player.character) {
+        (false, _) => gap,
+        (true, 0) => -fx(GAP_LEFT),
+        (true, _) => -fx(GAP_SECOND_LEFT),
+    };
     let at = Vec2::new(barrel.x - gap, barrel.y - rise);
     world
         .player
