@@ -1842,6 +1842,87 @@ fn a_metal_barrel_in_the_hands_falls_through_the_floor_on_a_ball_or_a_thrower() 
     }
 }
 
+/// metal-barrel.md, "The thrower and its balls": a metal barrel thrown
+/// either way hits the thrower on the frames a barrel does, and carried
+/// in a jump it does too, then falls through the floor like one in the
+/// hands; the thrower and the player go on as with a barrel.
+#[test]
+fn a_metal_barrel_meets_the_thrower_as_a_barrel_does() {
+    let plain = level(&format!("{FLAT}\n{}", thrower(300, 100)));
+    let metal = plain.replace("\"crate\"", "\"canister\"");
+    let mut hits = 0;
+    for right in [true, false] {
+        for n in [22, 30, 37, 38, 45] {
+            for i in [-60, -40, -20, 0, 20, 40] {
+                let hit = |src: &str| {
+                    let mut play = Play::new(src);
+                    if !right {
+                        play.world.player.facing = Facing::Left;
+                    }
+                    play.throw_to(n - 1);
+                    let mut ahead = Play {
+                        world: play.world.clone(),
+                        held: play.held,
+                    };
+                    ahead.step(&[]);
+                    let o = ahead.world.things[0].pos;
+                    let x = o.x.floor() - i;
+                    play.world.things[1].pos = Vec2::new(
+                        Fixed::from_int(x as i32) + f(0.75),
+                        Fixed::from_int((-(-o.y).floor()) as i32) - f(0.25),
+                    );
+                    play.step(&[]);
+                    (knocked_thrower(&play).1, play.world.player.pos)
+                };
+                let got = hit(&metal);
+                assert_eq!(hit(&plain), got, "right {right} Q + {n} I {i}");
+                hits += usize::from(got.0);
+            }
+        }
+    }
+    assert!(hits > 10, "{hits}");
+    // Carried in a jump.
+    let mut play = Play::new(&metal);
+    let mut control = Play::new(&plain);
+    control.world.things[1].active = false;
+    play.world.things[1].active = false;
+    while play.world.player.grounded() {
+        play.step(&[A, Action::Jump]);
+        control.step(&[A, Action::Jump]);
+    }
+    play.world.player.facing = Facing::Left;
+    control.world.player.facing = Facing::Left;
+    let mut ahead = Play {
+        world: control.world.clone(),
+        held: control.held,
+    };
+    ahead.step(&[A]);
+    let head = ahead.world.things[0].pos;
+    let at = Vec2::new(
+        Fixed::from_int((head.x.floor() - 31) as i32),
+        Fixed::from_int((-(-head.y).floor()) as i32),
+    );
+    play.world.things[1].active = true;
+    play.world.things[1].pos = at;
+    play.step(&[A]);
+    control.step(&[A]);
+    assert!(knocked_thrower(&play).1);
+    assert!(play.world.player.hands.is_none());
+    assert!(matches!(
+        play.world.things[0].phase,
+        Phase::LetGo { vy, .. } if vy == f(-5.0)
+    ));
+    let mut steps = 0;
+    while play.world.things[0].active {
+        assert_eq!(play.world.player.pos, control.world.player.pos);
+        play.step(&[]);
+        control.step(&[]);
+        steps += 1;
+        assert!(steps < 100);
+    }
+    assert!((39..=49).contains(&steps), "{steps}");
+}
+
 /// metal-barrel.md, "The second character throwing it": thrown by the
 /// second character, a metal barrel turns back at a wall as it does for
 /// the first, and before that moves as a barrel does.
