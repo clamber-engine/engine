@@ -1017,6 +1017,10 @@ params! {
     TakeoverHop => "takeover_hop",
     /// The hop's upward speed on its third frame.
     TakeoverHop3 => "takeover_hop_3",
+    /// Frames after the hit character's last flight frame that the
+    /// character taking over keeps still in its own state, before it
+    /// starts waiting as the one under control. Whole frames.
+    TakeoverStill => "takeover_still",
     /// Frames from the hit, counting the hit frame, that the character
     /// under control can't be hurt after losing a character. Whole
     /// frames.

@@ -809,7 +809,7 @@ impl Player {
 
     /// Ends the timed roll under way or the stop after one, with any
     /// boost waiting.
-    fn end_roll(&mut self) {
+    pub(crate) fn end_roll(&mut self) {
         self.roll = None;
         self.roll_stop = 0;
         self.stopped = None;

@@ -535,6 +535,7 @@ mod tests {
                     | Param::TakeoverNudge
                     | Param::TakeoverHop
                     | Param::TakeoverHop3
+                    | Param::TakeoverStill
                     | Param::ProtectTime
                     | Param::FlashStart
                     | Param::FlashEnd

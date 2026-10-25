@@ -368,3 +368,72 @@ fn with_no_other_character_a_hit_knocks_out() {
     assert!(play.world.player.knockout.is_some());
     assert!(play.world.loss.is_none());
 }
+
+/// The second character under control at `at`, the first standing at
+/// `other` facing right.
+fn second(at: Vec2, other: Vec2) -> Play {
+    let mut play = Play::new(at, Facing::Right, other);
+    play.world.player.character = 1;
+    play.world.other = Some(Other::new(0, other, Facing::Right, at));
+    play.hold(&[], 2);
+    play
+}
+
+#[test]
+fn the_second_character_hit_flies_like_the_first_and_the_first_waits_a_frame_longer() {
+    let mut play = second(v(200.25, FLOOR), v(130.0, FLOOR));
+    let rows = play.hit(&[], 70);
+    assert_eq!(rows[0].events, [Event::Hurt]);
+    assert_eq!(rows[0].vel, v(0.0, -8.0));
+    assert_eq!(play.world.flow.lives, START_LIVES);
+    let mut vy = f(-8.0);
+    for (n, row) in rows.iter().enumerate().take(35).skip(1) {
+        vy += f(0.4375);
+        assert_eq!(
+            (row.vel.y, row.state, row.character),
+            (vy, State::Hurt, 1),
+            "H + {n}"
+        );
+    }
+    assert_eq!(rows[35].events, [Event::Land]);
+    // H + 36: the first character, as it has been, on the ground, in
+    // an ordinary state.
+    let other = &rows[36];
+    assert_eq!(other.character, 0);
+    assert_eq!((other.pos, other.vel), (v(130.0, FLOOR), Vec2::default()));
+    assert!(other.ground && other.state != State::Swap);
+    assert!(other.events.is_empty());
+    // Swap state from H + 37, still until H + 37, moving from H + 38.
+    assert_eq!(
+        (rows[37].state, rows[37].pos),
+        (State::Swap, v(130.0, FLOOR))
+    );
+    assert_eq!(rows[38].pos.x, f(130.0 + 70.0 / 16.0));
+    // The hop: T is the first row with the hop's start placed half a
+    // pixel above the floor.
+    let t = rows.iter().position(|r| r.pos.y == f(FLOOR - 0.5)).unwrap();
+    assert_eq!(rows[t + 1].pos.y, f(FLOOR - 0.5 - 9.5625));
+    assert_eq!(rows[t + 2].pos.y, f(FLOOR - 0.5 - 9.5625 - 9.125));
+    assert_eq!(rows[t + 3].pos.y, f(FLOOR - 0.5 - 9.5625 - 9.125 - 6.5625));
+}
+
+#[test]
+fn the_second_character_hit_with_jump_held_falls_under_the_lighter_gravity() {
+    let mut play = second(v(200.25, FLOOR), v(130.0, FLOOR));
+    play.hold(&[Action::Jump], 8);
+    assert!(play.world.player.jump_hold);
+    let rows = play.hit(&[Action::Jump], 3);
+    assert_eq!(rows[1].vel.y, f(-8.0 + 0.3515625));
+}
+
+#[test]
+fn a_hit_during_a_roll_loses_the_character_too() {
+    let mut play = Play::example();
+    play.hold(&[Action::Right, Action::Action], 6);
+    assert!(play.world.player.roll.is_some() || play.world.player.state == State::Roll);
+    let rows = play.hit(&[Action::Right, Action::Action], 4);
+    assert_eq!(rows[0].events, [Event::Hurt]);
+    assert_eq!((rows[0].vel, rows[0].state), (v(0.0, -8.0), State::Hurt));
+    assert!(play.world.player.knockout.is_none());
+    assert!(play.world.loss.is_some());
+}

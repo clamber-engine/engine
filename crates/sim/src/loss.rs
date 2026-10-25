@@ -15,7 +15,7 @@
 //! ([`World::player_drawn`]).
 
 use clamber_fixed::Fixed;
-use clamber_level::Vec2;
+use clamber_level::{Dir, Vec2};
 use clamber_pack::{Param, Physics};
 
 use crate::player::{Facing, Player, State, ceil, frames};
@@ -57,9 +57,7 @@ pub(crate) fn can_start(world: &World) -> bool {
         && world.loss.is_none()
         && world.player_physics()[Param::LoseJump] > Fixed::ZERO
         && p.knockout.is_none()
-        && !matches!(p.state, State::Bounce | State::Roll)
-        && p.roll.is_none()
-        && p.roll_stop == 0
+        && !(p.state == State::Bounce && p.character != 0)
 }
 
 /// Starts losing the player's character on this, the hit frame: it
@@ -80,6 +78,7 @@ pub(crate) fn start(world: &mut World) {
     p.vel = Vec2::new(Fixed::ZERO, -physics[Param::LoseJump]);
     p.state = State::Hurt;
     p.jump_hold = false;
+    p.end_roll();
     p.takeoff = false;
     p.takeoff_wait = None;
     p.turn = None;
@@ -151,15 +150,25 @@ pub(crate) fn update(world: &mut World) -> bool {
         None => world.player_physics(),
     };
     let wait = u16::from(frames(physics[Param::TakeoverWait]));
+    let still = u16::from(frames(physics[Param::TakeoverStill]));
     if loss.frame < wait {
         world.player.state = State::Hurt;
         return true;
     }
     if loss.frame == wait {
-        take_over(world);
+        take_over(world, still > 0);
+        return true;
+    }
+    if loss.frame < wait + still {
         return true;
     }
     let p = &mut world.player;
+    if loss.frame == wait + still {
+        // The character stops standing as it was and starts to wait.
+        p.state = State::Swap;
+        p.ground = None;
+        return true;
+    }
     match loss.hop {
         None => {
             let gap_x = loss.spot.x.floor() - p.pos.x.floor();
@@ -210,9 +219,11 @@ fn toward(gap: i64, physics: &Physics) -> Fixed {
 }
 
 /// Makes the other character the one under control, standing still
-/// where it is, off the ground, with input ignored. The lost character
-/// goes its own way.
-fn take_over(world: &mut World) {
+/// where it is, with input ignored: off the ground in its waiting state,
+/// or, with `keep` (`takeover_still`), in its ordinary ground state until
+/// the frames it stands still are over. The lost character goes its own
+/// way.
+fn take_over(world: &mut World, keep: bool) {
     let Some(other) = world.other.take() else {
         return;
     };
@@ -222,13 +233,22 @@ fn take_over(world: &mut World) {
     let mut player = Player::new(&world.level, other.pos);
     player.character = other.character;
     player.facing = other.facing;
-    player.ground = None;
     player.spring = None;
     player.spring_arc = None;
     player.rope = None;
     player.sling = None;
     player.rope_fall = false;
-    player.state = State::Swap;
+    if keep {
+        let from = Vec2::new(player.pos.x, player.pos.y - Fixed::ONE);
+        player.ground = world
+            .level
+            .collision
+            .cast(from, Dir::Down, Fixed::from_int(2))
+            .map(|hit| hit.collider);
+    } else {
+        player.ground = None;
+        player.state = State::Swap;
+    }
     world.player = player;
 }
 

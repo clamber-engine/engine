@@ -248,6 +248,7 @@ takeover_min_move = 0
 takeover_nudge = 0
 takeover_hop = 0
 takeover_hop_3 = 0
+takeover_still = 0
 protect_time = 0
 flash_start = 0
 flash_end = 0
@@ -817,7 +818,11 @@ takeover_share = 16
 takeover_min_move = 3
 takeover_nudge = 0.5
 takeover_hop = 10
-takeover_hop_3 = 7.9140625
+takeover_hop_3 = 6.5625
+# The first character is the one taking over after the second is hit: it
+# stays in its own state a frame longer, and its hop's third frame differs
+# (the second character's values are in its roster slot).
+takeover_still = 1
 protect_time = 150
 flash_start = 38
 flash_end = 134
@@ -1280,9 +1285,13 @@ hurt_crouch_width = 21
 hurt_crouch_offset = 2.5
 hurt_crouch_hold = 12
 hurt_jump_lift = 2
-# The second character being hit isn't specified yet, so it's a hit with
-# one character, as before.
-lose_jump = 0
+# Losing the second character (losing-a-character.md, "The second
+# character as the hit character"): it is thrown up like the first. The
+# values of the character taking over are the first character's (the
+# world's); these are for the first character being the one lost.
+lose_jump = 8
+takeover_hop_3 = 7.9140625
+takeover_still = 0
 ground_action_time = 0
 # Carrying (carrying.md, "The second character"): a pick-up whose target
 # is 0 for G to G + 10, a throw of 40 frames with the target 0 for 19, a
