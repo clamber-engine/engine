@@ -1,11 +1,12 @@
 //! An object in the lead's hands at the level end on `classic-1`
 //! (spec/behavior/level-end.md, "An object in the lead's hands").
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
-use clamber_pack::{Fixed, Param};
+use clamber_pack::{CharacterFeel, Fixed, Param, Presets};
 use clamber_sim::{Act, Facing, InputFrame, Outcome, Phase, World, generic_feel, step};
 
 const R: Action = Action::Right;
@@ -18,7 +19,7 @@ fn f(v: f64) -> Fixed {
 /// Flat ground at y = 400, the player at x = 200, a crate 20 px to its
 /// right, holding the missing character if `holder`, and an end marker
 /// at `xm` on the ground.
-fn world(holder: bool, xm: i32) -> World {
+fn world(holder: bool, xm: i32, second: bool) -> World {
     let src = format!(
         r#"
         format = 1
@@ -41,7 +42,21 @@ fn world(holder: bool, xm: i32) -> World {
         "#
     );
     let level = Arc::new(Level::from_toml_str(&src, "hands").unwrap());
-    World::new(level, Arc::new(generic_feel("classic-1").unwrap()))
+    let mut feel = generic_feel("classic-1").unwrap();
+    if second {
+        feel.roster.push(CharacterFeel {
+            physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+            abilities: BTreeMap::new(),
+        });
+    }
+    let mut world = World::new(level, Arc::new(feel));
+    if second {
+        world.player.character = 1;
+        if let Some(other) = &mut world.other {
+            other.character = 0;
+        }
+    }
+    world
 }
 
 struct Play {
@@ -52,8 +67,13 @@ struct Play {
 impl Play {
     /// Picks up the crate and carries it with action held, standing.
     fn carrying(holder: bool, xm: i32) -> Play {
+        Play::carrying_by(false, holder, xm)
+    }
+
+    /// The same, with the second character as the lead if `second`.
+    fn carrying_by(second: bool, holder: bool, xm: i32) -> Play {
         let mut play = Play {
-            world: world(holder, xm),
+            world: world(holder, xm, second),
             held: Actions::NONE,
         };
         play.hold(&[], 2);
@@ -244,4 +264,28 @@ fn without_a_let_go_speed_it_stays_in_the_hands() {
     play.hold(&[], 10);
     assert!(play.world.player.hands.is_some());
     assert_eq!(play.object().phase, Phase::Held);
+}
+
+/// With the second character leading and carrying, the rules hold as
+/// they are: let go on `T`, the same fall and removal.
+#[test]
+fn the_second_character_leading_lets_it_go_the_same_way() {
+    for holder in [false, true] {
+        let mut play = Play::carrying_by(true, holder, 300);
+        assert_eq!(play.world.player.character, 1);
+        play.until_passed(&[R, A]);
+        let removed = falls_away(&mut play, 1.0, |_, _| {});
+        assert!((30..40).contains(&removed), "{removed}");
+    }
+}
+
+/// ... and a throw still under way never happens then either.
+#[test]
+fn the_second_character_leading_never_finishes_a_throw() {
+    let mut play = Play::carrying_by(true, false, 190);
+    play.step(&[]);
+    assert_eq!(play.world.player.hands.map(|h| h.act), Some(Act::Throw));
+    play.until_passed(&[R]);
+    assert_eq!(play.world.things[0].phase, Phase::Held);
+    falls_away(&mut play, 1.0, |_, _| {});
 }
