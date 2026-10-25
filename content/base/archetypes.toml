@@ -282,7 +282,15 @@
 #   the character under control is not the first; facing left, those
 #   turn around by the contact's `mirror`. Nothing defeats it and it's never bounced on. While
 #   the player is knocked out, it holds still with the other enemies,
-#   also when it's the one that hurt the player.
+#   also when it's the one that hurt the player. With a `knock` table
+#   (`jump`, `gravity`, `max_fall`, `speed`, `glide`, `response`), a
+#   stinger that doesn't move (`reach` and `velocity` all 0) can be
+#   defeated by a thrown object with `hit_stinger`: it holds still the
+#   frame after the hit (its speed across becoming `speed` back the way
+#   the object came) and the next (its speed up becoming `jump`), then
+#   falls through everything, its speed across easing toward `glide` by
+#   `response` of the gap, `gravity` added to its speed down up to
+#   `max_fall`, and it's gone once outside the window as a walker is.
 # - `collect`: a collectible the player takes by reaching it. It's then
 #   gone, and adds `worth` to the collectible count, one at a time: the
 #   first as it's taken, then one every `release_every` frames, each
@@ -918,6 +926,9 @@ size = [16, 16]
 offset = 0
 reach = [0, 0, 0, 0]
 velocity = [0, 0]
+# Defeated by a metal barrel (metal-barrel.md, "Stingers"): it holds
+# still two frames, then falls through the floor.
+knock = { jump = 6, gravity = 0.4375, max_fall = 8, speed = 4, glide = 2, response = 0.125 }
 
 [archetypes.stinger.contact]
 upright = [-21, 32, -20, 29]
@@ -1079,6 +1090,10 @@ item_touch = 5
 behavior = "carry"
 turns_at_walls = true
 hit_rise = 5
+# Rolling right, it defeats a stinger that doesn't move, whose offsets
+# from it are within [across from, to, above from, to] (metal-barrel.md,
+# "Stingers").
+hit_stinger = [-28, 32, -20, 19]
 size = [32, 24]
 offset = 0
 reach = { right = [-7, 38], left = [-33, 12], below = [-22, 32] }

@@ -97,7 +97,10 @@ pub enum Behavior {
     /// wall exits. With `turns_at_walls`, thrown, it turns back from a
     /// wall instead of breaking on it (metal-barrel.md). With a
     /// `hit_rise`, in the hands it doesn't break on a thrower or a ball:
-    /// it moves up at that speed and falls through everything.
+    /// it moves up at that speed and falls through everything. With a
+    /// `hit_stinger`, rolling right it defeats stingers that don't move
+    /// whose offsets from it are within those ranges (see
+    /// [`Stinger::knock`]).
     Carry {
         reach: Grab,
         hit: Hit,
@@ -113,6 +116,7 @@ pub enum Behavior {
         opens: Option<Opens>,
         turns_at_walls: bool,
         hit_rise: Option<Fixed>,
+        hit_stinger: Option<Offsets>,
     },
     /// A collectible the player takes from within its [`Reach`] (see
     /// [`collect`](crate::collect)). It adds `worth` to the collectible
@@ -591,6 +595,19 @@ pub struct Stinger {
     pub velocity: Vec2,
     pub contact: Contact,
     pub second: Option<SecondReach>,
+    /// How it's knocked off by what defeats it, if anything does.
+    pub knock: Option<StingerKnock>,
+}
+
+/// How a defeated stinger moves (spec/behavior/metal-barrel.md,
+/// "Stingers"): it holds still two frames, its speed across becoming
+/// `fall.knock` back the way the object came on the first and its speed
+/// up `fall.jump` on the second, then falls through everything, its
+/// speed across easing toward `fall.knock_glide` by `response`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct StingerKnock {
+    pub fall: Fall,
+    pub response: Response,
 }
 
 /// Where a stinger hurts a character other than the first
@@ -1804,6 +1821,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "holds_character",
             "turns_at_walls",
             "hit_rise",
+            "hit_stinger",
             "holder_window",
             "hit_thrower",
             "hit_thrower_early",
@@ -1861,7 +1879,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "mount_hold",
             "ride",
         ],
-        "stinger" => &["reach", "velocity", "contact", "second"],
+        "stinger" => &["reach", "velocity", "contact", "second", "knock"],
         "keg" => &[
             "contact",
             "pieces",
@@ -2245,6 +2263,16 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 true => Some(number("hit_rise")?),
                 false => None,
             };
+            let hit_stinger = match table.get("hit_stinger") {
+                None => None,
+                Some(v) => {
+                    let (a, b, c, d) = edges(v, &format!("{path}.hit_stinger"))?;
+                    Some(Offsets {
+                        across: (a, b),
+                        above: (c, d),
+                    })
+                }
+            };
             Behavior::Carry {
                 reach,
                 hit: hit("hit")?,
@@ -2260,6 +2288,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 opens,
                 turns_at_walls,
                 hit_rise,
+                hit_stinger,
             }
         }
         "collect" => {
@@ -2477,6 +2506,10 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                     None => None,
                     Some(v) => Some(parse_second_reach(v, &format!("{path}.second"))?),
                 },
+                knock: match table.get("knock") {
+                    None => None,
+                    Some(v) => Some(parse_stinger_knock(v, &format!("{path}.knock"))?),
+                },
             })
         }
         "keg" => Behavior::Keg(parse_keg(table, path)?),
@@ -2502,6 +2535,43 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
         size,
         offset: number("offset")?,
     })
+}
+
+/// Reads a stinger's [`StingerKnock`] table: `jump`, `gravity`,
+/// `max_fall`, `speed`, `glide` and `response`. Errors start with `path`.
+fn parse_stinger_knock(value: &Value, path: &str) -> Result<StingerKnock, String> {
+    let Value::Table(table) = value else {
+        return Err(format!("{path}: expected a table"));
+    };
+    const KEYS: &[&str] = &["jump", "gravity", "max_fall", "speed", "glide", "response"];
+    if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
+        return Err(format!("{path}: unknown key `{key}`"));
+    }
+    let get = |key: &str| {
+        let at = format!("{path}.{key}");
+        let v = table
+            .get(key)
+            .ok_or_else(|| format!("{path}: missing `{key}`"))?;
+        clamber_pack::read_number(v, "", &at).map_err(|e| e.message)
+    };
+    let fall = Fall {
+        jump: get("jump")?,
+        gravity: get("gravity")?,
+        max_fall: get("max_fall")?,
+        knock: get("speed")?,
+        knock_glide: get("glide")?,
+        move_first: false,
+    };
+    if fall.gravity <= Fixed::ZERO || fall.max_fall <= Fixed::ZERO {
+        return Err(format!("{path}: `gravity` and `max_fall` must be positive"));
+    }
+    let response = parse_response(
+        table
+            .get("response")
+            .ok_or_else(|| format!("{path}: missing `response`"))?,
+        &format!("{path}.response"),
+    )?;
+    Ok(StingerKnock { fall, response })
 }
 
 /// Reads a keg's values. Errors start with `path`.

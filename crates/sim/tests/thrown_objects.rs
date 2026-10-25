@@ -471,6 +471,78 @@ fn a_rolling_metal_barrel_defeats_walkers_by_the_late_ranges() {
     }
 }
 
+/// metal-barrel.md, "Stingers": a metal barrel rolling right defeats a
+/// stinger that doesn't move on the frame after the end of the frame its
+/// offsets (`x` rounded up less the stinger's rounded down, and the
+/// stinger's height above the barrel, both `y` rounded up) are within
+/// -28 to 32 and -20 to 19, and goes on unaffected. The stinger holds
+/// still on the hit frame K, its speed across becoming -4, and on K + 1,
+/// its speed up becoming -6, then moves by 3.75 px left and 5.5625 px up
+/// on K + 2.
+#[test]
+fn a_rolling_metal_barrel_defeats_a_stinger_that_does_not_move() {
+    for above in [-21, -20, -5, 0, 10, 19, 20, 25] {
+        for offset in (-20..=70).step_by(7) {
+            let entity = format!(
+                "[[entities]]\ntype = \"stinger\"\nat = [{}, {}]",
+                300 + offset,
+                400 - above
+            );
+            let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", "\"canister\"");
+            let mut play = Play::new(&src);
+            play.throw_to(21 + 20);
+            let at = play.world.player.pos;
+            place(&mut play, at, 0, 0, false, true);
+            play.world.things[0].pos.x = f(300.0);
+            let mut hit_on = None;
+            for n in 0..40 {
+                play.hold(&[], 1);
+                assert_eq!(play.object().vx, speed(896), "{above} {offset}");
+                let stinger = &play.world.things[1];
+                let ceil = |v: Fixed| -(-v).floor();
+                let across = ceil(play.world.things[0].pos.x) - stinger.pos.x.floor();
+                let up = ceil(play.world.things[0].pos.y) - ceil(stinger.pos.y);
+                let inside = (-28..=32).contains(&across) && (-20..=19).contains(&up);
+                if hit_on.is_none() {
+                    assert_eq!(
+                        stinger.phase == Phase::Struck(0),
+                        inside,
+                        "{above} {offset}: frame {n}"
+                    );
+                    if inside {
+                        hit_on = Some(n);
+                    }
+                    continue;
+                }
+                let start = stinger.pos;
+                let k = n - hit_on.unwrap();
+                match k {
+                    1 => {
+                        assert_eq!((stinger.vx, stinger.pos), (f(-4.0), start));
+                        assert_eq!(stinger.phase, Phase::Struck(1));
+                    }
+                    2 => assert_eq!(stinger.phase, Phase::Knocked { vy: Some(f(-6.0)) }),
+                    _ => {}
+                }
+                if k == 3 {
+                    assert_eq!(stinger.vx, f(-960.0 / 256.0));
+                    assert_eq!(
+                        stinger.phase,
+                        Phase::Knocked {
+                            vy: Some(f(-5.5625))
+                        }
+                    );
+                }
+            }
+            assert_eq!(
+                hit_on.is_some(),
+                (-20..=19).contains(&above),
+                "{above} {offset}"
+            );
+        }
+    }
+}
+
 /// The same example's second case: 40 px further right, it's hit after
 /// the object's first bounce, on Q + 43, by the smaller area.
 #[test]

@@ -177,6 +177,9 @@ pub enum Phase {
     /// on the step after the hit (`vy` is `None`), then falling out of
     /// the level at `vy`.
     Knocked { vy: Option<Fixed> },
+    /// A stinger a thrown object defeated, this many frames into holding
+    /// still before it's knocked off (see [`things`](crate::things)).
+    Struck(u8),
     /// A launcher that fired this many frames ago.
     Fired(u8),
     /// A sling that caught the player this many frames ago (see
@@ -784,6 +787,7 @@ impl World {
                 Phase::LetGo { wait, .. } => [24, wait],
                 Phase::Flitting { .. } => [25, 0],
                 Phase::Waiting(falling) => [26, falling.map_or(0, |n| n.saturating_add(1))],
+                Phase::Struck(since) => [27, since],
             });
             if let Phase::Wobbling { thrown, .. } = t.phase {
                 out.push(thrown.map_or(0, |n| n.saturating_add(1)));

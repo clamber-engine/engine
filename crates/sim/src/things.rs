@@ -98,7 +98,7 @@ use clamber_fixed::Fixed;
 use clamber_level::{Dir, Level, Vec2};
 use clamber_pack::{Param, Physics};
 
-use crate::archetype::{Archetype, Behavior, Fall, Hit, Response, WalkerDrop};
+use crate::archetype::{Archetype, Behavior, Fall, Hit, Offsets, Response, Stinger, WalkerDrop};
 use crate::carry;
 use crate::columns;
 use crate::critter;
@@ -108,7 +108,9 @@ use crate::hidden;
 use crate::hutch;
 use crate::join;
 use crate::keg::Burst;
-use crate::player::{Act, Facing, HEIGHT, Player, SPEED_GRAIN, STEP, State, TINY, frames, is_wall};
+use crate::player::{
+    Act, Facing, HEIGHT, Player, SPEED_GRAIN, STEP, State, TINY, ceil, frames, is_wall,
+};
 use crate::pose::{self, SecondPose, Stance};
 use crate::ride;
 use crate::rope;
@@ -604,7 +606,42 @@ fn advance(
         | Phase::Caught(_)
         | Phase::Gone
         | Phase::Open => return false,
+        Phase::Struck(since) => {
+            // A stinger holds still the frame it's hit on, its speed
+            // across becoming the knock's, and the next, its speed up
+            // becoming the jump's (metal-barrel.md, "Stingers").
+            if let Behavior::Stinger(Stinger {
+                knock: Some(knock), ..
+            }) = archetype.behavior
+            {
+                thing.phase = if since == 0 {
+                    thing.vx = -knock.fall.knock;
+                    Phase::Struck(1)
+                } else {
+                    Phase::Knocked {
+                        vy: Some(-knock.fall.jump),
+                    }
+                };
+            }
+            return false;
+        }
         Phase::Knocked { vy } => {
+            if let Behavior::Stinger(Stinger {
+                knock: Some(knock), ..
+            }) = archetype.behavior
+            {
+                knocked(
+                    level,
+                    thing,
+                    &archetype,
+                    knock.response,
+                    None,
+                    knock.fall,
+                    vy,
+                );
+                fall_out(thing, physics, picture);
+                return false;
+            }
             if let Behavior::Walker {
                 response,
                 range,
@@ -989,6 +1026,7 @@ fn throw_hits(world: &mut World) -> Vec<Vec2> {
             thrower_early,
             thrower_turn,
             holder,
+            hit_stinger,
             ..
         } = archetype.behavior
         else {
@@ -1002,6 +1040,12 @@ fn throw_hits(world: &mut World) -> Vec<Vec2> {
         let pos = object.pos;
         let reach = if early { hit_early } else { hit }.bounds(pos, right);
         let walker = hit_walker(world, reach, right, Some((pos.y, early))).is_some();
+        if let Some(offsets) = hit_stinger
+            && right
+            && flight.rolling
+        {
+            strike_stinger(world, offsets, pos);
+        }
         if walker && holder.is_some() {
             world.things[i].active = false;
             freed.push(pos);
@@ -1040,6 +1084,37 @@ fn throw_hits(world: &mut World) -> Vec<Vec2> {
         freed.push(pos);
     }
     freed
+}
+
+/// Defeats the first stinger that doesn't move, and isn't hit already,
+/// that a metal barrel rolling right at `pos` hits (metal-barrel.md,
+/// "Stingers"): the barrel's `x` rounded up less the stinger's rounded
+/// down and the barrel's `y` rounded up less the stinger's are within
+/// `offsets`, as whole pixels at the end of the step. It holds still
+/// from the next step, and the barrel goes on as it was.
+fn strike_stinger(world: &mut World, offsets: Offsets, pos: Vec2) {
+    let (x, y) = (ceil(pos.x), ceil(pos.y));
+    let stinger = world.things.iter_mut().find(|t| {
+        let Some(Behavior::Stinger(s)) = t.archetype.map(|a| a.behavior) else {
+            return false;
+        };
+        let still =
+            (s.velocity.x, s.velocity.y) == (Fixed::ZERO, Fixed::ZERO) && s.reach == (0, 0, 0, 0);
+        let (across, above) = (x - t.pos.x.floor(), y - ceil(t.pos.y));
+        let ((a0, a1), (u0, u1)) = (offsets.across, offsets.above);
+        t.active
+            && still
+            && s.knock.is_some()
+            && matches!(t.phase, Phase::Swaying { .. })
+            && (i64::from(a0)..=i64::from(a1)).contains(&across)
+            && (i64::from(u0)..=i64::from(u1)).contains(&above)
+    });
+    if let Some(stinger) = stinger {
+        stinger.heading = Facing::Left;
+        stinger.phase = Phase::Struck(0);
+        let index = stinger.index;
+        world.flow.events.push(FlowEvent::Defeat(index));
+    }
 }
 
 /// The first thrower that isn't knocked out whose position an object at
