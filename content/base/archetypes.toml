@@ -1095,7 +1095,7 @@ hit_rise = 5
 # Rolling right, it defeats a stinger that doesn't move, whose offsets
 # from it are within [across from, to, above from, to] (metal-barrel.md,
 # "Stingers").
-hit_stinger = [-28, 32, -20, 19]
+hit_stinger = [-28, 32, -28, 19]
 # Rolling left, with its `x` rounded to the nearest.
 hit_stinger_left = [-25, 34, -20, 19]
 # The same, thrown by the second character: hit from further below.

@@ -539,13 +539,13 @@ fn a_metal_barrel_rolling_left_defeats_walkers_by_the_late_ranges() {
 /// stinger that doesn't move on the frame after the end of the frame its
 /// offsets (`x` rounded up less the stinger's rounded down, and the
 /// stinger's height above the barrel, both `y` rounded up) are within
-/// -28 to 32 and -20 to 19, and goes on unaffected. The stinger holds
+/// -28 to 32 and -28 to 19, and goes on unaffected. The stinger holds
 /// still on the hit frame K, its speed across becoming -4, and on K + 1,
 /// its speed up becoming -6, then moves by 3.75 px left and 5.5625 px up
 /// on K + 2.
 #[test]
 fn a_rolling_metal_barrel_defeats_a_stinger_that_does_not_move() {
-    for above in [-21, -20, -5, 0, 10, 19, 20, 25] {
+    for above in [-30, -29, -28, -21, -20, -5, 0, 10, 19, 20, 25] {
         for offset in (-20..=70).step_by(7) {
             let entity = format!(
                 "[[entities]]\ntype = \"stinger\"\nat = [{}, {}]",
@@ -566,7 +566,7 @@ fn a_rolling_metal_barrel_defeats_a_stinger_that_does_not_move() {
                 let ceil = |v: Fixed| -(-v).floor();
                 let across = ceil(play.world.things[0].pos.x) - stinger.pos.x.floor();
                 let up = ceil(play.world.things[0].pos.y) - ceil(stinger.pos.y);
-                let inside = (-28..=32).contains(&across) && (-20..=19).contains(&up);
+                let inside = (-28..=32).contains(&across) && (-28..=19).contains(&up);
                 if hit_on.is_none() {
                     assert_eq!(
                         stinger.phase == Phase::Struck(0),
@@ -577,6 +577,10 @@ fn a_rolling_metal_barrel_defeats_a_stinger_that_does_not_move() {
                         hit_on = Some(n);
                     }
                     continue;
+                }
+                // What a hit does to a stinger more than 20 px below isn't specified.
+                if above < -20 {
+                    break;
                 }
                 let start = stinger.pos;
                 let k = n - hit_on.unwrap();
@@ -600,7 +604,7 @@ fn a_rolling_metal_barrel_defeats_a_stinger_that_does_not_move() {
             }
             assert_eq!(
                 hit_on.is_some(),
-                (-20..=19).contains(&above),
+                (-28..=19).contains(&above),
                 "{above} {offset}"
             );
         }
