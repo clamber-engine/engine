@@ -89,6 +89,9 @@ pub enum State {
     Swim,
     /// Holding a rope (see [`rope`](crate::rope)).
     Hold,
+    /// Riding a thrown metal barrel (see
+    /// [`barrel_ride`](crate::barrel_ride)).
+    Astride,
 }
 
 impl State {
@@ -106,8 +109,20 @@ impl State {
             State::GroundAction => "ground_action",
             State::Swim => "swim",
             State::Hold => "rope",
+            State::Astride => "astride",
         }
     }
+}
+
+/// The thrown metal barrel the player rides.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Astride {
+    /// Its thing.
+    pub thing: usize,
+    /// Frames since the catch frame.
+    pub age: u8,
+    /// How far behind the barrel the player is, once that's known.
+    pub gap: Fixed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -327,6 +342,8 @@ pub struct Player {
     /// Jumped off an animal on the last step: this one is the jump's
     /// take-off frame.
     pub jumping_off: bool,
+    /// The thrown metal barrel being ridden, if any.
+    pub astride: Option<Astride>,
     /// Where the animal got off on this step was left, and the way it
     /// faces, until the animal is put there.
     pub left: Option<(Vec2, Facing)>,
@@ -446,6 +463,7 @@ impl Player {
             unseated: false,
             hopped_off: None,
             jumping_off: false,
+            astride: None,
             left: None,
             fall_top: None,
             spring: None,
@@ -692,6 +710,34 @@ impl Player {
         self.frozen = 0;
         self.sling = Some(slung);
         self.state = State::Fall;
+    }
+
+    /// Caught by a metal barrel rolling right: it stops with its feet
+    /// `rise` above the barrel's and `gap` behind it, and rides from the
+    /// next frame.
+    pub(crate) fn catch_on_barrel(&mut self, on: Astride, at: Vec2) {
+        self.vel = Vec2::default();
+        self.target = Fixed::ZERO;
+        self.pos = at;
+        self.astride = Some(on);
+        self.state = State::Astride;
+        self.clear_movement();
+        self.rope_run = false;
+        self.rope_fall = false;
+    }
+
+    /// Jumps off the barrel ridden: a jump that takes off on this frame,
+    /// at the barrel's speed across.
+    pub(crate) fn jump_off_barrel(&mut self, vx: Fixed, vy: Fixed) {
+        self.astride = None;
+        self.vel = Vec2::new(vx, vy);
+        self.target = Fixed::ZERO;
+        self.state = State::Jump;
+        self.jump_age = Some(0);
+        self.jump_hold = true;
+        self.jump_held_since_press = true;
+        self.approach = None;
+        self.rolled_jump = false;
     }
 
     /// Lets go of the rope held, if any, without moving.

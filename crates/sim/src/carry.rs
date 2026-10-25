@@ -334,6 +334,23 @@ fn can_hold(world: &World) -> bool {
         && world.flow.outcome == Outcome::Playing
 }
 
+/// Whether `thing` can be picked up: it rests, or it's a metal barrel
+/// rolling along the floor (metal-barrel.md, "Picking it up").
+fn lies_or_rolling(thing: &Thing) -> bool {
+    let metal = matches!(
+        thing.archetype.as_ref().map(|a| &a.behavior),
+        Some(Behavior::Carry {
+            turns_at_walls: true,
+            ..
+        })
+    );
+    match thing.phase {
+        Phase::Ready | Phase::Placed => true,
+        Phase::Thrown(f) => metal && f.rolling,
+        _ => false,
+    }
+}
+
 /// The object resting within the player's reach, or just set down: the
 /// nearest across, if more than one is. A holder lying where it's placed
 /// is within reach by its look ([`Holder::still_at`]), its `clock`
@@ -346,7 +363,7 @@ fn in_reach(world: &World) -> Option<usize> {
     world
         .things
         .iter()
-        .filter(|t| t.active && matches!(t.phase, Phase::Ready | Phase::Placed))
+        .filter(|t| t.active && lies_or_rolling(t))
         .filter_map(|t| {
             let Some(Archetype {
                 behavior: Behavior::Carry { reach, holder, .. },

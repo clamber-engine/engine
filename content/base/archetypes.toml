@@ -1069,7 +1069,8 @@ item_touch = 5
 
 # A metal barrel: what a hidden metal barrel's item becomes. Picked up and
 # carried as a barrel (carrying.md); thrown, it flies as one and turns back
-# at a wall instead of breaking, and defeats walkers as a barrel does
+# at a wall instead of breaking, defeats walkers as a barrel does, and
+# carries the first character that comes down onto it while it rolls right
 # (metal-barrel.md). What else it meets isn't covered; until it is, it's
 # the crate's values.
 [archetypes.canister]

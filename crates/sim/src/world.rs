@@ -10,6 +10,7 @@ use clamber_pack::{CharacterFeel, Feel, Param, Physics, Presets};
 use crate::archetype::{
     Archetype, ArchetypeError, Archetypes, Behavior, KEG_PIECES, Rope, Sling, Spring,
 };
+use crate::barrel_ride;
 use crate::carry::{self, Flight};
 use crate::collect;
 use crate::dimming::{self, Dimming};
@@ -1237,6 +1238,15 @@ fn player_bytes(out: &mut Vec<u8>, p: &Player) {
         }
         None => out.push(0),
     }
+    match p.astride {
+        Some(a) => {
+            out.push(1);
+            count(out, a.thing);
+            out.push(a.age);
+            fixed(out, a.gap);
+        }
+        None => out.push(0),
+    }
     out.extend(p.rope_last.map_or(u64::MAX, |n| n as u64).to_le_bytes());
     out.extend([
         p.rope_dir.map_or(0, |f| 1 + u8::from(f == Facing::Right)),
@@ -1499,6 +1509,8 @@ fn advance(world: &mut World, input: &InputFrame) {
             // The loss moves the characters.
         } else if ride::unseat(world) {
             // Knocked off the animal, the player doesn't move.
+        } else if barrel_ride::hold(world, &input.players[0]) {
+            // Riding a metal barrel, the player moves by its rules.
         } else if rope::hold(world, &input.players[0]) {
             // Holding a rope, the player moves by its rules.
         } else if !swap::update(world, &physics, &input.players[0]) {
@@ -1518,6 +1530,7 @@ fn advance(world: &mut World, input: &InputFrame) {
             sling::catch(world);
         }
         let hurt_now = things::update(world, start_pos, frozen);
+        barrel_ride::after(world);
         flow::update(world, hurt_by.or(hurt_now), facing);
         ending::pass(world, &input.players[0]);
         exit::take_over(world);

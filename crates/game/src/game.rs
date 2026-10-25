@@ -895,6 +895,7 @@ fn state_color(state: State) -> Color {
         State::GroundAction => rgb(0xd0, 0x80, 0xb0),
         State::Swim => rgb(0x50, 0xc8, 0xd0),
         State::Hold => rgb(0xa0, 0xb8, 0x70),
+        State::Astride => rgb(0xb8, 0xa0, 0x70),
     }
 }
 

@@ -63,6 +63,7 @@
 //! happens as a trace (`spec/traces/FORMAT.md`).
 
 mod archetype;
+mod barrel_ride;
 mod carry;
 mod collect;
 mod columns;
@@ -128,8 +129,8 @@ pub use join::Join;
 pub use keg::{Burst, Resume};
 pub use loss::{Loss, Lost};
 pub use player::{
-    Act, Boost, Crouch, FaceSwitch, Facing, Gait, GroundAction, HALF_WIDTH, HEIGHT, Hands, Holds,
-    Knockout, Landing, Player, ROLL, Roll, RollSize, SWAP_FRAMES, State, Stride,
+    Act, Astride, Boost, Crouch, FaceSwitch, Facing, Gait, GroundAction, HALF_WIDTH, HEIGHT, Hands,
+    Holds, Knockout, Landing, Player, ROLL, Roll, RollSize, SWAP_FRAMES, State, Stride,
 };
 pub use pose::{
     Air, Pose, PoseClock, SecondPose, Stance, hurt_pose, pose, second_pose, second_pose_held,
