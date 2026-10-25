@@ -257,11 +257,11 @@ fn letting_go_during_a_pick_up_with_down_held_throws_when_down_is_let_go_of() {
     assert_eq!(play.step(&[]).act, Some(Act::Throw));
 }
 
-/// Down held on every frame up to and including G + 15 puts the object
-/// down from G + 16, whether or not down is still held then.
+/// Down held on every frame up to and including G + 15: Q is G + 16, a
+/// put-down if down is held on it and a throw if not (spec-v0.345.0).
 #[test]
-fn down_held_through_the_pick_up_puts_the_object_down() {
-    for last in [&[Down][..], &[][..]] {
+fn down_held_through_the_pick_up_puts_down_only_if_held_on_q() {
+    for (last, act) in [(&[Down][..], Act::PutDown), (&[][..], Act::Throw)] {
         let mut play = Play::near();
         play.hold(&[A], 5);
         for _ in 0..11 {
@@ -269,7 +269,7 @@ fn down_held_through_the_pick_up_puts_the_object_down() {
             assert_ne!(row.act, Some(Act::Throw));
             assert_ne!(row.act, Some(Act::PutDown));
         }
-        assert_eq!(play.step(last).act, Some(Act::PutDown));
+        assert_eq!(play.step(last).act, Some(act));
     }
 }
 
@@ -293,14 +293,17 @@ fn the_second_character_s_throw_waits_for_down_the_same_way() {
     assert_ne!(play.step(&[Down]).act, Some(Act::Throw));
     assert_eq!(play.step(&[]).act, Some(Act::Throw));
 
-    let mut play = Play::second();
-    play.hold(&[A], 5);
-    for _ in 0..6 {
-        let row = play.step(&[Down]);
-        assert_ne!(row.act, Some(Act::Throw));
-        assert_ne!(row.act, Some(Act::PutDown));
+    // Q is G + 11: a put-down with down held on it, a throw without.
+    for (last, act) in [(&[Down][..], Act::PutDown), (&[][..], Act::Throw)] {
+        let mut play = Play::second();
+        play.hold(&[A], 5);
+        for _ in 0..6 {
+            let row = play.step(&[Down]);
+            assert_ne!(row.act, Some(Act::Throw));
+            assert_ne!(row.act, Some(Act::PutDown));
+        }
+        assert_eq!(play.step(last).act, Some(act));
     }
-    assert_eq!(play.step(&[]).act, Some(Act::PutDown));
 }
 
 #[test]

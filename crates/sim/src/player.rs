@@ -2660,28 +2660,17 @@ impl Player {
             self.turn = None;
             self.hands = Some(Hands::new(thing, Act::PickUp));
         }
-        if let Some(hands) = &mut self.hands
-            && matches!(hands.act, Act::PickUp | Act::Carry)
-            && held(Action::Action)
-        {
-            hands.waiting = false;
-        }
         if let Some(hands) = self.hands
             && matches!(hands.act, Act::PickUp | Act::Carry)
             && !held(Action::Action)
         {
             // With down held, letting go during the pick-up waits: the
-            // throw comes on the first frame without it, or the object
-            // is put down once the pick-up is over.
+            // throw comes on the first frame without it. If it's held
+            // through the pick-up, the frame after is Q: the object is
+            // put down if down is held on it too, and thrown if not.
             let in_window = u32::from(hands.frame) < u32::from(time(Param::PickUpDownHold));
-            if in_window && held(Action::Down) {
-                if let Some(h) = &mut self.hands {
-                    h.waiting = true;
-                }
-            } else {
-                let down = hands.act == Act::Carry
-                    && self.grounded()
-                    && (held(Action::Down) || hands.waiting);
+            if !(in_window && held(Action::Down)) {
+                let down = hands.act == Act::Carry && self.grounded() && held(Action::Down);
                 let act = if down { Act::PutDown } else { Act::Throw };
                 self.hands = Some(Hands::new(hands.thing, act));
                 if act == Act::Throw {
@@ -3973,10 +3962,6 @@ pub struct Hands {
     /// During a throw or a put-down, the frame of the latest action press
     /// that may start a roll or pick the object up again.
     pub press: Option<u8>,
-    /// Action was let go of with down held during the pick-up, and the
-    /// throw or put-down waits for down to be let go of or the pick-up
-    /// to end.
-    pub waiting: bool,
 }
 
 impl Hands {
@@ -3986,7 +3971,6 @@ impl Hands {
             act,
             frame: 0,
             press: None,
-            waiting: false,
         }
     }
 }

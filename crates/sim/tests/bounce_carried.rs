@@ -51,7 +51,6 @@ fn falling(facing: Facing, preset: &str, character: usize) -> World {
         act: Act::Carry,
         frame: 30,
         press: None,
-        waiting: false,
     });
     world.things[1].phase = Phase::Held;
     world.player.ground = None;

@@ -69,7 +69,6 @@ fn carrying(player_x: f64, facing: Facing, kind: &str, walker: (f64, f64, &str))
         act: Act::Carry,
         frame: 30,
         press: None,
-        waiting: false,
     });
     world.things[1].phase = Phase::Held;
     world
@@ -258,7 +257,6 @@ fn a_crate_just_picked_up_doesnt_break_on_its_first_carried_frame() {
         act: Act::PickUp,
         frame: 14,
         press: None,
-        waiting: false,
     });
     carry_step(&mut w);
     assert_eq!(w.player.hands.map(|h| h.act), Some(Act::Carry));
@@ -315,7 +313,6 @@ fn hurt_during(act: Act, frame: u8) -> bool {
         act,
         frame: frame - 1,
         press: None,
-        waiting: false,
     });
     let held: Actions = match act {
         Act::PickUp | Act::Carry => Action::Action.into(),
@@ -360,7 +357,6 @@ fn bounces_throwing(frame: u8) -> bool {
             act: Act::Throw,
             frame: frame - 1,
             press: None,
-            waiting: false,
         });
     }
     step(
@@ -453,14 +449,12 @@ fn step_to(w: &mut World, act: Act, frame: u8) {
             act: Act::Carry,
             frame: 30,
             press: None,
-            waiting: false,
         },
         _ => Hands {
             thing: 1,
             act,
             frame: frame - 1,
             press: None,
-            waiting: false,
         },
     });
     let action: Actions = Action::Action.into();
