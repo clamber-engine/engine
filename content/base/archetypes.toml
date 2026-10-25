@@ -1097,7 +1097,7 @@ hit_rise = 5
 # "Stingers").
 hit_stinger = [-28, 32, -28, 19]
 # Rolling left, with its `x` rounded to the nearest.
-hit_stinger_left = [-25, 34, -20, 19]
+hit_stinger_left = [-25, 34, -28, 19]
 # The same, thrown by the second character: hit from further below.
 hit_stinger_left_second = [-25, 34, -28, 19]
 size = [32, 24]

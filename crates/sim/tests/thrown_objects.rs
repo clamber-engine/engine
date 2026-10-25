@@ -471,6 +471,42 @@ fn a_rolling_metal_barrel_defeats_walkers_by_the_late_ranges() {
     }
 }
 
+/// metal-barrel.md, "Rolling right on the flat floor", walkers: after the
+/// hit the walker's frames are those of thrown-objects.md, "The walker",
+/// knocked left: -4 px a frame on K, -960/256 on K + 1, then the same
+/// steps as a walker hit by an ordinary barrel.
+#[test]
+fn a_walker_hit_by_a_rolling_metal_barrel_is_knocked_off_as_by_a_barrel() {
+    let run = |kind: &str| {
+        let entity = format!(
+            "[[entities]]\ntype = \"crawler\"\nat = [100, 400]\nparams = {{ {SMALL_WALKER} }}"
+        );
+        let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", kind);
+        let mut play = Play::new(&src);
+        play.throw_to(21 + 20);
+        let at = play.world.player.pos;
+        place(&mut play, at, 0, 0, false, true);
+        play.world.things[0].pos.x = f(300.0);
+        play.world.things[1].pos.x = f(300.0);
+        let mut rows = Vec::new();
+        for _ in 0..30 {
+            play.hold(&[], 1);
+            if play.world.flow.events.contains(&FlowEvent::Defeat(1)) || !rows.is_empty() {
+                rows.push(walker(&play));
+            }
+        }
+        rows
+    };
+    let metal = run("\"canister\"");
+    assert_eq!(metal[0].2, f(-4.0));
+    assert_eq!(metal[1].2, f(-3.75));
+    assert!(metal.len() > 10);
+    // The walker keeps being knocked off as by a barrel thrown the same way.
+    let barrel = run("\"crate\"");
+    let n = metal.len().min(barrel.len());
+    assert_eq!(metal[..2.min(n)], barrel[..2.min(n)]);
+}
+
 /// metal-barrel.md, "Rolling left on the flat floor": a metal barrel
 /// rolling left long after it left the hands defeats walkers by the
 /// ranges of the "t of 17 or more" column, knocking them right at 4 px a
@@ -613,12 +649,12 @@ fn a_rolling_metal_barrel_defeats_a_stinger_that_does_not_move() {
 
 /// metal-barrel.md, "Rolling left": as for rolling right, with the
 /// barrel's `x` rounded to the nearest (halves up), the hit is at offsets
-/// of -25 to 34 and -20 to 19, and the knock-off is mirrored: the
+/// of -25 to 34 and -28 to 19, and the knock-off is mirrored: the
 /// stinger's speed across becomes +4 and it moves 3.75 px right on
 /// K + 2.
 #[test]
 fn a_metal_barrel_rolling_left_defeats_a_stinger_that_does_not_move() {
-    for above in [-21, -20, -5, 0, 10, 19, 20, 25] {
+    for above in [-30, -29, -28, -21, -20, -5, 0, 10, 19, 20, 25] {
         for offset in (-50..=10).step_by(4) {
             let entity = format!(
                 "[[entities]]\ntype = \"stinger\"\nat = [{}, {}]",
@@ -640,7 +676,7 @@ fn a_metal_barrel_rolling_left_defeats_a_stinger_that_does_not_move() {
                 let near = (play.world.things[0].pos.x + f(0.5)).floor();
                 let across = near - stinger.pos.x.floor();
                 let up = ceil(play.world.things[0].pos.y) - ceil(stinger.pos.y);
-                let inside = (-25..=34).contains(&across) && (-20..=19).contains(&up);
+                let inside = (-25..=34).contains(&across) && (-28..=19).contains(&up);
                 if hit_on.is_none() {
                     assert_eq!(
                         stinger.phase == Phase::Struck(0),
@@ -651,6 +687,10 @@ fn a_metal_barrel_rolling_left_defeats_a_stinger_that_does_not_move() {
                         hit_on = Some(n);
                     }
                     continue;
+                }
+                // What a hit does to a stinger more than 20 px below isn't specified.
+                if above < -20 {
+                    break;
                 }
                 let start = stinger.pos;
                 match n - hit_on.unwrap() {
@@ -673,7 +713,7 @@ fn a_metal_barrel_rolling_left_defeats_a_stinger_that_does_not_move() {
             }
             assert_eq!(
                 hit_on.is_some(),
-                (-20..=19).contains(&above),
+                (-28..=19).contains(&above),
                 "{above} {offset}"
             );
         }
