@@ -461,7 +461,14 @@ pub(crate) fn fly(
     let launch = flight.launch;
     flight.launch = false;
     if flight.thrown {
-        if bounce_and_roll(level, thing, flight, slope, holder.is_some()) {
+        let turns = matches!(
+            archetype.behavior,
+            Behavior::Carry {
+                turns_at_walls: true,
+                ..
+            }
+        );
+        if bounce_and_roll(level, thing, flight, slope, holder.is_some(), turns) {
             thing.active = false;
             return true;
         }
@@ -552,19 +559,32 @@ pub(crate) fn holder(archetype: &Archetype) -> Option<Holder> {
 /// in its own column, and touching the floor there, is put on it.
 /// Returns whether it broke holding the character; it's left where it
 /// broke.
+///
+/// One that `turns` doesn't break at a wall (metal-barrel.md): it doesn't
+/// move across, losing the fraction of a pixel of its `x`, and goes on at
+/// the speed it rolls at, away from the wall, while falling, bouncing or
+/// rolling in its own column as it would have.
 fn bounce_and_roll(
     level: &Level,
     thing: &mut Thing,
     mut flight: Flight,
     slope: Fixed,
     holds: bool,
+    turns: bool,
 ) -> bool {
     let pos = thing.pos;
-    let x = pos.x + flight.vx;
-    let to = column(x);
+    let mut x = pos.x + flight.vx;
+    let mut to = column(x);
     let dir = if flight.right() { 1 } else { -1 };
     let from = column(pos.x);
-    let wall = columns::breaks_object(level, from, to, dir, pos.y, slope);
+    let mut wall = columns::breaks_object(level, from, to, dir, pos.y, slope);
+    if wall && turns && !holds {
+        wall = false;
+        x = Fixed::from_int(pos.x.floor() as i32);
+        to = from;
+        flight.target = -Fixed::from_int(dir) * flight.target.abs();
+        flight.vx = flight.target;
+    }
     if wall && holds {
         let (y, touch) = fall(level, from, pos.y, &mut flight);
         thing.pos = Vec2::new(pos.x, touch.unwrap_or(y));

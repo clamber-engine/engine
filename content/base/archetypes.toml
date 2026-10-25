@@ -1067,12 +1067,13 @@ item_gravity = 0.25
 item_max_fall = 6
 item_touch = 5
 
-# A metal barrel: what a hidden metal barrel's item becomes. The spec
-# covers picking it up and carrying it as a barrel (carrying.md), not
-# how it moves when thrown or what it meets; until it does, it's the
-# crate's values throughout.
+# A metal barrel: what a hidden metal barrel's item becomes. Picked up and
+# carried as a barrel (carrying.md); thrown, it flies as one and turns back
+# at a wall instead of breaking (metal-barrel.md). What it meets besides
+# walls isn't covered; until it is, it's the crate's values.
 [archetypes.canister]
 behavior = "carry"
+turns_at_walls = true
 size = [32, 24]
 offset = 0
 reach = { right = [-7, 38], left = [-33, 12], below = [-22, 32] }

@@ -202,6 +202,34 @@ fn breaks_against_a_wall() {
     }
 }
 
+/// metal-barrel.md, "Turning back at a wall": a metal barrel that meets a
+/// wall doesn't break. It stays where it is across, whole pixels only,
+/// goes away from it at 3.5 px per frame, and rolls on.
+#[test]
+fn a_metal_barrel_turns_back_at_a_wall() {
+    let wall = "[[collision]]\nshape = \"rect\"\nrect = [300, 200, 20, 200]";
+    let src = level(&format!("{FLAT}\n{wall}")).replace("\"crate\"", "\"canister\"");
+    let mut play = Play::new(&src);
+    play.throw_to(21);
+    let mut turned = None;
+    for n in 0..80 {
+        let before = play.world.things[0].pos;
+        play.step(&[]);
+        let thing = &play.world.things[0];
+        assert!(thing.active, "{n}");
+        assert!(thing.pos.x < f(300.0), "{n}");
+        if turned.is_none() && play.object().vx.is_negative() {
+            turned = Some(n);
+            assert_eq!(thing.pos.x, Fixed::from_int(before.x.floor() as i32));
+            assert_eq!(play.object().vx, speed(-896));
+        }
+    }
+    assert!(turned.is_some());
+    assert!(play.world.things[0].pos.x < f(300.0) - f(100.0));
+    assert!(play.object().rolling);
+    assert_eq!(play.object().vx, speed(-896));
+}
+
 /// thrown-objects.md, "Rolling": it rolls up and down slopes of 1 px per
 /// 4 columns on their floor, without breaking.
 #[test]
