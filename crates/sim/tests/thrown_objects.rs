@@ -1401,3 +1401,62 @@ fn hits_a_walker_by_the_second_character_s_object_later_by_the_smaller_area() {
     }
     assert!(hit.is_some_and(|n| n >= 35), "{hit:?}");
 }
+
+/// metal-barrel.md, "The thrower and its balls": carried, a metal barrel
+/// that meets a ball or a thrower doesn't break. It moves up at 5 px per
+/// frame, then falls by 0.4375 a frame to 8, straight down through the
+/// floor, and is removed far below. The player carries nothing.
+#[test]
+fn a_metal_barrel_in_the_hands_falls_through_the_floor_on_a_ball_or_a_thrower() {
+    for with_ball in [true, false] {
+        let more = if with_ball {
+            BALL.to_string()
+        } else {
+            thrower(300, 100)
+        };
+        let src = level(&format!("{FLAT}\n{more}")).replace("\"crate\"", "\"canister\"");
+        let mut play = Play::new(&src);
+        play.world.player.facing = Facing::Left;
+        let mut control = Play {
+            world: play.world.clone(),
+            held: play.held,
+        };
+        control.world.things[1].active = false;
+        control.step(&[A]);
+        let head = control.world.things[0].pos;
+        let up = |v: Fixed| -(-v).floor();
+        let at = Vec2::new(
+            Fixed::from_int(head.x.floor() as i32 - 20),
+            Fixed::from_int(up(head.y) as i32),
+        );
+        if with_ball {
+            put_ball(&mut play, at, Fixed::ZERO, 0);
+        } else {
+            play.world.things[1].pos = at;
+        }
+        play.step(&[A]);
+        assert!(play.world.player.hands.is_none());
+        let thing = &play.world.things[0];
+        assert!(thing.active, "ball: {with_ball}");
+        let x = thing.pos.x;
+        let Phase::LetGo { vy, .. } = thing.phase else {
+            panic!("{:?}", thing.phase);
+        };
+        assert_eq!(vy, f(-5.0));
+        let mut last = vy;
+        let mut steps = 0;
+        while play.world.things[0].active {
+            play.step(&[]);
+            let thing = &play.world.things[0];
+            if let Phase::LetGo { vy, .. } = thing.phase {
+                assert_eq!(vy, (last + f(0.4375)).min(f(8.0)));
+                last = vy;
+                assert_eq!(thing.pos.x, x);
+            }
+            steps += 1;
+            assert!(steps < 200);
+        }
+        assert!(last == f(8.0), "reached its top speed");
+        assert!(play.world.things[0].pos.y > f(400.0), "through the floor");
+    }
+}

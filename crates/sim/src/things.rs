@@ -1187,8 +1187,10 @@ fn hands_hits(world: &mut World, physics: &Physics) -> (Option<Vec2>, Option<usi
     let thrower =
         thrower_at(world, box_, thrower_turn, pos, right).filter(|_| holder.is_none() && !lifting);
     let mut walker = None;
+    let mut on_thrower = false;
     if let Some(index) = thrower {
         knock_out(world, index);
+        on_thrower = true;
     } else {
         let bounced = world.events.contains(&Event::Bounce);
         let held = carried && hands.frame > frames(physics[Param::PickUpTime]);
@@ -1217,13 +1219,37 @@ fn hands_hits(world: &mut World, physics: &Physics) -> (Option<Vec2>, Option<usi
             world.player.pose.carried_air = true;
         }
     }
-    // Its pieces aren't in the spec.
-    world.things[hands.thing].active = false;
+    if on_thrower {
+        break_held(world, hands.thing, pos);
+    } else {
+        // Its pieces aren't in the spec.
+        world.things[hands.thing].active = false;
+    }
     if carried {
         world.player.hands = None;
     }
     let freed = holder.map(|_| pos);
     (freed, walker)
+}
+
+/// Breaks the object `index`, in the player's hands at `pos`, on a
+/// thrower or a ball. A metal barrel doesn't: it has no pieces, and
+/// falls straight down from a small move up, through everything, and is
+/// removed far below the picture (metal-barrel.md, "The thrower and its
+/// balls"); the other kinds' pieces aren't in the spec.
+fn break_held(world: &mut World, index: usize, pos: Vec2) {
+    let thing = &mut world.things[index];
+    let rise = match thing.archetype.map(|a| a.behavior) {
+        Some(Behavior::Carry { hit_rise, .. }) => hit_rise,
+        _ => None,
+    };
+    let Some(rise) = rise else {
+        thing.active = false;
+        return;
+    };
+    thing.pos = pos;
+    thing.vx = Fixed::ZERO;
+    thing.phase = Phase::LetGo { vy: -rise, wait: 0 };
 }
 
 /// Each ball there is now: its index, where it is, and the part of its
@@ -1312,8 +1338,8 @@ fn meet_balls(world: &mut World, before: &[(usize, Vec2, Option<usize>)], physic
             world.things[ball].active = false;
         }
         if held {
-            // Its pieces aren't in the spec.
-            world.things[i].active = false;
+            let at = carry::in_hands(&world.player, &world.things[i]);
+            break_held(world, i, at);
             if hands.is_some_and(|h| h.act == Act::Carry) {
                 world.player.hands = None;
             }

@@ -1071,11 +1071,13 @@ item_touch = 5
 # carried as a barrel (carrying.md); thrown, it flies as one and turns back
 # at a wall instead of breaking, defeats walkers as a barrel does, and
 # carries the first character that comes down onto it while it rolls right
-# (metal-barrel.md). What else it meets isn't covered; until it is, it's
-# the crate's values.
+# (metal-barrel.md). In the hands it doesn't break on a thrower or a ball:
+# it rises at `hit_rise` and falls through the floor. What else it meets
+# isn't covered; until it is, it's the crate's values.
 [archetypes.canister]
 behavior = "carry"
 turns_at_walls = true
+hit_rise = 5
 size = [32, 24]
 offset = 0
 reach = { right = [-7, 38], left = [-33, 12], below = [-22, 32] }

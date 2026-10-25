@@ -95,7 +95,9 @@ pub enum Behavior {
     /// With `balls`, it meets balls. With a
     /// `holder`, it holds the missing character. With `opens`, it opens
     /// wall exits. With `turns_at_walls`, thrown, it turns back from a
-    /// wall instead of breaking on it (metal-barrel.md).
+    /// wall instead of breaking on it (metal-barrel.md). With a
+    /// `hit_rise`, in the hands it doesn't break on a thrower or a ball:
+    /// it moves up at that speed and falls through everything.
     Carry {
         reach: Grab,
         hit: Hit,
@@ -110,6 +112,7 @@ pub enum Behavior {
         holder: Option<Holder>,
         opens: Option<Opens>,
         turns_at_walls: bool,
+        hit_rise: Option<Fixed>,
     },
     /// A collectible the player takes from within its [`Reach`] (see
     /// [`collect`](crate::collect)). It adds `worth` to the collectible
@@ -1800,6 +1803,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "hit_early_time",
             "holds_character",
             "turns_at_walls",
+            "hit_rise",
             "holder_window",
             "hit_thrower",
             "hit_thrower_early",
@@ -2237,6 +2241,10 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 Some(Value::Boolean(true)) => true,
                 Some(_) => return Err(format!("{path}.turns_at_walls: expected true or false")),
             };
+            let hit_rise = match table.contains_key("hit_rise") {
+                true => Some(number("hit_rise")?),
+                false => None,
+            };
             Behavior::Carry {
                 reach,
                 hit: hit("hit")?,
@@ -2251,6 +2259,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 holder,
                 opens,
                 turns_at_walls,
+                hit_rise,
             }
         }
         "collect" => {
