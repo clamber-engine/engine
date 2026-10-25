@@ -632,6 +632,111 @@ fn a_metal_barrel_thrown_by_the_second_character_rolling_left_defeats_walkers() 
     }
 }
 
+/// metal-barrel.md, "Rolling left on the flat floor", walkers: the
+/// walker's frames after the hit are those of thrown-objects.md, "The
+/// walker", knocked right (d = -1): +4 px per frame on K, +960/256 on
+/// K + 1, then as a walker hit by an ordinary barrel rolling left.
+#[test]
+fn a_walker_hit_by_a_metal_barrel_rolling_left_is_knocked_off_to_the_right() {
+    let run = |kind: &str, facing: &str, offset: i32| {
+        let params = SMALL_WALKER
+            .replace("facing = \"left\"", &format!("facing = \"{facing}\""))
+            .replace("speed = 1", "speed = 0");
+        let entity =
+            format!("[[entities]]\ntype = \"crawler\"\nat = [100, 400]\nparams = {{ {params} }}");
+        let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", kind);
+        let mut play = Play::new(&src);
+        play.throw_to(21 + 20);
+        let at = play.world.player.pos;
+        place(&mut play, at, -1, 0, false, true);
+        play.world.things[0].pos.x = f(440.0);
+        play.world.things[1].pos.x = f(440.0 + offset as f64);
+        let mut rows = Vec::new();
+        for _ in 0..80 {
+            play.hold(&[], 1);
+            if play.world.flow.events.contains(&FlowEvent::Defeat(1)) || !rows.is_empty() {
+                rows.push(walker(&play));
+            }
+        }
+        rows
+    };
+    for facing in ["left", "right"] {
+        for offset in (-100..=-10).step_by(3) {
+            let metal = run("\"canister\"", facing, offset);
+            assert_eq!(metal[0].2, f(4.0), "{facing} {offset}");
+            assert_eq!(metal[1].2, speed(960), "{facing} {offset}");
+            assert!(metal.len() > 10, "{facing} {offset}");
+            // A walker hit by an ordinary barrel the same way follows the
+            // same rule.
+            let barrel = run("\"crate\"", facing, offset);
+            let n = metal.len().min(barrel.len());
+            assert_eq!(metal[..n], barrel[..n], "{facing} {offset}");
+        }
+    }
+}
+
+/// metal-barrel.md, "Rolling right, thrown by the second character": a
+/// barrel thrown right, rolling on the flat floor 37 frames after it left
+/// the hands, defeats a walker on the first frame its offset is within the
+/// range's lower end (the table's "t of 17 or more" column, a large
+/// walker facing right one pixel earlier in some runs), knocking it left
+/// at 4 px per frame; the barrel is unaffected.
+#[test]
+fn a_metal_barrel_thrown_right_by_the_second_character_defeats_walkers() {
+    let medium = SMALL_WALKER.replace(
+        "size = [20, 12], offset = 0.5",
+        "size = [25, 25], offset = 5.0",
+    );
+    let large = SMALL_WALKER.replace("size = [20, 12]", "size = [26, 38]");
+    let kinds = [
+        (SMALL_WALKER, [-23, -22]),
+        (medium.as_str(), [-30, -20]),
+        (large.as_str(), [-26, -25]),
+    ];
+    let run = |params: &str, facing: &str, diff: i32| {
+        let params = params
+            .replace("facing = \"left\"", &format!("facing = \"{facing}\""))
+            .replace("speed = 1", "speed = 0");
+        let entity =
+            format!("[[entities]]\ntype = \"crawler\"\nat = [100, 400]\nparams = {{ {params} }}");
+        let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", "\"canister\"");
+        let mut play = second_play(&src);
+        play.throw_to(18 + 36);
+        let barrel = play.world.things[0].pos.x;
+        play.world.things[1].pos.x = barrel - f(diff as f64);
+        let mut rows = Vec::new();
+        let mut hit = None;
+        let mut before = i64::from(diff);
+        for n in 0..14 {
+            play.hold(&[], 1);
+            let thing = &play.world.things[0];
+            rows.push((thing.pos, play.object().vx));
+            if hit.is_none() && play.world.flow.events.contains(&FlowEvent::Defeat(1)) {
+                hit = Some((n, before));
+                assert_eq!(play.world.things[1].vx, f(-4.0), "{params} {diff}");
+            }
+            before = thing.pos.x.floor() - play.world.things[1].pos.x.floor();
+        }
+        (hit, rows)
+    };
+    for (params, lows) in kinds {
+        for (facing, low) in ["left", "right"].into_iter().zip(lows) {
+            // The second character is level with nothing on the way; the
+            // barrel's own frames are the same with the walker far ahead.
+            let (_, free) = run(params, facing, -300);
+            for diff in -40..=3 {
+                let (hit, rows) = run(params, facing, diff);
+                assert_eq!(rows, free, "{params} {facing} {diff}: barrel changed");
+                let (n, at) = hit.unwrap_or_else(|| panic!("{params} {facing} {diff}: no hit"));
+                // `at` is the difference on the frame before the hit: the
+                // first one in range, except that a large walker facing
+                // right was hit a pixel early in some runs.
+                assert!(n == 0 || at < low, "{params} {facing} {diff}: late");
+            }
+        }
+    }
+}
+
 /// metal-barrel.md, "Stingers": a metal barrel rolling right defeats a
 /// stinger that doesn't move on the frame after the end of the frame its
 /// offsets (`x` rounded up less the stinger's rounded down, and the
