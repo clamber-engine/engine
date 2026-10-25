@@ -68,6 +68,7 @@ impl Play {
             age: 30,
             wait: 0,
             launch: false,
+            second: false,
         });
         let p = &mut world.player;
         p.pos = Vec2::new(f(x), f(y));

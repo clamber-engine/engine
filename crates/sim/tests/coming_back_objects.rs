@@ -323,6 +323,7 @@ fn thrown() -> Phase {
         age: 30,
         wait: 0,
         launch: false,
+        second: false,
     })
 }
 

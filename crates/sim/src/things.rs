@@ -1039,6 +1039,7 @@ fn throw_hits(world: &mut World) -> Vec<Vec2> {
             holder,
             hit_stinger,
             hit_stinger_left,
+            hit_stinger_left_second,
             ..
         } = archetype.behavior
         else {
@@ -1053,7 +1054,11 @@ fn throw_hits(world: &mut World) -> Vec<Vec2> {
         let reach = if early { hit_early } else { hit }.bounds(pos, right);
         let walker = hit_walker(world, reach, right, Some((pos.y, early))).is_some();
         if flight.rolling
-            && let Some(offsets) = if right { hit_stinger } else { hit_stinger_left }
+            && let Some(offsets) = match (right, flight.second) {
+                (true, _) => hit_stinger,
+                (false, false) => hit_stinger_left,
+                (false, true) => hit_stinger_left_second.or(hit_stinger_left),
+            }
         {
             strike_stinger(world, offsets, pos, right);
         }

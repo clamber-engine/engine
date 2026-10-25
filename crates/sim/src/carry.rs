@@ -112,6 +112,8 @@ pub struct Flight {
     /// Its first move is the one after a bounce's: it ends with `vy` at
     /// one speed grain.
     pub launch: bool,
+    /// Thrown by the second character.
+    pub second: bool,
 }
 
 impl Flight {
@@ -242,6 +244,7 @@ pub(crate) fn after(world: &mut World) {
                 age: 0,
                 wait: 0,
                 launch: false,
+                second: world.player.character != 0,
             });
         }
         Act::PutDown if hands.frame == set_down => {
@@ -403,6 +406,7 @@ fn drop(thing: &mut Thing, physics: &Physics) {
         age: 0,
         wait: 0,
         launch: false,
+        second: false,
     });
 }
 
@@ -445,6 +449,7 @@ pub(crate) fn release_on_bounce(world: &mut World, wait: u8) -> bool {
         age: 0,
         wait,
         launch: true,
+        second: world.player.character != 0,
     });
     world.player.hands = None;
     true

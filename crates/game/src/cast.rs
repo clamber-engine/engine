@@ -2718,6 +2718,7 @@ mod tests {
             age: 0,
             wait: 0,
             launch: false,
+            second: false,
         });
         thing
     }
