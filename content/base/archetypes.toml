@@ -687,6 +687,10 @@ in_hands_second_put_down = [
     [12, 8], [12, 8], [14, 3], [14, 3], [16, -1], [16, -1], [16, -7],
     [16, -7], [12, 3], [12, 3], [12, 3],
 ]
+# Carried (spec/behavior/thrown-objects.md, "The second character"): the
+# spec gives 11 to 12 px ahead and 9 to 11 px above, not which frame has
+# which; the engine holds it 12 ahead (where the pick-up ends) and 10 up.
+in_hands_second_carried = [[12, 10]]
 # title-1's (spec/behavior/thrown-objects.md, "Hitting a ball"), the
 # ranges of I and H turned around, early and late as for the thrower.
 # Moving left I is 1 less (the box moved 1 px right); upside down (the second and third

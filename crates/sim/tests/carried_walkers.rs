@@ -5,10 +5,12 @@
 //! with the object where carrying.md ("The object in the hands") puts
 //! it.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::Level;
+use clamber_pack::{CharacterFeel, Presets};
 use clamber_sim::{
     Act, Event, Facing, Fixed, FlowEvent, Hands, InputFrame, Phase, World, generic_feel, step,
 };
@@ -54,10 +56,12 @@ fn carrying(player_x: f64, facing: Facing, kind: &str, walker: (f64, f64, &str))
         player_x.floor()
     );
     let level = Level::from_toml_str(&src, "carried").unwrap();
-    let mut world = World::new(
-        Arc::new(level),
-        Arc::new(generic_feel("classic-1").unwrap()),
-    );
+    let mut feel = generic_feel("classic-1").unwrap();
+    feel.roster.push(CharacterFeel {
+        physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+        abilities: BTreeMap::new(),
+    });
+    let mut world = World::new(Arc::new(level), Arc::new(feel));
     world.player.pos.x = fx(player_x);
     world.player.facing = facing;
     world.player.hands = Some(Hands {
@@ -683,4 +687,94 @@ fn the_walker_hit_during_a_put_down_can_still_hurt_on_the_next_frame() {
     let down: Actions = Action::Down.into();
     step(&mut w, &InputFrame::single(Frame::after(down, down)));
     assert!(w.events.contains(&Event::Hurt));
+}
+
+/// Whether the crate the second character carries, with the object at
+/// `object_x`, breaks on a still walker of `kind` at 300 facing `heading`
+/// on the first step, the player standing on its floor.
+fn second_breaks(kind: &str, object_x: i32, facing: Facing, heading: &str) -> bool {
+    let ahead = if facing == Facing::Right { 12 } else { -12 };
+    let mut w = carrying(
+        f64::from(object_x - ahead),
+        facing,
+        kind,
+        (300.0, 0.0, heading),
+    );
+    w.player.character = 1;
+    carry_step(&mut w);
+    let broke = !w.things[1].active;
+    assert_eq!(broke, w.player.hands.is_none());
+    broke
+}
+
+#[test]
+fn the_second_characters_carried_object_breaks_on_walkers_of_all_sizes() {
+    // thrown-objects.md, "A carried object", "The second character": the
+    // small walker's own ranges, and the first character's for the others.
+    for (kind, rows) in [
+        (
+            SMALL,
+            [
+                ("right", Facing::Right, -22, 28),
+                ("right", Facing::Left, -27, 23),
+                ("left", Facing::Right, -23, 27),
+                ("left", Facing::Left, -28, 22),
+            ],
+        ),
+        (
+            MEDIUM,
+            [
+                ("right", Facing::Right, -20, 35),
+                ("right", Facing::Left, -25, 30),
+                ("left", Facing::Right, -30, 25),
+                ("left", Facing::Left, -35, 20),
+            ],
+        ),
+        (
+            LARGE,
+            [
+                ("right", Facing::Right, -25, 31),
+                ("right", Facing::Left, -30, 26),
+                ("left", Facing::Right, -26, 30),
+                ("left", Facing::Left, -31, 25),
+            ],
+        ),
+    ] {
+        for (heading, facing, low, high) in rows {
+            let row = format!("{kind}, walker {heading}, player {facing:?}");
+            assert!(
+                !second_breaks(kind, 300 + low - 1, facing, heading),
+                "{row}"
+            );
+            assert!(second_breaks(kind, 300 + low, facing, heading), "{row}");
+            assert!(second_breaks(kind, 300 + high, facing, heading), "{row}");
+            assert!(
+                !second_breaks(kind, 300 + high + 1, facing, heading),
+                "{row}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_first_characters_carried_object_still_misses_the_small_walker() {
+    let mut w = carrying(300.0, Facing::Right, SMALL, (300.0, 0.0, "left"));
+    carry_step(&mut w);
+    assert!(w.things[1].active);
+}
+
+#[test]
+fn the_second_characters_object_is_held_low_in_front() {
+    // The height limits of H (thrown-objects.md): 29, 42 and 55 above the
+    // walker's floor, the object 10 px above the player on its floor, so
+    // the walker is put 19, 32 and 45 px lower, and one more is too low.
+    for (kind, limit) in [(SMALL, 29), (MEDIUM, 42), (LARGE, 55)] {
+        for (drop, hit) in [(limit - 10, true), (limit - 9, false)] {
+            let mut w = carrying(288.0, Facing::Right, kind, (300.0, 0.0, "left"));
+            w.player.character = 1;
+            w.things[0].pos.y = fx(400.0 + f64::from(drop));
+            carry_step(&mut w);
+            assert_eq!(!w.things[1].active, hit, "{kind}, walker {drop} px lower");
+        }
+    }
 }

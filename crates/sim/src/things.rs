@@ -1096,9 +1096,10 @@ fn hit_walker(
 /// (holder-breaking.md, "Carried into a walker"); the world waits, and
 /// the walker can hurt the player on the first step after the wait. In
 /// the hands it doesn't break on throwers.
-/// Engine choices: walkers of every size are hit by the box (the spec
-/// measured medium and large walkers hit while carried and small ones out
-/// of reach).
+/// Walkers of every size are hit by the box; with the object where
+/// carrying.md puts it, the first character's reaches no small walker on
+/// its floor and the second character's reaches all three
+/// (thrown-objects.md, "A carried object").
 fn hands_hits(world: &mut World, physics: &Physics) -> (Option<Vec2>, Option<usize>) {
     let Some(hands) = world.player.hands else {
         return (None, None);

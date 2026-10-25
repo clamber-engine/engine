@@ -73,7 +73,7 @@ use clamber_input::{Action, Frame};
 use clamber_level::{Dir, Level, Vec2};
 use clamber_pack::{Param, Physics};
 
-use crate::archetype::{Archetype, Behavior, Holder};
+use crate::archetype::{Archetype, Behavior, HandsPath, Holder};
 use crate::columns::{self, column};
 use crate::flow::Outcome;
 use crate::player::{
@@ -253,18 +253,26 @@ pub(crate) fn in_hands(player: &Player, thing: &Thing) -> Vec2 {
     let place = match (player.hands, thing.archetype.map(|a| a.behavior)) {
         (Some(hands), Some(Behavior::Carry { in_hands, .. })) => {
             let n = usize::from(hands.frame);
-            let (pick_up, throw, put_down) = match in_hands.second {
-                Some(second) if player.character != 0 => {
-                    (second.pick_up, second.throw, second.put_down)
-                }
-                _ => (in_hands.pick_up, in_hands.throw, in_hands.put_down),
+            let (pick_up, throw, put_down, carried) = match in_hands.second {
+                Some(second) if player.character != 0 => (
+                    second.pick_up,
+                    second.throw,
+                    second.put_down,
+                    second.carried,
+                ),
+                _ => (
+                    in_hands.pick_up,
+                    in_hands.throw,
+                    in_hands.put_down,
+                    HandsPath::default(),
+                ),
             };
             match hands.act {
                 Act::PickUp if n == 0 => return thing.pos,
                 Act::PickUp => pick_up.at(n - 1),
                 Act::Throw => throw.at(n),
                 Act::PutDown => put_down.at(n),
-                Act::Carry => None,
+                Act::Carry => carried.at(0),
             }
         }
         _ => None,

@@ -1441,6 +1441,9 @@ pub struct SecondHands {
     pub pick_up: HandsPath,
     pub throw: HandsPath,
     pub put_down: HandsPath,
+    /// Where it is carried: the first place only. Without one, it's on
+    /// the player's head.
+    pub carried: HandsPath,
 }
 
 /// One action's path in [`InHands`]: its first `len` places.
@@ -1805,6 +1808,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "in_hands_second_pick_up",
             "in_hands_second_throw",
             "in_hands_second_put_down",
+            "in_hands_second_carried",
             "hit_ball",
             "hit_ball_early",
             "meets_ball",
@@ -2165,6 +2169,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                         pick_up: hands_path("in_hands_second_pick_up")?,
                         throw: hands_path("in_hands_second_throw")?,
                         put_down: hands_path("in_hands_second_put_down")?,
+                        carried: hands_path("in_hands_second_carried")?,
                     }),
                 },
             };
