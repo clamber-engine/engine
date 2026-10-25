@@ -571,6 +571,67 @@ fn a_metal_barrel_rolling_left_defeats_walkers_by_the_late_ranges() {
     }
 }
 
+/// metal-barrel.md, "Rolling left, thrown by the second character,
+/// against walkers": the late ranges' lower ends, a walker not hit on the
+/// first frame followed, its sideways speed 4 px per frame to the right on
+/// the hit, and the barrel unaffected.
+#[test]
+fn a_metal_barrel_thrown_by_the_second_character_rolling_left_defeats_walkers() {
+    let medium = SMALL_WALKER.replace(
+        "size = [20, 12], offset = 0.5",
+        "size = [25, 25], offset = 5.0",
+    );
+    let large = SMALL_WALKER.replace("size = [20, 12]", "size = [26, 38]");
+    let kinds = [
+        (SMALL_WALKER, [-28, -27]),
+        (medium.as_str(), [-35, -25]),
+        (large.as_str(), [-31, -30]),
+    ];
+    for (params, lows) in kinds {
+        for (facing, low) in ["left", "right"].into_iter().zip(lows) {
+            for diff in -50..=16 {
+                let params = params
+                    .replace("facing = \"left\"", &format!("facing = \"{facing}\""))
+                    .replace("speed = 1", "speed = 0");
+                let entity = format!(
+                    "[[entities]]\ntype = \"crawler\"\nat = [100, 400]\nparams = {{ {params} }}"
+                );
+                let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", "\"canister\"");
+                let mut play = second_play(&src);
+                play.throw_to(18 + 20);
+                let at = play.world.player.pos;
+                place(&mut play, at, -1, 0, false, true);
+                play.world.things[0].pos.x = f(300.0);
+                play.world.things[1].pos.x = f(300.0 - diff as f64);
+                let floor = play.world.things[0].pos.y;
+                let mut hit = None;
+                for n in 0..60 {
+                    play.hold(&[], 1);
+                    assert!(play.world.things[0].active);
+                    assert_eq!(play.object().vx, speed(-896));
+                    assert_eq!(play.world.things[0].pos.y, floor);
+                    if hit.is_none() && play.world.flow.events.contains(&FlowEvent::Defeat(1)) {
+                        let at =
+                            play.world.things[0].pos.x.floor() - play.world.things[1].pos.x.floor();
+                        hit = Some((n, at));
+                        assert_eq!(play.world.things[1].vx, f(4.0), "{facing} {diff}");
+                    }
+                }
+                // Only the lower end is covered: a walker behind it is not hit.
+                if diff < low {
+                    assert_eq!(hit, None, "{facing} {diff}");
+                } else if diff >= low + 4 {
+                    let (n, at) = hit.unwrap_or_else(|| panic!("{facing} {diff}: no hit"));
+                    assert!(at >= low, "{facing} {diff}: hit at {at}");
+                    // In range when it is placed (the first frame followed):
+                    // hit on the next one, the first step.
+                    assert_eq!(n, 0, "{facing} {diff}: late");
+                }
+            }
+        }
+    }
+}
+
 /// metal-barrel.md, "Stingers": a metal barrel rolling right defeats a
 /// stinger that doesn't move on the frame after the end of the frame its
 /// offsets (`x` rounded up less the stinger's rounded down, and the
@@ -785,6 +846,58 @@ fn a_metal_barrel_thrown_by_the_second_character_rolling_left_defeats_a_stinger_
                 "{above} {offset}"
             );
         }
+    }
+}
+
+/// metal-barrel.md, "Stingers": a stinger the second character's barrel
+/// rolling left knocked off is removed on K + 2 when its `x` rounded
+/// down, after that frame's move, is below the view's left edge less 31
+/// (walker-view.md, "Defeated walkers falling out"), and not before.
+#[test]
+fn a_stinger_knocked_off_by_the_second_character_s_barrel_leaves_by_the_window() {
+    // Where the stinger is after K + 2's move (3.75 px right of its
+    // start): offset -10 is 323, which the view at 355 puts 32 left.
+    for (offset, gone) in [
+        (-30, true),
+        (-12, true),
+        (-10, true),
+        (-9, false),
+        (0, false),
+    ] {
+        let entity = format!(
+            "[[entities]]\ntype = \"stinger\"\nat = [{}, 400]",
+            330 + offset
+        );
+        let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", "\"canister\"");
+        let mut play = second_play(&src);
+        play.throw_to(18);
+        let at = play.world.player.pos;
+        place(&mut play, at, -1, 0, false, true);
+        play.world.things[0].pos.x = f(330.0);
+        let mut hit_on = None;
+        for n in 0..8 {
+            play.world.view = Some(View {
+                left: f(355.0),
+                top: f(300.0),
+                ..View::default()
+            });
+            play.hold(&[], 1);
+            let stinger = &play.world.things[1];
+            if hit_on.is_none() && stinger.phase == Phase::Struck(0) {
+                hit_on = Some(n);
+            }
+            // The frame it is first struck is one before the spec's K,
+            // on which its speed changes.
+            let Some(k) = hit_on.map(|h| h + 1) else {
+                continue;
+            };
+            assert_eq!(
+                stinger.active,
+                n < k + 2 || !gone,
+                "{offset}: frame {n}, K at {k}",
+            );
+        }
+        assert!(hit_on.is_some(), "{offset}");
     }
 }
 
