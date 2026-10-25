@@ -15,10 +15,19 @@
 //! while riding, and Jump only from C + 2: a jump taking off at the
 //! barrel's speed across, which then eases away as in any jump.
 //!
+//! The second character is caught the same way, with ranges of its own
+//! and a height band for where it is at the start of the frame (14.11 to
+//! 45.89 px above the barrel's `y` caught, 47.14 or more and 11.48 or
+//! less not; the middle of each gap is used). It rides 16.7 px above the
+//! barrel and 8.15 behind it on the catch frame.
+//!
+//! A Jump press that began on C, C - 1 or C - 2 and is still held on C + 2
+//! jumps on C + 2; one begun on C + 1 never does.
+//!
 //! Engine choices where the spec says nothing:
 //!
-//! - Only the first character catches, and not while holding an object,
-//!   riding an animal, swapping, lost or hurt.
+//! - Only the characters under control catch, and not while holding an
+//!   object, riding an animal, swapping, lost or hurt.
 //! - The ride ends when the barrel no longer moves right (it turned at a
 //!   wall, or it is gone): the character is put on the floor at its own
 //!   `x` on that frame, or falls if there is none.
@@ -35,10 +44,17 @@ use crate::columns;
 use crate::player::{Astride, Facing, State};
 use crate::world::{Event, Phase, World};
 
-/// How high above the barrel's `y` the character's feet are.
+/// How high above the barrel's `y` the first character's feet are.
 const RISE: f64 = 16.5;
-/// How far behind the barrel's `x` the character is on the catch frame.
+/// How far behind the barrel's `x` the first character is on the catch
+/// frame.
 const GAP: f64 = 7.75;
+/// The same for the second character.
+const RISE_SECOND: f64 = 16.7;
+const GAP_SECOND: f64 = 8.15;
+/// The band the second character's `y` at the start of a frame is in, in
+/// px above the barrel's `y`, for the barrel to catch it.
+const BAND_SECOND: (f64, f64) = (12.795, 46.515);
 /// The lowest a falling character's feet can end a frame, above the
 /// barrel's `y`, for the barrel to catch it.
 const REACH: f64 = 17.5;
@@ -48,11 +64,18 @@ fn fx(v: f64) -> Fixed {
 }
 
 /// The distances (character's `x` minus the barrel's) it is caught at.
-fn range(facing: Facing) -> (Fixed, Fixed) {
-    match facing {
-        Facing::Left => (fx(-26.324), fx(24.176)),
-        Facing::Right => (fx(-23.084), fx(27.477)),
+fn range(character: usize, facing: Facing) -> (Fixed, Fixed) {
+    match (character, facing) {
+        (0, Facing::Left) => (fx(-26.324), fx(24.176)),
+        (0, Facing::Right) => (fx(-23.084), fx(27.477)),
+        (_, Facing::Left) => (fx(-20.533), fx(23.664)),
+        (_, Facing::Right) => (fx(-26.111), fx(17.9255)),
     }
+}
+
+/// How high above the barrel's `y` the character rides.
+fn rise(character: usize) -> Fixed {
+    fx(if character == 0 { RISE } else { RISE_SECOND })
 }
 
 /// The speed across of the thrown barrel `thing` if it's a metal one
@@ -91,7 +114,11 @@ pub(crate) fn hold(world: &mut World, input: &Frame) -> bool {
     p.jump_buffer.take();
     on.age = on.age.saturating_add(1);
     match vx {
-        Some(vx) if on.age >= 2 && input.pressed.contains(Action::Jump) => {
+        // A press begun on C or before and still held on C + 2 jumps then.
+        Some(vx)
+            if on.age >= 2
+                && (input.pressed.contains(Action::Jump) || (on.age == 2 && p.jump_held >= 3)) =>
+        {
             p.jump_off_barrel(vx, -physics[Param::JumpSpeed]);
             world.events.push(Event::JumpStart);
         }
@@ -102,11 +129,11 @@ pub(crate) fn hold(world: &mut World, input: &Frame) -> bool {
 
 /// After the things have moved on a step: a falling character is caught,
 /// a rider goes with its barrel or is put down.
-pub(crate) fn after(world: &mut World) {
+pub(crate) fn after(world: &mut World, start_y: Fixed) {
     if world.player.astride.is_some() {
         ride_on(world);
     } else {
-        catch(world);
+        catch(world, start_y);
     }
 }
 
@@ -130,14 +157,14 @@ fn ride_on(world: &mut World) {
         p.pos.x = barrel.x - on.gap;
         p.vel.x = vx;
     }
-    p.pos.y = barrel.y - fx(RISE);
+    p.pos.y = barrel.y - rise(p.character);
     p.astride = Some(on);
 }
 
 /// Ends a ride: the character stands on the floor at its own `x`.
 fn put_down(world: &mut World) {
     let column = columns::column(world.player.pos.x);
-    let feet = world.player.pos.y + fx(RISE);
+    let feet = world.player.pos.y + rise(world.player.character);
     let floor = columns::floor(&world.level, column, feet);
     let p = &mut world.player;
     p.astride = None;
@@ -154,12 +181,11 @@ fn put_down(world: &mut World) {
     }
 }
 
-fn catch(world: &mut World) {
+fn catch(world: &mut World, start_y: Fixed) {
     let p = &world.player;
     if p.state != State::Fall
         || p.grounded()
         || !p.vel.y.to_bits().is_positive()
-        || p.character != 0
         || p.hands.is_some()
         || p.riding.is_some()
         || p.rope.is_some()
@@ -169,25 +195,31 @@ fn catch(world: &mut World) {
     {
         return;
     }
-    let (low, high) = range(p.facing);
+    let (low, high) = range(p.character, p.facing);
     let found = (0..world.things.len()).find(|&i| {
         rolling_right(world, i).is_some() && {
             let barrel = world.things[i].pos;
             let d = p.pos.x - barrel.x;
-            low <= d && d <= high && p.pos.y >= barrel.y - fx(REACH)
+            let height = if p.character == 0 {
+                p.pos.y >= barrel.y - fx(REACH)
+            } else {
+                let above = barrel.y - start_y;
+                fx(BAND_SECOND.0) <= above && above <= fx(BAND_SECOND.1)
+            };
+            low <= d && d <= high && height
         }
     });
     let Some(thing) = found else {
         return;
     };
     let barrel = world.things[thing].pos;
-    let at = Vec2::new(barrel.x - fx(GAP), barrel.y - fx(RISE));
-    world.player.catch_on_barrel(
-        Astride {
-            thing,
-            age: 0,
-            gap: fx(GAP),
-        },
-        at,
-    );
+    let (gap, rise) = if world.player.character == 0 {
+        (fx(GAP), rise(0))
+    } else {
+        (fx(GAP_SECOND), rise(1))
+    };
+    let at = Vec2::new(barrel.x - gap, barrel.y - rise);
+    world
+        .player
+        .catch_on_barrel(Astride { thing, age: 0, gap }, at);
 }

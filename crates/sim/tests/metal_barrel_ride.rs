@@ -1,12 +1,13 @@
 //! A first character meeting a thrown metal barrel
 //! (spec/behavior/metal-barrel.md, "The characters").
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
-use clamber_pack::Fixed;
-use clamber_sim::{Flight, InputFrame, Phase, State, World, generic_feel, step};
+use clamber_pack::{CharacterFeel, Fixed, Presets};
+use clamber_sim::{Flight, InputFrame, Phase, ROLL, State, World, generic_feel, step};
 
 fn f(v: f64) -> Fixed {
     Fixed::from_f64(v).unwrap()
@@ -43,7 +44,11 @@ impl Play {
     /// air at `x`, `y`.
     fn new(src: &str, barrel: f64, x: f64, y: f64) -> Play {
         let level = Arc::new(Level::from_toml_str(src, "ride").unwrap());
-        let feel = generic_feel("classic-1").unwrap();
+        let mut feel = generic_feel("classic-1").unwrap();
+        feel.roster.push(CharacterFeel {
+            physics: Presets::builtin().slot("classic-1", 1).unwrap(),
+            abilities: BTreeMap::from([(ROLL.to_string(), BTreeMap::new())]),
+        });
         let mut world = World::new(level, Arc::new(feel));
         let physics = world.player_physics();
         let thing = &mut world.things[0];
@@ -222,4 +227,64 @@ fn a_rolling_metal_barrel_can_be_picked_up() {
         play.step(&[Action::Action]);
     }
     assert_eq!(play.world.things[0].phase, Phase::Held);
+}
+
+/// A press that began on C and is still held on C + 2 jumps on C + 2;
+/// one that began on C + 1 never does.
+#[test]
+fn a_press_held_through_c_plus_2_jumps_then() {
+    let mut play = Play::new(&level(""), 100.0, 160.0, 300.0);
+    play.until_caught();
+    play.world.player.jump_held = 1; // began on C
+    play.step(&[Action::Jump]);
+    assert_eq!(play.world.player.state, State::Astride);
+    play.step(&[Action::Jump]);
+    assert_eq!(play.world.player.state, State::Jump);
+
+    let mut play = Play::new(&level(""), 100.0, 160.0, 300.0);
+    play.until_caught();
+    for _ in 0..8 {
+        play.step(&[Action::Jump]);
+        assert_eq!(play.world.player.state, State::Astride);
+    }
+}
+
+fn second(barrel: f64, x: f64, y: f64) -> Play {
+    let mut play = Play::new(&level(""), barrel, x, y);
+    play.world.player.character = 1;
+    play
+}
+
+#[test]
+fn the_second_character_is_caught_and_rides_a_little_higher() {
+    let mut play = second(100.0, 150.0, 300.0);
+    play.until_caught();
+    assert_eq!(play.world.player.pos.y, f(400.0 - 16.7));
+    assert_eq!(play.gap(), f(8.15));
+    play.step(&[]);
+    assert_eq!(play.gap(), f(8.15 + 3.5));
+    play.step(&[Action::Left]);
+    assert_eq!(play.gap(), f(8.15 + 3.5));
+}
+
+/// Whether a character starting to fall at `y`, level with a barrel
+/// just behind it, is caught on the first frame.
+fn caught_from(character: usize, y: f64) -> bool {
+    let mut play = Play::new(&level(""), 96.0, 100.0, y);
+    play.world.player.character = character;
+    play.world.player.vel.y = f(2.0);
+    play.step(&[]);
+    play.world.player.state == State::Astride
+}
+
+#[test]
+fn the_second_character_is_caught_in_a_band_by_where_the_frame_began() {
+    // 18 px above the barrel: both. 12 px above: the first only, for its
+    // fall would end below the reach; the second began under the band.
+    assert!(caught_from(0, 382.0));
+    assert!(caught_from(1, 382.0));
+    assert!(caught_from(0, 388.0));
+    assert!(!caught_from(1, 388.0));
+    // Over 46.5 px above: not caught.
+    assert!(!caught_from(1, 350.0));
 }

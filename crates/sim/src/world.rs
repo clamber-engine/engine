@@ -1530,7 +1530,7 @@ fn advance(world: &mut World, input: &InputFrame) {
             sling::catch(world);
         }
         let hurt_now = things::update(world, start_pos, frozen);
-        barrel_ride::after(world);
+        barrel_ride::after(world, start_pos.y);
         flow::update(world, hurt_by.or(hurt_now), facing);
         ending::pass(world, &input.players[0]);
         exit::take_over(world);
