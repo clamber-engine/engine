@@ -99,8 +99,9 @@ pub enum Behavior {
     /// `hit_rise`, in the hands it doesn't break on a thrower or a ball:
     /// it moves up at that speed and falls through everything. With a
     /// `hit_stinger`, rolling right it defeats stingers that don't move
-    /// whose offsets from it are within those ranges (see
-    /// [`Stinger::knock`]).
+    /// whose offsets from it are within those ranges, and with
+    /// `hit_stinger_left` rolling left, rounding its `x` to the nearest
+    /// (see [`Stinger::knock`]).
     Carry {
         reach: Grab,
         hit: Hit,
@@ -117,6 +118,7 @@ pub enum Behavior {
         turns_at_walls: bool,
         hit_rise: Option<Fixed>,
         hit_stinger: Option<Offsets>,
+        hit_stinger_left: Option<Offsets>,
     },
     /// A collectible the player takes from within its [`Reach`] (see
     /// [`collect`](crate::collect)). It adds `worth` to the collectible
@@ -1822,6 +1824,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "turns_at_walls",
             "hit_rise",
             "hit_stinger",
+            "hit_stinger_left",
             "holder_window",
             "hit_thrower",
             "hit_thrower_early",
@@ -2263,16 +2266,20 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 true => Some(number("hit_rise")?),
                 false => None,
             };
-            let hit_stinger = match table.get("hit_stinger") {
-                None => None,
-                Some(v) => {
-                    let (a, b, c, d) = edges(v, &format!("{path}.hit_stinger"))?;
-                    Some(Offsets {
-                        across: (a, b),
-                        above: (c, d),
-                    })
+            let stinger_offsets = |key: &str| -> Result<Option<Offsets>, String> {
+                match table.get(key) {
+                    None => Ok(None),
+                    Some(v) => {
+                        let (a, b, c, d) = edges(v, &format!("{path}.{key}"))?;
+                        Ok(Some(Offsets {
+                            across: (a, b),
+                            above: (c, d),
+                        }))
+                    }
                 }
             };
+            let hit_stinger = stinger_offsets("hit_stinger")?;
+            let hit_stinger_left = stinger_offsets("hit_stinger_left")?;
             Behavior::Carry {
                 reach,
                 hit: hit("hit")?,
@@ -2289,6 +2296,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 turns_at_walls,
                 hit_rise,
                 hit_stinger,
+                hit_stinger_left,
             }
         }
         "collect" => {

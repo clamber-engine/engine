@@ -623,7 +623,10 @@ fn advance(
             }) = archetype.behavior
             {
                 thing.phase = if since == 0 {
-                    thing.vx = -knock.fall.knock;
+                    thing.vx = match thing.heading {
+                        Facing::Left => -knock.fall.knock,
+                        Facing::Right => knock.fall.knock,
+                    };
                     Phase::Struck(1)
                 } else {
                     Phase::Knocked {
@@ -1035,6 +1038,7 @@ fn throw_hits(world: &mut World) -> Vec<Vec2> {
             thrower_turn,
             holder,
             hit_stinger,
+            hit_stinger_left,
             ..
         } = archetype.behavior
         else {
@@ -1048,11 +1052,10 @@ fn throw_hits(world: &mut World) -> Vec<Vec2> {
         let pos = object.pos;
         let reach = if early { hit_early } else { hit }.bounds(pos, right);
         let walker = hit_walker(world, reach, right, Some((pos.y, early))).is_some();
-        if let Some(offsets) = hit_stinger
-            && right
-            && flight.rolling
+        if flight.rolling
+            && let Some(offsets) = if right { hit_stinger } else { hit_stinger_left }
         {
-            strike_stinger(world, offsets, pos);
+            strike_stinger(world, offsets, pos, right);
         }
         if walker && holder.is_some() {
             world.things[i].active = false;
@@ -1095,13 +1098,19 @@ fn throw_hits(world: &mut World) -> Vec<Vec2> {
 }
 
 /// Defeats the first stinger that doesn't move, and isn't hit already,
-/// that a metal barrel rolling right at `pos` hits (metal-barrel.md,
-/// "Stingers"): the barrel's `x` rounded up less the stinger's rounded
+/// that a metal barrel rolling right, or left if not `right`, at `pos`
+/// hits (metal-barrel.md, "Stingers"): the barrel's `x` rounded up
+/// (rolling left, to the nearest, halves up) less the stinger's rounded
 /// down and the barrel's `y` rounded up less the stinger's are within
 /// `offsets`, as whole pixels at the end of the step. It holds still
 /// from the next step, and the barrel goes on as it was.
-fn strike_stinger(world: &mut World, offsets: Offsets, pos: Vec2) {
-    let (x, y) = (ceil(pos.x), ceil(pos.y));
+fn strike_stinger(world: &mut World, offsets: Offsets, pos: Vec2, right: bool) {
+    let x = if right {
+        ceil(pos.x)
+    } else {
+        (pos.x + Fixed::from_ratio_pow2(1, 1)).floor()
+    };
+    let y = ceil(pos.y);
     let stinger = world.things.iter_mut().find(|t| {
         let Some(Behavior::Stinger(s)) = t.archetype.map(|a| a.behavior) else {
             return false;
@@ -1118,7 +1127,7 @@ fn strike_stinger(world: &mut World, offsets: Offsets, pos: Vec2) {
             && (i64::from(u0)..=i64::from(u1)).contains(&above)
     });
     if let Some(stinger) = stinger {
-        stinger.heading = Facing::Left;
+        stinger.heading = if right { Facing::Left } else { Facing::Right };
         stinger.phase = Phase::Struck(0);
         let index = stinger.index;
         world.flow.events.push(FlowEvent::Defeat(index));
