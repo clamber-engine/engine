@@ -471,6 +471,70 @@ fn a_rolling_metal_barrel_defeats_walkers_by_the_late_ranges() {
     }
 }
 
+/// metal-barrel.md, "Rolling left on the flat floor": a metal barrel
+/// rolling left long after it left the hands defeats walkers by the
+/// ranges of the "t of 17 or more" column, knocking them right at 4 px a
+/// frame, and isn't slowed, lifted or removed by the hit.
+#[test]
+fn a_metal_barrel_rolling_left_defeats_walkers_by_the_late_ranges() {
+    let medium = SMALL_WALKER.replace(
+        "size = [20, 12], offset = 0.5",
+        "size = [25, 25], offset = 5.0",
+    );
+    let large = SMALL_WALKER.replace("size = [20, 12]", "size = [26, 38]");
+    // (walker, facing) -> the range of barrel x minus walker x.
+    let kinds = [
+        (SMALL_WALKER, [(-28, 22), (-27, 23)]),
+        (medium.as_str(), [(-35, 20), (-25, 30)]),
+        (large.as_str(), [(-31, 25), (-30, 26)]),
+    ];
+    for (params, ranges) in kinds {
+        for (facing, (low, high)) in ["left", "right"].into_iter().zip(ranges) {
+            for offset in (-118..=20).step_by(3) {
+                let params = params
+                    .replace("facing = \"left\"", &format!("facing = \"{facing}\""))
+                    .replace("speed = 1", "speed = 0");
+                let entity = format!(
+                    "[[entities]]\ntype = \"crawler\"\nat = [100, 400]\nparams = {{ {params} }}"
+                );
+                let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", "\"canister\"");
+                let mut play = Play::new(&src);
+                play.throw_to(21 + 20);
+                let at = play.world.player.pos;
+                place(&mut play, at, -1, 0, false, true);
+                play.world.things[0].pos.x = f(300.0);
+                play.world.things[1].pos.x = f(300.0 + offset as f64);
+                let floor = play.world.things[0].pos.y;
+                let mut hit = None;
+                for n in 0..60 {
+                    let before =
+                        play.world.things[0].pos.x.floor() - play.world.things[1].pos.x.floor();
+                    play.hold(&[], 1);
+                    let diff =
+                        play.world.things[0].pos.x.floor() - play.world.things[1].pos.x.floor();
+                    if !play.world.things[0].active {
+                        break;
+                    }
+                    assert_eq!(play.object().vx, speed(-896));
+                    assert_eq!(play.world.things[0].pos.y, floor);
+                    if hit.is_none() && play.world.flow.events.contains(&FlowEvent::Defeat(1)) {
+                        hit = Some((n, diff));
+                        assert!(n == 0 || before > high, "{params} {facing} {offset}: late");
+                        assert_eq!(play.world.things[1].vx, f(4.0), "{facing} {offset}");
+                    }
+                }
+                match hit {
+                    Some((_, diff)) => assert!(
+                        (low..=high).contains(&diff),
+                        "{params} {facing} {offset}: hit at {diff}"
+                    ),
+                    None => panic!("{params} {facing} {offset}: no hit"),
+                }
+            }
+        }
+    }
+}
+
 /// metal-barrel.md, "Stingers": a metal barrel rolling right defeats a
 /// stinger that doesn't move on the frame after the end of the frame its
 /// offsets (`x` rounded up less the stinger's rounded down, and the
