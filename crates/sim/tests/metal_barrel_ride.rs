@@ -364,3 +364,81 @@ fn a_barrel_in_the_air_does_not_touch_a_second_character_on_the_floor() {
         assert_eq!(play.world.player.pos, at);
     }
 }
+
+impl Play {
+    /// The barrel rolls left instead.
+    fn rolling_left(mut self) -> Play {
+        if let Phase::Thrown(flight) = &mut self.world.things[0].phase {
+            flight.vx = f(-3.5);
+            flight.target = f(-3.5);
+        }
+        self
+    }
+}
+
+#[test]
+fn a_barrel_rolling_left_catches_and_carries_the_first_character_on_its_left() {
+    let mut play = Play::new(&level(""), 200.0, 150.0, 300.0).rolling_left();
+    play.until_caught();
+    let p = &play.world.player;
+    assert_eq!(p.pos.y, f(400.0 - 16.5));
+    assert_eq!(play.gap(), f(-8.4));
+    play.step(&[]);
+    let gap = play.gap();
+    assert_eq!(gap, f(-8.4 - 3.5));
+    for _ in 0..10 {
+        let before = play.world.player.pos.x;
+        play.step(&[Action::Right, Action::Down, Action::Action]);
+        let p = &play.world.player;
+        assert_eq!(p.state, State::Astride);
+        assert_eq!(play.gap(), gap);
+        assert_eq!(p.pos.x - before, f(-3.5));
+    }
+    // A jump off goes on at the barrel's speed.
+    play.step(&[Action::Jump]);
+    let p = &play.world.player;
+    assert_eq!(p.state, State::Jump);
+    assert_eq!(p.vel.x, f(-3.5));
+}
+
+#[test]
+fn a_barrel_rolling_left_catches_within_its_own_ranges() {
+    // D is the character's x minus the barrel's at the end of the catch
+    // frame. The ends of what is caught lie in the gaps the spec gives.
+    for (facing, low, high) in [
+        (clamber_sim::Facing::Left, (-26.664, -26.41), (23.598, 24.0)),
+        (
+            clamber_sim::Facing::Right,
+            (-23.777, -23.453),
+            (26.852, 27.285),
+        ),
+    ] {
+        let mut ds = Vec::new();
+        for step_x in 0..1200 {
+            let x = 100.0 + f64::from(step_x) * 0.125;
+            let mut play = Play::new(&level(""), 200.0, x, 300.0).rolling_left();
+            play.world.player.facing = facing;
+            for _ in 0..40 {
+                play.step(&[]);
+                if play.world.player.state == State::Astride {
+                    ds.push(x - play.barrel().x.to_f64());
+                    break;
+                }
+            }
+        }
+        let lo = ds.iter().cloned().fold(f64::MAX, f64::min);
+        let hi = ds.iter().cloned().fold(f64::MIN, f64::max);
+        assert!(!ds.is_empty());
+        assert!((low.0..=low.1).contains(&lo), "{facing:?} low end {lo}");
+        assert!((high.0..=high.1).contains(&hi), "{facing:?} high end {hi}");
+    }
+}
+
+#[test]
+fn a_barrel_rolling_left_does_not_catch_the_second_character() {
+    let mut play = second(200.0, 215.0, 300.0).rolling_left();
+    for _ in 0..40 {
+        play.step(&[]);
+        assert_ne!(play.world.player.state, State::Astride);
+    }
+}

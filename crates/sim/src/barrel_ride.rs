@@ -26,8 +26,10 @@
 //!
 //! A barrel still in the air after a throw catches the same way, the second
 //! character too (spec v0.350.0); one standing on the floor is never
-//! touched. Only barrels moving right catch: a barrel moving left isn't
-//! in the spec's measured ride, so it catches no one.
+//! touched. A barrel rolling left catches the first character the same
+//! way, mirrored, with ranges of its own and the character 8.4 px to its
+//! right on the catch frame (spec v0.352.0); it catches no second
+//! character, which the spec has not measured.
 //!
 //! A barrel with a rider falls more slowly: its downward speed grows by
 //! 0.3125 px each frame instead of the free barrel's `throw_gravity`
@@ -58,6 +60,9 @@ const RISE: f64 = 16.5;
 /// How far behind the barrel's `x` the first character is on the catch
 /// frame.
 const GAP: f64 = 7.75;
+/// The same for a barrel rolling left, the character being to its right
+/// (the spec measured 7.98 to 8.89).
+const GAP_LEFT: f64 = 8.4;
 /// The same for the second character.
 const RISE_SECOND: f64 = 16.7;
 const GAP_SECOND: f64 = 8.15;
@@ -76,8 +81,11 @@ fn fx(v: f64) -> Fixed {
 }
 
 /// The distances (character's `x` minus the barrel's) it is caught at.
-fn range(character: usize, facing: Facing) -> (Fixed, Fixed) {
+fn range(character: usize, facing: Facing, left: bool) -> (Fixed, Fixed) {
     match (character, facing) {
+        // Rolling left (spec v0.352.0), the first character only.
+        (0, Facing::Left) if left => (fx(-26.537), fx(23.799)),
+        (0, Facing::Right) if left => (fx(-23.615), fx(27.0685)),
         (0, Facing::Left) => (fx(-26.324), fx(24.176)),
         (0, Facing::Right) => (fx(-23.084), fx(27.477)),
         (_, Facing::Left) => (fx(-20.533), fx(23.664)),
@@ -91,8 +99,16 @@ fn rise(character: usize) -> Fixed {
 }
 
 /// The speed across of the thrown barrel `thing` if it's a metal one
-/// rolling right.
-fn rolling_right(world: &World, thing: usize) -> Option<Fixed> {
+/// rolling the way a rider with this `gap` behind it is carried: right
+/// for a gap in front of the barrel's `x`, left for one beyond it.
+fn rolling_with(world: &World, thing: usize, gap: Fixed) -> Option<Fixed> {
+    let vx = rolling(world, thing)?;
+    ((vx > Fixed::ZERO) == (gap > Fixed::ZERO)).then_some(vx)
+}
+
+/// The speed across of the thrown metal barrel `thing` if it's moving
+/// sideways.
+fn rolling(world: &World, thing: usize) -> Option<Fixed> {
     let thing = &world.things[thing];
     let turns = matches!(
         thing.archetype.as_ref()?.behavior,
@@ -102,7 +118,7 @@ fn rolling_right(world: &World, thing: usize) -> Option<Fixed> {
         }
     );
     match thing.phase {
-        Phase::Thrown(f) if thing.active && turns && f.vx > Fixed::ZERO => Some(f.vx),
+        Phase::Thrown(f) if thing.active && turns && f.vx != Fixed::ZERO => Some(f.vx),
         _ => None,
     }
 }
@@ -131,7 +147,7 @@ pub(crate) fn hold(world: &mut World, input: &Frame) -> bool {
         return false;
     }
     let physics = world.player_physics();
-    let vx = rolling_right(world, on.thing);
+    let vx = rolling_with(world, on.thing, on.gap);
     let p = &mut world.player;
     p.touched.clear();
     p.update_jump_held(input);
@@ -170,7 +186,7 @@ fn ride_on(world: &mut World) {
         world.player.astride = None;
         return;
     }
-    let Some(vx) = rolling_right(world, on.thing) else {
+    let Some(vx) = rolling_with(world, on.thing, on.gap) else {
         put_down(world);
         return;
     };
@@ -220,9 +236,16 @@ fn catch(world: &mut World, start_y: Fixed) {
     {
         return;
     }
-    let (low, high) = range(p.character, p.facing);
-    let found = (0..world.things.len()).find(|&i| {
-        rolling_right(world, i).is_some() && {
+    let found = (0..world.things.len()).find_map(|i| {
+        let vx = rolling(world, i)?;
+        // Only the first character is known to be caught by a barrel
+        // rolling left.
+        let left = vx < Fixed::ZERO;
+        if left && p.character != 0 {
+            return None;
+        }
+        let (low, high) = range(p.character, p.facing, left);
+        let caught = {
             let barrel = world.things[i].pos;
             let d = p.pos.x - barrel.x;
             let height = if p.character == 0 {
@@ -232,9 +255,10 @@ fn catch(world: &mut World, start_y: Fixed) {
                 fx(BAND_SECOND.0) <= above && above <= fx(BAND_SECOND.1)
             };
             low <= d && d <= high && height
-        }
+        };
+        caught.then_some((i, left))
     });
-    let Some(thing) = found else {
+    let Some((thing, left)) = found else {
         return;
     };
     let barrel = world.things[thing].pos;
@@ -243,6 +267,7 @@ fn catch(world: &mut World, start_y: Fixed) {
     } else {
         (fx(GAP_SECOND), rise(1))
     };
+    let gap = if left { -fx(GAP_LEFT) } else { gap };
     let at = Vec2::new(barrel.x - gap, barrel.y - rise);
     world
         .player
