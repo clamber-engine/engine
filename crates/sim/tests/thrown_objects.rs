@@ -2173,6 +2173,81 @@ fn a_metal_barrel_meets_the_thrower_as_a_barrel_does() {
     assert!((39..=49).contains(&steps), "{steps}");
 }
 
+/// metal-barrel.md, "The second character throwing it", the ledge
+/// thrower: a metal barrel thrown either way by the second character
+/// knocks out the thrower on the frame a barrel does, with the same rows
+/// for the thrower and the character.
+#[test]
+fn a_metal_barrel_thrown_by_the_second_character_meets_the_thrower_as_a_barrel_does() {
+    let plain = level(&format!("{FLAT}\n{}", thrower(300, 100)));
+    let metal = plain.replace("\"crate\"", "\"canister\"");
+    let mut hits = 0;
+    for right in [true, false] {
+        for n in [22, 30, 37, 45] {
+            for i in [-60, -20, 0, 20, 40] {
+                let hit = |src: &str| {
+                    let mut play = second_play(src);
+                    if !right {
+                        play.world.player.facing = Facing::Left;
+                    }
+                    play.throw_to(n - 1);
+                    let mut ahead = Play {
+                        world: play.world.clone(),
+                        held: play.held,
+                    };
+                    ahead.step(&[]);
+                    let o = ahead.world.things[0].pos;
+                    let x = o.x.floor() - i;
+                    play.world.things[1].pos = Vec2::new(
+                        Fixed::from_int(x as i32) + f(0.75),
+                        Fixed::from_int((-(-o.y).floor()) as i32) - f(0.25),
+                    );
+                    let mut rows = Vec::new();
+                    for _ in 0..10 {
+                        play.step(&[]);
+                        rows.push((knocked_thrower(&play), play.world.player.pos));
+                    }
+                    rows
+                };
+                let got = hit(&metal);
+                assert_eq!(hit(&plain), got, "right {right} Q + {n} I {i}");
+                hits += usize::from(got.iter().any(|r| r.0.1));
+            }
+        }
+    }
+    assert!(hits > 5, "{hits}");
+}
+
+/// The same, with the metal barrel still in the second character's hands
+/// when it reaches the thrower: it isn't broken but moves up at 5 px per
+/// frame, then falls through the floor and is gone some frames later (40 or
+/// 41 on the ledge measured; the count follows how far below the picture
+/// the floor is, so the flat test floor gives fewer).
+#[test]
+fn a_metal_barrel_in_the_second_character_s_hands_meets_the_thrower() {
+    let src = level(&format!("{FLAT}\n{}", thrower(300, 100))).replace("\"crate\"", "\"canister\"");
+    let mut play = second_play(&src);
+    play.world.player.facing = Facing::Left;
+    let head = play.world.things[0].pos;
+    play.world.things[1].pos = Vec2::new(
+        Fixed::from_int(head.x.floor() as i32 - 20),
+        Fixed::from_int((-(-head.y).floor()) as i32),
+    );
+    play.step(&[A]);
+    assert!(play.world.player.hands.is_none());
+    assert!(matches!(
+        play.world.things[0].phase,
+        Phase::LetGo { vy, .. } if vy == f(-5.0)
+    ));
+    let mut steps = 0;
+    while play.world.things[0].active {
+        play.step(&[]);
+        steps += 1;
+        assert!(steps < 100);
+    }
+    assert!((30..=49).contains(&steps), "{steps}");
+}
+
 /// metal-barrel.md, "The second character throwing it": thrown by the
 /// second character, a metal barrel turns back at a wall as it does for
 /// the first, and before that moves as a barrel does.
