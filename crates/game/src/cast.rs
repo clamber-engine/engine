@@ -39,6 +39,7 @@ use crate::hidden_pictures;
 use crate::hutch_pictures;
 use crate::item_pictures;
 use crate::letter_pictures;
+use crate::metal_pictures;
 use crate::pictures::{self, PictureClock};
 use crate::ride_pictures;
 use crate::sign_pictures;
@@ -807,16 +808,28 @@ impl Cast {
     /// in flight without all eight of its pictures, the frame of its
     /// kind's animation that far through the cycle, mirrored the same.
     fn carried_picture(&self, thing: &Thing, pose: &Pose, x: f32, y: f32) -> Option<Sprite> {
+        let metal = is_metal(thing);
+        let (sheet_name, flight, lying) = if metal {
+            (
+                metal_pictures::SHEET,
+                &metal_pictures::FLIGHT,
+                metal_pictures::LYING,
+            )
+        } else {
+            (
+                thrown_pictures::SHEET,
+                &thrown_pictures::FLIGHT,
+                thrown_pictures::LYING,
+            )
+        };
         if let Some(count) = pose.thrown {
             let left = matches!(thing.phase, Phase::Thrown(f) if f.vx.is_negative());
             let entry = thrown_pictures::flight(count);
-            let own = self.kinds.get(thrown_pictures::SHEET).and_then(|&id| {
+            let own = self.kinds.get(sheet_name).and_then(|&id| {
                 let sheet = self.bank.sheet(id);
-                let all = thrown_pictures::FLIGHT
-                    .iter()
-                    .all(|l| sheet.animation(l).is_some());
+                let all = flight.iter().all(|l| sheet.animation(l).is_some());
                 let frame = *sheet
-                    .animation(thrown_pictures::FLIGHT[entry])
+                    .animation(flight[entry])
                     .filter(|_| all)?
                     .frames
                     .first()?;
@@ -833,23 +846,21 @@ impl Cast {
                     .animations
                     .get(pose.animation)
                     .map_or(&[][..], |a| &a.frames[..]);
-                let at = entry * frames.len() / thrown_pictures::FLIGHT.len();
+                let at = entry * frames.len() / flight.len();
                 Some(Sprite {
                     flip_x: left,
                     ..Sprite::new(id, frames.get(at).copied().unwrap_or(0), x, y)
                 })
             });
         }
-        let id = *self.kinds.get(thrown_pictures::SHEET)?;
-        if !pose.put_down.is_some_and(thrown_pictures::lying) {
+        let id = *self.kinds.get(sheet_name)?;
+        // A metal barrel that hasn't been picked up lies there too.
+        let down = pose.put_down.is_some_and(thrown_pictures::lying)
+            || (metal && matches!(thing.phase, Phase::Ready));
+        if !down {
             return None;
         }
-        let frame = *self
-            .bank
-            .sheet(id)
-            .animation(thrown_pictures::LYING)?
-            .frames
-            .first()?;
+        let frame = *self.bank.sheet(id).animation(lying)?.frames.first()?;
         Some(Sprite::new(id, frame, x - 1.0, y))
     }
 
@@ -1335,6 +1346,17 @@ fn is_stinger(thing: &Thing) -> bool {
 /// `pictures` param says ([`crate::bunch_pictures`]).
 fn is_bunch(world: &World, thing: &Thing) -> bool {
     pictures_param(world, thing) == Some(bunch_pictures::BUNCH)
+}
+
+/// Whether `thing` is a metal barrel: one that turns back at a wall.
+fn is_metal(thing: &Thing) -> bool {
+    matches!(
+        thing.archetype.as_ref().map(|a| &a.behavior),
+        Some(Behavior::Carry {
+            turns_at_walls: true,
+            ..
+        })
+    )
 }
 
 /// Whether `thing` is an object thrown (not dropped) and in flight.
@@ -2814,5 +2836,72 @@ mod tests {
             };
             assert_eq!(got, want, "{count}");
         }
+    }
+
+    fn metal_thing(phase: Phase) -> Thing {
+        let mut thing = world().things[0].clone();
+        thing.archetype = clamber_sim::Archetypes::builtin().named("canister");
+        thing.phase = phase;
+        thing
+    }
+
+    #[test]
+    fn a_metal_barrel_shows_its_own_pictures_and_a_barrel_does_not_use_them() {
+        let none = Color::default();
+        let kind = world().things[0].kind.clone();
+        let cast = Cast::new(vec![
+            (kind.clone(), sheet()),
+            (
+                metal_pictures::SHEET.to_string(),
+                labelled_sheet(&[metal_pictures::LYING], 4),
+            ),
+            (
+                thrown_pictures::SHEET.to_string(),
+                labelled_sheet(&[thrown_pictures::LYING], 4),
+            ),
+        ]);
+        let drawn = |thing: &Thing, put_down| {
+            let pose = Pose {
+                put_down,
+                ..Pose::default()
+            };
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, thing, &pose, 2.0, 0.0);
+            [0, 1, 2, 3].map(|x| canvas.get(x, 0).unwrap())
+        };
+        // Standing, and put down from the frame after, not mirrored.
+        let metal_lying = drawn(&metal_thing(Phase::Placed), Some(1));
+        assert_ne!(metal_lying, [none; 4]);
+        assert_eq!(drawn(&metal_thing(Phase::Ready), None), metal_lying);
+        // A barrel standing on the floor keeps its ordinary picture.
+        let mut barrel = world().things[0].clone();
+        barrel.phase = Phase::Ready;
+        assert_ne!(drawn(&barrel, None), metal_lying);
+    }
+
+    #[test]
+    fn a_thrown_metal_barrel_cycles_its_pictures_mirrored_with_its_direction() {
+        let none = Color::default();
+        let kind = world().things[0].kind.clone();
+        let flying = |vx, labels: &[&str], count| {
+            let cast = Cast::new(vec![
+                (kind.clone(), sheet()),
+                (metal_pictures::SHEET.to_string(), labelled_sheet(labels, 4)),
+            ]);
+            let mut thing = metal_thing(Phase::Ready);
+            thing.phase = thrown_thing(vx).phase;
+            let pose = Pose {
+                thrown: Some(count),
+                ..Pose::default()
+            };
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, &thing, &pose, 2.0, 0.0);
+            [0, 1, 2, 3].map(|x| canvas.get(x, 0).unwrap())
+        };
+        let labels = &metal_pictures::FLIGHT[..];
+        assert_eq!(flying(2, labels, 0), [none, B, none, none]);
+        assert_eq!(flying(-2, labels, 0), [B, none, none, none]);
+        // Without one of the eight, the engine's art.
+        assert_eq!(flying(2, &labels[1..], 0), [none, none, R, none]);
     }
 }

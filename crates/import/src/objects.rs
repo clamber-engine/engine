@@ -80,6 +80,7 @@ impl ObjectPalette {
 /// The sheets the game reads for objects whose pictures the importer
 /// can't write yet, with what they hold.
 pub const PENDING_SHEETS: &[(&str, &str)] = &[
+    ("metal-pictures", "the metal barrel"),
     ("sign-pictures", "the signs"),
     ("hidden-patch", "the hidden barrels' patch"),
     ("barrel-pictures", "the launch barrels"),

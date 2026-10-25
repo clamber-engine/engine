@@ -68,6 +68,7 @@ mod layers;
 mod letter_pictures;
 mod map;
 mod menu;
+mod metal_pictures;
 mod mouse;
 mod music;
 mod pacing;
@@ -243,8 +244,8 @@ pub fn user_dir() -> Option<PathBuf> {
 mod import_coverage {
     use crate::{
         bunch_pictures, critter_pictures, hidden_pictures, hutch_pictures, item_pictures,
-        letter_pictures, sign_pictures, sling_pictures, spin_pictures, stinger_pictures,
-        thrower_pictures, thrown_pictures, tyre_pictures, walker_pictures,
+        letter_pictures, metal_pictures, sign_pictures, sling_pictures, spin_pictures,
+        stinger_pictures, thrower_pictures, thrown_pictures, tyre_pictures, walker_pictures,
     };
 
     /// Every picture sheet the game reads is written by the importer or is
@@ -256,6 +257,7 @@ mod import_coverage {
             spin_pictures::SHEET,
             bunch_pictures::SHEET,
             thrown_pictures::SHEET,
+            metal_pictures::SHEET,
             hutch_pictures::SHEET,
             hidden_pictures::SHEET,
             item_pictures::SHEET,
