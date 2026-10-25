@@ -1460,3 +1460,105 @@ fn a_metal_barrel_in_the_hands_falls_through_the_floor_on_a_ball_or_a_thrower() 
         assert!(play.world.things[0].pos.y > f(400.0), "through the floor");
     }
 }
+
+/// metal-barrel.md, "The second character throwing it": thrown by the
+/// second character, a metal barrel turns back at a wall as it does for
+/// the first, and before that moves as a barrel does.
+#[test]
+fn a_metal_barrel_thrown_by_the_second_character_turns_back_at_a_wall() {
+    let wall = "[[collision]]\nshape = \"rect\"\nrect = [300, 200, 20, 200]";
+    let src = level(&format!("{FLAT}\n{wall}"));
+    let mut barrel = second_play(&src);
+    let mut metal = second_play(&src.replace("\"crate\"", "\"canister\""));
+    barrel.throw_to(18);
+    metal.throw_to(18);
+    let mut turned = false;
+    for n in 0..80 {
+        let before = metal.world.things[0].pos;
+        barrel.step(&[]);
+        metal.step(&[]);
+        let thing = &metal.world.things[0];
+        assert!(thing.active, "{n}");
+        if !turned && metal.object().vx.is_negative() {
+            turned = true;
+            assert_eq!(thing.pos.x, Fixed::from_int(before.x.floor() as i32));
+            assert_eq!(metal.object().vx, speed(-896));
+        }
+        if !turned {
+            assert_eq!(barrel.world.things[0].pos, thing.pos, "{n}");
+            assert_eq!(barrel.world.things[0].active, thing.active, "{n}");
+        }
+    }
+    assert!(turned);
+}
+
+/// The same, at a walker on the floor: the walker, the character and the
+/// object move as with a barrel, and when the walker reaches the
+/// character with the object still in the hands it isn't broken but moves
+/// up at 5 px per frame.
+#[test]
+fn a_metal_barrel_thrown_by_the_second_character_defeats_walkers() {
+    let run = |kind: &str, distance: f64| {
+        let entity = format!(
+            "[[entities]]\ntype = \"crawler\"\nat = [300, 400]\nparams = {{ {SMALL_WALKER} }}"
+        );
+        let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", kind);
+        let mut play = second_play(&src);
+        play.throw_to(18);
+        let start = play.world.things[0].pos;
+        play.world.things[1].pos.x = start.x + f(distance);
+        let mut rows = Vec::new();
+        for _ in 0..60 {
+            play.hold(&[], 1);
+            let (o, w) = (&play.world.things[0], &play.world.things[1]);
+            rows.push((
+                o.pos,
+                o.active,
+                walker(&play),
+                w.active,
+                play.world.player.pos,
+            ));
+        }
+        rows
+    };
+    assert_eq!(run("\"crate\"", 150.0), run("\"canister\"", 150.0));
+}
+
+/// When the walker reaches the second character with the metal barrel
+/// still in the hands, the barrel isn't broken: it moves up at 5 px per
+/// frame and is gone later; a barrel is removed.
+#[test]
+fn a_metal_barrel_in_the_second_character_s_hands_rises_when_a_walker_reaches_it() {
+    let run = |kind: &str| {
+        let entity = format!(
+            "[[entities]]\ntype = \"crawler\"\nat = [300, 400]\nparams = {{ {SMALL_WALKER} }}"
+        );
+        let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", kind);
+        let mut play = second_play(&src);
+        play.world.things[1].pos.x = play.world.things[0].pos.x + f(50.0);
+        let mut rows = Vec::new();
+        for _ in 0..60 {
+            play.step(&[]);
+            let t = &play.world.things[0];
+            rows.push((t.active, t.phase, t.pos));
+        }
+        rows
+    };
+    let barrel = run("\"crate\"");
+    let broke = barrel
+        .iter()
+        .position(|r| !r.0)
+        .expect("a barrel is removed");
+    let metal = run("\"canister\"");
+    let at = metal
+        .iter()
+        .position(|r| matches!(r.1, Phase::LetGo { .. }))
+        .expect("a metal barrel is let go");
+    assert_eq!(at, broke);
+    let Phase::LetGo { vy, .. } = metal[at].1 else {
+        unreachable!()
+    };
+    assert_eq!(vy, f(-5.0));
+    assert!(metal[at].0 && metal[at + 1].2.y < metal[at].2.y);
+    assert!(metal.iter().any(|r| !r.0), "gone later");
+}

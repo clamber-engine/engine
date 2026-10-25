@@ -1219,7 +1219,10 @@ fn hands_hits(world: &mut World, physics: &Physics) -> (Option<Vec2>, Option<usi
             world.player.pose.carried_air = true;
         }
     }
-    if on_thrower {
+    // A walker reaching the second character leaves a metal barrel
+    // unbroken too (metal-barrel.md, "The second character throwing it");
+    // for the first character that isn't in the spec.
+    if on_thrower || world.player.character == 1 {
         break_held(world, hands.thing, pos);
     } else {
         // Its pieces aren't in the spec.

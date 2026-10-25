@@ -1072,8 +1072,9 @@ item_touch = 5
 # at a wall instead of breaking, defeats walkers as a barrel does, and
 # carries a character that comes down onto it while it rolls right
 # (metal-barrel.md). In the hands it doesn't break on a thrower or a ball:
-# it rises at `hit_rise` and falls through the floor. What else it meets
-# isn't covered; until it is, it's the crate's values.
+# it rises at `hit_rise` and falls through the floor; so it does in the
+# hands of the second character when a walker reaches it. What else it
+# meets isn't covered; until it is, it's the crate's values.
 [archetypes.canister]
 behavior = "carry"
 turns_at_walls = true
@@ -1119,6 +1120,7 @@ in_hands_second_put_down = [
 ]
 meets_ball = [26, 22, 30, 15]
 meets_ball_early = [27, 47, 54, 48]
+in_hands_second_carried = [[12, 10]]
 meets_ball_turn = -1
 meets_ball_parts = [[0, 0], [0, -3], [1, -3], [1, 0]]
 holds_character = false
