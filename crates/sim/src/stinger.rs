@@ -102,6 +102,13 @@ fn ease(v: Fixed, target: Fixed) -> Fixed {
     }
 }
 
+/// Whether a stinger in `phase` can hurt the player: while it sways, and
+/// on the step after a metal barrel hit it, when it still stands where it
+/// was (metal-barrel.md, "Stingers").
+fn hurts(phase: Phase) -> bool {
+    matches!(phase, Phase::Swaying { .. } | Phase::Struck(1))
+}
+
 /// The stinger that hurts the player on the next frame, if any: one
 /// whose offsets from the player, at the end of this one, are within the
 /// ranges of its contact for the player's pose and facing.
@@ -112,7 +119,7 @@ pub(crate) fn hurt_ahead(world: &World) -> Option<usize> {
     world
         .things
         .iter()
-        .filter(|t| t.active && matches!(t.phase, Phase::Swaying { .. }))
+        .filter(|t| t.active && hurts(t.phase))
         .find(|t| {
             let Some(Behavior::Stinger(stinger)) = t.archetype.map(|a| a.behavior) else {
                 return false;

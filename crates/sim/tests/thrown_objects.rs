@@ -708,6 +708,38 @@ fn a_rolling_metal_barrel_defeats_a_stinger_that_does_not_move() {
     }
 }
 
+/// metal-barrel.md, "Stingers": a stinger knocked off still hurts a
+/// standing player facing left on the floor, 5 px below it, on the frame
+/// after the hit, for I from -27 to 26, as one that was not hit would.
+#[test]
+fn a_stinger_knocked_off_still_hurts_a_standing_player() {
+    for i in [-29, -28, -27, -26, 0, 25, 26, 27, 28] {
+        let entity = "[[entities]]\ntype = \"stinger\"\nat = [320, 395]";
+        let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", "\"canister\"");
+        let mut play = Play::new(&src);
+        play.throw_to(21 + 20);
+        let at = play.world.player.pos;
+        place(&mut play, at, 0, 0, false, true);
+        play.world.things[0].pos.x = f(300.0);
+        play.world.player.pos.x = f(f64::from(320 + i));
+        play.world.player.facing = Facing::Left;
+        let mut hit_on = None;
+        let mut hurt_on = None;
+        for n in 0..8 {
+            play.hold(&[], 1);
+            if hit_on.is_none() && play.world.things[1].phase == Phase::Struck(0) {
+                hit_on = Some(n);
+            }
+            if hurt_on.is_none() && play.world.events.contains(&Event::Hurt) {
+                hurt_on = Some(n);
+            }
+        }
+        assert!(hit_on.is_some(), "{i}");
+        let hurts = (-27..=26).contains(&i);
+        assert_eq!(hurt_on, hurts.then(|| hit_on.unwrap() + 2), "{i}");
+    }
+}
+
 /// metal-barrel.md, "Rolling left": as for rolling right, with the
 /// barrel's `x` rounded to the nearest (halves up), the hit is at offsets
 /// of -25 to 34 and -28 to 19, and the knock-off is mirrored: the
