@@ -290,6 +290,8 @@ throw_max_fall = 0
 throw_land_margin = 0
 throw_bounce_min = 0
 throw_bounce = 0
+bounce_release_speed = 0
+bounce_release_drop = 0
 put_down_time = 0
 put_down_set = 0
 put_down_ahead = 0
@@ -869,6 +871,10 @@ throw_max_fall = 8
 throw_land_margin = 5
 throw_bounce_min = 1
 throw_bounce = 0.5
+# An object carried into a bounce leaves the hands and flies on at a
+# steady 5 px a frame (thrown-objects.md, "Carried into a bounce").
+bounce_release_speed = 5
+bounce_release_drop = 1
 put_down_time = 14
 put_down_set = 13
 put_down_ahead = 16

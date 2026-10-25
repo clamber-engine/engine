@@ -321,6 +321,8 @@ fn thrown() -> Phase {
         bounce: Fixed::ZERO,
         rolling: false,
         age: 30,
+        wait: 0,
+        launch: false,
     })
 }
 

@@ -1158,6 +1158,13 @@ params! {
     /// The part of its downward speed before the frame a thrown object
     /// bounces up with, rounded down to a whole 1/256 px per frame.
     ThrowBounce => "throw_bounce",
+    /// The speed across, px per frame, of an object that leaves the
+    /// player's hands when the player bounces off a walker, the way the
+    /// player faces and kept for as long as it flies. 0: it stays in the
+    /// hands.
+    BounceReleaseSpeed => "bounce_release_speed",
+    /// Its downward speed on the frame of the contact, px per frame.
+    BounceReleaseDrop => "bounce_release_drop",
     /// Frames a put-down lasts, counting the frame action is let go; the
     /// target speed is 0 whatever is held. The object is set down on
     /// the last. Whole frames.

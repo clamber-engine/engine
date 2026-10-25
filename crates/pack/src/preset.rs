@@ -573,6 +573,8 @@ mod tests {
                     | Param::ThrowLandMargin
                     | Param::ThrowBounceMin
                     | Param::ThrowBounce
+                    | Param::BounceReleaseSpeed
+                    | Param::BounceReleaseDrop
                     | Param::PutDownTime
                     | Param::PutDownSet
                     | Param::PutDownAhead

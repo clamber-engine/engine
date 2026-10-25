@@ -61,9 +61,9 @@
 //! describes: on its first touch of the floor, outside the picture, and
 //! on throwers and balls as well as walkers ([`things`](crate::things)).
 //! Against a wall it still falls on that frame. Breaking, it frees the
-//! character ([`join`](crate::join)). The spec doesn't cover how it
-//! moves when a bounce on a walker makes the player let go of it; here
-//! the player keeps it. The vertical step walkers turn at
+//! character ([`join`](crate::join)). A bounce on a walker makes
+//! the player let go of it, and it flies on at a steady speed
+//! ([`release_on_bounce`]). The vertical step walkers turn at
 //! (`spec/behavior/walker.md`, "Turning at a barrier") breaks either kind
 //! as ground more than a step above it does (thrown-objects.md,
 //! "Breaking at a vertical step"); one in the hands it doesn't.
@@ -106,6 +106,12 @@ pub struct Flight {
     pub rolling: bool,
     /// Frames since it left the hands, counting this one, up to 255.
     pub age: u8,
+    /// Frames it holds still before its first move: an object that left
+    /// the hands in a bounce, on the bounce's frozen frames.
+    pub wait: u8,
+    /// Its first move is the one after a bounce's: it ends with `vy` at
+    /// one speed grain.
+    pub launch: bool,
 }
 
 impl Flight {
@@ -230,6 +236,8 @@ pub(crate) fn after(world: &mut World) {
                 bounce: physics[Param::ThrowBounce],
                 rolling: false,
                 age: 0,
+                wait: 0,
+                launch: false,
             });
         }
         Act::PutDown if hands.frame == set_down => {
@@ -350,7 +358,53 @@ fn drop(thing: &mut Thing, physics: &Physics) {
         bounce: Fixed::ZERO,
         rolling: false,
         age: 0,
+        wait: 0,
+        launch: false,
     });
+}
+
+/// Lets the carried object go on a bounce or a push (thrown-objects.md,
+/// "Carried into a bounce"): it moves to the player's `x` and flies the
+/// way the player faces at `bounce_release_speed`, which `response` 0
+/// keeps, after `wait` frames. Returns whether it left; it doesn't when
+/// the preset keeps it in the hands.
+pub(crate) fn release_on_bounce(world: &mut World, wait: u8) -> bool {
+    let physics = world.player_physics();
+    let speed = physics[Param::BounceReleaseSpeed];
+    let Some(hands) = world.player.hands else {
+        return false;
+    };
+    if speed <= Fixed::ZERO
+        || hands.act != Act::Carry
+        || world.things[hands.thing].phase != Phase::Held
+    {
+        return false;
+    }
+    let ahead = match world.player.facing {
+        Facing::Left => -speed,
+        Facing::Right => speed,
+    };
+    let held = in_hands(&world.player, &world.things[hands.thing]);
+    let thing = &mut world.things[hands.thing];
+    thing.pos = Vec2::new(Fixed::from_int(world.player.pos.x.floor() as i32), held.y);
+    thing.phase = Phase::Thrown(Flight {
+        vx: ahead,
+        vy: physics[Param::BounceReleaseDrop],
+        target: ahead,
+        response: Fixed::ZERO,
+        gravity: physics[Param::ThrowGravity],
+        max_fall: physics[Param::ThrowMaxFall],
+        thrown: true,
+        margin: physics[Param::ThrowLandMargin],
+        bounce_min: physics[Param::ThrowBounceMin],
+        bounce: physics[Param::ThrowBounce],
+        rolling: false,
+        age: 0,
+        wait,
+        launch: true,
+    });
+    world.player.hands = None;
+    true
 }
 
 /// One frame of a thrown or dropped object's flight. It's gone once it's
@@ -366,6 +420,11 @@ pub(crate) fn fly(
     slope: Fixed,
     picture: Option<Picture>,
 ) -> bool {
+    if flight.wait > 0 {
+        flight.wait -= 1;
+        thing.phase = Phase::Thrown(flight);
+        return false;
+    }
     flight.age = flight.age.saturating_add(1);
     flight.vx = if flight.response > Fixed::ZERO {
         ease(flight.vx, flight.target, flight.response)
@@ -373,10 +432,15 @@ pub(crate) fn fly(
         flight.target
     };
     let holder = holder(archetype).filter(|_| flight.thrown);
+    let launch = flight.launch;
+    flight.launch = false;
     if flight.thrown {
         if bounce_and_roll(level, thing, flight, slope, holder.is_some()) {
             thing.active = false;
             return true;
+        }
+        if launch && let Phase::Thrown(f) = &mut thing.phase {
+            f.vy = SPEED_GRAIN;
         }
     } else {
         drop_and_rest(level, thing, archetype.size, flight);

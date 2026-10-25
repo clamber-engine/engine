@@ -2715,6 +2715,8 @@ mod tests {
             bounce: clamber_fixed::Fixed::ZERO,
             rolling: false,
             age: 0,
+            wait: 0,
+            launch: false,
         });
         thing
     }

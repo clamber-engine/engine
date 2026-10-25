@@ -375,6 +375,15 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     }
     world.bursts.extend(broken);
     freed.extend(throw_hits(world));
+    if world.events.contains(&Event::Bounce) {
+        // Everything holds still on the frozen frames, or the object does.
+        let wait = if physics[Param::BounceHoldsAll] > Fixed::ZERO {
+            0
+        } else {
+            world.player.frozen
+        };
+        carry::release_on_bounce(world, wait);
+    }
     let (held_freed, carried_into) = hands_hits(world, &physics);
     freed.extend(held_freed);
     meet_balls(world, &balls, &physics);
