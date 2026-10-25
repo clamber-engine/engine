@@ -407,6 +407,70 @@ fn a_metal_barrel_defeats_walkers_as_a_barrel_does() {
     }
 }
 
+/// metal-barrel.md, "Rolling right on the flat floor": a metal barrel
+/// rolling right long after it left the hands defeats walkers by the
+/// ranges of the "t of 17 or more" column, knocking them left at 4 px a
+/// frame, and isn't slowed, lifted or removed by the hit.
+#[test]
+fn a_rolling_metal_barrel_defeats_walkers_by_the_late_ranges() {
+    let medium = SMALL_WALKER.replace(
+        "size = [20, 12], offset = 0.5",
+        "size = [25, 25], offset = 5.0",
+    );
+    let large = SMALL_WALKER.replace("size = [20, 12]", "size = [26, 38]");
+    // (walker, facing) -> the range of barrel x minus walker x.
+    let kinds = [
+        (SMALL_WALKER, [(-23, 27), (-22, 28)]),
+        (medium.as_str(), [(-30, 25), (-20, 35)]),
+        (large.as_str(), [(-26, 30), (-25, 31)]),
+    ];
+    for (params, ranges) in kinds {
+        for (facing, (low, high)) in ["left", "right"].into_iter().zip(ranges) {
+            for offset in (-20..=118).step_by(3) {
+                let params = params
+                    .replace("facing = \"left\"", &format!("facing = \"{facing}\""))
+                    .replace("speed = 1", "speed = 0");
+                let entity = format!(
+                    "[[entities]]\ntype = \"crawler\"\nat = [100, 400]\nparams = {{ {params} }}"
+                );
+                let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", "\"canister\"");
+                let mut play = Play::new(&src);
+                play.throw_to(21 + 20);
+                let at = play.world.player.pos;
+                place(&mut play, at, 0, 0, false, true);
+                play.world.things[0].pos.x = f(300.0);
+                play.world.things[1].pos.x = f(300.0 + offset as f64);
+                let floor = play.world.things[0].pos.y;
+                let mut hit = None;
+                for n in 0..60 {
+                    let before =
+                        play.world.things[0].pos.x.floor() - play.world.things[1].pos.x.floor();
+                    play.hold(&[], 1);
+                    let diff =
+                        play.world.things[0].pos.x.floor() - play.world.things[1].pos.x.floor();
+                    if !play.world.things[0].active {
+                        break;
+                    }
+                    assert_eq!(play.object().vx, speed(896));
+                    assert_eq!(play.world.things[0].pos.y, floor);
+                    if hit.is_none() && play.world.flow.events.contains(&FlowEvent::Defeat(1)) {
+                        hit = Some((n, diff));
+                        assert!(n == 0 || before < low, "{params} {facing} {offset}: late");
+                        assert_eq!(play.world.things[1].vx, f(-4.0), "{facing} {offset}");
+                    }
+                }
+                match hit {
+                    Some((_, diff)) => assert!(
+                        (low..=high).contains(&diff),
+                        "{params} {facing} {offset}: hit at {diff}"
+                    ),
+                    None => panic!("{params} {facing} {offset}: no hit"),
+                }
+            }
+        }
+    }
+}
+
 /// The same example's second case: 40 px further right, it's hit after
 /// the object's first bounce, on Q + 43, by the smaller area.
 #[test]
