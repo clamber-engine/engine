@@ -167,14 +167,18 @@ pub(crate) fn after(world: &mut World) {
     if !can_hold(world) || walking_out {
         world.player.hands = None;
         world.player.thrown = None;
-        let facing = world.player.facing;
-        let let_go = (world.player.knockout.is_some() || walking_out) && let_go_speed;
+        // A character lost on a hit lets go on the hit frame, the way it
+        // faced before the hit turned it.
+        let lost_now = world.loss.filter(|l| l.frame == 0);
+        let facing = lost_now.map_or(world.player.facing, |l| l.faced);
+        let let_go =
+            (world.player.knockout.is_some() || walking_out || lost_now.is_some()) && let_go_speed;
         let thing = &mut world.things[hands.thing];
         if thing.phase == Phase::Held {
             if let_go {
                 let held = frames(physics[Param::KnockoutHold]).saturating_sub(1);
                 let holds_character = thing.archetype.as_ref().and_then(holder).is_some();
-                let wait = if holds_character || walking_out {
+                let wait = if holds_character || walking_out || lost_now.is_some() {
                     0
                 } else {
                     held
@@ -297,6 +301,28 @@ pub(crate) fn in_hands(player: &Player, thing: &Thing) -> Vec2 {
         Fixed::from_int((x + ahead) as i32),
         Fixed::from_int(above as i32),
     )
+}
+
+/// The second character's object is gone on the frame before a hit that
+/// loses a character, whichever hurt it is going to (`losing-a-character.md`,
+/// "Hits while carrying an object"). Only the barrel in the hands counts.
+pub(crate) fn lose_second_barrel(world: &mut World) {
+    let p = &world.player;
+    let Some(hands) = p.hands else {
+        return;
+    };
+    if p.character == 0
+        || world.other.is_none()
+        || world.swap.is_some()
+        || world.protected()
+        || world.losing()
+        || world.player_physics()[Param::LoseJump] <= Fixed::ZERO
+        || world.things[hands.thing].phase != Phase::Held
+    {
+        return;
+    }
+    world.things[hands.thing].active = false;
+    world.player.hands = None;
 }
 
 /// Whether the player can go on holding an object after this step.

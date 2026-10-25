@@ -14,7 +14,7 @@ use clamber_pack::{Param, Physics};
 
 use crate::follow::{self, Follow};
 use crate::player::{Facing, Player, State, ceil, frames};
-use crate::world::World;
+use crate::world::{Phase, World};
 
 /// The character in the level that isn't under control.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -190,7 +190,14 @@ pub(crate) fn update(world: &mut World, physics: &Physics, input: &Frame) -> boo
         }
     };
     if swap.frame >= swap.end {
+        let quirk = hurt_on_end(world);
         hand_over(world, &swap);
+        if quirk {
+            // The character that took over is hurt on E itself, and holds
+            // still.
+            world.player.hit(&mut world.events);
+            return true;
+        }
         // After a swap in which the second character was the player, a
         // tandem press on this frame starts the next swap (`controls.md`).
         let tandem =
@@ -206,6 +213,29 @@ pub(crate) fn update(world: &mut World, physics: &Physics, input: &Frame) -> boo
         return go_on(world, swap);
     }
     go_on(world, swap)
+}
+
+/// A walker heading left standing next to where the first character
+/// ended up hurts the second character, which takes over from it, on E
+/// itself, though they are about 60 px apart (`losing-a-character.md`,
+/// "Hits during a swap"): its `x` less the first character's, at the end
+/// of E - 1, is from -13.35 to 29.65, at the first character's height.
+fn hurt_on_end(world: &World) -> bool {
+    let p = &world.player;
+    if p.character != 0 || world.protected() || world.losing() {
+        return false;
+    }
+    // The bounds are measured to a hundredth of a pixel.
+    let from = Fixed::from_f64(-13.35).unwrap();
+    let to = Fixed::from_f64(29.65).unwrap();
+    world.things.iter().any(|t| {
+        t.active
+            && t.phase == Phase::Ready
+            && t.archetype.is_some_and(|a| a.behavior.is_walker())
+            && t.facing == Facing::Left
+            && ceil(t.pos.y) == ceil(p.pos.y)
+            && (from..=to).contains(&(t.pos.x - p.pos.x))
+    })
 }
 
 /// Moves both characters on the swap's frame, which is before its end.

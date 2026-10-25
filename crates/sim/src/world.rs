@@ -264,6 +264,9 @@ pub struct World {
     pub other: Option<Other>,
     /// The swap under way, if there is one.
     pub swap: Option<Swap>,
+    /// An enemy touching the character that takes over during a swap,
+    /// which hurts it on the frame after control returns.
+    pub swap_touch: Option<usize>,
     /// What was held lately, for whether a swap press starts a swap.
     pub recent: Recent,
     /// The loss of a character under way, until protection after it
@@ -474,6 +477,7 @@ impl World {
             player,
             other,
             swap: None,
+            swap_touch: None,
             recent: Recent::default(),
             loss: None,
             lost: None,
@@ -1478,8 +1482,8 @@ fn advance(world: &mut World, input: &InputFrame) {
         flow::flight_stopped(world);
         things::update(world, start_pos, frozen);
     } else {
-        // What hurting a swapping player does isn't in the spec yet;
-        // nothing does.
+        // Nothing hurts a swapping player; what touched the other
+        // character hurts it after the swap (`swap_touch`).
         let hurt_by = world
             .player
             .hurt_ahead

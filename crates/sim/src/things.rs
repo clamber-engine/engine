@@ -108,7 +108,7 @@ use crate::hidden;
 use crate::hutch;
 use crate::join;
 use crate::keg::Burst;
-use crate::player::{Act, Facing, HEIGHT, SPEED_GRAIN, STEP, State, TINY, frames, is_wall};
+use crate::player::{Act, Facing, HEIGHT, Player, SPEED_GRAIN, STEP, State, TINY, frames, is_wall};
 use crate::pose::{self, SecondPose, Stance};
 use crate::ride;
 use crate::rope;
@@ -268,6 +268,10 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     let held_by_bounce = holds_walkers && frozen && world.player.state == State::Bounce;
     // With `roll_defeat_holds_walkers`, on a roll's frozen frames too.
     let held_by_roll = roll_holds && frozen && world.player.state == State::Roll;
+    // Ground walkers stand still from the frame after a swap's press to
+    // the frame before control returns (losing-a-character.md, "Hits
+    // during a swap").
+    let held_by_swap = world.swap.is_some_and(|s| s.frame >= 1);
     // Enemies hold still while a knocked-out player does, after the hit
     // frame, except the one that hurt it.
     let hold = u16::from(frames(physics[Param::KnockoutHold]));
@@ -288,8 +292,13 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         return None;
     }
     // Walkers hold still on these, the one that hurt the player aside.
-    world.still =
-        held_by_bounce_all || held_by_bounce || held_by_roll || paused || held.is_some() || waiting;
+    world.still = held_by_bounce_all
+        || held_by_bounce
+        || held_by_roll
+        || held_by_swap
+        || paused
+        || held.is_some()
+        || waiting;
     // Throwers and balls stop then too, the one that hurt it as well,
     // and none is thrown.
     let thrower_held = held.is_some() || held_by_bounce_all;
@@ -351,7 +360,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         if paused && thing.archetype.is_some_and(|a| a.behavior.fall().is_some()) {
             continue;
         }
-        if (held_by_bounce || held_by_roll)
+        if (held_by_bounce || held_by_roll || held_by_swap)
             && thing.archetype.is_some_and(|a| a.behavior.is_walker())
         {
             continue;
@@ -486,12 +495,42 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         } else {
             None
         };
+        if world.swap.is_some() {
+            // Nothing hurts either character during a swap, but what
+            // touches the one that takes over hurts it once it has control
+            // (losing-a-character.md, "Hits during a swap").
+            world.swap_touch = world.swap_touch.or_else(|| taker_touched(world));
+        }
+        let stinger = stinger::hurt_ahead(world);
         world.player.hurt_ahead = walker
             .or_else(|| throwers::hurt_ahead(world))
             .or_else(|| throwers::thrower_hurt_ahead(world))
-            .or_else(|| stinger::hurt_ahead(world));
+            .or(stinger);
+        if world.swap.is_none() {
+            world.player.hurt_ahead = world.player.hurt_ahead.or_else(|| world.swap_touch.take());
+        }
+        if stinger.is_some() && world.player.hurt_ahead == stinger {
+            carry::lose_second_barrel(world);
+        }
     }
     hurt_by
+}
+
+/// The enemy touching the character that takes over a swap, as it is
+/// now, if one is.
+fn taker_touched(world: &mut World) -> Option<usize> {
+    let other = world.other.as_ref()?;
+    let physics = world.feel.roster[other.character].physics;
+    let mut taker = Player::new(&world.level, other.pos);
+    taker.character = other.character;
+    taker.facing = other.facing;
+    std::mem::swap(&mut world.player, &mut taker);
+    let touched = hurt_ahead(world, &physics, None)
+        .or_else(|| throwers::hurt_ahead(world))
+        .or_else(|| throwers::thrower_hurt_ahead(world))
+        .or_else(|| stinger::hurt_ahead(world));
+    std::mem::swap(&mut world.player, &mut taker);
+    touched
 }
 
 /// Whether, with `bounce_holds_all`, this step is one of a bounce's

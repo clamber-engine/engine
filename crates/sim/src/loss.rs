@@ -33,6 +33,8 @@ pub struct Loss {
     /// The frame the other character's hop starts on, once its run to
     /// the hit spot is over.
     pub hop: Option<u16>,
+    /// The way the hit character faced before the hit turned it.
+    pub faced: Facing,
 }
 
 /// A character lost on a hit, on its way out of the level.
@@ -49,7 +51,7 @@ pub struct Lost {
 
 /// Whether a hurt player loses its character rather than a life: the
 /// other character is in the level, and the hit isn't one the spec
-/// leaves out (during a swap, a bounce or a roll).
+/// leaves out (a bounce of the second character).
 pub(crate) fn can_start(world: &World) -> bool {
     let p = &world.player;
     world.other.is_some()
@@ -71,6 +73,7 @@ pub(crate) fn start(world: &mut World) {
     } else {
         physics[Param::Gravity]
     };
+    let faced = p.facing;
     if p.facing == Facing::Left {
         world.events.push(Event::Turn);
     }
@@ -95,6 +98,7 @@ pub(crate) fn start(world: &mut World) {
             Fixed::from_int(ceil(p.pos.y) as i32),
         ),
         hop: None,
+        faced,
     });
 }
 
