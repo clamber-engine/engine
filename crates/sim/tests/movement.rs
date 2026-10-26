@@ -5349,3 +5349,65 @@ fn classic_a_stopped_roll_carried_on_stands_and_pushes_off() {
         assert_eq!(rows[change].vx, 0.25, "{change}");
     }
 }
+
+/// Frames (counted from the turn's first, 0) of the Turn and JumpStart
+/// events, and the first frame the state is a roll, with Left held on
+/// `left` and `button` pressed (and held) from `press`.
+fn classic_turn_press(left: std::ops::Range<usize>, button: Action, press: usize) -> Tpress {
+    let mut w = classic();
+    let mut steps = Vec::new();
+    for f in 0..16 {
+        let mut held = Vec::new();
+        if left.contains(&f) {
+            held.push(Action::Left);
+        }
+        if f >= press {
+            held.push(button);
+        }
+        steps.extend(hold(&mut w, &held, 1));
+    }
+    Tpress {
+        turn: first(&steps, Event::Turn),
+        jump: first(&steps, Event::JumpStart),
+        roll: steps.iter().position(|s| s.state == State::Roll),
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct Tpress {
+    turn: Option<usize>,
+    jump: Option<usize>,
+    roll: Option<usize>,
+}
+
+#[test]
+fn classic_a_press_during_a_turn_cancels_its_facing_change() {
+    // spec/behavior/ground-speed.md, "A Jump or Action press during a turn":
+    // the worked rows (standing, facing right).
+    let rows: [(std::ops::Range<usize>, usize, Option<usize>, usize); 7] = [
+        (0..1, 2, None, 3),
+        (0..1, 5, Some(4), 6),
+        (0..3, 1, Some(2), 2),
+        (0..3, 2, None, 3),
+        (0..9, 2, Some(3), 3),
+        (0..9, 4, Some(5), 5),
+        (0..1, 6, Some(4), 7),
+    ];
+    for (left, press, turn, jump) in rows {
+        let got = classic_turn_press(left.clone(), Action::Jump, press);
+        assert_eq!(
+            (got.turn, got.jump),
+            (turn, Some(jump)),
+            "{left:?} Jump {press}"
+        );
+    }
+    // Action starts a roll on its press, facing as in the column.
+    for (left, press, turn) in [(0..3, 2, None), (0..9, 3, Some(4))] {
+        let got = classic_turn_press(left.clone(), Action::Action, press);
+        assert_eq!(
+            (got.turn, got.roll),
+            (turn, Some(press)),
+            "{left:?} Action {press}"
+        );
+    }
+}

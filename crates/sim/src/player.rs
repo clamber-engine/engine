@@ -1730,7 +1730,8 @@ impl Player {
             && (self.grounded() || air_gait)
             && !events.contains(&Event::JumpStart)
         {
-            self.turn_on_ground(dir, turn_time, !striding, toward_rise)
+            let button = pressed(Action::Jump) || pressed(Action::Action);
+            self.turn_on_ground(dir, turn_time, !striding, toward_rise, button)
         } else {
             // In the air, and on the take-off frame, facing follows the
             // input at once.
@@ -3108,10 +3109,18 @@ impl Player {
         turn_time: u8,
         start: bool,
         toward_rise: bool,
+        button: bool,
     ) -> Facing {
         let mut facing = self.facing;
         let length = turn_time.saturating_sub(self.short_turn.into());
         self.turn = self.turn.map(|n| n + 1).filter(|&n| n < length);
+        // A Jump or Action press before the turn's facing change cancels
+        // it (`ground-speed.md`, "A Jump or Action press during a turn");
+        // facing then follows the input on the next frame.
+        if button && self.turn.is_some_and(|n| n <= turn_time / 2) {
+            self.turn = None;
+            return facing;
+        }
         if toward_rise {
             facing = facing_of(dir);
         }
