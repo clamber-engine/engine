@@ -3746,6 +3746,35 @@ fn classic_roll_ends_on_landing_after_a_30_frame_fall() {
 }
 
 #[test]
+fn classic_roll_started_on_the_first_airborne_frame_ends_on_landing_after_a_29_frame_fall() {
+    // spec/behavior/rolling-off-ledges.md, "When the roll ends": when the
+    // roll starts on L itself, a fall of exactly 29 frames makes the
+    // landing frame D and a 30-frame fall ends at G + 30; from L = S + 1
+    // on it is the 30-frame fall.
+    let ends = |lead: usize, nudge: f64| {
+        let rows = classic_roll_off_raised(lead, 100, |f, w| {
+            if f == lead + 5 {
+                w.player.pos.y += Fixed::from_f64(nudge).unwrap();
+            }
+        });
+        let leave = frames_with(&rows, Event::LeaveGround)[0];
+        let land = frames_with(&rows, Event::Land)[0];
+        let end = frames_with(&rows, Event::RollEnd)[0];
+        (land - leave, end - land)
+    };
+    let falls = |lead: usize| -> Vec<(usize, usize)> {
+        (-16..=120)
+            .map(|px| ends(lead, f64::from(px)))
+            .filter(|&(f, _)| (28..=31).contains(&f))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    };
+    assert_eq!(falls(0), [(28, 30), (29, 0), (30, 30), (31, 30)]);
+    assert_eq!(falls(1), [(28, 30), (29, 30), (30, 0), (31, 30)]);
+}
+
+#[test]
 fn classic_roll_off_the_end_of_the_ground_worked_example() {
     // spec/behavior/rolling-off-ledges.md, "When the roll ends", the
     // example where the ground simply ends: standing 56 px from the edge,

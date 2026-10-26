@@ -215,6 +215,9 @@ pub struct Player {
     /// A timed roll ended in a stop in the air, and the frame after the
     /// landing hasn't ended yet (`roll_air_stop_wait`).
     pub air_stopped: bool,
+    /// The timed roll under way left the ground on its own first frame, so
+    /// that it ends on landing one frame earlier in the fall.
+    pub roll_left_on_start: bool,
     /// The ground action under way, if there is one.
     pub ground_action: Option<GroundAction>,
     /// A boost waiting for action to be held, after a roll or its stop
@@ -422,6 +425,7 @@ impl Player {
             boost: None,
             boosted: false,
             roll_press: None,
+            roll_left_on_start: false,
             since_run: None,
             lone_run: false,
             holds: Holds::default(),
@@ -2977,6 +2981,9 @@ impl Player {
         roll.still = false;
         roll.since_press = roll.since_press.saturating_add(1);
         roll.frame = roll.frame.saturating_add(1);
+        if roll.frame == 1 {
+            self.roll_left_on_start = events.contains(&Event::LeaveGround);
+        }
         let fell = roll.air;
         roll.air = if airborne {
             roll.air.saturating_add(1)
@@ -2987,6 +2994,9 @@ impl Player {
         let carries = roll.defeated || (roll.held && roll.size != RollSize::Fast);
         let landed = lengthen == 0 && events.contains(&Event::Land);
         let fall_end = frames(physics[Param::RollFallEnd]);
+        // A roll that starts on the frame the player leaves the ground ends
+        // on landing after a fall one frame shorter.
+        let fall_end = fall_end.saturating_sub(u8::from(self.roll_left_on_start));
         let ends_on_landing = landed && fall_end > 0 && fell == fall_end;
         if ends_on_landing {
             // The landing frame is the first after the roll.
