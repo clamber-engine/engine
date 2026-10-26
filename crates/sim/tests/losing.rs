@@ -74,7 +74,11 @@ impl Play {
     /// The first character standing at `at` facing `facing`, and the
     /// second standing at `other` facing right.
     fn new(at: Vec2, facing: Facing, other: Vec2) -> Play {
-        let level = Arc::new(Level::from_toml_str(FLAT, "flat").unwrap());
+        Play::in_level(FLAT, at, facing, other)
+    }
+
+    fn in_level(source: &str, at: Vec2, facing: Facing, other: Vec2) -> Play {
+        let level = Arc::new(Level::from_toml_str(source, "flat").unwrap());
         let mut world = World::new(level, feel());
         world.player.pos = at;
         world.player.facing = facing;
@@ -195,6 +199,24 @@ fn the_lost_character_holds_still_then_runs_right_and_is_gone() {
     play.hold(&[], 460);
     assert!(play.world.leaving().is_none());
     assert!(play.world.lost.is_none());
+}
+
+/// Placeholder rule: a run held up by a wall ends within a bounded
+/// number of frames (the spec doesn't say what the run does there).
+#[test]
+fn a_run_held_up_by_a_wall_ends() {
+    for gap in [0.0, 1.0, 3.0, 10.0, 40.0, 150.0] {
+        let wall = format!(
+            "\n[[collision]]\nshape = \"rect\"\nrect = [{}, 300, 40, 100]\n",
+            200.0 + 6.0 + gap
+        );
+        let source = format!("{FLAT}{wall}");
+        let mut play = Play::in_level(&source, v(200.0, FLOOR), Facing::Right, v(138.0, FLOOR));
+        play.hit(&[], 37);
+        assert!(play.world.leaving().is_some(), "gap {gap}");
+        play.hold(&[], 150);
+        assert!(play.world.lost.is_none(), "gap {gap}: still running");
+    }
 }
 
 #[test]
