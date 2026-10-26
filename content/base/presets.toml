@@ -701,6 +701,9 @@ roll_fast_window_neutral = 14
 roll_carry_time = 3
 roll_stop_time = 17
 roll_stop_slide = 3
+# Facing turns on the press frame from D + 1, while still sliding too
+# (roll-input.md, "How a roll ends").
+roll_slide_turns = 1
 roll_buffer = 19
 # A roll from a new press on D + 17 lasts 30 frames too (roll-input.md),
 # and a stop that carries the player off a ledge goes on in the air,

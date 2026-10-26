@@ -3229,6 +3229,37 @@ fn classic_roll_input_worked_example() {
 }
 
 #[test]
+fn classic_roll_stop_turns_on_the_press_frame() {
+    use Action::{Action as A, Left as L};
+    // spec/behavior/roll-input.md, "How a roll ends": in the stop after a
+    // roll (D = 39, the roll's last frame, here), a direction turns facing on the frame it is
+    // pressed from D + 1 to D + 17, also while the player still slides,
+    // and the slide goes on; from D + 18 it's the standing turn.
+    let rolled = |press: usize, key: Action| {
+        let mut w = classic();
+        play(&mut w, 70, |f| match f {
+            10 => vec![A],
+            _ if f >= press => vec![key],
+            _ => vec![],
+        })
+    };
+    for press in 40..=56 {
+        let rows = rolled(press, L);
+        assert_eq!(frames_with(&rows, Event::Turn), [press], "{press}");
+        assert_eq!(rows[press].facing, Facing::Left, "{press}");
+    }
+    let slid = rolled(100, L);
+    let rows = rolled(40, L);
+    assert_eq!(rows[40].vx, slid[40].vx);
+    assert_eq!(rows[41].vx, slid[41].vx);
+    // The direction already faced turns nothing.
+    assert_eq!(frames_with(&rolled(46, Action::Right), Event::Turn), NONE);
+    // From D + 18 the standing turn changes facing 4 frames later.
+    let rows = rolled(57, L);
+    assert_eq!(frames_with(&rows, Event::Turn), [61]);
+}
+
+#[test]
 fn classic_roll_carries_on_into_running() {
     use Action::{Action as A, Right as R};
     // spec/behavior/roll-input.md, "How a roll ends" and "Starting the
