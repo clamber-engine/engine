@@ -1818,7 +1818,7 @@ impl Player {
             self.target = vx;
             vx
         } else if self.roll_stop > 0 {
-            if self.roll_stop <= slide {
+            if self.roll_stop <= slide && !self.stop_next_to_edge(level, physics) {
                 ease(self.vel.x, Fixed::ZERO, response)
             } else {
                 Fixed::ZERO
@@ -1865,6 +1865,10 @@ impl Player {
         };
         let carrying = self.carrying_stride(physics);
         let mut pre_stride = None;
+        let crouch_pending = physics[Param::CrouchTurnLock] > Fixed::ZERO
+            && self.grounded()
+            && self.crouch.held > 0
+            && !crouching;
         if !striding || (crouching && self.grounded()) {
             // In the air, rolling and in a roll's stop, the player isn't
             // walking or running; landings and the end of a roll set the
@@ -1875,8 +1879,10 @@ impl Player {
             pre_stride = Some((self.gait, held(Action::Action) && !carrying, carrying));
             let turned = self.stride(
                 run_dir,
-                // Toward a rise, a turn starts by the way the target points.
-                if toward_rise && self.target.is_negative() {
+                // The frames before a crouch shows start no turn.
+                if crouch_pending {
+                    0
+                } else if toward_rise && self.target.is_negative() {
                     -1
                 } else if toward_rise {
                     i32::from(self.target > Fixed::ZERO)
@@ -3088,6 +3094,31 @@ impl Player {
         };
         self.roll = Some(roll);
         Some(vx)
+    }
+
+    /// Whether this frame of a roll's stop is a stopped frame: the player
+    /// is moving slowly on the ground with no ground ahead in the roll's
+    /// direction, as in a roll (`roll_edge_speed`, `rolling-off-ledges.md`
+    /// "The stop after a roll, next to an edge").
+    fn stop_next_to_edge(&self, level: &Level, physics: &Physics) -> bool {
+        let slow = physics[Param::RollEdgeSpeed];
+        let Some(roll) = self.stopped else {
+            return false;
+        };
+        if slow <= Fixed::ZERO || !self.grounded() || self.vel.x.abs() > slow {
+            return false;
+        }
+        let ahead = physics[Param::RollEdgeAhead].floor() * i64::from(direction(roll.dir));
+        let depth = match physics[Param::RollEdgeDepth] {
+            Fixed::ZERO => STEP + STEP,
+            depth => depth,
+        };
+        !columns::ground_down_to(
+            level,
+            columns::column(self.pos.x) + ahead,
+            self.pos.y,
+            depth,
+        )
     }
 
     /// Makes the frame after a timed roll, or its stop, ends in the air

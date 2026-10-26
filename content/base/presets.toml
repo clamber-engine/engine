@@ -603,6 +603,8 @@ speed_response = 0.125
 crouch_start = 2
 crouch_min = 13
 crouch_recovery = 10
+# No turn starts from D to U + 9 (ground-speed.md, "Turns during a crouch").
+crouch_turn_lock = 10
 # No crouch starts before L + 2, nor on a Jump press, and taking off ends
 # one; an Action press with the Jump press starts nothing, or a crouch on
 # P + 1 with Down held there (air-control.md, "Action and Down around

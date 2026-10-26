@@ -1561,6 +1561,65 @@ fn classic_2_crouch_goes_on_with_down_or_up_alone() {
 }
 
 #[test]
+fn classic_1_turns_during_a_crouch() {
+    fn standing_classic_1() -> Play {
+        let mut w = Play::new(generic_feel("classic-1").unwrap());
+        hold(&mut w, &[], 60);
+        assert!(w.player.grounded());
+        w
+    }
+
+    // spec/behavior/ground-speed.md, "Turns during a crouch": standing
+    // still facing right, Down held on frames 0 to 4 and Left from frame
+    // 0 on. The crouch lasts to frame 12, so U is 13; facing stays right
+    // to frame 26, the turn starts on 23 and facing is left on 27.
+    use Action::{Down, Left};
+    let mut w = standing_classic_1();
+    for frame in 0..30 {
+        let held: &[Action] = if frame < 5 { &[Down, Left] } else { &[Left] };
+        hold(&mut w, held, 1);
+        let left = w.player.facing == Facing::Left;
+        assert_eq!(left, frame >= 27, "frame {frame}");
+        assert!(!(w.player.turn.is_some() && frame < 23), "frame {frame}");
+    }
+
+    // Left held on frames 8 to 10 only, or 18 to 20 only: no turn at all.
+    for range in [8..11, 18..21] {
+        let mut w = standing_classic_1();
+        for frame in 0..40 {
+            let mut held = vec![];
+            if frame < 5 {
+                held.push(Down);
+            }
+            if range.contains(&frame) {
+                held.push(Left);
+            }
+            hold(&mut w, &held, 1);
+            assert_eq!(w.player.facing, Facing::Right, "{range:?} frame {frame}");
+        }
+    }
+
+    // Left held only from frame 24 on: the turn starts on 24, facing is
+    // left on 28.
+    let mut w = standing_classic_1();
+    for frame in 0..30 {
+        let mut held = vec![];
+        if frame < 5 {
+            held.push(Down);
+        }
+        if frame >= 24 {
+            held.push(Left);
+        }
+        hold(&mut w, &held, 1);
+        assert_eq!(
+            w.player.facing == Facing::Left,
+            frame >= 28,
+            "frame {frame}"
+        );
+    }
+}
+
+#[test]
 fn classic_2_no_turn_while_crouching_or_just_after() {
     // spec/behavior/ground-speed.md, "Crouching (`title-2`)": from U to
     // U + 10 no turn can start, even with the other way held; one can
@@ -3701,6 +3760,48 @@ fn classic_roll_stands_still_before_the_end_of_the_ground() {
             .all(|r| r.x == 809.0 && r.vx == 0.0 && r.grounded)
     );
     assert_eq!(frames_with(&rows, Event::RollEnd), [29]);
+}
+
+#[test]
+fn classic_roll_stop_next_to_an_edge_has_stopped_frames() {
+    // spec/behavior/rolling-off-ledges.md, "The stop after a roll, next to
+    // an edge": a frame of the stop (D to D + 3) that starts with |vx| at
+    // most 271/256 and no ground 15 px ahead keeps the player still with
+    // vx 0. The edge is at E = 1600 here, so floor(x) + 15 >= 1600.
+    let mut stopped = 0;
+    for start in 1480..1590 {
+        for slow_from in [20, 23] {
+            let mut w = classic_raised(start);
+            for frame in 0..40 {
+                let (x, vx) = (w.player.pos.x, w.player.vel.x);
+                let before = w.player.roll_stop;
+                let held: Vec<Action> = match frame {
+                    0 => vec![Action::Action, Action::Right],
+                    f if f >= slow_from && f < 28 => vec![Action::Action, Action::Left],
+                    f if f < 28 => vec![Action::Action, Action::Right],
+                    _ => vec![Action::Right],
+                };
+                hold(&mut w, &held, 1);
+                // The stop's frames: the frame just played is D + n.
+                if before == 0 && w.player.roll_stop == 0 || w.player.roll_stop > 4 {
+                    continue;
+                }
+                let in_stop = w.player.roll_stop > 0 || before > 0;
+                if !in_stop || vx == Fixed::ZERO || vx.to_f64() < 0.0 || !w.player.grounded() {
+                    continue;
+                }
+                let no_ground_ahead = x.floor() + 15 >= 1600;
+                if vx.to_f64() <= 271.0 / 256.0 && no_ground_ahead {
+                    stopped += 1;
+                    assert_eq!(w.player.vel.x, Fixed::ZERO, "start {start} frame {frame}");
+                    assert_eq!(w.player.pos.x, x, "start {start} frame {frame}");
+                } else if vx.to_f64() <= 271.0 / 256.0 {
+                    assert!(w.player.pos.x != x, "start {start} frame {frame}");
+                }
+            }
+        }
+    }
+    assert!(stopped > 0);
 }
 
 #[test]
