@@ -322,6 +322,9 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
     let view = world.view.map_or((0, 0), |v| (v.x(), v.y()));
     let critters_held =
         held.is_some() || waiting || held_by_bounce || held_by_roll || held_by_bounce_all;
+    // Stingers that move are hit by where a barrel was at the end of the
+    // last step.
+    let rollers = rolling_right(world);
     let mut freed = Vec::new();
     let mut broken = Vec::new();
     let ridden = world.player.astride.map(|a| a.thing);
@@ -393,6 +396,9 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         }
     }
     world.bursts.extend(broken);
+    for (offsets, pos) in rollers {
+        strike_swaying(world, offsets, pos);
+    }
     freed.extend(throw_hits(world));
     if world.events.contains(&Event::Bounce) {
         // Everything holds still on the frozen frames, or the object does.
@@ -1134,6 +1140,67 @@ fn strike_stinger(world: &mut World, offsets: Offsets, pos: Vec2, right: bool) {
     if let Some(stinger) = stinger {
         stinger.heading = if right { Facing::Left } else { Facing::Right };
         stinger.phase = Phase::Struck(0);
+        let index = stinger.index;
+        world.flow.events.push(FlowEvent::Defeat(index));
+    }
+}
+
+/// Each metal barrel rolling right now that hits stingers, with its
+/// offsets for them and where it is.
+fn rolling_right(world: &World) -> Vec<(Offsets, Vec2)> {
+    world
+        .things
+        .iter()
+        .filter(|t| t.active)
+        .filter_map(|t| {
+            let (Phase::Thrown(flight), Some(archetype)) = (t.phase, t.archetype) else {
+                return None;
+            };
+            let Behavior::Carry { hit_stinger, .. } = archetype.behavior else {
+                return None;
+            };
+            (flight.thrown && flight.rolling && flight.right())
+                .then_some(hit_stinger)
+                .flatten()
+                .map(|offsets| (offsets, t.pos))
+        })
+        .collect()
+}
+
+/// Defeats the first stinger that flies, and isn't hit already, that a
+/// metal barrel rolling right hits (metal-barrel.md, "A stinger that
+/// sways"): the barrel's position is the one it had at the end of the
+/// last step, `pos`, and the stinger's the one it has now, after its own
+/// move, so the same ranges as for one that doesn't move apply. The
+/// stinger has made its move of this step and holds still on the next;
+/// its speed across is the knock's now.
+fn strike_swaying(world: &mut World, offsets: Offsets, pos: Vec2) {
+    let (x, y) = (ceil(pos.x), ceil(pos.y));
+    let stinger = world.things.iter_mut().find(|t| {
+        let Some(Behavior::Stinger(s)) = t.archetype.map(|a| a.behavior) else {
+            return false;
+        };
+        let still =
+            (s.velocity.x, s.velocity.y) == (Fixed::ZERO, Fixed::ZERO) && s.reach == (0, 0, 0, 0);
+        let (across, above) = (x - t.pos.x.floor(), y - ceil(t.pos.y));
+        let ((a0, a1), (u0, u1)) = (offsets.across, offsets.above);
+        t.active
+            && !still
+            && s.knock.is_some()
+            && matches!(t.phase, Phase::Swaying { .. })
+            && (i64::from(a0)..=i64::from(a1)).contains(&across)
+            && (i64::from(u0)..=i64::from(u1)).contains(&above)
+    });
+    if let Some(stinger) = stinger {
+        let Some(Behavior::Stinger(Stinger {
+            knock: Some(knock), ..
+        })) = stinger.archetype.map(|a| a.behavior)
+        else {
+            return;
+        };
+        stinger.heading = Facing::Left;
+        stinger.vx = -knock.fall.knock;
+        stinger.phase = Phase::Struck(1);
         let index = stinger.index;
         world.flow.events.push(FlowEvent::Defeat(index));
     }

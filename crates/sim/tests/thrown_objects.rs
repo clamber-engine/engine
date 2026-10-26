@@ -813,6 +813,70 @@ fn a_rolling_metal_barrel_defeats_a_stinger_that_does_not_move() {
     }
 }
 
+/// metal-barrel.md, "A stinger that sways": a metal barrel rolling right
+/// defeats a stinger that flies by the same ranges, with the barrel as it
+/// was at the end of the frame before the hit frame K and the stinger as
+/// it is at the end of K, after its own move. On K its speed across
+/// becomes -4, on K + 1 it holds still and its speed up becomes -6.
+#[test]
+fn a_rolling_metal_barrel_defeats_a_stinger_that_sways() {
+    let mut hits = 0;
+    for params in [
+        "reach = [20, 20, 0, 0], velocity = [-1.5, 0]",
+        "reach = [10, 30, 10, 10], velocity = [1.0, 0.5]",
+    ] {
+        for above in [-10, 0, 10, 19] {
+            for offset in (0..=90).step_by(11) {
+                let entity = format!(
+                    "[[entities]]\ntype = \"stinger\"\nat = [{}, {}]\nparams = {{ {params} }}",
+                    300 + offset,
+                    400 - above
+                );
+                let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", "\"canister\"");
+                let mut play = Play::new(&src);
+                play.throw_to(21 + 20);
+                let at = play.world.player.pos;
+                place(&mut play, at, 0, 0, false, true);
+                play.world.things[0].pos.x = f(300.0);
+                let ceil = |v: Fixed| -(-v).floor();
+                let mut hit_on = None;
+                let mut barrel = play.world.things[0].pos;
+                for n in 0..40 {
+                    play.hold(&[], 1);
+                    let stinger = &play.world.things[1];
+                    let across = ceil(barrel.x) - stinger.pos.x.floor();
+                    let up = ceil(barrel.y) - ceil(stinger.pos.y);
+                    let inside = (-28..=32).contains(&across) && (-28..=19).contains(&up);
+                    barrel = play.world.things[0].pos;
+                    if let Some((k, held)) = hit_on {
+                        let stinger = &play.world.things[1];
+                        if n == k + 1 {
+                            assert_eq!(
+                                (stinger.phase, stinger.pos),
+                                (Phase::Knocked { vy: Some(f(-6.0)) }, held),
+                                "{params}"
+                            );
+                        }
+                        continue;
+                    }
+                    let stinger = &play.world.things[1];
+                    assert_eq!(
+                        matches!(stinger.phase, Phase::Struck(_)),
+                        inside,
+                        "{params} {above} {offset}: frame {n}"
+                    );
+                    if inside {
+                        assert_eq!(stinger.vx, f(-4.0));
+                        hit_on = Some((n, stinger.pos));
+                        hits += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert!(hits > 10, "{hits}");
+}
+
 /// metal-barrel.md, "Stingers": a stinger knocked off still hurts a
 /// standing player facing left on the floor, 5 px below it, on the frame
 /// after the hit, for I from -27 to 26, as one that was not hit would.
