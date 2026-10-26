@@ -21,3 +21,7 @@ clamber-sim = { path = "../sim" }
 clamber-trace = { path = "../trace" }
 serde = { version = "1.0.229", features = ["derive"] }
 toml = "1.1.8"
+
+[[bench]]
+name = "check"
+harness = false
