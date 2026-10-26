@@ -813,8 +813,14 @@ impl Game {
         let (x, y) = between(previous, other.pos, alpha, origin);
         if self.cast.has_player() {
             let (x, y) = (x as f32, y as f32);
-            self.drawn_cast()
-                .draw_other(canvas, &self.world, &self.poses.other, x, y);
+            self.drawn_cast().draw_other(
+                canvas,
+                &self.world,
+                &self.poses.other,
+                self.poses.other_state,
+                x,
+                y,
+            );
             return;
         }
         let state = if self.world.swap.is_some() {

@@ -28,6 +28,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use clamber_level::Vec2;
 use clamber_sim::{
     Behavior, CHECKPOINT, Event, Facing, FlowEvent, Outcome, Phase, State, Thing, World, spring_top,
 };
@@ -302,9 +303,23 @@ impl Cast {
 
     /// Draws the other character in `pose` with its feet at `(x, y)`, if
     /// there is one.
-    pub fn draw_other(&self, canvas: &mut dyn Surface, world: &World, pose: &Pose, x: f32, y: f32) {
+    pub fn draw_other(
+        &self,
+        canvas: &mut dyn Surface,
+        world: &World,
+        pose: &Pose,
+        state: State,
+        x: f32,
+        y: f32,
+    ) {
         if let Some(other) = &world.other {
-            if let Some(sprite) = self.picture(other.character, pose, x, y) {
+            // The spec gives the follower's pictures only in a scene
+            // (`following.md`, "Not covered"); elsewhere the nearest
+            // picture its own sheet has to what it does stands in.
+            let sprite = self
+                .picture(other.character, pose, x, y)
+                .or_else(|| self.stand_in(other.character, state, x, y));
+            if let Some(sprite) = sprite {
                 let sprite = Sprite {
                     flip_x: other.facing == Facing::Left,
                     ..sprite
@@ -1136,6 +1151,10 @@ pub struct Poses {
     pub player: Pose,
     pub other: Pose,
     pub leaving: Pose,
+    /// What the other character seems to be doing, from how it moved
+    /// ([`Poses::update`]), and where it was a frame ago.
+    pub other_state: State,
+    other_seen: Option<Vec2>,
     pub things: Vec<Pose>,
     /// The latest frame's number plus one, with frames numbered from the
     /// level's start or from play starting again after a lost life.
@@ -1151,6 +1170,8 @@ impl Poses {
             player: Pose::default(),
             other: Pose::default(),
             leaving: Pose::default(),
+            other_state: State::Idle,
+            other_seen: world.other.as_ref().map(|o| o.pos),
             things: vec![Pose::default(); world.things.len()],
             clock: 0,
             sparkles: Sparkles::default(),
@@ -1182,6 +1203,14 @@ impl Poses {
         self.sparkles.update(world, self.clock - 1);
         self.player.pictures.update(world, jump_in);
         self.other.pictures.update_other(world);
+        let seen = world.other.as_ref().map(|o| o.pos);
+        self.other_state = match (self.other_seen, seen) {
+            (Some(a), Some(b)) if b.y < a.y => State::Jump,
+            (Some(a), Some(b)) if b.y > a.y => State::Fall,
+            (Some(a), Some(b)) if b.x != a.x => State::Walk,
+            _ => State::Idle,
+        };
+        self.other_seen = seen;
         let id = cast.player;
         let landing = cast.playing(id, &self.player, LAND);
         let animation = cast.animation(id, Some(player_animation(world, landing)));
@@ -1815,6 +1844,44 @@ mod tests {
             let got = [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()];
             assert_eq!(got, want, "{labels:?}");
         }
+    }
+
+    #[test]
+    fn the_follower_shows_its_own_slots_nearest_picture_when_the_spec_gives_none() {
+        let mut world = world();
+        let at = world.player.pos;
+        world.other = Some(clamber_sim::Other::new(1, at, Facing::Right, at));
+        let standing = crate::pictures::labels(1, crate::pictures::Set::Standing);
+        for (labels, want) in [
+            (&standing[..1], [R, Color::default()]),
+            // With no picture of the character at all: the engine's art.
+            (&[][..], [Color::default(), rgb(255, 255, 255)]),
+        ] {
+            let cast = Cast::new(vec![
+                (PLAYER.to_string(), sheet()),
+                (format!("{CHARACTER}1"), character_sheet(labels)),
+            ]);
+            let mut poses = Poses::new(&cast, &world);
+            poses.update(&cast, &world, 0);
+            assert_eq!(poses.other_state, State::Idle);
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_other(
+                &mut canvas,
+                &world,
+                &poses.other,
+                poses.other_state,
+                2.0,
+                0.0,
+            );
+            let got = [canvas.get(1, 0).unwrap(), canvas.get(2, 0).unwrap()];
+            assert_eq!(got, want, "{labels:?}");
+        }
+        // Moving along the floor it is walking.
+        let cast = Cast::new(vec![(PLAYER.to_string(), sheet())]);
+        let mut poses = Poses::new(&cast, &world);
+        world.other.as_mut().unwrap().pos.x += clamber_fixed::Fixed::from_int(1);
+        poses.update(&cast, &world, 0);
+        assert_eq!(poses.other_state, State::Walk);
     }
 
     #[test]
