@@ -3911,6 +3911,48 @@ fn classic_roll_stop_next_to_an_edge_has_stopped_frames() {
 }
 
 #[test]
+fn classic_roll_stop_next_to_a_left_edge_has_stopped_frames() {
+    // The same rule at a left edge, directions mirrored (spec
+    // rolling-off-ledges.md, "The stop after a roll, next to an edge"). The
+    // ground's left end is column 800, so no ground 15 px ahead means
+    // floor(x) - 15 < 800.
+    let mut stopped = 0;
+    for start in 810..920 {
+        for slow_from in [20, 23] {
+            let mut w = classic_raised(start);
+            w.player.facing = Facing::Left;
+            for frame in 0..40 {
+                let (x, vx) = (w.player.pos.x, w.player.vel.x);
+                let before = w.player.roll_stop;
+                let held: Vec<Action> = match frame {
+                    0 => vec![Action::Action, Action::Left],
+                    f if f >= slow_from && f < 28 => vec![Action::Action, Action::Right],
+                    f if f < 28 => vec![Action::Action, Action::Left],
+                    _ => vec![Action::Left],
+                };
+                hold(&mut w, &held, 1);
+                if before == 0 && w.player.roll_stop == 0 || w.player.roll_stop > 4 {
+                    continue;
+                }
+                let in_stop = w.player.roll_stop > 0 || before > 0;
+                if !in_stop || vx == Fixed::ZERO || vx.to_f64() > 0.0 || !w.player.grounded() {
+                    continue;
+                }
+                let no_ground_ahead = x.floor() - 15 < 800;
+                if -vx.to_f64() <= 271.0 / 256.0 && no_ground_ahead {
+                    stopped += 1;
+                    assert_eq!(w.player.vel.x, Fixed::ZERO, "start {start} frame {frame}");
+                    assert_eq!(w.player.pos.x, x, "start {start} frame {frame}");
+                } else if -vx.to_f64() <= 271.0 / 256.0 {
+                    assert!(w.player.pos.x != x, "start {start} frame {frame}");
+                }
+            }
+        }
+    }
+    assert!(stopped > 0);
+}
+
+#[test]
 fn classic_roll_pushes_off_toward_the_end_of_the_ground() {
     // spec/behavior/rolling-off-ledges.md, "Stopping before a ledge": the
     // same place, Right and Action on S and Right held after.
