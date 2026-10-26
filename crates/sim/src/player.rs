@@ -3167,6 +3167,25 @@ impl Player {
         facing
     }
 
+    /// One step of the walking pictures' cycle during a walk-out, at the
+    /// walk-out's speed. The walk-out's own rules say nothing about
+    /// the cycle's pace (`level-end.md`: "The lead's pictures are those
+    /// of walking"), so it runs as walking at that speed does.
+    pub(crate) fn walk_out_stride(&mut self, physics: &Physics) {
+        let steps = physics[Param::StrideSteps]
+            .floor()
+            .clamp(1, MAX_STEP.into()) as u32;
+        let mut stride = match self.gait {
+            Gait::Walking(stride) => stride,
+            _ => Stride::START,
+        };
+        let rate = (stride_rate(self.vel.x.abs(), physics[Param::WalkStride])
+            - physics[Param::WalkStrideLess])
+            .max(physics[Param::StrideMin]);
+        stride.advance(rate, steps);
+        self.gait = Gait::Walking(stride);
+    }
+
     /// Goes on through the stride cycle once the frame's speed is known,
     /// holding `dir`, and starts a turn when one can start and `turn_dir`
     /// points behind the player. `turn_ends` says the turn under way

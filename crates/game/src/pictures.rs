@@ -1343,7 +1343,9 @@ impl PictureClock {
             .or_else(|| walking(first, player))
         } else if let Some(shown) = face_fall(first, world) {
             Some(shown)
-        } else if player.grounded() || upright_fall(player) {
+        } else if player.grounded() || upright_fall(player) || world.ending.is_some() {
+            // The walk-out lifts the lead off the ground but shows the
+            // walking pictures (`level-end.md`, "The walk-out").
             walking(first, player)
         } else {
             None
@@ -3101,6 +3103,29 @@ mod tests {
                 ("walk-9", 1),
             ],
         );
+    }
+
+    #[test]
+    fn the_walk_out_shows_walking_pictures_though_off_the_ground() {
+        // level-end.md, "The walk-out": the lead rises off the ground and
+        // "the lead's pictures are those of walking".
+        for slot in [0, 1] {
+            let mut start = world(FLAT, slot);
+            start.ending = Some(clamber_sim::Ending::default());
+            let run = run(start, &hold(&[], 0, 40));
+            assert!(run.grounded[0] && !run.grounded[5], "slot {slot}");
+            let walks: Vec<_> = run.shown[3..]
+                .iter()
+                .map(|l| l.expect("a picture"))
+                .collect();
+            assert!(
+                walks.iter().all(|l| l.contains("walk-")),
+                "slot {slot}: {walks:?}"
+            );
+            let mut seen = walks.clone();
+            seen.dedup();
+            assert!(seen.len() > 3, "slot {slot}: the cycle steps on: {seen:?}");
+        }
     }
 
     #[test]
