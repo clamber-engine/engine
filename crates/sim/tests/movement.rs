@@ -3775,6 +3775,52 @@ fn classic_roll_started_on_the_first_airborne_frame_ends_on_landing_after_a_29_f
 }
 
 #[test]
+fn classic_carry_on_roll_ends_in_a_fall_when_the_ground_ends_under_it() {
+    // spec/behavior/rolling-off-ledges.md, "Carrying on into running as the
+    // ground ends": with Action held throughout, a roll that leaves the
+    // ground on D + 1 to D + 3 still ends on D + 3, in a fall.
+    let run = |s: usize, n: usize| {
+        let held = move |f: usize| {
+            if f >= s {
+                vec![Action::Action, Action::Right]
+            } else {
+                vec![Action::Right]
+            }
+        };
+        play(&mut classic_raised(1300), s + n, held)
+    };
+    // Far from the edge, the carry-on ends on D + 3.
+    let rows = run(1, 40);
+    let start = frames_with(&rows, Event::RollStart)[0];
+    assert!(frames_with(&rows, Event::LeaveGround).is_empty());
+    let span = frames_with(&rows, Event::RollEnd)[0] - start;
+    let mut seen = std::collections::BTreeSet::new();
+    for s in 1..200 {
+        let rows = run(s, 120);
+        let (Some(&start), Some(&leave)) = (
+            frames_with(&rows, Event::RollStart).first(),
+            frames_with(&rows, Event::LeaveGround).first(),
+        ) else {
+            continue;
+        };
+        let late = leave.saturating_sub(start);
+        if (span - 2..=span).contains(&late) {
+            seen.insert(late);
+            assert_eq!(
+                frames_with(&rows, Event::RollEnd)[0],
+                start + span,
+                "L = S + {late}"
+            );
+            assert!(
+                frames_with(&rows, Event::Land)[0] > start + span,
+                "L = S + {late}"
+            );
+        }
+    }
+    assert_eq!(seen.len(), 3, "{seen:?}");
+}
+
+#[test]
 fn classic_roll_off_the_end_of_the_ground_worked_example() {
     // spec/behavior/rolling-off-ledges.md, "When the roll ends", the
     // example where the ground simply ends: standing 56 px from the edge,

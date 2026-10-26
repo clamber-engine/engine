@@ -3011,9 +3011,11 @@ impl Player {
             // A roll off a ledge ends as if it started just after landing.
             roll.left = frames(physics[Param::RollTime]);
             false
-        } else if (lengthen == 0 && airborne) || roll.left > 0 {
+        } else if (lengthen == 0 && airborne && !roll.carry) || roll.left > 0 {
             // It doesn't end in the air, or it's lengthened there every
-            // `roll_air_lengthen` frames from its first.
+            // `roll_air_lengthen` frames from its first. A carry-on that
+            // has begun on the ground still ends on schedule if the
+            // ground ends under it.
             if lengthen > 0
                 && airborne
                 && roll.left == frames(physics[Param::RollTime]).saturating_sub(lengthen)
