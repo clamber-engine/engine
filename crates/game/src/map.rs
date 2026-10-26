@@ -34,6 +34,7 @@ pub const LEVEL_MAP: &str = "maps/level-map.map";
 const PATH: Color = rgb(0xc8, 0xa0, 0x60);
 const LEVEL: Color = rgb(0xe8, 0x50, 0x40);
 const STOP: Color = rgb(0xf0, 0xe0, 0xb0);
+const TITLE: Color = rgb(0xff, 0xff, 0xff);
 const LEAD: Color = rgb(0x40, 0xb0, 0xf0);
 /// How far left of a page's edge the other character's origin may be and still
 /// show (cut off) there: it is in view from position 248 on the previous page.
@@ -747,6 +748,12 @@ impl MapPlay {
         // character leads
         if let Some(at) = screen.lead.other_position() {
             self.draw_other(canvas, cast, screen, at, (left_edge, scale, height));
+        }
+        // the stop's name, centred in rows 16 to 23 of the screen, in front
+        // of everything (`level-map.md`, "The stop's name")
+        if let Some(title) = screen.lead.title(&self.map) {
+            let y = (16.0 * scale).round() as i32;
+            crate::text::draw_text_centred(canvas, (w / 2) as i32, y, title, shade(TITLE));
         }
     }
 

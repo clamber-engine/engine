@@ -882,3 +882,73 @@ fn over_a_page_edge_to_the_left_the_other_ends_by_when_the_page_changes() {
     let (lead, other) = left_walk(260);
     assert_eq!((lead, other), (196, 220));
 }
+
+/// Stops a and b, joined by a path through two corners, the first named
+/// after a and the second after b (`level-map.md`, "The stop's name").
+fn titled() -> WorldMap {
+    map_with(
+        "appear_wait = 0\nappear_offset = [0, 0]",
+        "[[nodes]]\nid = \"a\"\nkind = \"waypoint\"\nat = [0, 0]\ntitle = \"NA\"\n\
+         [[nodes]]\nid = \"b\"\nkind = \"waypoint\"\nat = [64, 64]\ntitle = \"NB\"\n\
+         [[nodes]]\nid = \"c\"\nkind = \"waypoint\"\nat = [200, 64]\n\
+         [[paths]]\nfrom = \"a\"\nto = \"b\"\nvia = [[32, 0], [64, 0]]\nnamed_from = 1\n\
+         leave = [\"right\"]\nback = [\"left\"]\n\
+         [[paths]]\nfrom = \"b\"\nto = \"c\"\nleave = [\"down\"]",
+    )
+}
+
+/// The title after each of the first `frames` steps of a walk pressed on
+/// frame `press`, from node `start`.
+fn titles(
+    map: &WorldMap,
+    start: usize,
+    dir: Buttons,
+    press: u64,
+    frames: u64,
+) -> Vec<Option<String>> {
+    let mut lead = LegWalker::appear(map, legs(map), start);
+    let p = Progress::default();
+    let mut out = Vec::new();
+    while lead.frame() < frames {
+        let held = if lead.frame() >= press {
+            dir
+        } else {
+            Buttons::NONE
+        };
+        lead.step(map, legs(map), &p, held);
+        out.push(lead.title(map).map(str::to_string));
+    }
+    out
+}
+
+#[test]
+fn a_walk_shows_the_name_of_the_point_its_leg_ends_at() {
+    let map = titled();
+    let name = |v: &[Option<String>], f: usize| v[f].clone().unwrap();
+    let there = titles(&map, 0, Buttons::RIGHT, 10, 200);
+    assert_eq!(name(&there, 9), "NA");
+    // the first leg ends at the corner named after a: frames 10 to 73
+    assert_eq!(name(&there, 10), "NA");
+    assert_eq!(name(&there, 73), "NA");
+    // the second leg ends at the corner named after b
+    assert_eq!(name(&there, 74), "NB");
+    assert_eq!(name(&there, 199), "NB");
+    let back = titles(&map, 1, Buttons::LEFT, 10, 200);
+    assert_eq!(name(&back, 9), "NB");
+    // the corners are met in reverse: b's first, then a's
+    // (a leg of 64 px takes 65 frames, the last one being 74)
+    assert_eq!(name(&back, 74), "NB");
+    assert_eq!(name(&back, 75), "NA");
+    assert_eq!(name(&back, 199), "NA");
+    // a stop without a title shows none
+    let c = titles(&map, 1, Buttons::DOWN, 10, 100);
+    assert_eq!(name(&c, 9), "NB");
+    assert_eq!(c[10], None);
+    assert_eq!(c[99], None);
+}
+
+#[test]
+fn a_title_is_checked() {
+    let err = map_err("", "[[paths]]\nfrom = \"a\"\nto = \"b\"\nnamed_from = 1");
+    assert!(err.contains("named_from"), "{err}");
+}

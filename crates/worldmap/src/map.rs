@@ -95,6 +95,9 @@ pub struct Node {
     /// as if pressed when the map appears after this level is finished
     /// ([`LegWalker::after_finish`](crate::LegWalker::after_finish)).
     pub onward: Option<Dir>,
+    /// Legs maps: the name shown at the top of the map while the lead
+    /// stands here or walks toward here. Nodes can share one.
+    pub title: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -141,6 +144,10 @@ pub struct Path {
     /// Legs maps: walking back from `to` also needs this, so a path can
     /// be open one way before the other.
     pub back_unlock: Option<Condition>,
+    /// Legs maps: of the corners in `via`, the first this many take the
+    /// title of the `from` node, the rest that of the `to` node. Walking
+    /// back, a corner keeps its title.
+    pub named_from: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -570,6 +577,7 @@ struct NodeFile {
     sprite: Option<String>,
     animation: Option<String>,
     onward: Option<String>,
+    title: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -590,6 +598,8 @@ struct PathFile {
     back: Vec<String>,
     back_via: Option<Vec<[N; 2]>>,
     back_unlock: Option<Value>,
+    #[serde(default)]
+    named_from: usize,
 }
 
 #[derive(Deserialize)]
@@ -696,6 +706,7 @@ impl Reader<'_> {
                     .as_ref()
                     .map(|d| self.dir(&format!("{at}.onward"), d))
                     .transpose()?,
+                title: n.title.clone(),
             });
         }
 
@@ -722,6 +733,12 @@ impl Reader<'_> {
                     format!("`{}` and `{}` are already joined", p.from, p.to),
                 ));
             }
+            if p.named_from > p.via.len() {
+                return Err(self.err(
+                    &format!("{at}.named_from"),
+                    "more than the corners in `via`",
+                ));
+            }
             paths.push(Path {
                 from,
                 to,
@@ -744,6 +761,7 @@ impl Reader<'_> {
                     .as_ref()
                     .map(|c| self.condition(&format!("{at}.back_unlock"), c, &places))
                     .transpose()?,
+                named_from: p.named_from,
             });
         }
 

@@ -245,6 +245,8 @@ pub struct LegWalker {
     forced: Option<(u64, Dir)>,
     /// The other character, when there are two.
     other: Option<Box<Other>>,
+    /// The leg the last step moved along, for the title.
+    shown_leg: usize,
 }
 
 /// Counted frames the other character walks later than the lead.
@@ -334,6 +336,7 @@ impl LegWalker {
             entered: None,
             forced: None,
             other: None,
+            shown_leg: 0,
         }
     }
 
@@ -382,6 +385,35 @@ impl LegWalker {
         }
         lead.given = given.map(|d| (u64::from(t.gate), d));
         lead
+    }
+
+    /// The title the picture shows: the node the lead stands at, or while
+    /// walking, the point the leg being walked ends at
+    /// (`level-map.md`, "The stop's name").
+    pub fn title<'a>(&self, map: &'a WorldMap) -> Option<&'a str> {
+        let node = match &self.walk {
+            None => self.node,
+            Some(walk) => {
+                let path = &map.paths[walk.path];
+                let corners = walk.points.len() - 1;
+                if self.shown_leg >= corners {
+                    walk.to
+                } else {
+                    // the corners are `via` in order, or reversed on the way back
+                    let corner = if walk.to == path.to {
+                        self.shown_leg
+                    } else {
+                        corners - 1 - self.shown_leg
+                    };
+                    if corner < path.named_from {
+                        path.from
+                    } else {
+                        path.to
+                    }
+                }
+            }
+        };
+        map.nodes[node].title.as_deref()
     }
 
     pub fn position(&self) -> Vec2 {
@@ -511,6 +543,7 @@ impl LegWalker {
         }
 
         if let Some(walk) = &mut self.walk {
+            self.shown_leg = walk.leg;
             let end = walk.points[walk.leg];
             for i in 0..2 {
                 if walk.arrived[i] {

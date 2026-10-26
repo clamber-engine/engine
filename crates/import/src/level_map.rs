@@ -216,6 +216,12 @@ pub struct Rules {
     pub onward: Direction,
     /// The paths open at a new game, (from, to); only that way.
     pub open: &'static [(u8, u8)],
+    /// Groups of stops that show the same name at the top of the map;
+    /// every other stop has a name of its own.
+    pub same_name: &'static [&'static [u8]],
+    /// The stop whose name each corner shows, for corners whose record
+    /// doesn't say.
+    pub corner_names: &'static [(u8, u8)],
 }
 
 impl Rules {
@@ -229,9 +235,29 @@ impl Rules {
                 first_level: 22,
                 onward: Direction::Down,
                 open: &[(235, 236), (20, 240), (240, 20), (66, 245), (245, 66)],
+                // behavior/level-map.md, "The stop's name"
+                same_name: &[
+                    &[1, 234],
+                    &[235, 236],
+                    &[238, 239, 240, 241, 242, 243],
+                    &[244, 245, 246, 247, 248, 249],
+                    &[250, 251, 252, 253, 254, 255],
+                ],
+                corner_names: &[(112, 238), (113, 234), (114, 12), (115, 244)],
             }),
             _ => None,
         }
+    }
+
+    /// The name stop `id` shows: the engine's own text, the same for
+    /// stops that share a name.
+    pub fn name(&self, id: u8) -> String {
+        let first = self
+            .same_name
+            .iter()
+            .find(|group| group.contains(&id))
+            .map_or(id, |group| group[0]);
+        format!("Stop {first}")
     }
 
     /// What kind of place stop `id` is.
@@ -546,6 +572,7 @@ impl LevelMap {
                 let _ = writeln!(w, "kind = \"waypoint\"");
                 continue;
             };
+            let _ = writeln!(w, "title = \"{}\"", r.name(stop));
             let level_stop = |n: u8| {
                 format!("kind = \"event\"\nevent = \"level-stop\"\nparams = {{ stop = {n} }}")
             };
@@ -580,12 +607,30 @@ impl LevelMap {
                 (a, b, there, back)
             };
             let via = there.1.clone().unwrap_or_default();
+            let named_from = match rules {
+                Some(r) => {
+                    if back
+                        .1
+                        .as_ref()
+                        .is_some_and(|route| route.iter().rev().ne(via.iter()))
+                    {
+                        return Err(format!(
+                            "the walks between stops {a} and {b} pass different corners"
+                        ));
+                    }
+                    Some(corners_named_from(r, *from, *to, &via)?)
+                }
+                None => None,
+            };
             let _ = writeln!(
                 w,
                 "\n[[paths]]\nfrom = \"stop-{from}\"\nto = \"stop-{to}\"\nvia = {}\nleave = {}",
                 points(&via),
                 dirs(&there.0)
             );
+            if let Some(n) = named_from.filter(|&n| n > 0) {
+                let _ = writeln!(w, "named_from = {n}");
+            }
             if let Some(route) = &back.1 {
                 let _ = writeln!(w, "back = {}", dirs(&back.0));
                 let reversed: Vec<u8> = via.iter().rev().copied().collect();
@@ -624,6 +669,30 @@ impl LevelMap {
         }
         Ok(())
     }
+}
+
+/// How many of the corners on the route from `from` to `to` show `from`'s
+/// name; the rest show `to`'s (`behavior/level-map.md`, "The stop's name").
+fn corners_named_from(rules: &Rules, from: u8, to: u8, corners: &[u8]) -> Result<usize, String> {
+    let mut count = 0;
+    for (i, &corner) in corners.iter().enumerate() {
+        let stop = rules
+            .corner_names
+            .iter()
+            .find(|c| c.0 == corner)
+            .map(|c| c.1)
+            .ok_or_else(|| {
+                format!("the spec doesn't say which stop's name corner {corner} shows")
+            })?;
+        if stop == from && count == i {
+            count += 1;
+        } else if stop != to {
+            return Err(format!(
+                "corner {corner} on the walk from stop {from} to {to} shows stop {stop}'s name"
+            ));
+        }
+    }
+    Ok(count)
 }
 
 /// Writes a title's level map into the pack as the world map
@@ -1039,6 +1108,34 @@ mod tests {
         }
         assert_eq!((rules.start, rules.first_level), (235, 22));
         assert!(Rules::of("title-2").is_none());
+    }
+
+    #[test]
+    fn title_1_s_stops_show_names_and_corners_take_them() {
+        let rules = Rules::of("title-1").unwrap();
+        assert_eq!(rules.name(235), rules.name(236));
+        assert_eq!(rules.name(240), rules.name(238));
+        assert_eq!(rules.name(252), rules.name(255));
+        assert_ne!(rules.name(22), rules.name(12));
+        assert_ne!(rules.name(234), rules.name(235));
+        // corner 114 lies between stops 22 and 12 and shows 12's name
+        let points = tables(&[
+            (235, [0, 16, 100], [236, 0, 0, 0]),
+            (236, [0, 88, 100], [0, 235, 0, 0]),
+            (22, [1, 44, 60], [0, 0, 0, 12]),
+            (12, [1, 44, 20], [0, 0, 22, 0]),
+            (114, [0, 44, 40], [0, 0, 0, 0]),
+        ]);
+        let mut corners = [0u8; 12];
+        corners[8..].copy_from_slice(&[22, 22, 12, 12]);
+        let map = LevelMap::read(&points, &corners, 3).unwrap();
+        let text = map.to_title_world_map(LEVEL_MAP, &rules).unwrap();
+        let world = clamber_worldmap::WorldMap::from_toml_str(&text, "level-map.map").unwrap();
+        let node = |id: u8| world.node(&format!("stop-{id}")).unwrap();
+        assert_eq!(world.nodes[node(12)].title.as_deref(), Some("Stop 12"));
+        let path = &world.paths[0];
+        assert_eq!(path.via.len(), 1);
+        assert_eq!(path.named_from, usize::from(path.from == node(12)));
     }
 
     #[test]
