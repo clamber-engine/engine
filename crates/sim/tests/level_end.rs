@@ -335,6 +335,31 @@ fn the_other_character_goes_on_following_2_px_a_frame() {
     assert!(feet(&play) < start_feet, "it rises along the trail");
 }
 
+/// "The first character following": with the second character leading,
+/// the first moves by the rules of following on every frame of the
+/// walk-out, not 2 px a frame, and catches up when 28 px or more behind.
+#[test]
+fn the_first_character_follows_the_second_leading_by_the_following_rules() {
+    let mut play = Play::new(second_leading(700, (1000, 449)));
+    assert!(play.until_passed(&[R], 300));
+    let other_x = |play: &Play| play.world.other.as_ref().unwrap().pos.x;
+    let gap = |play: &Play| play.world.player.pos.x - other_x(play);
+    let behind = gap(&play);
+    assert!(behind >= Fixed::from_int(28), "{behind:?}");
+    let mut steps = Vec::new();
+    while !play.world.flow.outcome.is_over() {
+        let x = other_x(&play);
+        play.step(&[]);
+        steps.push(other_x(&play) - x);
+        assert!(play.world.frame < 400);
+    }
+    assert!(
+        steps.iter().any(|d| *d != Fixed::from_int(2)),
+        "it doesn't move 2 px a frame: {steps:?}"
+    );
+    assert!(gap(&play) < behind, "it catches up");
+}
+
 #[test]
 fn without_a_walk_out_passing_completes_the_level_at_once() {
     let mut play = Play::new(world("default", 1010, (1000, 449), ""));
