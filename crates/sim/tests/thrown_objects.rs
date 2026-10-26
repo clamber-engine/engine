@@ -2610,3 +2610,48 @@ fn a_rolling_metal_barrel_passes_a_critter() {
         }
     }
 }
+
+/// metal-barrel.md, "Critters, thrown by the second character": a metal
+/// barrel thrown right by the second character passes a critter too. The
+/// barrel's rows equal those of a run with the critter far above its
+/// path, and the critter's rows equal those of a run with no barrel.
+#[test]
+fn a_metal_barrel_thrown_right_by_the_second_character_passes_a_critter() {
+    let run = |critter_y: i32, barrel: bool| {
+        let entity = format!("[[entities]]\ntype = \"critter\"\nat = [400, {critter_y}]");
+        let src = level(&format!("{FLAT}\n{entity}")).replace("\"crate\"", "\"canister\"");
+        let mut play = second_play(&src);
+        play.throw_to(18 + 36);
+        play.world.things[1].pos.x = play.world.things[0].pos.x + f(60.0);
+        if !barrel {
+            play.world.things[0].active = false;
+        }
+        let mut rows = Vec::new();
+        for _ in 0..60 {
+            play.world.view = Some(View {
+                left: f(200.0),
+                top: f(200.0),
+                ..View::default()
+            });
+            play.hold(&[], 1);
+            let (barrel, critter) = (&play.world.things[0], &play.world.things[1]);
+            rows.push((
+                (barrel.active, barrel.pos, barrel.vx),
+                (critter.active, critter.pos),
+                play.world.player.pos,
+            ));
+        }
+        rows
+    };
+    for height in [0, 16, 40, 64] {
+        let near = run(400 - height, true);
+        let far = run(400 - height - 250, true);
+        let none = run(400 - height, false);
+        assert!(near.iter().any(|r| r.1.0), "the critter appears");
+        for n in 0..60 {
+            assert_eq!(near[n].0, far[n].0, "{height}: barrel, frame {n}");
+            assert_eq!(near[n].2, far[n].2, "{height}: player, frame {n}");
+            assert_eq!(near[n].1, none[n].1, "{height}: critter, frame {n}");
+        }
+    }
+}
