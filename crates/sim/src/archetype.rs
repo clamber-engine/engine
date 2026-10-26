@@ -102,7 +102,9 @@ pub enum Behavior {
     /// whose offsets from it are within those ranges, and with
     /// `hit_stinger_left` rolling left (`hit_stinger_left_second` if the
     /// second character threw it), rounding its `x` to the nearest
-    /// (see [`Stinger::knock`]).
+    /// (see [`Stinger::knock`]). `hit_stinger_left_sway` is the same
+    /// for a stinger that flies, rolling left, thrown by the first
+    /// character.
     Carry {
         reach: Grab,
         hit: Hit,
@@ -121,6 +123,7 @@ pub enum Behavior {
         hit_stinger: Option<Offsets>,
         hit_stinger_left: Option<Offsets>,
         hit_stinger_left_second: Option<Offsets>,
+        hit_stinger_left_sway: Option<Offsets>,
     },
     /// A collectible the player takes from within its [`Reach`] (see
     /// [`collect`](crate::collect)). It adds `worth` to the collectible
@@ -1828,6 +1831,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             "hit_stinger",
             "hit_stinger_left",
             "hit_stinger_left_second",
+            "hit_stinger_left_sway",
             "holder_window",
             "hit_thrower",
             "hit_thrower_early",
@@ -2284,6 +2288,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
             let hit_stinger = stinger_offsets("hit_stinger")?;
             let hit_stinger_left = stinger_offsets("hit_stinger_left")?;
             let hit_stinger_left_second = stinger_offsets("hit_stinger_left_second")?;
+            let hit_stinger_left_sway = stinger_offsets("hit_stinger_left_sway")?;
             Behavior::Carry {
                 reach,
                 hit: hit("hit")?,
@@ -2302,6 +2307,7 @@ fn parse(table: &Table, path: &str) -> Result<Archetype, String> {
                 hit_stinger,
                 hit_stinger_left,
                 hit_stinger_left_second,
+                hit_stinger_left_sway,
             }
         }
         "collect" => {

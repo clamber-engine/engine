@@ -324,7 +324,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         held.is_some() || waiting || held_by_bounce || held_by_roll || held_by_bounce_all;
     // Stingers that move are hit by where a barrel was at the end of the
     // last step.
-    let rollers = rolling_right(world);
+    let rollers = rolling(world);
     let mut freed = Vec::new();
     let mut broken = Vec::new();
     let ridden = world.player.astride.map(|a| a.thing);
@@ -396,8 +396,8 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         }
     }
     world.bursts.extend(broken);
-    for (offsets, pos) in rollers {
-        strike_swaying(world, offsets, pos);
+    for (offsets, pos, right) in rollers {
+        strike_swaying(world, offsets, pos, right);
     }
     freed.extend(throw_hits(world));
     if world.events.contains(&Event::Bounce) {
@@ -1145,9 +1145,10 @@ fn strike_stinger(world: &mut World, offsets: Offsets, pos: Vec2, right: bool) {
     }
 }
 
-/// Each metal barrel rolling right now that hits stingers, with its
-/// offsets for them and where it is.
-fn rolling_right(world: &World) -> Vec<(Offsets, Vec2)> {
+/// Each metal barrel rolling now that hits stingers that fly (right, or
+/// left thrown by the first character), with its offsets for them, where
+/// it is and whether it rolls right.
+fn rolling(world: &World) -> Vec<(Offsets, Vec2, bool)> {
     world
         .things
         .iter()
@@ -1156,26 +1157,44 @@ fn rolling_right(world: &World) -> Vec<(Offsets, Vec2)> {
             let (Phase::Thrown(flight), Some(archetype)) = (t.phase, t.archetype) else {
                 return None;
             };
-            let Behavior::Carry { hit_stinger, .. } = archetype.behavior else {
+            let Behavior::Carry {
+                hit_stinger,
+                hit_stinger_left_sway,
+                ..
+            } = archetype.behavior
+            else {
                 return None;
             };
-            (flight.thrown && flight.rolling && flight.right())
-                .then_some(hit_stinger)
-                .flatten()
-                .map(|offsets| (offsets, t.pos))
+            if !flight.thrown || !flight.rolling {
+                return None;
+            }
+            let right = flight.right();
+            let offsets = match (right, flight.second) {
+                (true, _) => hit_stinger,
+                (false, false) => hit_stinger_left_sway,
+                (false, true) => None,
+            };
+            offsets.map(|offsets| (offsets, t.pos, right))
         })
         .collect()
 }
 
 /// Defeats the first stinger that flies, and isn't hit already, that a
-/// metal barrel rolling right hits (metal-barrel.md, "A stinger that
-/// sways"): the barrel's position is the one it had at the end of the
-/// last step, `pos`, and the stinger's the one it has now, after its own
-/// move, so the same ranges as for one that doesn't move apply. The
-/// stinger has made its move of this step and holds still on the next;
-/// its speed across is the knock's now.
-fn strike_swaying(world: &mut World, offsets: Offsets, pos: Vec2) {
-    let (x, y) = (ceil(pos.x), ceil(pos.y));
+/// metal barrel rolling right, or left if not `right`, hits
+/// (metal-barrel.md, "A stinger that sways", "Rolling left, a stinger
+/// that sways"): the barrel's position is the one it had at the end of
+/// the last step, `pos`, and the stinger's the one it has now, after its
+/// own move, so the ranges of one that doesn't move apply (rolling left,
+/// `offsets` with the barrel's `x` rounded to the nearest). The stinger
+/// has made its move of this step and holds still on the next; its speed
+/// across is the knock's now.
+fn strike_swaying(world: &mut World, offsets: Offsets, pos: Vec2, right: bool) {
+    let x = if right {
+        ceil(pos.x)
+    } else {
+        (pos.x + Fixed::from_ratio_pow2(1, 1)).floor()
+    };
+    let y = ceil(pos.y);
     let stinger = world.things.iter_mut().find(|t| {
         let Some(Behavior::Stinger(s)) = t.archetype.map(|a| a.behavior) else {
             return false;
@@ -1198,8 +1217,13 @@ fn strike_swaying(world: &mut World, offsets: Offsets, pos: Vec2) {
         else {
             return;
         };
-        stinger.heading = Facing::Left;
-        stinger.vx = -knock.fall.knock;
+        if right {
+            stinger.heading = Facing::Left;
+            stinger.vx = -knock.fall.knock;
+        } else {
+            stinger.heading = Facing::Right;
+            stinger.vx = knock.fall.knock;
+        }
         stinger.phase = Phase::Struck(1);
         let index = stinger.index;
         world.flow.events.push(FlowEvent::Defeat(index));
