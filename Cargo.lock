@@ -328,6 +328,7 @@ name = "clamber-conformance"
 version = "0.1.0"
 dependencies = [
  "clamber-level",
+ "clamber-pack",
  "clamber-sim",
  "clamber-trace",
  "serde",

@@ -12,6 +12,8 @@
 //! - playthroughs (`tests/playthrough/<id>.scn`) name their level in
 //!   `requires:`, relative to the repository root.
 
+pub mod check;
+
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};

@@ -102,7 +102,18 @@ clamber-trace record <scenario.scn> -o out.trace   # run the engine headlessly
                                                    # (--level, --preset to override)
 clamber-trace diff <reference.trace> <candidate.trace> --scenario <scenario.scn>
 clamber-trace report                                # conformance summary
+clamber-trace check [--json f] [--csv f]            # fast batch conformance run
 ```
+
+`check` runs every spec scenario that has metrics and a reference trace,
+for each title, headless and in parallel (`--threads`, one per core by
+default), with each level loaded once. It applies the same ratchet as
+layer 5 and exits 1 on any regression or unexpected pass. `--json` writes
+one line per scenario with every metric's first diverging frame, quantity,
+expected and actual values; `--csv` one row per failing metric. The
+summary is per title. The spec's 14 scenario runs take about 12 ms in a
+release build. Not yet: `--pack` runs against an imported pack and start
+states beyond the scenario format's `start:` (#451).
 
 The research harness writes the same trace format from the emulator, so
 `diff` also works for research-side sanity checks.

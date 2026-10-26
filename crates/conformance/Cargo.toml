@@ -16,6 +16,7 @@ harness = false
 
 [dependencies]
 clamber-level = { path = "../level" }
+clamber-pack = { path = "../pack" }
 clamber-sim = { path = "../sim" }
 clamber-trace = { path = "../trace" }
 serde = { version = "1.0.229", features = ["derive"] }

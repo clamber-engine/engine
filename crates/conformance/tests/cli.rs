@@ -228,3 +228,38 @@ fn record_matches_the_golden_trace() {
     assert_eq!(out.status.code(), Some(2));
     assert_eq!(stderr(&out), "clamber-trace: no preset named `nope`\n");
 }
+
+#[test]
+fn check_runs_the_spec_corpus_and_writes_json_and_csv() {
+    let dir = workspace("check");
+    let root = clamber_conformance::root();
+    let (json, csv) = (dir.join("check.json"), dir.join("check.csv"));
+    let out = run(
+        &dir,
+        &[
+            "check",
+            "--root",
+            root.to_str().unwrap(),
+            "--json",
+            json.to_str().unwrap(),
+            "--csv",
+            csv.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}{}",
+        stdout(&out),
+        stderr(&out)
+    );
+    assert!(stdout(&out).contains("title-1: "), "{}", stdout(&out));
+    let json = fs::read_to_string(json).unwrap();
+    assert!(json.lines().count() > 0);
+    assert!(json.lines().all(|l| l.starts_with("{\"scenario\":")));
+    assert!(
+        fs::read_to_string(csv)
+            .unwrap()
+            .starts_with("scenario,title,metric,frame,quantity,expected,actual\n")
+    );
+}

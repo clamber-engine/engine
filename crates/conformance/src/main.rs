@@ -14,6 +14,7 @@ usage:
                        [--preset <id>]
   clamber-trace diff <reference.trace> <candidate.trace> --scenario <scenario.scn>
   clamber-trace report [--spec <dir>] [--candidates <dir>]
+  clamber-trace check [--root <dir>] [--json <file>] [--csv <file>] [--threads <n>]
 
 record  runs the engine headlessly with the scenario's inputs and writes
         its trace (default: to stdout). The level defaults to
@@ -23,6 +24,12 @@ diff    compares two traces on the scenario's [metrics]; exits 1 if any fail,
 report  compares each candidate trace (default tests/golden) against the
         spec's reference traces (default spec) and prints passing metrics
         per scenario
+check   runs every spec scenario that has a reference trace, for each title,
+        in parallel and headless, against the ratchet in
+        tests/conformance-status.toml; exits 1 on any regression or
+        unexpected pass. --root is the repository (default .); --json and
+        --csv write the per-metric results (first diverging frame, quantity,
+        expected and actual)
 ";
 
 enum Failure {
@@ -38,6 +45,7 @@ fn main() -> ExitCode {
         Some("record") => record(&args[1..]),
         Some("diff") => diff(&args[1..]),
         Some("report") => report(&args[1..]),
+        Some("check") => check(&args[1..]),
         Some("help" | "-h" | "--help") => {
             print!("{USAGE}");
             Ok(ExitCode::SUCCESS)
@@ -248,5 +256,37 @@ fn report(args: &[String]) -> Result<ExitCode, Failure> {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(2)
+    })
+}
+
+fn check(args: &[String]) -> Result<ExitCode, Failure> {
+    let (positional, values) = parse_args(args, &["root", "json", "csv", "threads"])?;
+    if let Some(extra) = positional.first() {
+        return Err(Failure::Usage(format!("unexpected argument `{extra}`")));
+    }
+    let threads = match values[3] {
+        Some(n) => n
+            .parse()
+            .map_err(|_| Failure::Usage(format!("`--threads {n}` isn't a number")))?,
+        None => 0,
+    };
+    let start = std::time::Instant::now();
+    let results = clamber_conformance::check::run(Path::new(values[0].unwrap_or(".")), threads)
+        .map_err(Failure::Error)?;
+    let total = start.elapsed();
+    for (path, text) in [
+        (values[1], clamber_conformance::check::json(&results)),
+        (values[2], clamber_conformance::check::csv(&results)),
+    ] {
+        if let Some(path) = path {
+            std::fs::write(path, text)
+                .map_err(|e| Failure::Error(format!("can't write {path}: {e}")))?;
+        }
+    }
+    print!("{}", clamber_conformance::check::summary(&results, total));
+    Ok(if results.iter().all(|r| r.verdict.ok()) {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
     })
 }
