@@ -289,3 +289,23 @@ fn the_second_character_leading_never_finishes_a_throw() {
     assert_eq!(play.world.things[0].phase, Phase::Held);
     falls_away(&mut play, 1.0, |_, _| {});
 }
+
+/// "With an object in the lead's hands": the first character follows the
+/// carrying second character by the rules of following, whether the
+/// object is let go or not, and not 2 px a frame.
+#[test]
+fn the_first_character_follows_a_carrying_lead_by_the_following_rules() {
+    let mut play = Play::carrying_by(true, false, 600);
+    play.until_passed(&[R, A]);
+    let other_x = |play: &Play| play.world.other.as_ref().unwrap().pos.x;
+    let mut steps = Vec::new();
+    for _ in 0..60 {
+        let x = other_x(&play);
+        play.step(&[R, A]);
+        steps.push(other_x(&play) - x);
+    }
+    assert!(
+        steps.iter().any(|d| *d != Fixed::from_int(2)),
+        "it doesn't move 2 px a frame: {steps:?}"
+    );
+}
