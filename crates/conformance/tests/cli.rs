@@ -263,3 +263,121 @@ fn check_runs_the_spec_corpus_and_writes_json_and_csv() {
             .starts_with("scenario,title,metric,frame,quantity,expected,actual\n")
     );
 }
+
+/// A made-up pack with one level, a scenario that plays it and the engine's
+/// own trace of the scenario as the reference.
+fn pack_workspace(name: &str) -> PathBuf {
+    let root = clamber_conformance::root();
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join("pack/levels")).unwrap();
+    fs::create_dir_all(dir.join("scenarios")).unwrap();
+    fs::create_dir_all(dir.join("traces")).unwrap();
+    fs::write(
+        dir.join("pack/pack.toml"),
+        "id = \"made-up\"\nname = \"Made up\"\npreset = \"classic-1\"\n\n\
+         [[roster]]\nid = \"one\"\nname = \"One\"\n",
+    )
+    .unwrap();
+    fs::copy(
+        root.join("content/test/run-jump-flat.level"),
+        dir.join("pack/levels/start.level"),
+    )
+    .unwrap();
+    let scenario = fs::read_to_string(root.join("spec/scenarios/run-jump-flat.scn"))
+        .unwrap()
+        .lines()
+        .map(|l| {
+            if l.starts_with("requires:") {
+                "requires: levels/start.level"
+            } else {
+                l
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(dir.join("scenarios/run-jump-flat.scn"), scenario + "\n").unwrap();
+    let out = run(
+        &dir,
+        &[
+            "record",
+            "scenarios/run-jump-flat.scn",
+            "--level",
+            "pack/levels/start.level",
+            "--preset",
+            "classic-1",
+            "-o",
+            "traces/run-jump-flat.trace",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    dir
+}
+
+#[test]
+fn check_against_a_pack_compares_every_scenario_with_its_trace() {
+    let dir = pack_workspace("check-pack");
+    let json = dir.join("pack.json");
+    let args = [
+        "check",
+        "--pack",
+        "pack",
+        "--scenarios",
+        "scenarios",
+        "--traces",
+        "traces",
+        "--json",
+        json.to_str().unwrap(),
+    ];
+    let out = run(&dir, &args);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}{}",
+        stdout(&out),
+        stderr(&out)
+    );
+    assert!(
+        stdout(&out).contains("made-up: 1/1 scenarios ok"),
+        "{}",
+        stdout(&out)
+    );
+    assert!(
+        fs::read_to_string(&json)
+            .unwrap()
+            .contains("\"title\":\"made-up\"")
+    );
+
+    // A reference that the engine no longer matches fails, with no ratchet
+    // to excuse it.
+    let path = dir.join("traces/run-jump-flat.trace");
+    let text = fs::read_to_string(&path).unwrap();
+    let skewed: Vec<String> = text
+        .lines()
+        .map(|l| {
+            let mut cols: Vec<&str> = l.split('\t').collect();
+            if cols.len() > 3 && cols[0].parse::<u32>().is_ok() {
+                cols[3] = "-9999";
+            }
+            cols.join("\t")
+        })
+        .collect();
+    fs::write(&path, skewed.join("\n") + "\n").unwrap();
+    let out = run(&dir, &args);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "{}{}",
+        stdout(&out),
+        stderr(&out)
+    );
+    assert!(stdout(&out).contains("run-jump-flat"), "{}", stdout(&out));
+}
+
+#[test]
+fn check_with_a_pack_needs_scenarios_and_traces() {
+    let dir = pack_workspace("check-pack-usage");
+    let out = run(&dir, &["check", "--pack", "pack"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr(&out).contains("`--pack` needs `--scenarios <dir>`"));
+}

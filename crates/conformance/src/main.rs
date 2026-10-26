@@ -15,6 +15,8 @@ usage:
   clamber-trace diff <reference.trace> <candidate.trace> --scenario <scenario.scn>
   clamber-trace report [--spec <dir>] [--candidates <dir>]
   clamber-trace check [--root <dir>] [--json <file>] [--csv <file>] [--threads <n>]
+  clamber-trace check --pack <dir> --scenarios <dir> --traces <dir> [--preset <id>]
+                      [--json <file>] [--csv <file>] [--threads <n>]
 
 record  runs the engine headlessly with the scenario's inputs and writes
         its trace (default: to stdout). The level defaults to
@@ -30,6 +32,10 @@ check   runs every spec scenario that has a reference trace, for each title,
         unexpected pass. --root is the repository (default .); --json and
         --csv write the per-metric results (first diverging frame, quantity,
         expected and actual)
+        With --pack, runs the scenarios in --scenarios against an imported
+        pack instead: each scenario's `requires:` is its level's path in the
+        pack, its reference trace is <traces>/<id>.trace, the feel is the
+        pack's (or --preset), and every metric must pass
 ";
 
 enum Failure {
@@ -260,7 +266,19 @@ fn report(args: &[String]) -> Result<ExitCode, Failure> {
 }
 
 fn check(args: &[String]) -> Result<ExitCode, Failure> {
-    let (positional, values) = parse_args(args, &["root", "json", "csv", "threads"])?;
+    let (positional, values) = parse_args(
+        args,
+        &[
+            "root",
+            "json",
+            "csv",
+            "threads",
+            "pack",
+            "scenarios",
+            "traces",
+            "preset",
+        ],
+    )?;
     if let Some(extra) = positional.first() {
         return Err(Failure::Usage(format!("unexpected argument `{extra}`")));
     }
@@ -271,8 +289,24 @@ fn check(args: &[String]) -> Result<ExitCode, Failure> {
         None => 0,
     };
     let start = std::time::Instant::now();
-    let results = clamber_conformance::check::run(Path::new(values[0].unwrap_or(".")), threads)
-        .map_err(Failure::Error)?;
+    let results = match values[4] {
+        Some(pack) => {
+            let need = |i: usize, name: &str| {
+                values[i]
+                    .map(Path::new)
+                    .ok_or_else(|| Failure::Usage(format!("`--pack` needs `--{name} <dir>`")))
+            };
+            let run = clamber_conformance::check::PackRun {
+                pack: Path::new(pack),
+                scenarios: need(5, "scenarios")?,
+                traces: need(6, "traces")?,
+                preset: values[7],
+            };
+            clamber_conformance::check::run_pack(&run, threads)
+        }
+        None => clamber_conformance::check::run(Path::new(values[0].unwrap_or(".")), threads),
+    }
+    .map_err(Failure::Error)?;
     let total = start.elapsed();
     for (path, text) in [
         (values[1], clamber_conformance::check::json(&results)),

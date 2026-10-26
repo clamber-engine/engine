@@ -114,8 +114,16 @@ expected and actual values; `--csv` one row per failing metric. The
 summary is per title. The spec's 14 scenario runs take about 6 ms in a
 release build; `cargo bench -p clamber-conformance` measures it (best of 20
 runs, slowest scenario) and fails an optimized run above 2 ms per scenario
-on average. Not yet: `--pack` runs against an imported pack and start
-states beyond the scenario format's `start:` (#451).
+on average.
+
+`check --pack <dir> --scenarios <dir> --traces <dir> [--preset id]` runs
+the scenarios in a directory against an imported pack instead (only the
+made-up pack is tested here; never commit real data). Each scenario's
+`requires:` line is its level's path inside the pack, its reference is
+`<traces>/<id>.trace`, the feel is the pack's own preset (or `--preset`),
+and there's no ratchet: every metric must pass. Output and exit status are
+as above, with the pack's id as the title. Not yet: levels built from a
+scenario's geometry and start states beyond `start:` (#451).
 
 The research harness writes the same trace format from the emulator, so
 `diff` also works for research-side sanity checks.

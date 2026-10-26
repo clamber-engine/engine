@@ -139,7 +139,7 @@ pub fn playthrough_cases(root: &Path) -> Result<Vec<Case>, String> {
         .collect()
 }
 
-fn scenarios_in(dir: &Path) -> Result<Vec<Scenario>, String> {
+pub(crate) fn scenarios_in(dir: &Path) -> Result<Vec<Scenario>, String> {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
         .and_then(|entries| entries.map(|e| e.map(|e| e.path())).collect())
         .map_err(|e: io::Error| format!("{}: {e}", dir.display()))?;
