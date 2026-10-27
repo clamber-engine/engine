@@ -195,12 +195,17 @@ impl Player {
         physics: &Physics,
         input: &Frame,
         dir: i32,
+        immediate: bool,
         events: &mut Vec<Event>,
     ) {
         let Some(mut r) = self.riding else {
             return;
         };
         let mut ride = r.ride;
+        if immediate {
+            // The animal's jump leaves the floor on the press frame (#437).
+            ride.crouch = 0;
+        }
         if let Some(second) = ride.second
             && self.character != 0
         {

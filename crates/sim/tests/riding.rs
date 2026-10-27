@@ -223,6 +223,31 @@ fn the_example_jump() {
     assert!(play.world.player.grounded());
 }
 
+/// With the feel immediate (#437) the animal's jump has no crouch: its
+/// take-off frame is the press frame, and it rises from the next one.
+#[test]
+fn an_immediate_jump_has_no_crouch() {
+    for immediate in [false, true] {
+        let mut play = Play::flat(-422, Facing::Left, &[L]);
+        let mut feel = (*play.world.feel).clone();
+        feel.immediate = immediate;
+        play.world.feel = Arc::new(feel);
+        let mut rows = Vec::new();
+        for frame in 0..8 {
+            play.step(if frame == 0 { &[L, J] } else { &[L] });
+            rows.push(play.flat_row());
+        }
+        let take_off = if immediate { 0 } else { 5 };
+        for (frame, (_, y, _, vy)) in rows.iter().enumerate() {
+            match frame.cmp(&take_off) {
+                std::cmp::Ordering::Less => assert_eq!((*y, *vy), (fx(0.0), 0), "{frame}"),
+                std::cmp::Ordering::Equal => assert_eq!((*y, *vy), (fx(0.0), -7 * 256), "{frame}"),
+                std::cmp::Ordering::Greater => assert!(*y < fx(0.0), "{frame}"),
+            }
+        }
+    }
+}
+
 /// riding.md's charge from standing still, facing left, with Right held.
 #[test]
 fn the_example_charge() {

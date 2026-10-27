@@ -1147,7 +1147,7 @@ impl Player {
             self.face_switch = None;
         }
         if self.riding.is_some() {
-            self.ride(level, physics, input, held_dir, events);
+            self.ride(level, physics, input, held_dir, feel.immediate, events);
             return;
         }
         if Player::in_water(level, self.pos) {
