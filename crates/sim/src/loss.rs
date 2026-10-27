@@ -19,7 +19,7 @@ use clamber_level::{Dir, Vec2};
 use clamber_pack::{Param, Physics};
 
 use crate::player::{Facing, Player, State, ceil, frames};
-use crate::world::{Event, World};
+use crate::world::{Event, Phase, World};
 
 /// A loss under way, from the hit frame until protection and flashing
 /// are over.
@@ -269,6 +269,12 @@ fn take_over(world: &mut World, keep: bool) {
     } else {
         player.ground = None;
         player.state = State::Swap;
+    }
+    // An animal under the lost rider goes with it: nothing rides it now.
+    for animal in &mut world.things {
+        if animal.phase == Phase::Ridden {
+            animal.active = false;
+        }
     }
     world.player = player;
 }

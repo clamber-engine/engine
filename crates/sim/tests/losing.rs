@@ -8,7 +8,8 @@ use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Fixed, Param, Presets};
 use clamber_sim::{
-    Event, Facing, FlowEvent, InputFrame, Other, START_LIVES, State, World, generic_feel, step,
+    Behavior, Event, Facing, FlowEvent, InputFrame, Other, Phase, Riding, START_LIVES, State,
+    World, generic_feel, step,
 };
 
 /// Flat ground at y = 400 from x = 0 to 2000, a still walker far off
@@ -458,4 +459,33 @@ fn a_hit_during_a_roll_loses_the_character_too() {
     assert_eq!((rows[0].vel, rows[0].state), (v(0.0, -8.0), State::Hurt));
     assert!(play.world.player.knockout.is_none());
     assert!(play.world.loss.is_some());
+}
+
+/// The animal that was ridden when a character is lost is gone with it:
+/// nothing is left under the character that takes over.
+#[test]
+fn no_animal_is_left_under_the_character_that_takes_over() {
+    let source = format!("{FLAT}\n[[entities]]\ntype = \"hutch\"\nat = [40, 400]\n");
+    let mut play = Play::in_level(&source, v(200.25, FLOOR), Facing::Right, v(138.0, FLOOR));
+    let w = &mut play.world;
+    let Some(Behavior::Hutch(hutch)) = w.things[1].archetype.map(|a| a.behavior) else {
+        panic!("no animal crate");
+    };
+    w.things[1].phase = Phase::Ridden;
+    w.player.riding = Some(Riding {
+        on_floor: true,
+        was_on_floor: true,
+        mount: None,
+        ..Riding::new(hutch.ride, Fixed::ZERO)
+    });
+    play.hold(&[], 2);
+    play.hit(&[], 80);
+    let w = &play.world;
+    assert_eq!(w.player.character, 1);
+    assert!(w.player.riding.is_none());
+    assert!(
+        w.things
+            .iter()
+            .all(|t| !(t.active && t.phase == Phase::Ridden))
+    );
 }
