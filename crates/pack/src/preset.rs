@@ -530,6 +530,7 @@ mod tests {
                     | Param::SwapTandemOnEnd
                     | Param::LoseJump
                     | Param::LoseRunSpeed
+                    | Param::LoseRunGone
                     | Param::TakeoverWait
                     | Param::TakeoverShare
                     | Param::TakeoverMinMove

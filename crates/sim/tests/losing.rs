@@ -202,22 +202,37 @@ fn the_lost_character_holds_still_then_runs_right_and_is_gone() {
     assert!(play.world.lost.is_none());
 }
 
-/// Placeholder rule: a run held up by a wall ends within a bounded
-/// number of frames (the spec doesn't say what the run does there).
+/// A run held up by a wall stays there, with no time limit while the
+/// view stays near it (losing-a-character.md, "A wall").
 #[test]
-fn a_run_held_up_by_a_wall_ends() {
-    for gap in [0.0, 1.0, 3.0, 10.0, 40.0, 150.0] {
-        let wall = format!(
-            "\n[[collision]]\nshape = \"rect\"\nrect = [{}, 300, 40, 100]\n",
-            200.0 + 6.0 + gap
-        );
-        let source = format!("{FLAT}{wall}");
-        let mut play = Play::in_level(&source, v(200.0, FLOOR), Facing::Right, v(138.0, FLOOR));
-        play.hit(&[], 37);
-        assert!(play.world.leaving().is_some(), "gap {gap}");
-        play.hold(&[], 150);
-        assert!(play.world.lost.is_none(), "gap {gap}: still running");
+fn a_run_held_up_by_a_wall_stays() {
+    let wall = "\n[[collision]]\nshape = \"rect\"\nrect = [230, 300, 40, 100]\n";
+    let source = format!("{FLAT}{wall}");
+    let mut play = Play::in_level(&source, v(200.0, FLOOR), Facing::Right, v(138.0, FLOOR));
+    play.hit(&[], 37);
+    play.hold(&[], 300);
+    let lost = play.world.leaving().expect("run is gone");
+    assert!(lost.pos.x < f(230.0));
+    let stopped = lost.pos;
+    play.hold(&[], 300);
+    assert_eq!(play.world.leaving().unwrap().pos, stopped);
+}
+
+/// In the open the run is gone on the first frame its `x` rounded down
+/// is 289 or more right of the view's left edge.
+#[test]
+fn a_run_is_gone_289_px_right_of_the_view() {
+    let mut play = Play::example();
+    play.hit(&[], 37);
+    for _ in 0..200 {
+        let Some(lost) = play.world.leaving() else {
+            break;
+        };
+        let left = play.world.view.expect("no view").x();
+        assert!(lost.pos.x.floor() - left < 289);
+        play.hold(&[], 1);
     }
+    assert!(play.world.leaving().is_none());
 }
 
 #[test]

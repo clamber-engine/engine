@@ -243,6 +243,7 @@ swap_rise_wait = 0
 swap_tandem_on_end = 0
 lose_jump = 0
 lose_run_speed = 0
+lose_run_gone = 0
 takeover_wait = 0
 takeover_share = 0
 takeover_min_move = 0
@@ -822,6 +823,7 @@ swap_tandem_on_end = 0
 # (protection.md).
 lose_jump = 8
 lose_run_speed = 4
+lose_run_gone = 289
 takeover_wait = 36
 takeover_share = 16
 takeover_min_move = 3

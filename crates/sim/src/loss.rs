@@ -47,16 +47,7 @@ pub struct Lost {
     pub landed: Option<u8>,
     /// It's no longer the character under control.
     pub apart: bool,
-    /// Frames in a row the run has not moved it across.
-    pub stuck: u8,
 }
-
-/// How many frames in a row a lost character's run may make no
-/// progress before it is gone anyway. A placeholder for the spec's
-/// answer on what the run does at walls, pits and the level's edges
-/// (`losing-a-character.md` "Not covered"); it only keeps a run from
-/// lasting forever.
-const STUCK_LIMIT: u8 = 30;
 
 /// Whether a hurt player loses its character rather than a life: the
 /// other character is in the level, and the hit isn't one the spec
@@ -99,7 +90,6 @@ pub(crate) fn start(world: &mut World) {
         gravity,
         landed: None,
         apart: false,
-        stuck: 0,
     });
     world.loss = Some(Loss {
         frame: 0,
@@ -129,14 +119,7 @@ pub(crate) fn tick(world: &mut World) {
     let physics = world.feel.roster[lost.body.character].physics;
     let mut events = Vec::new();
     let mut body = lost.body.clone();
-    let before = body.pos.x;
     body.run_off(&world.level, &physics, lost, &mut events);
-    let running = lost.landed == Some(1) && body.grounded();
-    lost.stuck = if running && body.pos.x == before {
-        lost.stuck.saturating_add(1)
-    } else {
-        0
-    };
     lost.body = body;
     if !lost.apart {
         // Until the other character takes over, the trace follows this
@@ -149,7 +132,13 @@ pub(crate) fn tick(world: &mut World) {
         world.events.extend(events);
     }
     let (left, top, _, _) = lost.body.body();
-    if left > world.level.size.x || top > world.level.size.y || lost.stuck >= STUCK_LIMIT {
+    // A run stopped at a wall stays until the view leaves it behind.
+    let gone = physics[Param::LoseRunGone].floor();
+    let out_of_view = gone > 0
+        && world
+            .view
+            .is_some_and(|v| lost.body.pos.x.floor() - v.x() >= gone);
+    if left > world.level.size.x || top > world.level.size.y || out_of_view {
         world.lost = None;
     }
 }

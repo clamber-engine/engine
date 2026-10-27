@@ -1001,6 +1001,10 @@ params! {
     /// How fast a lost character runs right, out of the level, from the
     /// second frame after it lands.
     LoseRunSpeed => "lose_run_speed",
+    /// How far right of the view's left edge, in whole px, a lost
+    /// character's run is gone: on the first frame its `x` rounded down
+    /// is this far or more. 0: only at the level's end.
+    LoseRunGone => "lose_run_gone",
     /// Frames from the hit, counting the hit frame, before the other
     /// character is the one under control. It moves toward the hit spot
     /// from the frame after. Whole frames.
