@@ -3953,6 +3953,52 @@ fn classic_roll_stop_next_to_a_left_edge_has_stopped_frames() {
 }
 
 #[test]
+fn classic_roll_stop_pressing_toward_the_edge_while_moving_away_from_it() {
+    // spec/behavior/rolling-off-ledges.md, "Pressing toward the edge while
+    // moving away from it": a roll reversed away from the edge at E = 1600,
+    // then Right and Action held, tests the ground 15 px toward the edge,
+    // not the way the player moves.
+    let mut stopped = 0;
+    let mut moved = 0;
+    for start in 1560..1600 {
+        for (slow_from, slow_to) in
+            (1..22).flat_map(|from| (from + 2..31).map(move |to| (from, to)))
+        {
+            let mut w = classic_raised(start);
+            for frame in 0..44 {
+                let (x, vx) = (w.player.pos.x, w.player.vel.x);
+                let before = w.player.roll_stop;
+                let held: Vec<Action> = match frame {
+                    0 => vec![Action::Action, Action::Right],
+                    f if (slow_from..slow_to).contains(&f) => vec![Action::Action, Action::Left],
+                    f if f < 28 => vec![Action::Action, Action::Right],
+                    28 => vec![Action::Right],
+                    _ => vec![Action::Action, Action::Right],
+                };
+                hold(&mut w, &held, 1);
+                if before == 0 && w.player.roll_stop == 0 || w.player.roll_stop > 4 {
+                    continue;
+                }
+                let toward = held.contains(&Action::Right) && held.contains(&Action::Action);
+                if !toward || vx.to_f64() >= 0.0 || !w.player.grounded() {
+                    continue;
+                }
+                let slow = -vx.to_f64() <= 271.0 / 256.0;
+                if slow && x.floor() + 15 >= 1600 {
+                    stopped += 1;
+                    assert_eq!(w.player.vel.x, Fixed::ZERO, "start {start} frame {frame}");
+                    assert_eq!(w.player.pos.x, x, "start {start} frame {frame}");
+                } else if slow && -vx.to_f64() > 0.05 {
+                    moved += 1;
+                    assert!(w.player.pos.x != x, "start {start} frame {frame}");
+                }
+            }
+        }
+    }
+    assert!(stopped > 0 && moved > 0, "{stopped} {moved}");
+}
+
+#[test]
 fn classic_roll_pushes_off_toward_the_end_of_the_ground() {
     // spec/behavior/rolling-off-ledges.md, "Stopping before a ledge": the
     // same place, Right and Action on S and Right held after.
@@ -4202,6 +4248,49 @@ fn classic_roll_started_on_d_17_lasts_30_frames() {
             "press {press}"
         );
     }
+}
+
+#[test]
+fn classic_jump_press_on_d_17_beats_a_remembered_roll_press() {
+    // spec/behavior/roll-input.md, "Starting the next roll": a Jump press
+    // on D + 17 beats a remembered roll press and a new one on D + 17; the
+    // jump starts on D + 18 and no roll starts. Earlier it jumps too; on
+    // D + 18 the roll has started already on D + 17.
+    for press in [34, 46] {
+        for jump in [44, 45, 46] {
+            let mut w = classic_raised(1000);
+            let rows = play(&mut w, 60, |f| {
+                let mut keys = match f {
+                    0 => vec![Action::Action, Action::Right],
+                    f if f == press => vec![Action::Action],
+                    28..34 => vec![Action::Right],
+                    _ => vec![],
+                };
+                if (jump..jump + 4).contains(&f) {
+                    keys.extend([Action::Jump, Action::Right]);
+                }
+                keys
+            });
+            assert_eq!(
+                frames_with(&rows, Event::RollStart),
+                [0],
+                "press {press} jump {jump}"
+            );
+            assert_eq!(
+                frames_with(&rows, Event::JumpStart),
+                [jump + 1],
+                "press {press} jump {jump}"
+            );
+        }
+    }
+    // On D + 18 the roll starts on D + 17 from the remembered press.
+    let mut w = classic_raised(1000);
+    let rows = play(&mut w, 60, |f| match f {
+        0 | 34 => vec![Action::Action],
+        47..=50 => vec![Action::Jump],
+        _ => vec![],
+    });
+    assert_eq!(frames_with(&rows, Event::RollStart), [0, 46]);
 }
 
 #[test]

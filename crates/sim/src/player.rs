@@ -2824,6 +2824,13 @@ impl Player {
         if !can_start {
             return false;
         }
+        // A Jump press on the stop's last frame beats a remembered press,
+        // and a new one: the jump starts next frame and no roll does
+        // (`roll-input.md`, "Starting the next roll").
+        if self.roll_stop > 0 && input.pressed.contains(Action::Jump) {
+            self.roll_press = None;
+            return false;
+        }
         // With `face_roll_wait`, not on a frame that starts on a face: the
         // press waits, held, for the first frame off it.
         let face_wait = frames(physics[Param::FaceRollWait]);
