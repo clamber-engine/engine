@@ -140,3 +140,12 @@ fn a_follower_at_an_offset_or_absent_builds_and_leaves_a_plain_walk_alone() {
         assert_eq!(trace.rows, settled.rows, "{follower}");
     }
 }
+
+#[test]
+fn a_start_with_the_second_character_leading_needs_a_second_character() {
+    let start = "mode: grounded\nlead: second\n";
+    match run("floor 0..99 0\n", start, "0-29 R\n", 30) {
+        Ok(trace) => assert!(trace.rows.last().unwrap().x > d("10")),
+        Err(e) => assert!(e.contains("no second character"), "{e}"),
+    }
+}

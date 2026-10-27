@@ -45,6 +45,9 @@ pub fn record_setup(feel: Arc<Feel>, scenario: &Scenario) -> Result<Trace, Strin
         .as_ref()
         .ok_or("the scenario has no [geometry] and [start]")?;
     let level = crate::geometry::level(scenario)?;
+    if setup.start.second_leads && feel.roster.len() < 2 {
+        return Err("the preset has no second character to lead".into());
+    }
     record_from(Arc::new(level), feel, scenario, Some(setup)).map_err(|e| e.to_string())
 }
 

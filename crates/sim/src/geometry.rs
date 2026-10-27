@@ -56,6 +56,13 @@ pub fn start(world: &mut World, setup: &Setup) {
             State::Fall
         };
     }
+    if s.second_leads {
+        // The roster's second character plays; the first one follows.
+        world.player.character = 1;
+        if let Some(other) = &mut world.other {
+            other.character = 0;
+        }
+    }
     let lead = world.player.pos;
     match s.follower {
         Follower::None => world.other = None,
@@ -98,9 +105,6 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
     };
     if s.state != default {
         return Err(format!("can't start in state `{}` yet", s.state.name()));
-    }
-    if s.second_leads {
-        return Err("can't start with the second character leading yet".into());
     }
     if matches!(s.mode, Mode::Grounded | Mode::Swimming) && s.vy != Decimal::ZERO {
         return Err(format!("`vy` in start mode {:?} can't be built", s.mode).to_lowercase());
