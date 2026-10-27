@@ -264,7 +264,7 @@ fn a_crate_is_bounced_off_when_landed_on() {
         crated
             .rows
             .iter()
-            .any(|r| r.events.iter().any(|e| *e == clamber_trace::Event::Bounce)),
+            .any(|r| r.events.contains(&clamber_trace::Event::Bounce)),
         "{:?}",
         crated.rows.iter().map(|r| &r.events).collect::<Vec<_>>()
     );
