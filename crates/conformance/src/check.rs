@@ -125,7 +125,8 @@ fn execute_with(
     only: Option<Arc<Feel>>,
 ) -> Vec<Checked> {
     let mut levels: HashMap<PathBuf, Result<Arc<Level>, String>> = HashMap::new();
-    for job in &jobs {
+    // A v2 scenario builds its own place from its geometry.
+    for job in jobs.iter().filter(|j| j.scenario.setup.is_none()) {
         levels.entry(job.level.clone()).or_insert_with(|| {
             Level::load(&job.level)
                 .map(Arc::new)
@@ -155,10 +156,14 @@ fn execute_with(
             scope.spawn(|| {
                 while let Some(job) = jobs.get(next.fetch_add(1, Ordering::Relaxed)) {
                     let start = Instant::now();
-                    let verdict = match (&levels[&job.level], &feels[&job.preset]) {
-                        (Err(e), _) => Verdict::Error(e.clone()),
+                    let verdict = match (levels.get(&job.level), &feels[&job.preset]) {
                         (_, None) => Verdict::Error(format!("no preset named `{}`", job.preset)),
-                        (Ok(level), Some(feel)) => run_one(job, level, feel, status),
+                        (_, Some(feel)) if job.scenario.setup.is_some() => {
+                            run_one(job, None, feel, status)
+                        }
+                        (Some(Err(e)), _) => Verdict::Error(e.clone()),
+                        (Some(Ok(level)), Some(feel)) => run_one(job, Some(level), feel, status),
+                        (None, _) => Verdict::Error("the level wasn't loaded".into()),
                     };
                     let checked = Checked {
                         key: job.key.clone(),
@@ -219,14 +224,19 @@ pub fn run_pack(run: &PackRun, threads: usize) -> Result<Vec<Checked>, String> {
     Ok(execute_with(jobs, &Status::default(), threads, Some(feel)))
 }
 
-fn run_one(job: &Job, level: &Arc<Level>, feel: &Arc<Feel>, status: &Status) -> Verdict {
+fn run_one(job: &Job, level: Option<&Arc<Level>>, feel: &Arc<Feel>, status: &Status) -> Verdict {
     let reference = match Trace::load(&job.reference) {
         Ok(t) => t,
         Err(e) => return Verdict::Error(e.to_string()),
     };
-    let candidate = match clamber_sim::record(level.clone(), feel.clone(), &job.scenario) {
+    let candidate = match level {
+        Some(level) => clamber_sim::record(level.clone(), feel.clone(), &job.scenario)
+            .map_err(|e| e.to_string()),
+        None => clamber_sim::record_setup(feel.clone(), &job.scenario),
+    };
+    let candidate = match candidate {
         Ok(t) => t,
-        Err(e) => return Verdict::Error(e.to_string()),
+        Err(e) => return Verdict::Error(e),
     };
     if let Some((r, c)) = title_mismatch(&reference, &candidate) {
         return Verdict::Error(format!(

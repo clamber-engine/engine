@@ -105,7 +105,7 @@ fn labels_match_conformance_status_keys() {
 /// Each malformed fixture, with the line and part of the message its
 /// error must have. Line 0 means the file as a whole.
 const INVALID: &[(&str, usize, &str)] = &[
-    ("wrong-version", 1, "unsupported scenario format `v2`"),
+    ("wrong-version", 1, "unsupported scenario format `v3`"),
     (
         "missing-version",
         1,

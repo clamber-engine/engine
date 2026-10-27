@@ -6,6 +6,7 @@ use clamber_fixed::{FRAC_BITS, Fixed};
 use clamber_input::Frame;
 use clamber_level::{Level, Vec2};
 use clamber_pack::Feel;
+use clamber_trace::setup::Setup;
 use clamber_trace::trace::{self, Source};
 use clamber_trace::{Buttons, Decimal, Row, Scenario, Trace};
 
@@ -33,12 +34,35 @@ pub fn record(
     feel: Arc<Feel>,
     scenario: &Scenario,
 ) -> Result<Trace, ArchetypeError> {
+    record_from(level, feel, scenario, None)
+}
+
+/// Records a v2 scenario on a test place built from its geometry and
+/// start, or says why the engine can't build it.
+pub fn record_setup(feel: Arc<Feel>, scenario: &Scenario) -> Result<Trace, String> {
+    let setup = scenario
+        .setup
+        .as_ref()
+        .ok_or("the scenario has no [geometry] and [start]")?;
+    let level = crate::geometry::level(scenario)?;
+    record_from(Arc::new(level), feel, scenario, Some(setup)).map_err(|e| e.to_string())
+}
+
+fn record_from(
+    level: Arc<Level>,
+    feel: Arc<Feel>,
+    scenario: &Scenario,
+    setup: Option<&Setup>,
+) -> Result<Trace, ArchetypeError> {
     let mut extra = vec![("preset".to_string(), feel.preset.clone())];
     if let Some(title) = &feel.title {
         extra.push(("title".to_string(), title.clone()));
     }
     let mut world = World::try_new(level, feel)?;
-    settle(&mut world);
+    match setup {
+        Some(setup) => crate::geometry::start(&mut world, setup),
+        None => settle(&mut world),
+    }
     let start = world.player.pos;
     let mut rows = Vec::with_capacity(scenario.frames as usize);
     for input in Script::from_scenario(scenario).frames() {

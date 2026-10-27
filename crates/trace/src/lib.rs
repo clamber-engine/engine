@@ -60,6 +60,7 @@ pub mod input;
 pub mod metrics;
 pub mod report;
 pub mod scenario;
+pub mod setup;
 pub mod trace;
 pub mod vocab;
 

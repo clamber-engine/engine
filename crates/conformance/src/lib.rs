@@ -151,10 +151,15 @@ pub(crate) fn scenarios_in(dir: &Path) -> Result<Vec<Scenario>, String> {
         .collect()
 }
 
-/// Records the scenario on `preset` in `level`.
+/// Records the scenario on `preset` in `level`, or in the place its own
+/// geometry describes if it is a v2 scenario.
 pub fn record(scenario: &Scenario, level: &Path, preset: &str) -> Result<Trace, String> {
-    let level = Level::load(level).map_err(|e| e.to_string())?;
     let feel = generic_feel(preset).ok_or_else(|| format!("no preset named `{preset}`"))?;
+    if scenario.setup.is_some() {
+        // A v2 scenario builds its own place; `level` is not read.
+        return clamber_sim::record_setup(Arc::new(feel), scenario);
+    }
+    let level = Level::load(level).map_err(|e| e.to_string())?;
     clamber_sim::record(Arc::new(level), Arc::new(feel), scenario).map_err(|e| e.to_string())
 }
 

@@ -75,6 +75,7 @@ mod entrance;
 mod exit;
 mod flow;
 mod follow;
+pub mod geometry;
 mod hidden;
 mod hits;
 mod hutch;
@@ -136,7 +137,7 @@ pub use pose::{
     Air, Pose, PoseClock, SecondPose, Stance, hurt_pose, pose, second_pose, second_pose_held,
     stance,
 };
-pub use record::{record, row};
+pub use record::{record, record_setup, row};
 pub use ride::{RidePart, Riding};
 pub use rope::{OnRope, ROPE};
 pub use script::{InputFrame, Script};
