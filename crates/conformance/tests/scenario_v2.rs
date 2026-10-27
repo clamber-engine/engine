@@ -104,3 +104,12 @@ fn what_it_cannot_build_is_said_so() {
     let e = run("floor 0..9 0\nwater 0..9 -8\n", "mode: swimming\n", "", 5).unwrap_err();
     assert!(e.contains("start mode swimming"), "{e}");
 }
+
+#[test]
+fn a_button_held_before_frame_0_is_not_pressed_on_it() {
+    let floor = "floor 0..99 0\n";
+    let fresh = run(floor, "mode: grounded\n", "0-9 J\n", 10).unwrap();
+    assert!(fresh.rows.iter().any(|r| r.state == State::Jump));
+    let held = run(floor, "mode: grounded\nheld: J\n", "0-9 J\n", 10).unwrap();
+    assert!(held.rows.iter().all(|r| r.state != State::Jump));
+}

@@ -24,6 +24,8 @@ impl InputFrame {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Script {
     pub held: Vec<Actions>,
+    /// What was held on the frame before the first step.
+    pub before: Actions,
 }
 
 impl Script {
@@ -31,24 +33,32 @@ impl Script {
     pub fn idle(frames: u32) -> Script {
         Script {
             held: vec![Actions::NONE; frames as usize],
+            before: Actions::NONE,
         }
     }
 
-    /// The scenario's inputs for each of its frames.
+    /// The scenario's inputs for each of its frames, and for a v2
+    /// scenario what its start has held before frame 0.
     pub fn from_scenario(scenario: &Scenario) -> Script {
-        Script::from_buttons((0..scenario.frames).map(|f| scenario.held(f)))
+        let mut script = Script::from_buttons((0..scenario.frames).map(|f| scenario.held(f)));
+        if let Some(setup) = &scenario.setup {
+            script.before = actions(setup.start.held);
+        }
+        script
     }
 
     /// The buttons held on each frame, in order, as actions.
     pub fn from_buttons(held: impl IntoIterator<Item = Buttons>) -> Script {
         Script {
             held: held.into_iter().map(actions).collect(),
+            before: Actions::NONE,
         }
     }
 
-    /// The input for each step. Nothing is held before the first.
+    /// The input for each step. Only [`Script::before`] is held before
+    /// the first.
     pub fn frames(&self) -> impl Iterator<Item = InputFrame> + '_ {
-        let previous = std::iter::once(Actions::NONE).chain(self.held.iter().copied());
+        let previous = std::iter::once(self.before).chain(self.held.iter().copied());
         previous
             .zip(&self.held)
             .map(|(previous, &held)| InputFrame::single(Frame::after(previous, held)))

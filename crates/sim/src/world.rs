@@ -1624,6 +1624,7 @@ mod tests {
         let mut events = Vec::new();
         let script = Script {
             held: vec![held; frames],
+            before: Actions::NONE,
         };
         run(world, &script, |w| events.extend(&w.events));
         events

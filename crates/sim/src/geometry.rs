@@ -92,9 +92,6 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
     if matches!(s.follower, Follower::At(..)) {
         return Err("can't place the follower at an offset yet".into());
     }
-    if !s.held.is_empty() {
-        return Err("can't start with inputs already held yet".into());
-    }
     if s.mode == Mode::Grounded && s.vy != Decimal::ZERO {
         return Err("`vy` on the ground can't be built".into());
     }
