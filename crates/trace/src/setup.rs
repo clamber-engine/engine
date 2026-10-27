@@ -61,6 +61,8 @@ pub const ENTITY_KINDS: &[&str] = &[
     "metal_barrel",
     "collectible",
     "sign",
+    "barrel",
+    "holder",
 ];
 
 /// The ground and objects of a scenario's test place.

@@ -3,12 +3,14 @@
 
 use clamber_fixed::Fixed;
 use clamber_level::{Level, Vec2};
+use clamber_pack::Param;
 use clamber_trace::Decimal;
 use clamber_trace::setup::{Columns, Follower, Geometry, Mode, Setup};
 use clamber_trace::{Scenario, State as TraceState};
 
 use crate::follow::{self, Follow};
-use crate::player::{Facing, State};
+use crate::player::{Act, Facing, Hands, State, frames};
+use crate::world::Phase;
 use crate::world::World;
 
 /// Where level 0 is in a built level, px from its top.
@@ -29,7 +31,13 @@ pub type Unsupported = String;
 pub fn level(scenario: &Scenario) -> Result<Level, Unsupported> {
     let setup = scenario.setup.as_ref().ok_or("not a v2 scenario")?;
     check_supported(setup)?;
-    let toml = toml(&setup.geometry, scenario.frames);
+    let toml = toml(
+        &setup.geometry,
+        scenario.frames,
+        (setup.start.mode == Mode::Carrying)
+            .then_some(setup.start.with.as_deref())
+            .flatten(),
+    );
     Level::from_toml_str(&toml, &scenario.id).map_err(|e| e.to_string())
 }
 
@@ -37,6 +45,8 @@ pub fn level(scenario: &Scenario) -> Result<Level, Unsupported> {
 /// is on a level from [`level`]; the player stands at column 0.
 pub fn start(world: &mut World, setup: &Setup) {
     let s = &setup.start;
+    let carried =
+        (s.mode == Mode::Carrying).then(|| world.things.iter().position(|t| t.kind == "crate"));
     let p = &mut world.player;
     p.facing = if s.facing_left {
         Facing::Left
@@ -62,6 +72,17 @@ pub fn start(world: &mut World, setup: &Setup) {
         if let Some(other) = &mut world.other {
             other.character = 0;
         }
+    }
+    if let Some(Some(thing)) = carried {
+        // The pick-up is over: the next step is the first of carrying.
+        let ticks = frames(world.player_physics()[Param::PickUpTime]);
+        world.things[thing].phase = Phase::Held;
+        world.player.hands = Some(Hands {
+            thing,
+            act: Act::PickUp,
+            frame: ticks.saturating_sub(1),
+            press: None,
+        });
     }
     let lead = world.player.pos;
     match s.follower {
@@ -99,7 +120,10 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
             e.kind
         ));
     }
-    if matches!(s.mode, Mode::Riding | Mode::Carrying | Mode::Rope) {
+    if s.mode == Mode::Carrying && !matches!(s.with.as_deref(), Some("barrel" | "holder")) {
+        return Err("mode carrying carries a `barrel` or a `holder` only".into());
+    }
+    if matches!(s.mode, Mode::Riding | Mode::Rope) {
         return Err(format!("can't build start mode {:?} yet", s.mode).to_lowercase());
     }
     let default = match s.mode {
@@ -119,7 +143,7 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
 
 /// The level file text. Column `c` is x = `origin + c`, level 0 is
 /// y = [`GROUND`].
-fn toml(g: &Geometry, frames: u32) -> String {
+fn toml(g: &Geometry, frames: u32, carried: Option<&str>) -> String {
     let first = g.floors.first().map_or(0, |f| i64::from(f.columns.first));
     let last = g.floors.last().map_or(0, |f| i64::from(f.columns.last));
     let origin = LEFT_MARGIN - first.min(0);
@@ -219,6 +243,16 @@ fn toml(g: &Geometry, frames: u32) -> String {
             "\n[[entities]]\ntype = \"crawler\"\nat = [{}, {}]\nparams = {{ speed = 1, response = 0.125, facing = \"{facing}\", size = [20, 12], offset = 0.5, turn_delay = 4, defeat_jump = 6, defeat_gravity = 0.4375, defeat_max_fall = 8 }}\n",
             x(e.column),
             y(e.height),
+        );
+    }
+    // The object a carrying start holds (behavior/carrying.md): a
+    // barrel, or one that holds the missing character. It starts at the
+    // player's feet and is lifted by the pick-up's last step.
+    if let Some(kind) = carried {
+        out += &format!(
+            "\n[[entities]]\ntype = \"crate\"\nat = [{}, {GROUND}]\nparams = {{ holds_character = {} }}\n",
+            origin,
+            kind == "holder",
         );
     }
     // A crate breaks under a player coming down on it and lets out its

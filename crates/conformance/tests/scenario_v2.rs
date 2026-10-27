@@ -284,3 +284,24 @@ fn walking_through_a_crate_does_nothing() {
     };
     assert_eq!(with(""), with("entity crate 20 0\n"));
 }
+
+#[test]
+fn a_carrying_start_holds_the_object_while_action_is_held() {
+    let floor = "floor -200..999 0\n";
+    for with in ["barrel", "holder"] {
+        let start = format!("mode: carrying\nwith: {with}\n");
+        let held = run_on("classic-1", floor, &start, "0-29 AR\n", 30).unwrap();
+        let thrown = run_on("classic-1", floor, &start, "0-29 R\n", 30).unwrap();
+        // Carrying, the player walks from frame 0; letting go of action on
+        // frame 0 throws at once, which holds the player still first.
+        assert!(held.rows[1].x > Decimal::ZERO, "{with}: {}", held.rows[1].x);
+        assert_eq!(thrown.rows[1].x, Decimal::ZERO, "{with}");
+        assert!(held.rows.iter().all(|r| r.state != State::Jump));
+    }
+}
+
+#[test]
+fn only_a_barrel_or_a_holder_is_carried() {
+    let e = run("floor 0..9 0\n", "mode: carrying\nwith: crate\n", "", 5).unwrap_err();
+    assert!(e.contains("barrel"), "{e}");
+}
