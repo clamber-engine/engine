@@ -199,6 +199,10 @@ pub struct Flow {
     /// Frames since a hit that cost a hit point, until its protection
     /// and the wait for control are over.
     pub recovery: Option<u16>,
+    /// Frames of protection left after a rider was knocked off the
+    /// animal (riding-hit.md, "The protection"). Nothing hurts the player
+    /// while any are left.
+    pub ride_guard: u16,
     /// What happened during the last step, in order.
     pub events: Vec<FlowEvent>,
 }

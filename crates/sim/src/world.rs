@@ -875,6 +875,9 @@ impl World {
         out.push(f.lives);
         out.push(f.hits_taken);
         out.extend(f.recovery.map_or(0, |n| n.saturating_add(1)).to_le_bytes());
+        if f.ride_guard > 0 {
+            out.extend(f.ride_guard.to_le_bytes());
+        }
         match self.ending {
             Some(e) => {
                 out.push(1);
@@ -1472,6 +1475,7 @@ fn advance(world: &mut World, input: &InputFrame) {
     }
     loss::tick(world);
     hits::tick(world);
+    hits::tick_ride_guard(world);
     // Input is ignored for a while after a hit that cost a hit point.
     let stunned = InputFrame::default();
     let input = if world.hit_stunned() { &stunned } else { input };
@@ -1503,6 +1507,7 @@ fn advance(world: &mut World, input: &InputFrame) {
             .hurt_ahead
             .take()
             .filter(|_| world.swap.is_none() && !world.protected() && !world.losing());
+        let hurt_by = hurt_by.filter(|_| !world.ride_guarded());
         if hurt_by.is_some() {
             world.player.hit(&mut world.events);
         } else if entrance::throw(world, &input.players[0]) {

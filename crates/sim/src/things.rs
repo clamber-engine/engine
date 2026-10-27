@@ -493,7 +493,7 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
         hurt_boxes,
         attack_boxes,
     );
-    if world.protected() {
+    if world.protected() || world.ride_guarded() {
         world.events.retain(|&e| e != Event::Hurt);
     }
     // Nothing hurts the player on the frame after a ground action's
@@ -517,7 +517,15 @@ pub(crate) fn update(world: &mut World, previous: Vec2, frozen: bool) -> Option<
             // (losing-a-character.md, "Hits during a swap").
             world.swap_touch = world.swap_touch.or_else(|| taker_touched(world));
         }
-        let stinger = stinger::hurt_ahead(world);
+        let mut stinger = stinger::hurt_ahead(world);
+        if let Some(r) = &mut world.player.riding
+            && stinger.is_some()
+        {
+            // A stinger on the rider knocks it off on the next frame
+            // instead of hurting it (riding-hit.md, "The hit").
+            r.stung = true;
+            stinger = None;
+        }
         world.player.hurt_ahead = walker
             .or_else(|| throwers::hurt_ahead(world))
             .or_else(|| throwers::thrower_hurt_ahead(world))

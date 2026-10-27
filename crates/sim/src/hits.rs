@@ -13,7 +13,7 @@ use clamber_fixed::Fixed;
 use clamber_level::Vec2;
 use clamber_pack::Param;
 
-use crate::player::{Facing, frames};
+use crate::player::{Facing, State, frames};
 use crate::world::World;
 
 /// The hit points a life starts with: `hit_points`, or 1 if that's 0.
@@ -31,6 +31,16 @@ pub(crate) fn tick(world: &mut World) {
     let end = frames(physics[Param::HitProtectTime]).max(frames(physics[Param::HitControlWait]));
     let next = frame.saturating_add(1);
     world.flow.recovery = (next < u16::from(end)).then_some(next);
+}
+
+/// Counts down the protection after a rider was knocked off: it doesn't
+/// run on the frames a bounce holds still (riding-hit.md, "The
+/// protection").
+pub(crate) fn tick_ride_guard(world: &mut World) {
+    let held = world.player.frozen > 0 && world.player.state == State::Bounce;
+    if !held {
+        world.flow.ride_guard = world.flow.ride_guard.saturating_sub(1);
+    }
 }
 
 /// On a hit that doesn't lose a character: takes a hit point if one
@@ -73,6 +83,12 @@ pub(crate) fn take(world: &mut World, hurt_by: Option<usize>) -> bool {
 }
 
 impl World {
+    /// Whether nothing hurts the player, knocked off the animal not long
+    /// ago.
+    pub(crate) fn ride_guarded(&self) -> bool {
+        self.flow.ride_guard > 0
+    }
+
     /// The hit points the player has left in this life, if a life has
     /// more than one (`hit_points` above 1).
     pub fn hit_points(&self) -> Option<(u8, u8)> {

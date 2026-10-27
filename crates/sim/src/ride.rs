@@ -158,6 +158,8 @@ pub struct Riding {
     pub approach: Option<u8>,
     /// How many landing frames the last jump's landing has.
     pub landing: u8,
+    /// A stinger touched the rider at the end of the last frame.
+    pub stung: bool,
 }
 
 impl Riding {
@@ -179,6 +181,7 @@ impl Riding {
             fell: false,
             approach: None,
             landing: ride.landing,
+            stung: false,
         }
     }
 }
@@ -635,6 +638,10 @@ fn floor_below(level: &Level, player: &Player) -> Option<i64> {
         .map(ceil)
 }
 
+/// The frames from a knock-off that nothing hurts the player for
+/// (riding-hit.md, "The protection").
+const RIDE_GUARD: u16 = 128;
+
 /// Knocks the rider off the animal if a walker on its floor reached it
 /// by the end of the last step. The player doesn't move on this step,
 /// but goes up from the next one it moves on, and the animal runs off.
@@ -646,18 +653,20 @@ pub(crate) fn unseat(world: &mut World) -> bool {
     };
     let floor = floor_below(&world.level, player);
     let on_floor = r.on_floor && r.was_on_floor;
-    let knocked = world.things.iter().any(|walker| {
-        rider_reach(walker).is_some_and(|reach| {
-            let (across, above) = offsets(player, walker);
-            Some(ceil(walker.pos.y)) == floor
-                && across_within(reach.knock_across, player.facing, walker.facing, across)
-                && (on_floor || above <= i64::from(reach.knock_above))
-        })
-    });
+    let knocked = r.stung
+        || world.things.iter().any(|walker| {
+            rider_reach(walker).is_some_and(|reach| {
+                let (across, above) = offsets(player, walker);
+                Some(ceil(walker.pos.y)) == floor
+                    && across_within(reach.knock_across, player.facing, walker.facing, across)
+                    && (on_floor || above <= i64::from(reach.knock_above))
+            })
+        });
     if !knocked {
         return false;
     }
     let ride = r.ride;
+    world.flow.ride_guard = RIDE_GUARD;
     let player = &mut world.player;
     let vx = player.vel.x;
     player.launch(Vec2::new(vx, -ride.knock_rise), &mut world.events);
