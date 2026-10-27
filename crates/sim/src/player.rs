@@ -1716,9 +1716,11 @@ impl Player {
         } else if physics[Param::CrouchTurnLock] > Fixed::ZERO
             && self.grounded()
             && (crouching || self.crouch.turn_lock > 0)
+            && !events.contains(&Event::JumpStart)
         {
             // No turn starts while crouching or just after, and a crouch
-            // ends the turn under way where it is.
+            // ends the turn under way where it is. The jump's first frame
+            // isn't a crouch frame.
             self.turn = None;
             self.facing
         } else if striding && let Gait::Landing(landing) = self.gait {
@@ -1872,7 +1874,9 @@ impl Player {
         let crouch_pending = physics[Param::CrouchTurnLock] > Fixed::ZERO
             && self.grounded()
             && self.crouch.held > 0
-            && !crouching;
+            && !crouching
+            // The jump's first frame isn't a crouch frame.
+            && !events.contains(&Event::JumpStart);
         if !striding || (crouching && self.grounded()) {
             // In the air, rolling and in a roll's stop, the player isn't
             // walking or running; landings and the end of a roll set the

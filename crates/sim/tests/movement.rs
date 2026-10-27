@@ -5638,6 +5638,47 @@ fn classic_crouch_jump(held: &[&[Action]], n: usize) -> (Play, Vec<Row>) {
 }
 
 #[test]
+fn classic_1_jump_press_in_a_crouch_turns_on_its_first_frame() {
+    // spec/behavior/ground-speed.md, "Turns during a crouch": walking
+    // right, Down held on frames 0 to 12 (U is 13); Left and Jump pressed
+    // together on 13, Left held to 20. `jump_start` and `turn` are both on
+    // 14. A press on any frame 0 to 19 with Left held from it to 20 does
+    // the same; Left held on the press frame only doesn't turn.
+    use Action::{Down, Jump, Left, Right};
+    let run = |press: usize, left: std::ops::RangeInclusive<usize>| {
+        let mut w = classic_walking();
+        let rows = play(&mut w, 40, |f| {
+            let mut keys = vec![Right];
+            if f <= 12 {
+                keys.push(Down);
+            }
+            if f == press || f == press + 1 {
+                keys.push(Jump);
+            }
+            if left.contains(&f) {
+                keys.retain(|k| *k != Right);
+                keys.push(Left);
+            }
+            keys
+        });
+        (w, rows)
+    };
+    let (_, rows) = run(13, 13..=20);
+    assert_eq!(frames_with(&rows, Event::JumpStart), [14]);
+    assert_eq!(frames_with(&rows, Event::Turn).first(), Some(&14));
+    for press in 0..20 {
+        let (_, rows) = run(press, press..=20);
+        assert_eq!(
+            frames_with(&rows, Event::Turn).first(),
+            Some(&(press + 1)),
+            "{press}"
+        );
+    }
+    let (_, rows) = run(13, 13..=13);
+    assert!(frames_with(&rows, Event::Turn).is_empty());
+}
+
+#[test]
 fn classic_jumping_from_a_crouch() {
     // spec/behavior/jump-input.md, "Crouching": the example. Jump, Action
     // and Down pressed on frame 30 (row 0), Action and Down released
