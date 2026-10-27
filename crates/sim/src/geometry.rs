@@ -91,7 +91,7 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
     if let Some(e) = g.entities.iter().find(|e| {
         !matches!(
             e.kind.as_str(),
-            "walker" | "sign" | "collectible" | "critter"
+            "walker" | "sign" | "collectible" | "critter" | "crate"
         )
     }) {
         return Err(format!(
@@ -217,6 +217,15 @@ fn toml(g: &Geometry, frames: u32) -> String {
         let facing = if e.facing_left { "left" } else { "right" };
         out += &format!(
             "\n[[entities]]\ntype = \"crawler\"\nat = [{}, {}]\nparams = {{ speed = 1, response = 0.125, facing = \"{facing}\", size = [20, 12], offset = 0.5, turn_delay = 4, defeat_jump = 6, defeat_gravity = 0.4375, defeat_max_fall = 8 }}\n",
+            x(e.column),
+            y(e.height),
+        );
+    }
+    // A crate breaks under a player coming down on it and lets out its
+    // animal (behavior/animal-crate.md); the preset has its ranges.
+    for e in g.entities.iter().filter(|e| e.kind == "crate") {
+        out += &format!(
+            "\n[[entities]]\ntype = \"hutch\"\nat = [{}, {}]\n",
             x(e.column),
             y(e.height),
         );

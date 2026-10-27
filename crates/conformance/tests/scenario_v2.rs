@@ -104,13 +104,13 @@ fn a_wall_stops_the_player() {
 #[test]
 fn what_it_cannot_build_is_said_so() {
     let e = run(
-        "floor 0..9 0\nentity crate 5 0\n",
+        "floor 0..9 0\nentity thrower 5 0\n",
         "mode: grounded\n",
         "",
         5,
     )
     .unwrap_err();
-    assert!(e.contains("can't build `entity crate`"), "{e}");
+    assert!(e.contains("can't build `entity thrower`"), "{e}");
     let e = run("floor 0..9 0\nentity rope 0 0\n", "mode: rope\n", "", 5).unwrap_err();
     assert!(
         e.contains("entity rope") || e.contains("start mode rope"),
@@ -239,4 +239,48 @@ fn a_critter_in_the_geometry_changes_nothing() {
         assert_eq!(a.state, b.state);
         assert_eq!((a.x, a.y), (b.x, b.y));
     }
+}
+
+#[test]
+fn a_crate_is_bounced_off_when_landed_on() {
+    let with = |entity: &str| {
+        run_on(
+            "classic-1",
+            &format!("floor 0..99 0\n{entity}"),
+            "mode: airborne\nheight: 60\nvx: 0\n",
+            "",
+            40,
+        )
+        .unwrap()
+    };
+    let bare = with("");
+    let crated = with("entity crate 0 0\n");
+    assert!(
+        bare.rows
+            .iter()
+            .all(|r| !r.events.contains(&clamber_trace::Event::Bounce))
+    );
+    assert!(
+        crated
+            .rows
+            .iter()
+            .any(|r| r.events.iter().any(|e| *e == clamber_trace::Event::Bounce)),
+        "{:?}",
+        crated.rows.iter().map(|r| &r.events).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn walking_through_a_crate_does_nothing() {
+    let with = |entity: &str| {
+        run_on(
+            "classic-1",
+            &format!("floor 0..99 0\n{entity}"),
+            "mode: grounded\n",
+            "0-59 R\n",
+            60,
+        )
+        .unwrap()
+    };
+    assert_eq!(with(""), with("entity crate 20 0\n"));
 }
