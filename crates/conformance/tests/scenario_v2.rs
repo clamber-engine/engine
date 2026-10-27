@@ -104,13 +104,13 @@ fn a_wall_stops_the_player() {
 #[test]
 fn what_it_cannot_build_is_said_so() {
     let e = run(
-        "floor 0..9 0\nentity critter 5 0\n",
+        "floor 0..9 0\nentity crate 5 0\n",
         "mode: grounded\n",
         "",
         5,
     )
     .unwrap_err();
-    assert!(e.contains("can't build `entity critter`"), "{e}");
+    assert!(e.contains("can't build `entity crate`"), "{e}");
     let e = run("floor 0..9 0\nentity rope 0 0\n", "mode: rope\n", "", 5).unwrap_err();
     assert!(
         e.contains("entity rope") || e.contains("start mode rope"),
@@ -212,6 +212,28 @@ fn a_collectible_in_the_geometry_changes_no_traced_quantity() {
     };
     let without = run("floor -200..823 0\n");
     let with = run("floor -200..823 0\nentity collectible 20 0\n");
+    assert_eq!(with.rows.len(), without.rows.len());
+    for (a, b) in with.rows.iter().zip(&without.rows) {
+        assert_eq!(a.state, b.state);
+        assert_eq!((a.x, a.y), (b.x, b.y));
+    }
+}
+
+#[test]
+fn a_critter_in_the_geometry_changes_nothing() {
+    // behavior/critter.md: play goes exactly as without it.
+    let run = |geometry: &str| {
+        run_on(
+            "classic-1",
+            geometry,
+            "mode: grounded\n",
+            "10-80 R\n20-30 J\n",
+            100,
+        )
+        .unwrap()
+    };
+    let without = run("floor -200..823 0\n");
+    let with = run("floor -200..823 0\nentity critter 20 40\n");
     assert_eq!(with.rows.len(), without.rows.len());
     for (a, b) in with.rows.iter().zip(&without.rows) {
         assert_eq!(a.state, b.state);
