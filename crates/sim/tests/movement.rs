@@ -3999,6 +3999,43 @@ fn classic_roll_stop_pressing_toward_the_edge_while_moving_away_from_it() {
 }
 
 #[test]
+fn classic_walk_off_fall_jumps_on_l_plus_2() {
+    // spec/behavior/jump-input.md, "Landings this doesn't cover": the lead
+    // walking off a ledge with no face has E = L + 2: a Jump press from
+    // L - 10 on, held through L + 1, starts the jump on L + 2; one on
+    // L - 11 or earlier gives none; one on L + 1 or later starts it on
+    // the frame after.
+    let mut checked = 0;
+    for press in 0..50 {
+        let mut w = classic_raised(1590);
+        let probe = play(&mut w, 120, |_| vec![Action::Right]);
+        let leave = frames_with(&probe, Event::LeaveGround)[0];
+        let land = frames_with(&probe, Event::Land)[0];
+        if !(13..=42).contains(&(land - leave)) || press < leave + 1 || press > land + 3 {
+            continue;
+        }
+        let mut w = classic_raised(1590);
+        let rows = play(&mut w, land + 10, |f| match f {
+            f if f == press => vec![Action::Right, Action::Jump],
+            f if f > press && f < land + 3 => vec![Action::Right, Action::Jump],
+            _ => vec![Action::Right],
+        });
+        let jumps = frames_with(&rows, Event::JumpStart);
+        if press + 10 < land {
+            assert!(jumps.is_empty(), "press {press} land {land}: {jumps:?}");
+        } else {
+            assert_eq!(
+                jumps,
+                [(land + 2).max(press + 1)],
+                "press {press} land {land}"
+            );
+        }
+        checked += 1;
+    }
+    assert!(checked > 5);
+}
+
+#[test]
 fn classic_roll_pushes_off_toward_the_end_of_the_ground() {
     // spec/behavior/rolling-off-ledges.md, "Stopping before a ledge": the
     // same place, Right and Action on S and Right held after.

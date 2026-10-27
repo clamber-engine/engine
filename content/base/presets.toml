@@ -83,6 +83,7 @@ jump_delay = 0
 landing_lockout = 0
 fall_landing_lockout = 0
 face_fall_jump = 0
+plain_fall_jump = 0
 switch_from = 0
 switch_reach = 0
 switch_steps = []
@@ -631,6 +632,9 @@ run_walk_speed = 2.5
 jump_delay = 1
 landing_lockout = 2
 fall_landing_lockout = 2
+# The lead walking off a ledge with no face can jump from L + 2
+# (jump-input.md, "Landings this doesn't cover").
+plain_fall_jump = 2
 # A jump's landing waits for its switch frame (jump-input.md, "The
 # switch frame M"); the floor within reach uses `view_band` and
 # `view_reach`.
@@ -1235,6 +1239,7 @@ jump_landing_mode = 17
 # cover").
 face_fall_landing = 7
 face_fall_jump = 2
+plain_fall_jump = 0
 # Its stride cycle (ground-speed.md, "The second character's stride
 # cycle") has 16 walking and 13 running steps of 512 rather than 256:
 # walking at v/2 and running at v/4 + v/8, both at least 256, so the

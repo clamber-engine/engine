@@ -2299,6 +2299,16 @@ impl Player {
             let lockout = match frames(physics[Param::FaceFallJump]) {
                 // A jump from that frame after the landing frame on.
                 n if n > 0 && face_fall && physics[Param::FaceFallLanding] > Fixed::ZERO => n - 1,
+                _ if self.walked_off
+                    && !self.walked_off_face
+                    && !self.rolled_off
+                    && !self.action_fall =>
+                {
+                    match frames(physics[Param::PlainFallJump]) {
+                        0 => frames(physics[Param::FallLandingLockout]),
+                        n => n - 1,
+                    }
+                }
                 _ => frames(
                     physics[if self.walked_off {
                         Param::FallLandingLockout
