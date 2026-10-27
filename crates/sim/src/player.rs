@@ -1584,9 +1584,11 @@ impl Player {
         // `crouch_jump_press`, so does taking off.
         let crouch_jump_press = physics[Param::CrouchJumpPress] > Fixed::ZERO;
         let took_off = crouch_jump_press && !crouch_in_air && events.contains(&Event::JumpStart);
+        let mut abandons_turn = false;
         let crouching = if acting.is_some() || took_off {
             self.crouch = Crouch {
                 turn_lock: self.crouch.turn_lock,
+                turn_hold: self.crouch.turn_hold,
                 ..Crouch::default()
             };
             false
@@ -1603,11 +1605,29 @@ impl Player {
                 .is_some_and(|n| n.saturating_add(1) < land_wait);
             // Nor on a Jump press on the first frame Down is held.
             let press_first = crouch_jump_press && jump_press && self.crouch.held == 0;
-            self.crouch.update(
+            let starts = self.crouch.held == 0;
+            let turn_under_way = self.turn;
+            let crouching = self.crouch.update(
                 down && !busy.no_crouch && !press_first,
                 (self.grounded() || in_fall) && !rolling && !hop_landed && !just_landed,
                 physics,
-            )
+            );
+            // A standing player's turn that a crouch abandons starts again
+            // later than the crouch's own wait for some presses of Down
+            // (`ground-speed.md`, "Down during a turn already under way"):
+            // 3, 1 and 1 frames later, counted here a frame more because
+            // the hold is first checked on the frame after.
+            abandons_turn = starts
+                && self.crouch.held > 0
+                && turn_under_way.is_some_and(|n| n < frames(physics[Param::TurnTime]) / 2);
+            if abandons_turn && self.gait == Gait::Standing {
+                self.crouch.late_turn = match turn_under_way {
+                    Some(1) => 4,
+                    Some(2 | 3) => 2,
+                    _ => 0,
+                };
+            }
+            crouching
         };
 
         // Held toward ground ahead too high to start toward, the target
@@ -1721,7 +1741,7 @@ impl Player {
             }
         } else if physics[Param::CrouchTurnLock] > Fixed::ZERO
             && self.grounded()
-            && (crouching || self.crouch.turn_lock > 0)
+            && (crouching || abandons_turn || self.crouch.turn_hold > 0)
             && !events.contains(&Event::JumpStart)
         {
             // No turn starts while crouching or just after, and a crouch
@@ -4446,6 +4466,11 @@ pub struct Crouch {
     pub rising: u8,
     /// Frames left in which no turn starts after a crouch ends.
     pub turn_lock: u8,
+    /// Frames left in which no turn starts: `turn_lock` plus the extra
+    /// wait of a turn that the crouch abandoned.
+    pub turn_hold: u8,
+    /// Frames to add to `turn_hold` when this crouch ends.
+    pub late_turn: u8,
 }
 
 impl Crouch {
@@ -4462,12 +4487,17 @@ impl Crouch {
         }
         let min = frames(physics[Param::CrouchMin]);
         self.turn_lock = self.turn_lock.saturating_sub(1);
+        self.turn_hold = self.turn_hold.saturating_sub(1);
         if on_ground && (down || (self.held > 0 && self.held < min)) {
             self.held = self.held.saturating_add(1);
         } else {
             if self.held >= start {
                 self.rising = frames(physics[Param::CrouchRecovery]);
                 self.turn_lock = frames(physics[Param::CrouchTurnLock]);
+                self.turn_hold = self.turn_lock.saturating_add(self.late_turn);
+            }
+            if self.held > 0 {
+                self.late_turn = 0;
             }
             self.held = 0;
         }

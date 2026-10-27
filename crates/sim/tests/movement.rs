@@ -5914,3 +5914,61 @@ fn classic_jump_release_is_logged_only_while_rising() {
         );
     }
 }
+
+/// The frames of `Event::Turn` standing with Left held from frame 0 and
+/// Down held for `down_for` frames from `k`, in Classic 1.
+fn classic_down_during_turn(k: usize, down_for: usize) -> Vec<usize> {
+    let mut w = classic();
+    w.held = keys(&[Action::Action]);
+    let mut turns = Vec::new();
+    for frame in 0..60 {
+        let held: &[Action] = if (k..k + down_for).contains(&frame) {
+            &[Action::Left, Action::Down]
+        } else {
+            &[Action::Left]
+        };
+        let steps = hold(&mut w, held, 1);
+        if steps[0].events.contains(&Event::Turn) {
+            turns.push(frame);
+        }
+    }
+    turns
+}
+
+#[test]
+fn classic_down_during_a_standing_turn_abandons_it() {
+    // spec/behavior/ground-speed.md, "Down during a turn already under
+    // way": Left from frame 0 turns facing on frame 4, unless Down is
+    // first held on frames 0 to 4. The next turn's frame is measured.
+    for down_for in [1, 13] {
+        assert_eq!(classic_down_during_turn(5, down_for)[0], 4);
+        assert_eq!(classic_down_during_turn(9, down_for)[0], 4);
+        for (k, next) in [(0, 27), (1, 28), (2, 32), (3, 31), (4, 32)] {
+            assert_eq!(classic_down_during_turn(k, down_for), [next], "k {k}");
+        }
+    }
+}
+
+#[test]
+fn classic_down_during_a_walking_turn_abandons_it() {
+    // spec/behavior/ground-speed.md, "Down during a turn already under
+    // way": walking right, Left held from frame 0, the turn check on frame
+    // 3: Down first held on frames 3 to 7 keeps facing right through U + 9,
+    // and on frame 8 or later facing is left from frame 7.
+    for (d, abandoned) in [(3, true), (5, true), (7, true), (8, false)] {
+        let mut w = classic();
+        w.held = keys(&[Action::Action]);
+        hold(&mut w, &[Action::Right], 30);
+        let mut turned = false;
+        for frame in 0..(d + 13 + 9) {
+            let held: &[Action] = if (d..d + 13).contains(&frame) {
+                &[Action::Left, Action::Down]
+            } else {
+                &[Action::Left]
+            };
+            let steps = hold(&mut w, held, 1);
+            turned |= steps[0].events.contains(&Event::Turn);
+        }
+        assert_eq!(!turned, abandoned, "Down on {d}");
+    }
+}
