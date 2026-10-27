@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::metrics::{Comparison, Curve, Field, Metric};
-use crate::setup::{Geometry, Setup, Start, parse_geometry_line};
+use crate::setup::{Geometry, Mode, Setup, Start, parse_geometry_line};
 use crate::{Buttons, Decimal, Event, ParseError};
 
 /// A scripted piece of play: a starting situation, held inputs, and the
@@ -277,8 +277,10 @@ impl Scenario {
                     return Err(err(*n, format!("probe must be `yes`, found `{other}`")));
                 }
             };
-            geometry.check().map_err(|m| err(0, m))?;
             let start = Start::from_lines(&start_lines).map_err(|(n, m)| err(n, m))?;
+            geometry
+                .check(start.mode == Mode::Rope)
+                .map_err(|m| err(0, m))?;
             start.check(&geometry).map_err(|m| err(0, m))?;
             let requires = get("requires")
                 .map(|(v, _)| v.to_string())

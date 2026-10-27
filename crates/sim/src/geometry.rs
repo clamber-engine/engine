@@ -8,8 +8,10 @@ use clamber_trace::Decimal;
 use clamber_trace::setup::{Columns, Follower, Geometry, Mode, Setup};
 use clamber_trace::{Scenario, State as TraceState};
 
+use crate::archetype::Behavior;
 use crate::follow::{self, Follow};
 use crate::player::{Act, Facing, Hands, State, frames};
+use crate::rope::{OnRope, ROPE};
 use crate::world::Phase;
 use crate::world::World;
 
@@ -84,6 +86,9 @@ pub fn start(world: &mut World, setup: &Setup) {
             press: None,
         });
     }
+    if s.mode == Mode::Rope {
+        hold_rope(world);
+    }
     let lead = world.player.pos;
     match s.follower {
         Follower::None => world.other = None,
@@ -100,6 +105,26 @@ pub fn start(world: &mut World, setup: &Setup) {
     }
 }
 
+/// The player holds the rope in column 0, which is the rope last held
+/// (behavior/ropes.md, "A rope in a scenario"). The rope starts where
+/// it's placed at full speed to the right, as every rope does.
+fn hold_rope(world: &mut World) {
+    let Some(thing) = world.things.iter().find(|t| t.kind == ROPE) else {
+        return;
+    };
+    let Some(Behavior::Rope(values)) = thing.archetype.map(|a| a.behavior) else {
+        return;
+    };
+    let on = OnRope {
+        thing: thing.index,
+        values,
+        turn: None,
+        climbing: 0,
+    };
+    world.player.ground = None;
+    world.player.catch_rope(on);
+}
+
 fn fixed(d: Decimal) -> Fixed {
     Fixed::from_f64(d.to_string().parse().unwrap_or(0.0)).unwrap_or(Fixed::ZERO)
 }
@@ -112,7 +137,7 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
     if let Some(e) = g.entities.iter().find(|e| {
         !matches!(
             e.kind.as_str(),
-            "walker" | "sign" | "collectible" | "critter" | "crate" | "thrower"
+            "walker" | "sign" | "collectible" | "critter" | "crate" | "thrower" | "rope"
         )
     }) {
         return Err(format!(
@@ -123,13 +148,14 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
     if s.mode == Mode::Carrying && !matches!(s.with.as_deref(), Some("barrel" | "holder")) {
         return Err("mode carrying carries a `barrel` or a `holder` only".into());
     }
-    if matches!(s.mode, Mode::Riding | Mode::Rope) {
+    if s.mode == Mode::Riding {
         return Err(format!("can't build start mode {:?} yet", s.mode).to_lowercase());
     }
     let default = match s.mode {
         Mode::Airborne if s.vy.is_negative() => TraceState::Jump,
         Mode::Airborne => TraceState::Fall,
         Mode::Swimming => TraceState::Swim,
+        Mode::Rope => TraceState::Rope,
         _ => TraceState::Idle,
     };
     if s.state != default {
@@ -253,6 +279,16 @@ fn toml(g: &Geometry, frames: u32, carried: Option<&str>) -> String {
             "\n[[entities]]\ntype = \"crate\"\nat = [{}, {GROUND}]\nparams = {{ holds_character = {} }}\n",
             origin,
             kind == "holder",
+        );
+    }
+    // A rope hangs with its bottom end `H` px under level 0, at the left
+    // edge of column 0, where the player holds it (behavior/ropes.md,
+    // "A rope in a scenario"); the preset's archetype has its values.
+    for e in g.entities.iter().filter(|e| e.kind == "rope") {
+        out += &format!(
+            "\n[[entities]]\ntype = \"rope\"\nat = [{}, {}]\n",
+            x(e.column),
+            y(e.height),
         );
     }
     // A crate breaks under a player coming down on it and lets out its

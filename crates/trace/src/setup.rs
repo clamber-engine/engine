@@ -255,8 +255,10 @@ pub(crate) fn parse_geometry_line(
 
 impl Geometry {
     /// Sorts the floors and checks that they don't overlap, leave gaps,
-    /// or miss column 0 or give it a height other than 0.
-    pub(crate) fn check(&mut self) -> Result<(), String> {
+    /// or miss column 0 or give it a height other than 0. With `rope`,
+    /// level 0 is the player's feet line and column 0 needs no floor
+    /// (a floor there is still at 0), and a rope's end is at least −24.
+    pub(crate) fn check(&mut self, rope: bool) -> Result<(), String> {
         self.floors.sort_by_key(|f| f.columns.first);
         for pair in self.floors.windows(2) {
             let (a, b) = (pair[0].columns, pair[1].columns);
@@ -278,7 +280,19 @@ impl Geometry {
                 });
             }
         }
+        if rope
+            && let Some(e) = self
+                .entities
+                .iter()
+                .find(|e| e.kind == "rope" && e.height < -24)
+        {
+            return Err(format!(
+                "`entity rope` end {} is above the player's feet line by more than 24 (at least -24)",
+                e.height
+            ));
+        }
         match self.floors.iter().find(|f| f.columns.contains(0)) {
+            None if rope => Ok(()),
             None => Err("the player's column 0 has no floor".into()),
             Some(f) if f.top != Some(0) => {
                 Err("the floor in column 0 must be at height 0 (that is level 0)".into())
@@ -422,6 +436,23 @@ impl Start {
             return Err(none(
                 "`idle_frames` is only for mode grounded with state idle".into(),
             ));
+        }
+        if start.mode == Mode::Rope {
+            if let Some(key) = ["vx", "vy", "height", "idle_frames", "held", "with"]
+                .into_iter()
+                .find(|k| seen.contains(k))
+            {
+                return Err(none(format!("`{key}` is not allowed in mode rope")));
+            }
+            if state_given && start.state != State::Rope {
+                return Err(none("mode rope has state `rope` only".into()));
+            }
+            if start.follower != Follower::None {
+                return Err(none(
+                    "mode rope needs `follower: none` (the other character on a rope is not covered)"
+                        .into(),
+                ));
+            }
         }
         match (start.mode, &start.with) {
             (Mode::Riding | Mode::Carrying, None) => {

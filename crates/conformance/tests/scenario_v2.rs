@@ -103,11 +103,14 @@ fn a_wall_stops_the_player() {
 
 #[test]
 fn what_it_cannot_build_is_said_so() {
-    let e = run("floor 0..9 0\nentity rope 0 0\n", "mode: rope\n", "", 5).unwrap_err();
-    assert!(
-        e.contains("entity rope") || e.contains("start mode rope"),
-        "{e}"
-    );
+    let e = run(
+        "floor 0..9 0\nentity barrel 0 0\n",
+        "mode: riding\nwith: barrel\n",
+        "",
+        5,
+    )
+    .unwrap_err();
+    assert!(e.contains("riding") || e.contains("barrel"), "{e}");
 }
 
 #[test]
@@ -339,4 +342,31 @@ fn a_carrying_start_holds_the_object_while_action_is_held() {
 fn only_a_barrel_or_a_holder_is_carried() {
     let e = run("floor 0..9 0\n", "mode: carrying\nwith: crate\n", "", 5).unwrap_err();
     assert!(e.contains("barrel"), "{e}");
+}
+
+#[test]
+fn a_rope_start_holds_the_rope_until_a_jump_off() {
+    let start = "mode: rope\nfollower: none\n";
+    let geometry = "entity rope 0 100\n";
+    let held = run_on("classic-1", geometry, start, "0-9 U\n", 10).unwrap();
+    assert!(held.rows.iter().all(|r| r.state == State::Rope));
+    assert!(held.rows[9].y < Decimal::ZERO, "{}", held.rows[9].y);
+    // Jump with a direction leaves the rope on frame 0; the rope is the
+    // one last held, so it isn't caught again at once.
+    let off = run_on("classic-1", geometry, start, "0 JR\n1-9 R\n", 10).unwrap();
+    assert_ne!(off.rows[1].state, State::Rope);
+}
+
+#[test]
+fn a_rope_end_above_the_feet_line_slides_off_at_once() {
+    let e = run_on(
+        "classic-1",
+        "entity rope 0 -25\n",
+        "mode: rope\nfollower: none\n",
+        "",
+        3,
+    );
+    assert!(e.is_err(), "{e:?}");
+    let e = run_on("classic-1", "entity rope 0 0\n", "mode: rope\n", "", 3);
+    assert!(e.unwrap_err().contains("follower"));
 }

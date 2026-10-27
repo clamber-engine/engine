@@ -180,7 +180,16 @@ fn start_and_geometry_mistakes_are_errors() {
         ("mode: grounded\nmode: grounded\n", "`mode` appears twice"),
         ("mode: flying\n", "unknown mode `flying`"),
         ("mode: swimming\n", "no water over column 0"),
-        ("mode: rope\n", "no matching entity"),
+        ("mode: rope\nfollower: none\n", "no matching entity"),
+        ("mode: rope\n", "needs `follower: none`"),
+        (
+            "mode: rope\nfollower: none\nvy: 1\n",
+            "`vy` is not allowed in mode rope",
+        ),
+        (
+            "mode: rope\nfollower: none\nstate: idle\n",
+            "state `rope` only",
+        ),
         ("mode: grounded\nfoo: 1\n", "unknown start key `foo`"),
         (
             "mode: grounded\nstate: walk\nidle_frames: 3\n",
