@@ -1410,6 +1410,7 @@ impl Player {
                 physics[Param::RollJumpHeldGravity] > Fixed::ZERO && self.roll.is_some();
             self.coyote = None;
         }
+        let mut released = None;
         if (starts && wait == 0) || due {
             self.rolled_jump = (self.state == State::Roll || roll_jump)
                 && physics[Param::RollJumpSwitch] == Fixed::ZERO;
@@ -1450,7 +1451,7 @@ impl Player {
             && self.vel.y.is_negative()
         {
             self.vel.y = self.vel.y.max(-physics[Param::JumpReleaseSpeed]);
-            events.push(Event::JumpRelease);
+            released = Some(events.len());
         }
         // Held through the frame before the jump is enough: a press let
         // go of on the frame it's used still jumps.
@@ -1973,6 +1974,11 @@ impl Player {
                 self.vel.y + gravity
             }
             .min(physics[Param::MaxFallSpeed]);
+        }
+        // The event is on the row only if it still rises after this
+        // frame's gravity (`jump-arc.md`, "The `jump_release` event").
+        if let Some(at) = released.filter(|_| self.vel.y.is_negative()) {
+            events.insert(at, Event::JumpRelease);
         }
         // At the level's ends, a move toward the end leaves `x` as it is.
         if view::stops(self.pos.x, self.vel.x, level, physics) {
@@ -2865,7 +2871,11 @@ impl Player {
         let still = self.roll_stop > 0;
         let longer = age > 0 || physics[Param::RollStopPressLengthens] > Fixed::ZERO;
         let length = frames(physics[Param::RollTime]).saturating_add(u8::from(still && longer));
-        let dir = if still && !after_stop {
+        // On the landing frames after a jump, facing follows the input,
+        // so a roll goes the way held (`roll-speed.md`, "Size and
+        // direction on the press frame").
+        let landing = matches!(self.gait, Gait::Landing(l) if !l.fixed && !l.bounce);
+        let dir = if (still && !after_stop) || landing {
             facing_toward(i32::from(right) - i32::from(left), self.facing)
         } else {
             self.facing

@@ -5863,3 +5863,54 @@ fn classic_jump_press_on_d_plus_3_of_a_roll_stop_leaves_the_speed() {
     let vx: Vec<f64> = rows[d + 3..d + 7].iter().map(|r| r.vx * 256.0).collect();
     assert_eq!(vx, [505.0, 442.0, 387.0, 339.0]);
 }
+
+#[test]
+fn classic_roll_pressed_on_a_landing_frame_goes_the_way_held() {
+    use Action::{Action as A, Left as L, Right as R};
+    // spec/behavior/roll-speed.md, "Size and direction on the press
+    // frame": on L to K facing follows the input, so Action with the
+    // opposite direction held rolls that way; from K + 1 the roll goes the
+    // way the player faces, and reverses on the next frame.
+    for jump in [12, 40] {
+        let (_, _, gaits) = classic_after_landing(classic, jump, &[R], |_| vec![R]);
+        let k = gaits
+            .iter()
+            .position(|g| !matches!(g, Gait::Landing(_)))
+            .unwrap();
+        for press in 1..=k + 3 {
+            let (_, rows, _) = classic_after_landing(classic, jump, &[R], |n| {
+                if n == press { vec![A, L] } else { vec![R] }
+            });
+            assert!(rows[press].events.contains(&Event::RollStart));
+            let expected = if press <= k {
+                Facing::Left
+            } else {
+                Facing::Right
+            };
+            assert_eq!(
+                rows[press].facing, expected,
+                "jump {jump}, press L + {press}, K = L + {k}"
+            );
+            assert_eq!(rows[press].events.contains(&Event::Turn), press <= k);
+        }
+    }
+}
+
+#[test]
+fn classic_jump_release_is_logged_only_while_rising() {
+    // spec/behavior/jump-arc.md, "The `jump_release` event": the row's
+    // `vy` after gravity decides. Held 25 frames: -0.09375 and the event;
+    // held 26: 0.1875 and none.
+    for (held, event) in [(25, true), (26, false)] {
+        let mut w = classic();
+        let rows = play(&mut w, held + 2, |f| {
+            if f < held { vec![Action::Jump] } else { vec![] }
+        });
+        assert_eq!(
+            frames_with(&rows, Event::JumpRelease),
+            if event { vec![held] } else { vec![] },
+            "held {held}, vy {}",
+            rows[held].vy
+        );
+    }
+}
