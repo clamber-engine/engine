@@ -133,7 +133,7 @@ fn objects_and_the_probe_flag_are_read() {
     assert_eq!(setup.geometry.platforms[0].at, -24);
     assert_eq!(setup.geometry.water[0].columns.first, 30);
     assert!(setup.geometry.entities[0].facing_left);
-    assert_eq!(setup.start.with.as_deref(), Some("crate"));
+    assert_eq!(setup.start.with.as_deref(), Some("barrel"));
     assert!(!setup_of("valid-pit.scn").probe);
 }
 
