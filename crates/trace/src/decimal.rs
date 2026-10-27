@@ -54,6 +54,11 @@ impl Decimal {
         Decimal(self.0.abs())
     }
 
+    /// Whether `self` is a whole multiple of 2^-`bits`.
+    pub fn is_multiple_of_binary(self, bits: u32) -> bool {
+        self.0 * (1i128 << bits) % ONE == 0
+    }
+
     pub fn is_zero(self) -> bool {
         self.0 == 0
     }

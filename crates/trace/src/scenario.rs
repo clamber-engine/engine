@@ -282,6 +282,16 @@ impl Scenario {
                 .check(start.mode == Mode::Rope)
                 .map_err(|m| err(0, m))?;
             start.check(&geometry).map_err(|m| err(0, m))?;
+            if start.mode == Mode::Riding
+                && let Some((_, n)) = inputs
+                    .iter()
+                    .find(|(l, _)| l.first == 0 && l.buttons.contains(Buttons::JUMP))
+            {
+                return Err(err(
+                    *n,
+                    "Jump among the frame 0 inputs with mode riding".into(),
+                ));
+            }
             let requires = get("requires")
                 .map(|(v, _)| v.to_string())
                 .unwrap_or_default();

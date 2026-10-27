@@ -370,3 +370,35 @@ fn a_rope_end_above_the_feet_line_slides_off_at_once() {
     let e = run_on("classic-1", "entity rope 0 0\n", "mode: rope\n", "", 3);
     assert!(e.unwrap_err().contains("follower"));
 }
+
+#[test]
+fn a_riding_start_rides_the_animal_at_its_speed() {
+    let geometry = "floor -9..60 0\nentity crate 0 0\n";
+    let start = "mode: riding\nwith: crate\nvx: 1.5\n";
+    let t = run_on("classic-1", geometry, start, "0-19 R\n", 20).unwrap();
+    assert!(
+        t.rows[19].x > t.rows[5].x,
+        "{} {}",
+        t.rows[19].x,
+        t.rows[5].x
+    );
+    assert_eq!(t.rows[19].y, Decimal::ZERO);
+    // Moving on frame 1 already: the animal carries its speed.
+    assert!(t.rows[1].x > Decimal::ZERO, "{}", t.rows[1].x);
+}
+
+#[test]
+fn launch_and_metal_barrels_are_built() {
+    let geometry = "floor -9..60 0\nentity launch_barrel 20 0\nentity down_launch_barrel 30 0\nentity metal_barrel 40 0\n";
+    run_on("classic-1", geometry, "mode: grounded\n", "0-9 R\n", 10).unwrap();
+}
+
+#[test]
+fn the_spec_riding_vector_is_built() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../spec/vectors/scenario-v2/valid-riding.scn");
+    let scenario = Scenario::load(&path).unwrap();
+    let t = record(&scenario, Path::new("unused.level"), "classic-1").unwrap();
+    assert_eq!(t.rows.len(), 10);
+    assert!(t.rows[9].x < Decimal::ZERO, "{}", t.rows[9].x);
+}

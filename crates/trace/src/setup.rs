@@ -58,6 +58,7 @@ pub const ENTITY_KINDS: &[&str] = &[
     "crate",
     "rope",
     "launch_barrel",
+    "down_launch_barrel",
     "metal_barrel",
     "collectible",
     "sign",
@@ -226,6 +227,13 @@ pub(crate) fn parse_geometry_line(
                 ["facing", "R"] => false,
                 _ => return Err(format!("expected `facing L` or `facing R`, found `{line}`")),
             };
+            if matches!(
+                kind,
+                "launch_barrel" | "down_launch_barrel" | "metal_barrel"
+            ) && !facing.is_empty()
+            {
+                return Err(format!("facing not allowed on {kind}"));
+            }
             if kind == "thrower" && facing == ["facing", "R"] {
                 return Err("a thrower faces left: `facing R` isn't covered".into());
             }
@@ -290,6 +298,15 @@ impl Geometry {
                 "`entity rope` end {} is above the player's feet line by more than 24 (at least -24)",
                 e.height
             ));
+        }
+        for e in self.entities.iter().filter(|e| e.kind == "metal_barrel") {
+            let floor = self.floors.iter().find(|f| f.columns.contains(e.column));
+            if floor.and_then(|f| f.top) != Some(e.height) {
+                return Err(format!(
+                    "metal_barrel H is not the height of the floor in its column (H {} in column {})",
+                    e.height, e.column
+                ));
+            }
         }
         match self.floors.iter().find(|f| f.columns.contains(0)) {
             None if rope => Ok(()),
@@ -454,6 +471,22 @@ impl Start {
                 ));
             }
         }
+        if start.mode == Mode::Riding {
+            if start.vx.abs() > Decimal::from_count(4) || !start.vx.is_multiple_of_binary(8) {
+                return Err(none(
+                    "riding `vx` must be a multiple of 1/256 of size at most 4".into(),
+                ));
+            }
+            if matches!(start.follower, Follower::At(..)) {
+                return Err(none("`follower: at` is not allowed in mode riding".into()));
+            }
+            if start.held.contains(Buttons::JUMP) {
+                return Err(none(
+                    "Jump in `held` with mode riding (a Jump press on the first riding frame does not start a jump)"
+                        .into(),
+                ));
+            }
+        }
         match (start.mode, &start.with) {
             (Mode::Riding | Mode::Carrying, None) => {
                 return Err(none("mode riding and carrying need `with`".into()));
@@ -463,6 +496,23 @@ impl Start {
                 return Err(none("`with` is only for modes riding and carrying".into()));
             }
             (_, None) => {}
+        }
+        if state_given {
+            let allowed: &[State] = match start.mode {
+                Mode::Grounded | Mode::Carrying => &[State::Idle],
+                Mode::Airborne if start.vy.is_negative() => &[State::Jump],
+                Mode::Airborne => &[State::Fall],
+                Mode::Riding => &[State::Idle, State::Walk],
+                Mode::Swimming => &[State::Swim],
+                Mode::Rope => &[State::Rope],
+            };
+            if !allowed.contains(&start.state) {
+                return Err(none(format!(
+                    "state {} is not defined for mode {}",
+                    start.state.name(),
+                    format!("{:?}", start.mode).to_lowercase()
+                )));
+            }
         }
         if !state_given {
             start.state = match start.mode {
@@ -490,6 +540,10 @@ impl Start {
             (Mode::Riding, Some(kind)) if !in_column_0(kind) => Err(format!(
                 "mode riding with no matching entity in the geometry (an `entity {kind}` in column 0)"
             )),
+            (Mode::Riding, Some(kind)) if kind != "crate" => Err(
+                "mode riding with a kind other than crate (the animal is the only thing ridden)"
+                    .into(),
+            ),
             (Mode::Rope, _) if !in_column_0("rope") => Err(
                 "mode rope with no matching entity in the geometry (an `entity rope` in column 0)"
                     .into(),

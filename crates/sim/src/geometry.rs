@@ -11,6 +11,7 @@ use clamber_trace::{Scenario, State as TraceState};
 use crate::archetype::Behavior;
 use crate::follow::{self, Follow};
 use crate::player::{Act, Facing, Hands, State, frames};
+use crate::ride::Riding;
 use crate::rope::{OnRope, ROPE};
 use crate::world::Phase;
 use crate::world::World;
@@ -89,6 +90,9 @@ pub fn start(world: &mut World, setup: &Setup) {
     if s.mode == Mode::Rope {
         hold_rope(world);
     }
+    if s.mode == Mode::Riding {
+        ride_animal(world, s.vx);
+    }
     let lead = world.player.pos;
     match s.follower {
         Follower::None => world.other = None,
@@ -125,6 +129,25 @@ fn hold_rope(world: &mut World) {
     world.player.catch_rope(on);
 }
 
+/// The player is on the animal in column 0 on its first riding frame
+/// (behavior/riding.md, "Standing and walking"): at `vx`, with no jump
+/// possible until a frame has ended on the floor, as after a mount.
+fn ride_animal(world: &mut World, vx: Decimal) {
+    let Some(thing) = world.things.iter_mut().find(|t| t.kind == "hutch") else {
+        return;
+    };
+    let Some(Behavior::Hutch(hutch)) = thing.archetype.map(|a| a.behavior) else {
+        return;
+    };
+    thing.active = true;
+    thing.phase = Phase::Ridden;
+    thing.pos = world.player.pos;
+    thing.facing = world.player.facing;
+    world.player.vel.x = fixed(vx);
+    world.player.jump_hold = false;
+    world.player.riding = Some(Riding::new(hutch.ride, world.player.pos.y));
+}
+
 fn fixed(d: Decimal) -> Fixed {
     Fixed::from_f64(d.to_string().parse().unwrap_or(0.0)).unwrap_or(Fixed::ZERO)
 }
@@ -137,7 +160,16 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
     if let Some(e) = g.entities.iter().find(|e| {
         !matches!(
             e.kind.as_str(),
-            "walker" | "sign" | "collectible" | "critter" | "crate" | "thrower" | "rope"
+            "walker"
+                | "sign"
+                | "collectible"
+                | "critter"
+                | "crate"
+                | "thrower"
+                | "rope"
+                | "launch_barrel"
+                | "down_launch_barrel"
+                | "metal_barrel"
         )
     }) {
         return Err(format!(
@@ -148,14 +180,12 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
     if s.mode == Mode::Carrying && !matches!(s.with.as_deref(), Some("barrel" | "holder")) {
         return Err("mode carrying carries a `barrel` or a `holder` only".into());
     }
-    if s.mode == Mode::Riding {
-        return Err(format!("can't build start mode {:?} yet", s.mode).to_lowercase());
-    }
     let default = match s.mode {
         Mode::Airborne if s.vy.is_negative() => TraceState::Jump,
         Mode::Airborne => TraceState::Fall,
         Mode::Swimming => TraceState::Swim,
         Mode::Rope => TraceState::Rope,
+        Mode::Riding if s.vx != Decimal::ZERO => TraceState::Walk,
         _ => TraceState::Idle,
     };
     if s.state != default {
@@ -287,6 +317,33 @@ fn toml(g: &Geometry, frames: u32, carried: Option<&str>) -> String {
     for e in g.entities.iter().filter(|e| e.kind == "rope") {
         out += &format!(
             "\n[[entities]]\ntype = \"rope\"\nat = [{}, {}]\n",
+            x(e.column),
+            y(e.height),
+        );
+    }
+    // A launch barrel stands where it's placed, ready; the left one has
+    // the preset's values, the one that shoots down the importer's
+    // (behavior/launch-barrel.md, "The kind").
+    for e in g
+        .entities
+        .iter()
+        .filter(|e| e.kind.ends_with("launch_barrel"))
+    {
+        let params = if e.kind == "launch_barrel" {
+            ""
+        } else {
+            "params = { hold = 28, shot = [0, 8.46484375], glide = 1, breaks = true }\n"
+        };
+        out += &format!(
+            "\n[[entities]]\ntype = \"sling\"\nat = [{}, {}]\n{params}",
+            x(e.column),
+            y(e.height),
+        );
+    }
+    // A metal barrel lies at rest on its floor (behavior/metal-barrel.md).
+    for e in g.entities.iter().filter(|e| e.kind == "metal_barrel") {
+        out += &format!(
+            "\n[[entities]]\ntype = \"canister\"\nat = [{}, {}]\n",
             x(e.column),
             y(e.height),
         );

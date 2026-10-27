@@ -11,6 +11,7 @@ pub struct Buttons(u16);
 
 impl Buttons {
     pub const NONE: Buttons = Buttons(0);
+    pub const JUMP: Buttons = Buttons(1 << 4);
 
     /// The single action for `code`, if it is one.
     pub fn from_code(code: char) -> Option<Buttons> {

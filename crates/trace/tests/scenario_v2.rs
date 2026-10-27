@@ -153,7 +153,7 @@ fn start_defaults_follow_the_mode() {
     assert_eq!(state("grounded", ""), "idle");
     assert_eq!(state("airborne", "vy: -3\n"), "jump");
     assert_eq!(state("airborne", ""), "fall");
-    assert_eq!(state("airborne", "state: bounce\n"), "bounce");
+    assert_eq!(state("airborne", "state: fall\n"), "fall");
     let s = parse(BASE).unwrap().setup.unwrap();
     assert_eq!(s.start.idle_frames, 30);
     assert_eq!(s.start.follower, Follower::Settled);
@@ -189,6 +189,14 @@ fn start_and_geometry_mistakes_are_errors() {
         (
             "mode: rope\nfollower: none\nstate: idle\n",
             "state `rope` only",
+        ),
+        (
+            "mode: grounded\nstate: bounce\n",
+            "state bounce is not defined for mode grounded",
+        ),
+        (
+            "mode: airborne\nvy: -2\nstate: fall\n",
+            "state fall is not defined for mode airborne",
         ),
         ("mode: grounded\nfoo: 1\n", "unknown start key `foo`"),
         (
