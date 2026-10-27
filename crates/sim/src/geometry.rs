@@ -88,7 +88,11 @@ fn fixed(d: Decimal) -> Fixed {
 fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
     let g = &setup.geometry;
     let s = &setup.start;
-    if let Some(e) = g.entities.iter().find(|e| e.kind != "walker") {
+    if let Some(e) = g
+        .entities
+        .iter()
+        .find(|e| !matches!(e.kind.as_str(), "walker" | "sign"))
+    {
         return Err(format!(
             "can't build `entity {}` in test places yet",
             e.kind
@@ -200,7 +204,9 @@ fn toml(g: &Geometry, frames: u32) -> String {
             height - y(w.at),
         );
     }
-    for e in &g.entities {
+    // A sign is scenery that nothing touches and that changes no count
+    // (behavior/signs.md, "What a sign does"), so it adds nothing here.
+    for e in g.entities.iter().filter(|e| e.kind == "walker") {
         // The spec's plain walker (behavior/walker.md): full speed from
         // the start, easing by an eighth of the gap, in the small walker's
         // sizes (walker-contact.md).

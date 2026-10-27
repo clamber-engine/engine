@@ -174,3 +174,25 @@ fn a_walker_in_the_geometry_is_bounced_on() {
     .unwrap();
     assert!(trace.rows.iter().any(|r| r.state == State::Bounce));
 }
+
+#[test]
+fn a_sign_in_the_geometry_changes_nothing() {
+    // behavior/signs.md: play goes exactly as with the sign out of reach.
+    let run = |geometry: &str| {
+        run_on(
+            "classic-1",
+            geometry,
+            "mode: grounded\n",
+            "10-80 R\n20-30 J\n",
+            100,
+        )
+        .unwrap()
+    };
+    let without = run("floor -200..823 0\n");
+    let with = run("floor -200..823 0\nentity sign 20 0\n");
+    assert_eq!(with.rows.len(), without.rows.len());
+    for (a, b) in with.rows.iter().zip(&without.rows) {
+        assert_eq!(a.state, b.state);
+        assert_eq!((a.x, a.y), (b.x, b.y));
+    }
+}
