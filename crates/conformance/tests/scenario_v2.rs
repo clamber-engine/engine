@@ -101,8 +101,24 @@ fn what_it_cannot_build_is_said_so() {
     )
     .unwrap_err();
     assert!(e.contains("can't build `entity walker`"), "{e}");
-    let e = run("floor 0..9 0\nwater 0..9 -8\n", "mode: swimming\n", "", 5).unwrap_err();
-    assert!(e.contains("start mode swimming"), "{e}");
+    let e = run("floor 0..9 0\nentity rope 0 0\n", "mode: rope\n", "", 5).unwrap_err();
+    assert!(
+        e.contains("entity rope") || e.contains("start mode rope"),
+        "{e}"
+    );
+}
+
+#[test]
+fn a_swimming_start_is_swimming_on_frame_0() {
+    let trace = run(
+        "floor 0..99 0\nwater 0..99 -40\n",
+        "mode: swimming\n",
+        "0-19 R\n",
+        20,
+    )
+    .unwrap();
+    assert!(trace.rows.iter().all(|r| r.state == State::Swim));
+    assert!(trace.rows.last().unwrap().x > d("2"));
 }
 
 #[test]

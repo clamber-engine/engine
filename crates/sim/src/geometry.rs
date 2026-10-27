@@ -72,15 +72,13 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
             e.kind
         ));
     }
-    if matches!(
-        s.mode,
-        Mode::Riding | Mode::Carrying | Mode::Swimming | Mode::Rope
-    ) {
+    if matches!(s.mode, Mode::Riding | Mode::Carrying | Mode::Rope) {
         return Err(format!("can't build start mode {:?} yet", s.mode).to_lowercase());
     }
     let default = match s.mode {
         Mode::Airborne if s.vy.is_negative() => TraceState::Jump,
         Mode::Airborne => TraceState::Fall,
+        Mode::Swimming => TraceState::Swim,
         _ => TraceState::Idle,
     };
     if s.state != default {
@@ -92,8 +90,8 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
     if matches!(s.follower, Follower::At(..)) {
         return Err("can't place the follower at an offset yet".into());
     }
-    if s.mode == Mode::Grounded && s.vy != Decimal::ZERO {
-        return Err("`vy` on the ground can't be built".into());
+    if matches!(s.mode, Mode::Grounded | Mode::Swimming) && s.vy != Decimal::ZERO {
+        return Err(format!("`vy` in start mode {:?} can't be built", s.mode).to_lowercase());
     }
     Ok(())
 }
