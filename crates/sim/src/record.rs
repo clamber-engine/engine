@@ -102,10 +102,13 @@ pub fn row(world: &World, frame: u32, input: Buttons, start: Vec2, stepped: bool
         // "In a trace").
         state: match world.ending.is_some() && !p.grounded() {
             true => clamber_trace::State::Fall,
+            // Blocked by a wall on the first frame after take-off, the
+            // row still reads standing (`air-walls.md`).
+            false if p.takeoff_blocked => clamber_trace::State::Idle,
             false => state(p.state),
         },
         // A swimmer on the floor is on the ground (`swimming.md`).
-        ground: p.grounded() || p.swim_floor,
+        ground: p.grounded() || p.swim_floor || p.takeoff_blocked,
         facing: match p.facing {
             Facing::Left => trace::Facing::Left,
             Facing::Right => trace::Facing::Right,

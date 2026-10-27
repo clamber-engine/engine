@@ -259,6 +259,10 @@ pub struct Player {
     /// The last step's move was stopped by a rise: a frame held toward
     /// one next keeps a target of 0 (`rise_keeps_target`).
     pub blocked: bool,
+    /// The last step was a wall's block in the air on the first frame
+    /// after take-off: its row reads idle and on the ground
+    /// (`air-walls.md`).
+    pub takeoff_blocked: bool,
     /// After a landing, what the switch frame steep faces wait for is,
     /// until it has come (`face_slide_switch`).
     pub face_switch: Option<FaceSwitch>,
@@ -437,6 +441,7 @@ impl Player {
             approach_face: false,
             push: Fixed::ZERO,
             blocked: false,
+            takeoff_blocked: false,
             face_switch: None,
             rolled_jump: false,
             walked_off: false,
@@ -1987,12 +1992,16 @@ impl Player {
         let hold = self.jump_hold;
         let feet = self.pos.y;
         self.blocked = false;
+        self.takeoff_blocked = false;
         // Stopped in the air or on the floor (`face_slide_switch`).
         let mut stopped = false;
         let moved = if slope > Fixed::ZERO && airborne {
             let before = self.vel.x;
             let moved = self.move_in_air_by_columns(level, physics, events);
             stopped = before != Fixed::ZERO && self.vel.x == Fixed::ZERO;
+            self.takeoff_blocked = stopped
+                && self.jump_age == Some(0)
+                && physics[Param::AirWholePixels] == Fixed::ZERO;
             moved
         } else if slope > Fixed::ZERO {
             // A roll is also stopped by floor more than a step above its

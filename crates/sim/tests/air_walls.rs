@@ -299,3 +299,83 @@ fn classic_2_landing_margin_follows_the_column_at_a_face() {
     assert_eq!(fall(218.5, -67.0, 2.0), (false, fx(-65.0)));
     assert_eq!(fall(218.5, -66.0, 2.0), (true, fx(-64.0)));
 }
+
+#[test]
+fn blocked_on_the_first_frame_after_take_off_reads_standing() {
+    let mut world = ground(|c| match c {
+        ..205 => 0,
+        _ => -1 - 4 * (c - 205),
+    });
+    world.player.pos.x = fx(150.0);
+    world.player.pos.y = Fixed::from_int(FLOOR - 4);
+    for _ in 0..6 {
+        hold(&mut world, &[]);
+    }
+    // Walking right; the press is one step before take-off, which
+    // happens at x = 204.2, so the next frame meets the face.
+    world.player.pos.x = fx(200.625);
+    world.player.vel.x = Fixed::from_bits(448 << 24);
+    world.player.facing = Facing::Right;
+    let right = [Action::Right].into_iter().collect::<Actions>();
+    let both = [Action::Right, Action::Jump]
+        .into_iter()
+        .collect::<Actions>();
+    let mut rows = vec![];
+    for n in 0..5 {
+        let prev = if n == 0 { right } else { both };
+        step(&mut world, &InputFrame::single(Frame::after(prev, both)));
+        rows.push(clamber_sim::row(
+            &world,
+            n,
+            Default::default(),
+            Default::default(),
+            true,
+        ));
+    }
+    // Take-off (T), then the blocked frame (T+1): standing and on the
+    // ground, with the jump's arc as usual; then an ordinary jump row.
+    assert_eq!(
+        (rows[1].vy.to_string(), rows[1].ground),
+        ("-7".into(), true)
+    );
+    assert_eq!(
+        (rows[2].state, rows[2].ground),
+        (clamber_trace::State::Idle, true)
+    );
+    assert_eq!(rows[2].vx.to_string(), "0");
+    assert_eq!(
+        (rows[3].state, rows[3].ground),
+        (clamber_trace::State::Jump, false)
+    );
+}
+
+#[test]
+fn blocked_on_a_later_frame_reads_jumping() {
+    let mut world = ground(|c| match c {
+        ..205 => 0,
+        _ => -1 - 4 * (c - 205),
+    });
+    world.player.pos.x = fx(150.0);
+    world.player.pos.y = Fixed::from_int(FLOOR - 4);
+    for _ in 0..6 {
+        hold(&mut world, &[]);
+    }
+    world.player.pos.x = fx(196.0);
+    world.player.vel.x = Fixed::from_bits(448 << 24);
+    world.player.facing = Facing::Right;
+    let right = [Action::Right].into_iter().collect::<Actions>();
+    let both = [Action::Right, Action::Jump]
+        .into_iter()
+        .collect::<Actions>();
+    let mut blocked = 0;
+    for n in 0..12 {
+        let prev = if n == 0 { right } else { both };
+        step(&mut world, &InputFrame::single(Frame::after(prev, both)));
+        let row = clamber_sim::row(&world, n, Default::default(), Default::default(), true);
+        if n >= 2 && row.vx.to_string() == "0" {
+            blocked += 1;
+            assert_eq!((row.state, row.ground), (clamber_trace::State::Jump, false));
+        }
+    }
+    assert!(blocked > 0);
+}
