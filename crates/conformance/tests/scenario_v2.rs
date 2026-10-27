@@ -129,3 +129,14 @@ fn a_button_held_before_frame_0_is_not_pressed_on_it() {
     let held = run(floor, "mode: grounded\nheld: J\n", "0-9 J\n", 10).unwrap();
     assert!(held.rows.iter().all(|r| r.state != State::Jump));
 }
+
+#[test]
+fn a_follower_at_an_offset_or_absent_builds_and_leaves_a_plain_walk_alone() {
+    let floor = "floor 0..99 0\n";
+    let settled = run(floor, "mode: grounded\n", "0-29 R\n", 30).unwrap();
+    for follower in ["none", "at -40 0", "at 20 -8"] {
+        let start = format!("mode: grounded\nfollower: {follower}\n");
+        let trace = run(floor, &start, "0-29 R\n", 30).unwrap();
+        assert_eq!(trace.rows, settled.rows, "{follower}");
+    }
+}

@@ -7,6 +7,7 @@ use clamber_trace::Decimal;
 use clamber_trace::setup::{Columns, Follower, Geometry, Mode, Setup};
 use clamber_trace::{Scenario, State as TraceState};
 
+use crate::follow::{self, Follow};
 use crate::player::{Facing, State};
 use crate::world::World;
 
@@ -55,6 +56,20 @@ pub fn start(world: &mut World, setup: &Setup) {
             State::Fall
         };
     }
+    let lead = world.player.pos;
+    match s.follower {
+        Follower::None => world.other = None,
+        Follower::Settled => {}
+        Follower::At(dx, dy) => {
+            if let Some(other) = &mut world.other {
+                other.pos = Vec2 {
+                    x: lead.x + Fixed::from_int(dx),
+                    y: lead.y + Fixed::from_int(dy),
+                };
+                other.follow = Follow::at(follow::point(other.pos));
+            }
+        }
+    }
 }
 
 fn fixed(d: Decimal) -> Fixed {
@@ -86,9 +101,6 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
     }
     if s.second_leads {
         return Err("can't start with the second character leading yet".into());
-    }
-    if matches!(s.follower, Follower::At(..)) {
-        return Err("can't place the follower at an offset yet".into());
     }
     if matches!(s.mode, Mode::Grounded | Mode::Swimming) && s.vy != Decimal::ZERO {
         return Err(format!("`vy` in start mode {:?} can't be built", s.mode).to_lowercase());
