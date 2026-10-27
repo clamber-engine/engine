@@ -11,11 +11,21 @@ fn run(
     inputs: &str,
     frames: u32,
 ) -> Result<clamber_trace::Trace, String> {
+    run_on("default", geometry, start, inputs, frames)
+}
+
+fn run_on(
+    preset: &str,
+    geometry: &str,
+    start: &str,
+    inputs: &str,
+    frames: u32,
+) -> Result<clamber_trace::Trace, String> {
     let text = format!(
         "# clamber-scenario v2\nid: t\nsummary: s\nframes: {frames}\n\n[geometry]\n{geometry}\n[start]\n{start}\n[inputs]\n{inputs}\n"
     );
     let scenario = Scenario::parse(&text, "inline").map_err(|e| e.to_string())?;
-    record(&scenario, Path::new("unused.level"), "default")
+    record(&scenario, Path::new("unused.level"), preset)
 }
 
 fn d(s: &str) -> Decimal {
@@ -94,13 +104,13 @@ fn a_wall_stops_the_player() {
 #[test]
 fn what_it_cannot_build_is_said_so() {
     let e = run(
-        "floor 0..9 0\nentity walker 5 0\n",
+        "floor 0..9 0\nentity critter 5 0\n",
         "mode: grounded\n",
         "",
         5,
     )
     .unwrap_err();
-    assert!(e.contains("can't build `entity walker`"), "{e}");
+    assert!(e.contains("can't build `entity critter`"), "{e}");
     let e = run("floor 0..9 0\nentity rope 0 0\n", "mode: rope\n", "", 5).unwrap_err();
     assert!(
         e.contains("entity rope") || e.contains("start mode rope"),
@@ -148,4 +158,19 @@ fn a_start_with_the_second_character_leading_needs_a_second_character() {
         Ok(trace) => assert!(trace.rows.last().unwrap().x > d("10")),
         Err(e) => assert!(e.contains("no second character"), "{e}"),
     }
+}
+
+#[test]
+fn a_walker_in_the_geometry_is_bounced_on() {
+    // The v1 bounce-walker scenario, as geometry: a walker 76 columns to
+    // the right of the player, heading left.
+    let trace = run_on(
+        "classic-1",
+        "floor -200..823 0\nentity walker 76 0 facing L\n",
+        "mode: grounded\n",
+        "20-139 J\n",
+        140,
+    )
+    .unwrap();
+    assert!(trace.rows.iter().any(|r| r.state == State::Bounce));
 }

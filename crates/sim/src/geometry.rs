@@ -88,7 +88,7 @@ fn fixed(d: Decimal) -> Fixed {
 fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
     let g = &setup.geometry;
     let s = &setup.start;
-    if let Some(e) = g.entities.first() {
+    if let Some(e) = g.entities.iter().find(|e| e.kind != "walker") {
         return Err(format!(
             "can't build `entity {}` in test places yet",
             e.kind
@@ -198,6 +198,17 @@ fn toml(g: &Geometry, frames: u32) -> String {
             y(w.at),
             i64::from(last - first) + 1,
             height - y(w.at),
+        );
+    }
+    for e in &g.entities {
+        // The spec's plain walker (behavior/walker.md): full speed from
+        // the start, easing by an eighth of the gap, in the small walker's
+        // sizes (walker-contact.md).
+        let facing = if e.facing_left { "left" } else { "right" };
+        out += &format!(
+            "\n[[entities]]\ntype = \"crawler\"\nat = [{}, {}]\nparams = {{ speed = 1, response = 0.125, facing = \"{facing}\", size = [20, 12], offset = 0.5, turn_delay = 4, defeat_jump = 6, defeat_gravity = 0.4375, defeat_max_fall = 8 }}\n",
+            x(e.column),
+            y(e.height),
         );
     }
     out
