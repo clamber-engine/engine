@@ -112,7 +112,7 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
     if let Some(e) = g.entities.iter().find(|e| {
         !matches!(
             e.kind.as_str(),
-            "walker" | "sign" | "collectible" | "critter" | "crate"
+            "walker" | "sign" | "collectible" | "critter" | "crate" | "thrower"
         )
     }) {
         return Err(format!(
@@ -262,6 +262,17 @@ fn toml(g: &Geometry, frames: u32, carried: Option<&str>) -> String {
             "\n[[entities]]\ntype = \"hutch\"\nat = [{}, {}]\n",
             x(e.column),
             y(e.height),
+        );
+    }
+    // A thrower stands 1 px above the floor of its ledge, faces left and
+    // throws as the preset's archetype does, which has the spec's default
+    // throws (scenarios/FORMAT.md, "entity thrower"; formats/placements.md,
+    // "Thrower settings").
+    for e in g.entities.iter().filter(|e| e.kind == "thrower") {
+        out += &format!(
+            "\n[[entities]]\ntype = \"thrower\"\nat = [{}, {}]\n",
+            x(e.column),
+            y(e.height) - 1,
         );
     }
     out

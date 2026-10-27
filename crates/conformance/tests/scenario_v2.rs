@@ -103,14 +103,6 @@ fn a_wall_stops_the_player() {
 
 #[test]
 fn what_it_cannot_build_is_said_so() {
-    let e = run(
-        "floor 0..9 0\nentity thrower 5 0\n",
-        "mode: grounded\n",
-        "",
-        5,
-    )
-    .unwrap_err();
-    assert!(e.contains("can't build `entity thrower`"), "{e}");
     let e = run("floor 0..9 0\nentity rope 0 0\n", "mode: rope\n", "", 5).unwrap_err();
     assert!(
         e.contains("entity rope") || e.contains("start mode rope"),
@@ -283,6 +275,49 @@ fn walking_through_a_crate_does_nothing() {
         .unwrap()
     };
     assert_eq!(with(""), with("entity crate 20 0\n"));
+}
+
+#[test]
+fn a_thrower_hurts_a_player_standing_on_its_ledge() {
+    let with = |entity: &str| {
+        run_on(
+            "classic-1",
+            &format!("floor 0..99 0\n{entity}"),
+            "mode: grounded\n",
+            "",
+            5,
+        )
+        .unwrap()
+    };
+    let hurt = |t: &clamber_trace::Trace| {
+        t.rows
+            .iter()
+            .position(|r| r.events.contains(&clamber_trace::Event::Hurt))
+    };
+    // The ledge is U = -1 (thrower-contact.md), and only `across` counts
+    // there. It doesn't hurt on frame 1, the one before its first throw
+    // (thrower-contact.md), and no ball is in the air before frame 2.
+    assert_eq!(hurt(&with("")), None);
+    assert_eq!(hurt(&with("entity thrower 0 0\n")), Some(2));
+}
+
+#[test]
+fn a_thrower_facing_right_is_an_error() {
+    let e = run(
+        "floor 0..9 0\nentity thrower 5 0 facing R\n",
+        "mode: grounded\n",
+        "",
+        5,
+    )
+    .unwrap_err();
+    assert!(e.contains("thrower faces left"), "{e}");
+    run(
+        "floor 0..9 0\nentity thrower 5 0 facing L\n",
+        "mode: grounded\n",
+        "",
+        5,
+    )
+    .unwrap();
 }
 
 #[test]

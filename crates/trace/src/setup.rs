@@ -226,6 +226,9 @@ pub(crate) fn parse_geometry_line(
                 ["facing", "R"] => false,
                 _ => return Err(format!("expected `facing L` or `facing R`, found `{line}`")),
             };
+            if kind == "thrower" && facing == ["facing", "R"] {
+                return Err("a thrower faces left: `facing R` isn't covered".into());
+            }
             geometry.entities.push(Entity {
                 kind: kind.to_string(),
                 column: parse_int(column)?,
