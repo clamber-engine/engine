@@ -91,7 +91,7 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
     if let Some(e) = g
         .entities
         .iter()
-        .find(|e| !matches!(e.kind.as_str(), "walker" | "sign"))
+        .find(|e| !matches!(e.kind.as_str(), "walker" | "sign" | "collectible"))
     {
         return Err(format!(
             "can't build `entity {}` in test places yet",
@@ -206,6 +206,8 @@ fn toml(g: &Geometry, frames: u32) -> String {
     }
     // A sign is scenery that nothing touches and that changes no count
     // (behavior/signs.md, "What a sign does"), so it adds nothing here.
+    // Nor does a collectible: taking one moves nothing and no traced
+    // quantity counts them (behavior/collectibles.md).
     for e in g.entities.iter().filter(|e| e.kind == "walker") {
         // The spec's plain walker (behavior/walker.md): full speed from
         // the start, easing by an eighth of the gap, in the small walker's

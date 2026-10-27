@@ -196,3 +196,25 @@ fn a_sign_in_the_geometry_changes_nothing() {
         assert_eq!((a.x, a.y), (b.x, b.y));
     }
 }
+
+#[test]
+fn a_collectible_in_the_geometry_changes_no_traced_quantity() {
+    // behavior/collectibles.md: taking one moves nothing.
+    let run = |geometry: &str| {
+        run_on(
+            "classic-1",
+            geometry,
+            "mode: grounded\n",
+            "10-80 R\n20-30 J\n",
+            100,
+        )
+        .unwrap()
+    };
+    let without = run("floor -200..823 0\n");
+    let with = run("floor -200..823 0\nentity collectible 20 0\n");
+    assert_eq!(with.rows.len(), without.rows.len());
+    for (a, b) in with.rows.iter().zip(&without.rows) {
+        assert_eq!(a.state, b.state);
+        assert_eq!((a.x, a.y), (b.x, b.y));
+    }
+}
