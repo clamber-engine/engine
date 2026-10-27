@@ -5786,3 +5786,39 @@ fn classic_a_press_during_a_turn_cancels_its_facing_change() {
         );
     }
 }
+
+fn classic_roll_stop_jump(press: usize, right: bool) -> Vec<Row> {
+    let mut w = classic();
+    play(&mut w, 70, |f| {
+        let mut keys = Vec::new();
+        if f == 2 {
+            keys.push(Action::Action);
+        }
+        if f < 29 || (right && f < 54) {
+            keys.push(Action::Right);
+        }
+        if (press..54).contains(&f) {
+            keys.push(Action::Jump);
+        }
+        keys
+    })
+}
+
+#[test]
+fn classic_jump_press_on_d_plus_3_of_a_roll_stop_leaves_the_speed() {
+    // spec/behavior/roll-input.md, "A Jump press during the stop": the
+    // roll is frames 2 to 30, D = 31.
+    let d = 31;
+    let rows = classic_roll_stop_jump(d + 3, true);
+    assert_eq!(frames_with(&rows, Event::RollEnd), [d]);
+    let vx: Vec<f64> = rows[d..d + 5].iter().map(|r| r.vx * 256.0).collect();
+    assert_eq!(vx, [753.0, 659.0, 577.0, 505.0, 512.0]);
+    // A press on D + 4 gives 0 there.
+    let rows = classic_roll_stop_jump(d + 4, true);
+    assert_eq!(rows[d + 3].vx, 0.0);
+    assert_eq!(rows[d + 4].vx, 0.0);
+    // With no direction held from 29, the air rule slows toward 0.
+    let rows = classic_roll_stop_jump(d + 3, false);
+    let vx: Vec<f64> = rows[d + 3..d + 7].iter().map(|r| r.vx * 256.0).collect();
+    assert_eq!(vx, [505.0, 442.0, 387.0, 339.0]);
+}

@@ -2014,8 +2014,10 @@ impl Player {
             self.gait = gait;
             self.stride(0, run_dir, action, false, turn_ends, physics);
         }
-        if self.roll_stop > 0 && self.roll_stop == slide {
-            // The slide's last frame moves, but ends standing.
+        if self.roll_stop > 0 && self.roll_stop == slide && !input.pressed.contains(Action::Jump) {
+            // The slide's last frame moves, but ends standing, unless Jump
+            // is pressed on it (`roll-input.md`, "A Jump press during the
+            // stop").
             self.vel.x = Fixed::ZERO;
         }
         if takeoff_ends_roll {
