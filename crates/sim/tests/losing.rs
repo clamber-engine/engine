@@ -218,6 +218,27 @@ fn a_run_held_up_by_a_wall_stays() {
     assert_eq!(play.world.leaving().unwrap().pos, stopped);
 }
 
+/// A run up a rise much steeper than any slope keeps its speed and its
+/// state, and its height follows the ground (losing-a-character.md,
+/// "A steep rise").
+#[test]
+fn a_run_up_a_steep_rise_keeps_going() {
+    let rise = "\n[[collision]]\nshape = \"polygon\"\npoints = \
+        [[260, 400], [312, 352], [2000, 352], [2000, 600], [260, 600]]\n";
+    let source = format!("{FLAT}{rise}");
+    let mut play = Play::in_level(&source, v(200.0, FLOOR), Facing::Right, v(138.0, FLOOR));
+    play.hit(&[], 37);
+    let mut last = play.world.leaving().unwrap().pos;
+    for _ in 0..30 {
+        play.hold(&[], 1);
+        let lost = play.world.leaving().expect("run is gone");
+        assert_eq!(lost.pos.x - last.x, f(4.0), "speed at x = {}", last.x);
+        assert!(lost.pos.y - last.y < f(11.0));
+        last = lost.pos;
+    }
+    assert_eq!(last.y, f(352.0));
+}
+
 /// In the open the run is gone on the first frame its `x` rounded down
 /// is 289 or more right of the view's left edge.
 #[test]
