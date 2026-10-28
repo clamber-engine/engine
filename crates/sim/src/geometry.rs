@@ -188,7 +188,9 @@ fn check_supported(setup: &Setup) -> Result<(), Unsupported> {
         Mode::Riding if s.vx != Decimal::ZERO => TraceState::Walk,
         _ => TraceState::Idle,
     };
-    if s.state != default {
+    let riding_name =
+        s.mode == Mode::Riding && matches!(s.state, TraceState::Idle | TraceState::Walk);
+    if s.state != default && !riding_name {
         return Err(format!("can't start in state `{}` yet", s.state.name()));
     }
     if matches!(s.mode, Mode::Grounded | Mode::Swimming) && s.vy != Decimal::ZERO {

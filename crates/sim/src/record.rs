@@ -6,7 +6,7 @@ use clamber_fixed::{FRAC_BITS, Fixed};
 use clamber_input::Frame;
 use clamber_level::{Level, Vec2};
 use clamber_pack::Feel;
-use clamber_trace::setup::Setup;
+use clamber_trace::setup::{Mode, Setup};
 use clamber_trace::trace::{self, Source};
 use clamber_trace::{Buttons, Decimal, Row, Scenario, Trace};
 
@@ -71,7 +71,16 @@ fn record_from(
     for input in Script::from_scenario(scenario).frames() {
         step(&mut world, &input);
         let frame = rows.len() as u32;
-        rows.push(row(&world, frame, scenario.held(frame), start, true));
+        let mut next = row(&world, frame, scenario.held(frame), start, true);
+        if let (0, Some(setup)) = (frame, setup) {
+            // A riding start names its row 0, `idle` or `walk`, whatever
+            // the speed (scenarios/FORMAT.md, "`state` other than the
+            // default").
+            if setup.start.mode == Mode::Riding {
+                next.state = setup.start.state;
+            }
+        }
+        rows.push(next);
         if area_over(world.flow.outcome) {
             break;
         }

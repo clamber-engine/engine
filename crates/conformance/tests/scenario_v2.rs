@@ -388,6 +388,29 @@ fn a_riding_start_rides_the_animal_at_its_speed() {
 }
 
 #[test]
+fn a_riding_start_may_name_idle_or_walk_whatever_the_speed() {
+    let geometry = "floor -9..60 0\nentity crate 0 0\n";
+    let walk = run_on(
+        "classic-1",
+        geometry,
+        "mode: riding\nwith: crate\nstate: walk\n",
+        "",
+        3,
+    )
+    .unwrap();
+    assert_eq!(walk.rows[0].state, clamber_trace::State::Walk);
+    let idle = run_on(
+        "classic-1",
+        geometry,
+        "mode: riding\nwith: crate\nvx: 1.5\nstate: idle\n",
+        "",
+        3,
+    )
+    .unwrap();
+    assert_eq!(idle.rows[0].state, clamber_trace::State::Idle);
+}
+
+#[test]
 fn launch_and_metal_barrels_are_built() {
     let geometry = "floor -9..60 0\nentity launch_barrel 20 0\nentity down_launch_barrel 30 0\nentity metal_barrel 40 0\n";
     run_on("classic-1", geometry, "mode: grounded\n", "0-9 R\n", 10).unwrap();
