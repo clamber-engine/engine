@@ -303,9 +303,16 @@ impl Decoder for ObjectDecoder {
         for note in notes() {
             pack.note(note);
         }
+        pack.note(SPIN_NOTE.to_string());
         Ok(())
     }
 }
+
+/// The report's note on the spin steps the spec has no pictures for
+/// (spec#66).
+const SPIN_NOTE: &str = "single collectibles' spin steps 6 to 8 (spark-pictures): the spec doesn't \
+     yet give their pictures; the nearest imported spin picture stands in (6 and 7 show spin-5, \
+     8 shows spin-1)";
 
 /// Import report notes for the objects whose pictures aren't converted.
 pub fn notes() -> impl Iterator<Item = String> {
@@ -418,6 +425,12 @@ mod tests {
         assert_eq!(palette.0[17], shared.palette().0[15]);
         assert!(indices.data.iter().any(|&i| i > 16));
         assert!(indices.data.iter().all(|&i| i % 16 != 0 || i == 0));
+    }
+
+    #[test]
+    fn spin_stand_ins_are_listed_for_the_report() {
+        assert!(SPIN_NOTE.contains("steps 6 to 8"), "{SPIN_NOTE}");
+        assert!(SPIN_NOTE.contains("stands in"), "{SPIN_NOTE}");
     }
 
     #[test]
