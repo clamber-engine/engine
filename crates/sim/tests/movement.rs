@@ -3870,21 +3870,50 @@ fn classic_roll_stands_still_before_the_end_of_the_ground() {
 
 #[test]
 fn classic_roll_stop_next_to_an_edge_has_stopped_frames() {
+    roll_stop_next_to_an_edge(classic_raised, 0);
+}
+
+#[test]
+fn classic_second_character_roll_stop_next_to_an_edge_has_stopped_frames() {
+    // rolling-off-ledges.md, "Stopping before a ledge (second character)":
+    // the same rule, with the first limit, rolling right.
+    roll_stop_next_to_an_edge(
+        |x| {
+            let level = Arc::new(Level::from_toml_str(RAISED_176, "raised").unwrap());
+            let mut feel = generic_feel("classic-1").unwrap();
+            feel.roster.push(CharacterFeel {
+                physics: clamber_pack::Presets::builtin()
+                    .slot("classic-1", 1)
+                    .unwrap(),
+                abilities: feel.roster[0].abilities.clone(),
+            });
+            let mut w = Play::on(level, feel);
+            w.player.pos.x = Fixed::from_int(x);
+            w.player.character = 1;
+            w
+        },
+        5,
+    );
+}
+
+/// `shorter`: how many frames shorter than the first character's the
+/// roll is.
+fn roll_stop_next_to_an_edge(new: impl Fn(i32) -> Play, shorter: usize) {
     // spec/behavior/rolling-off-ledges.md, "The stop after a roll, next to
     // an edge": a frame of the stop (D to D + 3) that starts with |vx| at
     // most 271/256 and no ground 15 px ahead keeps the player still with
     // vx 0. The edge is at E = 1600 here, so floor(x) + 15 >= 1600.
     let mut stopped = 0;
     for start in 1480..1590 {
-        for slow_from in [20, 23] {
-            let mut w = classic_raised(start);
+        for slow_from in [20 - shorter, 23 - shorter] {
+            let mut w = new(start);
             for frame in 0..40 {
                 let (x, vx) = (w.player.pos.x, w.player.vel.x);
                 let before = w.player.roll_stop;
                 let held: Vec<Action> = match frame {
                     0 => vec![Action::Action, Action::Right],
-                    f if f >= slow_from && f < 28 => vec![Action::Action, Action::Left],
-                    f if f < 28 => vec![Action::Action, Action::Right],
+                    f if f >= slow_from && f < 28 - shorter => vec![Action::Action, Action::Left],
+                    f if f < 28 - shorter => vec![Action::Action, Action::Right],
                     _ => vec![Action::Right],
                 };
                 hold(&mut w, &held, 1);
