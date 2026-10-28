@@ -1122,6 +1122,25 @@ fn a_slow_roll_frame_with_no_ground_ahead_is_stopped_on_a_plain_ledge() {
 }
 
 #[test]
+fn a_slow_roll_frame_with_no_ground_ahead_is_stopped_rolling_left() {
+    // rolling-off-ledges.md, "Stopping before a ledge (second
+    // character)": the same rule mirrored; going left with no ground
+    // 15 px ahead (column floor(x) - 15) the slow roll frame doesn't move.
+    let src = "format = 1\nname = \"ledge\"\nsize = [4096, 600]\nstart = [1610, 400]\n\
+               [[collision]]\nshape = \"polygon\"\n\
+               points = [[1600, 400], [3200, 400], [3200, 599], [1600, 599]]\n";
+    // The roll starts on frame 1 facing right and turns on frame 2, the
+    // first roll frame going left.
+    for (x, stopped) in [(1610.0, true), (1630.0, false)] {
+        let mut w = second_on(&src.replace("1610", &x.to_string()));
+        let rows = steps(&mut w, 3, |i| if i == 0 { vec![L] } else { vec![A, L] });
+        assert_eq!(rows[2].state, State::Roll, "x = {x}");
+        assert_eq!(rows[2].facing, Facing::Left, "x = {x}");
+        assert_eq!(rows[2].x == rows[1].x, stopped, "x = {x}");
+    }
+}
+
+#[test]
 fn the_ground_ending_during_the_carry_on_ends_the_roll_on_d_plus_6() {
     // second-character.md, "Rolls", "The ground ends during the
     // carry-on": Action pressed 8 frames after Right and held, off the
