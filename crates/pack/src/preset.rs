@@ -460,6 +460,7 @@ mod tests {
                     | Param::FaceSpeed
                     | Param::FaceSlideSwitch
                     | Param::FaceTopLanding
+                    | Param::FaceSlideTurnWait
                     | Param::FaceDropLeave
                     | Param::StartRiseAhead
                     | Param::RiseKeepsTarget

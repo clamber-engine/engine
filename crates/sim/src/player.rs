@@ -246,6 +246,15 @@ pub struct Player {
     /// The last frame started on a steep face that falls this way
     /// (`face_pull`).
     pub after_face: Option<Facing>,
+    /// Carried down a steep face facing the rise with the downhill
+    /// direction held: no turn until `face_slide_turn_wait` frames after
+    /// the first frame that ends off the face.
+    pub slide_armed: bool,
+    /// Frames since that frame, once it has come, until the wait is over.
+    pub slide_age: Option<u8>,
+    /// The wait is over: the next frame that holds the downhill direction
+    /// starts a turn at once, as for a standing player.
+    pub slide_free: bool,
     /// Frames since the jump under way started, until it lands.
     pub jump_age: Option<u8>,
     /// The jump under way, or the last one, reached its approach frame
@@ -436,6 +445,9 @@ impl Player {
             roll_jump: false,
             face_target: None,
             after_face: None,
+            slide_armed: false,
+            slide_age: None,
+            slide_free: false,
             jump_age: None,
             approach: None,
             approach_face: false,
@@ -1655,6 +1667,27 @@ impl Player {
             face_target.unwrap_or(self.target)
         };
 
+        // Carried down a face facing the rise, no turn starts on it or
+        // soon after (`face_slide_turn_wait`).
+        let slide_wait = frames(physics[Param::FaceSlideTurnWait]);
+        if slide_wait > 0 && self.grounded() {
+            if let Some(way) = face
+                && held_dir == way
+                && self.facing != facing_of(way)
+            {
+                self.slide_armed = true;
+            }
+        } else {
+            self.slide_armed = false;
+            self.slide_age = None;
+            self.slide_free = false;
+        }
+        self.slide_age = self.slide_age.map(|n| n.saturating_add(1));
+        let slide_blocks = self.slide_armed || self.slide_age.is_some_and(|n| n < slide_wait);
+        if self.slide_age.is_some_and(|n| n >= slide_wait) {
+            self.slide_age = None;
+            self.slide_free = true;
+        }
         let turn_time = frames(physics[Param::TurnTime]);
         let slide = frames(physics[Param::RollStopSlide]);
         // With a stride cycle, whether a turn starts is decided once the
@@ -1727,6 +1760,7 @@ impl Player {
             || self.hopped_off.is_some()
             || self.rope_fall
             || (keep_walk_off_facing && !air_gait)
+            || slide_blocks
         {
             self.turn = None;
             self.facing
@@ -1910,11 +1944,18 @@ impl Player {
             // it's standing: walking or a turn starts on the frame after.
             self.gait = Gait::Standing;
         } else {
+            if self.slide_free {
+                // Walking on, the player turns as a standing one does.
+                if run_dir == -direction(self.facing) {
+                    self.gait = Gait::Standing;
+                }
+                self.slide_free = self.gait != Gait::Standing;
+            }
             pre_stride = Some((self.gait, held(Action::Action) && !carrying, carrying));
             let turned = self.stride(
                 run_dir,
                 // The frames before a crouch shows start no turn.
-                if crouch_pending {
+                if crouch_pending || slide_blocks {
                     0
                 } else if toward_rise && self.target.is_negative() {
                     -1
@@ -2257,6 +2298,18 @@ impl Player {
         }
         .filter(|&n| n <= frames(physics[Param::CoyoteTime]));
 
+        // The first frame that ends off the face ends the slide.
+        if self.slide_armed && self.grounded() && face.is_some() {
+            let ends_on_face =
+                columns::face(level, columns::column(self.pos.x), self.pos.y, slope).is_some();
+            if !ends_on_face {
+                self.slide_armed = false;
+                self.slide_age = Some(0);
+            }
+        } else if !self.grounded() {
+            self.slide_armed = false;
+            self.slide_age = None;
+        }
         self.after_face = face
             .filter(|_| physics[Param::FacePull] > Fixed::ZERO)
             .map(facing_of);

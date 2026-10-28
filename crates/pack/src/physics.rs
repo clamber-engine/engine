@@ -718,6 +718,11 @@ params! {
     /// approach frame, whichever is later. A jump can start
     /// `landing_lockout` frames after it. Whole frames.
     FaceTopLanding => "face_top_landing",
+    /// Above 0, a body carried down a steep face while facing the rise
+    /// with the downhill direction held starts no turn before this many
+    /// frames after the first frame that ends off the face
+    /// (`steep-faces.md`, "Turning to face downhill after a slide").
+    FaceSlideTurnWait => "face_slide_turn_wait",
     /// Above 0, a grounded frame that starts on the floor of a steep
     /// face's lowest column, with no floor beyond it on its low side, and
     /// ends in that column leaves the ground there.

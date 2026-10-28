@@ -2409,3 +2409,71 @@ fn the_second_character_walking_into_a_steep_face_also_stays_standing() {
     hold(&mut world, &[Action::Left]);
     assert!(world.player.turn.is_some());
 }
+
+/// "Turning to face downhill after a slide": the example's rows, on a
+/// face falling to the left over columns 100 to 115, from the air above
+/// its lowest column's right part, facing right with Left held from
+/// frame 3 on. The turn starts on frame 21 and shows on frame 25.
+fn slide_rows(held_from: usize, frames: usize) -> Vec<(usize, Fixed, Facing, bool)> {
+    let mut world = ground(landing_face, 108.0);
+    world.player.pos.y -= fx(0.5);
+    world.player.ground = None;
+    world.player.state = State::Fall;
+    world.player.facing = Facing::Right;
+    let mut rows = Vec::new();
+    for frame in 1..=frames {
+        let now: &[Action] = if frame >= held_from {
+            &[Action::Left]
+        } else {
+            &[]
+        };
+        let before: &[Action] = if frame > held_from {
+            &[Action::Left]
+        } else {
+            &[]
+        };
+        press(&mut world, before, now);
+        let p = &world.player;
+        rows.push((
+            frame,
+            p.pos.x - Fixed::from_int(100),
+            p.facing,
+            p.turn.is_some(),
+        ));
+    }
+    rows
+}
+
+#[test]
+fn a_slide_down_a_face_facing_the_rise_waits_13_frames_before_a_turn() {
+    let rows = slide_rows(3, 26);
+    let at = |f: usize| rows[f - 1];
+    assert_eq!(at(8).1, fx(-0.38671875));
+    assert_eq!(at(9).1, fx(-2.38671875));
+    for f in 1..=20 {
+        assert_eq!((at(f).2, at(f).3), (Facing::Right, false), "frame {f}");
+    }
+    assert!(at(21).3, "the turn starts on frame 21");
+    assert_eq!(at(24).2, Facing::Right);
+    assert_eq!(at(25).2, Facing::Left);
+}
+
+#[test]
+fn a_downhill_press_before_the_wait_is_over_is_not_remembered() {
+    // Held on frames 3 to 6 only: nothing happens.
+    let mut world = ground(landing_face, 108.0);
+    world.player.pos.y -= fx(0.5);
+    world.player.ground = None;
+    world.player.state = State::Fall;
+    world.player.facing = Facing::Right;
+    for frame in 1..=40 {
+        let (before, now): (&[Action], &[Action]) = match frame {
+            3 => (&[], &[Action::Left]),
+            4..=6 => (&[Action::Left], &[Action::Left]),
+            7 => (&[Action::Left], &[]),
+            _ => (&[], &[]),
+        };
+        press(&mut world, before, now);
+        assert_eq!(world.player.facing, Facing::Right, "frame {frame}");
+    }
+}
