@@ -11,9 +11,9 @@
 //! Steps 1 to 5 show the pictures labelled [`LABELS`] in the pack's
 //! [`SHEET`], mirrored left to right with their origin at the
 //! collectible's position, when the sheet has all five. Steps 6 to 8
-//! have no pictures of their own, so they show the engine's art, as all
-//! steps do without the five; the engine's art spins along with the
-//! steps, unmirrored.
+//! have no pictures of their own, so with the five they show the
+//! nearest step's ([`pack_label`]); without the five, all steps show the
+//! engine's art, which spins along with the steps, unmirrored.
 
 use clamber_level::Vec2;
 
@@ -25,6 +25,14 @@ pub const SPIN: &str = "spin";
 
 /// The labels of steps 1 to 5.
 pub const LABELS: [&str; 5] = ["spin-1", "spin-2", "spin-3", "spin-4", "spin-5"];
+
+/// The label to show on `step` in a pack that has all of [`LABELS`]:
+/// the step's own, or for steps 6 to 8, which have none, the nearest
+/// step's around the turn (an engine choice, not the spec's: the pack's
+/// own picture stands in, never the engine's art).
+pub fn pack_label(step: u8) -> &'static str {
+    label(step).unwrap_or(if step >= 8 { LABELS[0] } else { LABELS[4] })
+}
 
 /// Steps in a turn.
 pub const STEPS: u32 = 8;
@@ -76,5 +84,16 @@ mod tests {
         assert_eq!(label(5), Some("spin-5"));
         assert_eq!(label(6), None);
         assert_eq!(label(0), None);
+    }
+
+    #[test]
+    fn a_pack_fills_the_unlabelled_steps_from_the_nearest() {
+        let shown: Vec<_> = (1..=STEPS as u8).map(pack_label).collect();
+        assert_eq!(
+            shown,
+            [
+                "spin-1", "spin-2", "spin-3", "spin-4", "spin-5", "spin-5", "spin-5", "spin-1"
+            ]
+        );
     }
 }

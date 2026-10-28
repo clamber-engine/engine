@@ -544,8 +544,8 @@ impl Cast {
 
     /// A spinning collectible's picture on `step`: its own from
     /// [`spin_pictures::SHEET`], mirrored left to right with its origin
-    /// at the collectible's position, if the step has one and the sheet
-    /// has them all; otherwise the frame of its kind's animation that
+    /// at the collectible's position, if the sheet has them all (the
+    /// nearest step's for steps without one); otherwise the frame of its kind's animation that
     /// far through the turn.
     fn spin_picture(&self, thing: &Thing, pose: &Pose, step: u8, x: f32, y: f32) -> Option<Sprite> {
         let own = self.kinds.get(spin_pictures::SHEET).and_then(|&id| {
@@ -553,7 +553,7 @@ impl Cast {
             let all = spin_pictures::LABELS
                 .iter()
                 .all(|l| sheet.animation(l).is_some());
-            let label = spin_pictures::label(step).filter(|_| all)?;
+            let label = all.then(|| spin_pictures::pack_label(step))?;
             let frame = *sheet.animation(label)?.frames.first()?;
             Some(Sprite {
                 flip_x: true,
@@ -2156,9 +2156,10 @@ mod tests {
         for (labels, step, want) in [
             // Its own picture, mirrored about its origin.
             (labels, 5, [B, Color::default()]),
-            // Step 6 has no picture of its own: the engine's art, as far
-            // through its animation as the step is through the turn.
-            (labels, 6, [Color::default(), G]),
+            // Steps 6 and 7 have none of their own: the pack's nearest
+            // (step 5's), never the engine's art.
+            (labels, 6, [B, Color::default()]),
+            (labels, 7, [B, Color::default()]),
             // Without one of the five, none are shown.
             (&labels[1..], 1, [Color::default(), R]),
             (&labels[1..], 5, [Color::default(), G]),
