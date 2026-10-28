@@ -1121,6 +1121,55 @@ fn a_slow_roll_frame_with_no_ground_ahead_is_stopped_on_a_plain_ledge() {
     assert!(rows[0].x > f(1570.0));
 }
 
+#[test]
+fn the_ground_ending_during_the_carry_on_ends_the_roll_on_d_plus_6() {
+    // second-character.md, "Rolls", "The ground ends during the
+    // carry-on": Action pressed 8 frames after Right and held, off the
+    // end of ground; with the first airborne frame L from D + 1 to
+    // D + 6 the roll is `roll` up to D + 5 and D + 6 is `roll_end`
+    // with state `fall`.
+    let mut seen = [false; 6];
+    for x in 1200..1600 {
+        let src = format!(
+            "format = 1\nname = \"ledge\"\nsize = [4096, 600]\nstart = [{x}, 400]\n\
+             [[collision]]\nshape = \"polygon\"\n\
+             points = [[0, 400], [1600, 400], [1600, 599], [0, 599]]\n"
+        );
+        // The floor is 170 px below the ledge, as in the measurement.
+        let src = src.replace(
+            "[1600, 599], [0, 599]",
+            "[1600, 570], [4096, 570], [4096, 599], [0, 599]",
+        );
+        let mut w = second_on(&src);
+        let rows = steps(&mut w, 8 + D + 12, |i| {
+            if i >= 8 { vec![A, R] } else { vec![R] }
+        });
+        let s = 8;
+        if frames_with(&rows, Event::RollStart) != [s] {
+            continue;
+        }
+        let Some(&l) = frames_with(&rows, Event::LeaveGround).first() else {
+            continue;
+        };
+        if l <= s + D || l > s + D + 6 {
+            continue;
+        }
+        let k = l - (s + D);
+        seen[k - 1] = true;
+        assert_eq!(
+            frames_with(&rows, Event::RollEnd),
+            [s + D + 6],
+            "L = D + {k}"
+        );
+        assert!(
+            rows[s..s + D + 6].iter().all(|r| r.state == State::Roll),
+            "L = D + {k}"
+        );
+        assert_eq!(rows[s + D + 6].state, State::Fall, "L = D + {k}");
+    }
+    assert_eq!(seen, [true; 6]);
+}
+
 /// Mode and step, or "turn", and the stride counter in 1/512 of a step,
 /// after each of `keys(frame)` held for a frame.
 fn gaits(play: &mut Play, n: usize, keys: impl Fn(usize) -> Vec<Action>) -> Vec<(String, i64)> {
