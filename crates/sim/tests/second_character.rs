@@ -1102,6 +1102,25 @@ fn a_roll_stopped_at_the_top_of_a_face_pushes_off_to_size_3() {
     assert_eq!(w.world.player.roll.unwrap().speed, f(3.0));
 }
 
+#[test]
+fn a_slow_roll_frame_with_no_ground_ahead_is_stopped_on_a_plain_ledge() {
+    // rolling-off-ledges.md, "Stopping before a ledge (second
+    // character)": where the ground simply ends, a slow roll frame going
+    // right with no ground 15 px ahead doesn't move; with ground ahead
+    // it does.
+    let src = "format = 1\nname = \"ledge\"\nsize = [4096, 600]\nstart = [1590, 400]\n\
+               [[collision]]\nshape = \"polygon\"\n\
+               points = [[0, 400], [1600, 400], [1600, 599], [0, 599]]\n";
+    let mut w = second_on(src);
+    let rows = steps(&mut w, 3, |i| if i == 0 { vec![A, R] } else { vec![R] });
+    assert_eq!(frames_with(&rows, Event::RollStart), [0]);
+    assert_eq!((rows[0].x, rows[0].vx), (f(1590.0), Fixed::ZERO));
+
+    let mut w = second_on(&src.replace("1590", "1570"));
+    let rows = steps(&mut w, 2, |i| if i == 0 { vec![A, R] } else { vec![R] });
+    assert!(rows[0].x > f(1570.0));
+}
+
 /// Mode and step, or "turn", and the stride counter in 1/512 of a step,
 /// after each of `keys(frame)` held for a frame.
 fn gaits(play: &mut Play, n: usize, keys: impl Fn(usize) -> Vec<Action>) -> Vec<(String, i64)> {
