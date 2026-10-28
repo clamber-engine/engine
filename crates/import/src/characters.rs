@@ -2729,10 +2729,9 @@ impl CharacterDecoder {
                 &[(FOLLOWING, &following)],
                 &format!("{name}.png"),
             )?;
-            // The first character's leading colours 1 to 14 dim
+            // Both characters' leading and following colours 1 to 14 dim
             // (`spec/behavior/dimming.md`, "Sprite colours").
-            let sheet =
-                with_dim_colours(sheet, if character.slot == 0 { &[(1, 14)] } else { &[] })?;
+            let sheet = with_dim_colours(sheet, &[(1, 14)])?;
             files.extend(sheet_files(&name, sheet));
         }
         files.extend(map_sheet);
@@ -2976,11 +2975,11 @@ mod tests {
             panic!("not indexed");
         };
         assert_eq!(palette, &leading.palette());
-        assert!(sheet.sheet.dim_colours.is_empty(), "the second character's");
+        assert_eq!(sheet.sheet.dim_colours, [(1, 14)], "the second character's");
     }
 
     #[test]
-    fn the_first_characters_leading_colours_1_to_14_dim() {
+    fn both_characters_colours_1_to_14_dim() {
         let mut decoder = decoder(vec![set("one", vec![("a", hash(35))])]);
         decoder.characters[0].slot = 0;
         let (files, _) = decoder.sheets(&image()).unwrap();

@@ -34,9 +34,10 @@ struct Entry {
     /// `textures`, in name order.
     named: Vec<(String, PaletteId)>,
     normals: Option<Arc<Texture>>,
-    /// The sheet's own image after each of the dimming's steps 1 to
-    /// [`SPRITE_STEPS`], if the sheet has colours that dim.
-    dimmed: Vec<Arc<Texture>>,
+    /// The first of `textures`, the image, and the named palettes after
+    /// each of the dimming's steps 1 to [`SPRITE_STEPS`], if the sheet
+    /// has colours that dim. The variant images don't dim.
+    dimmed: Vec<Vec<Arc<Texture>>>,
 }
 
 /// Collects sheets for a [`SpriteBank`].
@@ -73,15 +74,22 @@ impl SpriteBankBuilder {
                     .iter()
                     .any(|&(a, b)| (a..=b).contains(&i))
             };
+            let dim_palette = |palette: &Palette, step: u32| {
+                let colours = palette
+                    .0
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &c)| if dims(i) { dim_sprite(c, step) } else { c })
+                    .collect();
+                Texture::new(Palette(colours).apply(indices), pixel_art)
+            };
             entry.dimmed = (1..=SPRITE_STEPS)
                 .map(|step| {
-                    let colours = palette
-                        .0
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &c)| if dims(i) { dim_sprite(c, step) } else { c })
-                        .collect();
-                    Texture::new(Palette(colours).apply(indices), pixel_art)
+                    let own = dim_palette(palette, step);
+                    let named = sprite.sheet.palettes.values();
+                    std::iter::once(own)
+                        .chain(named.map(|p| dim_palette(p, step)))
+                        .collect()
                 })
                 .collect();
         }
@@ -190,14 +198,15 @@ impl SpriteBank {
         let entry = &self.sheets[sprite.sheet.0];
         let frame = &entry.sheet.frames[sprite.frame];
         let step = self.dim.load(Ordering::Relaxed).min(SPRITE_STEPS) as usize;
-        let own = match entry.dimmed.get(step.wrapping_sub(1)) {
-            Some(dimmed) if sprite.palette.is_none() => dimmed,
-            _ => &entry.textures[0],
+        let index = sprite.palette.map_or(0, |p| p.0);
+        let texture = match entry
+            .dimmed
+            .get(step.wrapping_sub(1))
+            .and_then(|d| d.get(index))
+        {
+            Some(dimmed) => dimmed,
+            None => entry.textures.get(index).unwrap_or(&entry.textures[0]),
         };
-        let texture = sprite
-            .palette
-            .and_then(|p| entry.textures.get(p.0))
-            .unwrap_or(own);
         let scale = entry.sheet.scale as f32;
         let (w, h) = (frame.rect.w as f32 / scale, frame.rect.h as f32 / scale);
         let offset = (frame.offset.0 as f32 / scale, frame.offset.1 as f32 / scale);
@@ -324,18 +333,19 @@ mod tests {
             assert_ne!(shown, R);
             assert_eq!(draw(&bank, sprite)[1][3], B, "step {step}");
         }
-        // A palette of the sheet's is never dimmed.
-        let alt = bank.palette(id, "alt");
-        assert_eq!(
-            draw(
-                &bank,
-                Sprite {
-                    palette: alt,
-                    ..sprite
-                }
-            )[1][3],
-            B
-        );
+        // The sheet's named palettes dim in the same colour indices:
+        // "alt" has green as colour 1.
+        let alt = Sprite {
+            palette: bank.palette(id, "alt"),
+            ..sprite
+        };
+        let green = [0, 255, 0, 255];
+        let [r, g, b, _] = crate::dim::sprite(green, 9);
+        bank.set_dim(9);
+        assert_eq!(draw(&bank, alt)[1][2], rgb(r, g, b));
+        assert_eq!(draw(&bank, alt)[1][3], B);
+        bank.set_dim(0);
+        assert_eq!(draw(&bank, alt)[1][2], rgb(0, 255, 0));
         bank.set_dim(0);
         assert_eq!(draw(&bank, sprite)[1][2], R);
     }
