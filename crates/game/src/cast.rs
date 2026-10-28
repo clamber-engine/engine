@@ -182,6 +182,16 @@ impl Cast {
         {
             return;
         }
+        // The mounting pictures of the animal's place are the character
+        // itself (animal-crate.md, "While mounting").
+        if world.things.iter().any(|t| {
+            is_hutch(t)
+                && matches!(t.phase, Phase::Mounted(since)
+                    if hutch_pictures::mounting(u32::from(since)).is_some())
+        }) && self.has_group(hutch_pictures::SHEET, &hutch_pictures::MOUNTING)
+        {
+            return;
+        }
         if let Some(shown) = pose.ride.shown()
             && ride_pictures::rider_group(shown.rider)
                 .is_some_and(|group| self.has_group(hutch_pictures::SHEET, group))
@@ -956,6 +966,20 @@ impl Cast {
         })
     }
 
+    /// The standing animal's picture `n` frames into its cycle, if the
+    /// pack has the standing group.
+    fn standing_sprite(&self, thing: &Thing, n: u32, at: (f32, f32)) -> Option<Sprite> {
+        let entry = ride_pictures::standing_picture(n);
+        let flip = thing.facing == Facing::Left;
+        self.group_sprite(
+            hutch_pictures::SHEET,
+            &hutch_pictures::STANDING,
+            entry,
+            flip,
+            at,
+        )
+    }
+
     /// What an animal crate's own pictures say `thing` shows: `None` if
     /// the engine's art does, `Some(None)` if nothing (the crate is
     /// drawn apart, by [`Cast::draw_crate`]), or its animal's picture
@@ -968,10 +992,18 @@ impl Cast {
         let at = (x, y);
         let sheet = hutch_pictures::SHEET;
         let own = match thing.phase {
-            Phase::Mounted(since) => {
-                let entry = hutch_pictures::mounting(u32::from(since))?;
-                let flip = clock.flip;
-                self.group_sprite(sheet, &hutch_pictures::MOUNTING, entry, flip, at)
+            Phase::Mounted(since) => match hutch_pictures::mounting(u32::from(since)) {
+                Some(entry) => {
+                    let flip = clock.flip;
+                    self.group_sprite(sheet, &hutch_pictures::MOUNTING, entry, flip, at)
+                }
+                // M and M + 1 are not covered: the animal keeps standing.
+                None => self.standing_sprite(thing, clock.frames.unwrap_or(0), at),
+            },
+            // Left behind or running off: not covered either; the
+            // standing animal, facing where it faces.
+            Phase::Waiting(_) | Phase::Bolting { .. } => {
+                self.standing_sprite(thing, clock.frames.unwrap_or(0), at)
             }
             Phase::Ridden => pose
                 .ridden
@@ -2693,6 +2725,31 @@ mod tests {
         assert_eq!(canvas.get(1, 0), Some(B));
         let no_crate = cast(&[animal, mounting]);
         assert!(!no_crate.draw_crate(&mut Canvas::new(4, 1), &pose(None), (2.0, 0.0)));
+    }
+
+    #[test]
+    fn a_left_animal_and_the_first_mount_frames_show_the_standing_pictures() {
+        let mut thing = crate_thing();
+        let labels: Vec<&str> = hutch_pictures::STANDING.to_vec();
+        let with = Cast::new(vec![
+            ("hutch".to_string(), sheet()),
+            (
+                hutch_pictures::SHEET.to_string(),
+                labelled_sheet(&labels, 4),
+            ),
+        ]);
+        let none = Color::default();
+        let draw = |thing: &Thing| {
+            let mut canvas = Canvas::new(4, 1);
+            with.draw_thing(&mut canvas, thing, &Pose::default(), 2.0, 0.0);
+            [0, 1, 2, 3].map(|x| canvas.get(x, 0).unwrap())
+        };
+        // animal-1 (the sheet's first frame, blue) a px left of the thing,
+        // never the engine's red art.
+        for phase in [Phase::Waiting(None), Phase::Mounted(0), Phase::Mounted(1)] {
+            thing.phase = phase;
+            assert_eq!(draw(&thing), [none, B, none, none], "{phase:?}");
+        }
     }
 
     #[test]

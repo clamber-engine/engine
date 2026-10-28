@@ -94,6 +94,12 @@ pub fn rider_group(label: &str) -> Option<&'static [&'static str]> {
 /// frames: `animal-1` to `animal-6` and back, 6 frames each.
 const STANDING_CYCLE: [usize; 10] = [0, 1, 2, 3, 4, 5, 4, 3, 2, 1];
 
+/// The index into [`hutch_pictures::STANDING`] of a standing animal's
+/// picture `n` frames into its cycle.
+pub fn standing_picture(n: u32) -> usize {
+    STANDING_CYCLE[(n as usize / 6) % 10]
+}
+
 /// The rider's standing loop: its picture and the frames it shows.
 const LOOP: [(usize, u16); 14] = [
     (6, 58),
