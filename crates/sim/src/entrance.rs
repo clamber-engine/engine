@@ -111,6 +111,16 @@ impl World {
         entering(self).is_some_and(|(_, v)| self.frame <= u32::from(v.throw))
     }
 
+    /// The frames since the throw's frame T on the frame just stepped
+    /// (0 on T), while the lead is being thrown out and hasn't landed.
+    pub fn throw_age(&self) -> Option<u32> {
+        let (e, v) = entering(self)?;
+        if e.landed || self.player.state == State::Hurt {
+            return None;
+        }
+        self.frame.checked_sub(1)?.checked_sub(u32::from(v.throw))
+    }
+
     /// Whether the other character is still hidden in the level's
     /// entrance.
     pub fn other_in_entrance(&self) -> bool {

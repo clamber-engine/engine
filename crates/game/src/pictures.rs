@@ -834,6 +834,18 @@ fn scene_frame(world: &World) -> Option<(u32, u32)> {
     Some((world.frame.checked_sub(1)?, scene.last - cut))
 }
 
+/// The index in the bounce pictures that the lead shows on T + `n` of the
+/// entrance throw, for the frames the spec covers (T + 10 and T + 20
+/// on): going round one to a frame, a step behind on seven of them.
+fn throw_label(n: u32) -> Option<usize> {
+    const BEHIND: [u32; 7] = [10, 22, 26, 30, 34, 42, 54];
+    if n != 10 && n < 20 {
+        return None;
+    }
+    let n = if BEHIND.contains(&n) { n - 1 } else { n };
+    Some((n % 16) as usize)
+}
+
 /// The first character's `run-n` picture.
 fn run(n: usize) -> (Set, &'static str) {
     (Set::Walking, WALKING[19 + n])
@@ -1093,6 +1105,18 @@ impl PictureClock {
         }
         if let Some((frame, last)) = scene_frame(world) {
             self.shown = scene_lead(self.slot, frame, last);
+            return;
+        }
+        // The lead thrown out of the entrance (level-start.md, "The lead's
+        // pictures in the throw"): the bounce pictures one to a frame, on
+        // the frames that were read.
+        if let Some(n) = world.throw_age()
+            && self.slot == 0
+            && let Some(label) = throw_label(n)
+        {
+            self.shown = Some((Set::Bounce, labels(self.slot, Set::Bounce)[label]));
+            self.standing = None;
+            self.landed = None;
             return;
         }
         // In a launch barrel ("In a launch barrel"): the bounce pictures
@@ -3023,6 +3047,52 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// level-start.md, "The lead's pictures in the throw": the bounce
+    /// pictures one to a frame on the frames that were read, a step
+    /// behind on seven of them.
+    #[test]
+    fn the_lead_shows_the_bounce_pictures_in_the_entrance_throw() {
+        let src = r#"
+            format = 1
+            size = [3000, 900]
+            start = [100, 300]
+
+            [[collision]]
+            shape = "rect"
+            rect = [0, 520, 3000, 100]
+
+            [[entities]]
+            type = "entrance"
+            at = [100, 300]
+        "#;
+        let mut world = world(src, 0);
+        let mut clock = PictureClock::default();
+        let mut held = Actions::NONE;
+        let mut seen = std::collections::BTreeMap::new();
+        for _ in 0..200 {
+            let input = InputFrame::single(Frame::after(held, Actions::NONE));
+            held = Actions::NONE;
+            step(&mut world, &input);
+            clock.update(&world, jump_in(&world, &input));
+            if let Some(n) = world.throw_age() {
+                seen.insert(n, clock.shown().map(|(_, label)| label));
+            }
+        }
+        let last = *seen.keys().last().unwrap();
+        assert!(last >= 55, "{last}");
+        let at = |n: u32| seen[&n];
+        assert_eq!(at(32), Some("bounce-1"));
+        assert_eq!(at(48), Some("bounce-1"));
+        assert_eq!(at(55), Some("bounce-8"));
+        assert_eq!(at(10), Some("bounce-10"));
+        assert_eq!(at(20), Some("bounce-5"));
+        assert_eq!(at(21), Some("bounce-6"));
+        assert_eq!(at(22), Some("bounce-6"));
+        assert_eq!(at(23), Some("bounce-8"));
+        assert_eq!(at(54), Some("bounce-6"));
+        assert_eq!(at(42), Some("bounce-10"));
     }
 
     #[test]
