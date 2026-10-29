@@ -65,6 +65,10 @@ pub struct Follow {
     /// The frame of a turn that began on the trail that this frame was,
     /// counting its first as 1. Still set on the turn's last frame.
     pub turn_frame: Option<u8>,
+    /// The frame of a rest that this frame was, 0 on the frame it started
+    /// (and the follower is shown resting), including the frame it
+    /// leaves rest on.
+    pub rest_frame: Option<u32>,
 }
 
 /// How the lead moved on arriving at a point of the trail.
@@ -246,6 +250,7 @@ fn follow(level: &Level, physics: &Physics, other: &mut Other, lead: Lead) {
         }
     }
     other.follow.placed = None;
+    let was = (other.follow.mode, other.follow.rest_frame);
     match other.follow.mode {
         Mode::Trail => trail(level, physics, other, lead),
         Mode::Rest { target, gained } => {
@@ -273,6 +278,11 @@ fn follow(level: &Level, physics: &Physics, other: &mut Other, lead: Lead) {
             other.follow.mode = Mode::Trail;
         }
     }
+    other.follow.rest_frame = match (was, other.follow.mode) {
+        ((Mode::Trail, _), Mode::Rest { .. }) => Some(0),
+        ((Mode::Rest { .. }, n), _) => Some(n.map_or(0, |n| n.saturating_add(1))),
+        _ => None,
+    };
     other.follow.turn_frame = other.follow.turn.filter(|_| other.follow.turn_on_trail);
     if other.follow.turn.is_some_and(|n| n >= turn) {
         other.follow.turn = None;

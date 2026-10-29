@@ -114,11 +114,13 @@ fn rests_behind_a_lead_that_stops_then_rejoins_its_trail() {
             gained: false
         }
     );
+    assert_eq!(play.other().follow.rest_frame, Some(0), "frame 10");
     let mut xs = Vec::new();
     for _ in 11..=39 {
         play.idle(1);
         xs.push(play.other().pos.x);
     }
+    assert_eq!(play.other().follow.rest_frame, Some(29), "frame 39");
     assert_eq!(xs[0], f(974.125), "frame 11");
     assert_eq!(xs[18 - 11], f(975.0), "frame 18");
     assert_eq!(xs[19 - 11], f(975.0625), "frame 19");
@@ -142,11 +144,14 @@ fn rests_behind_a_lead_that_stops_then_rejoins_its_trail() {
         ]
     );
     assert_eq!(play.other().follow.mode, Mode::Wait);
+    // The frame it leaves rest on is the last of the rest.
+    assert_eq!(play.other().follow.rest_frame, Some(31), "frame 41");
     // Frame 42: stays at 976. Frame 43: follows the trail from its first
     // point.
     play.idle(1);
     assert_eq!(play.other().pos.x, f(976.0));
     assert_eq!(play.other().follow.mode, Mode::Trail);
+    assert_eq!(play.other().follow.rest_frame, None);
     play.idle(1);
     assert_eq!(play.other().pos.x, f(976.0));
     // The gap is 29: the mark is set, and the step comes a frame later.

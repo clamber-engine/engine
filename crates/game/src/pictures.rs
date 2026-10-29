@@ -1121,6 +1121,18 @@ impl PictureClock {
             }
             return;
         }
+        let resting = world
+            .other
+            .as_ref()
+            .filter(|o| o.character != 0)
+            .and_then(|o| o.follow.rest_frame);
+        if let Some(n) = resting {
+            self.follow = None;
+            if self.shown.is_none() {
+                self.shown = Some((Set::Standing, rest_picture(n)));
+            }
+            return;
+        }
         let pace = world
             .other
             .as_ref()
@@ -5268,6 +5280,15 @@ fn turn_picture(n: u8) -> (Set, &'static str) {
     (Set::Walking, SECOND_WALKING[at])
 }
 
+/// The second character's picture on frame `n` of a rest as the
+/// follower, counting the frame it starts on as 0 (`following.md`,
+/// "The follower's pictures"): `s-stand-1` to `s-stand-22` for 4 frames
+/// each, then `s-wait-1` for 5. The spec has nothing past that; the last
+/// picture stays.
+fn rest_picture(n: u32) -> &'static str {
+    SECOND_STANDING[(n / 4).min(22) as usize]
+}
+
 /// Frames of the follower's landing pictures, from the end of its fall.
 const LEAP_LANDING: u32 = 5;
 
@@ -5406,6 +5427,23 @@ mod follower_cycle_tests {
                 "s-air-6", "s-land-1", "s-land-1", "s-land-2", "s-land-2", "none", "none"
             ]
         );
+    }
+
+    #[test]
+    fn the_follower_shows_the_standing_pictures_while_it_rests() {
+        let mut world = world_with_follower(Pace::Walking);
+        let mut clock = PictureClock::default();
+        let mut at = |n: u32| {
+            world.other.as_mut().unwrap().follow.rest_frame = Some(n);
+            clock.update_other(&world, false);
+            clock.shown().map(|(_, l)| l)
+        };
+        assert_eq!(at(0), Some("s-stand-1"));
+        assert_eq!(at(3), Some("s-stand-1"));
+        assert_eq!(at(4), Some("s-stand-2"));
+        assert_eq!(at(87), Some("s-stand-22"));
+        assert_eq!(at(88), Some("s-wait-1"));
+        assert_eq!(at(92), Some("s-wait-1"));
     }
 
     #[test]
