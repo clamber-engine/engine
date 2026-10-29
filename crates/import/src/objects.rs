@@ -245,9 +245,11 @@ impl ObjectDecoder {
                 pictures.push((label.to_string(), picture));
             }
             let sheet_image = format!("{}.png", sheet.name);
-            // The shared palette's colours 1 to 15 and the first
-            // character's leading palette's 1 to 14 dim
-            // (`spec/behavior/dimming.md`, "Sprite colours").
+            // The shared palette's colours 1 to 15, the characters'
+            // leading palettes' 1 to 14 and the animal's 1 to 14 dim
+            // (`spec/behavior/dimming.md`, "Sprite colours"); the metal
+            // barrel's use of the animal's palette is not covered.
+            let metal = sheet.name == "metal-pictures";
             let dims: Vec<(u8, u8)> = used
                 .iter()
                 .enumerate()
@@ -255,7 +257,10 @@ impl ObjectDecoder {
                     let first = u8::try_from(16 * group).ok()? + 1;
                     match palette {
                         ObjectPalette::Shared => Some((first, first + 14)),
-                        ObjectPalette::FirstLeading => Some((first, first + 13)),
+                        ObjectPalette::FirstLeading | ObjectPalette::SecondLeading => {
+                            Some((first, first + 13))
+                        }
+                        ObjectPalette::Animal if !metal => Some((first, first + 13)),
                         _ => None,
                     }
                 })
@@ -389,6 +394,29 @@ mod tests {
             palettes: vec![(Shared, at(SHARED_AT)), (Thrown, at(THROWN_AT))],
             sheets: &[],
         }
+    }
+
+    #[test]
+    fn the_animals_colours_1_to_14_dim_but_the_metal_barrels_do_not() {
+        let dims = |name: &'static str| {
+            let sheet = ObjectSheet {
+                name,
+                pictures: vec![("a", hash(35), Animal), ("b", hash(37), SecondLeading)].leak(),
+            };
+            let mut decoder = decoder();
+            decoder
+                .palettes
+                .push((Animal, Location::new(BANK, SHARED_AT)));
+            decoder
+                .palettes
+                .push((SecondLeading, Location::new(BANK, THROWN_AT)));
+            let (files, _) = decoder.sheets_of(&image(), &[sheet]).unwrap();
+            let json = std::str::from_utf8(&files[0].1).unwrap();
+            let meta = clamber_sprite::Sheet::from_json_str(json, "x.json").unwrap();
+            meta.dim_colours
+        };
+        assert_eq!(dims("animal-pictures"), [(1, 14), (17, 30)]);
+        assert_eq!(dims("metal-pictures"), [(17, 30)]);
     }
 
     #[test]
