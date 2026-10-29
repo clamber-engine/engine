@@ -1109,6 +1109,18 @@ impl PictureClock {
             }
             return;
         }
+        let turning = world
+            .other
+            .as_ref()
+            .filter(|o| o.character != 0 && o.follow.placed.is_some())
+            .and_then(|o| o.follow.turn_frame);
+        if let Some(n) = turning {
+            self.follow = None;
+            if self.shown.is_none() {
+                self.shown = Some(turn_picture(n));
+            }
+            return;
+        }
         let pace = world
             .other
             .as_ref()
@@ -5247,6 +5259,15 @@ mod stand_in_tests {
     }
 }
 
+/// The second character's picture on frame `n` of a turn that began
+/// while it followed the trail, counting the first as 1
+/// (`following.md`, "The follower's pictures"): the facing changes on
+/// the 4th.
+fn turn_picture(n: u8) -> (Set, &'static str) {
+    let at = if (2..=5).contains(&n) { 30 } else { 29 };
+    (Set::Walking, SECOND_WALKING[at])
+}
+
 /// Frames of the follower's landing pictures, from the end of its fall.
 const LEAP_LANDING: u32 = 5;
 
@@ -5385,5 +5406,36 @@ mod follower_cycle_tests {
                 "s-air-6", "s-land-1", "s-land-1", "s-land-2", "s-land-2", "none", "none"
             ]
         );
+    }
+
+    #[test]
+    fn the_follower_shows_the_turn_pictures_for_a_turn_begun_on_the_trail() {
+        let mut world = world_with_follower(Pace::Walking);
+        let mut clock = PictureClock::default();
+        let mut got = Vec::new();
+        for n in 1..=7 {
+            let other = world.other.as_mut().unwrap();
+            other.follow.placed = Some((Pace::Walking, true));
+            other.follow.turn_frame = Some(n);
+            clock.update_other(&world, true);
+            got.push(clock.shown().map_or("none", |(_, l)| l));
+        }
+        assert_eq!(
+            got,
+            [
+                "s-stand-5",
+                "s-stand-7",
+                "s-stand-7",
+                "s-stand-7",
+                "s-stand-7",
+                "s-stand-5",
+                "s-stand-5"
+            ]
+        );
+        // A turn that began elsewhere isn't drawn by this rule.
+        let other = world.other.as_mut().unwrap();
+        other.follow.turn_frame = None;
+        clock.update_other(&world, true);
+        assert_eq!(clock.shown().map(|(_, l)| l), Some("s-walk-1"));
     }
 }

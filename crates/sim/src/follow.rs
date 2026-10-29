@@ -60,6 +60,11 @@ pub struct Follow {
     /// Frames since the turn under way began, counting its first as 1, if
     /// one is.
     pub turn: Option<u8>,
+    /// The turn under way began while the follower followed the trail.
+    pub turn_on_trail: bool,
+    /// The frame of a turn that began on the trail that this frame was,
+    /// counting its first as 1. Still set on the turn's last frame.
+    pub turn_frame: Option<u8>,
 }
 
 /// How the lead moved on arriving at a point of the trail.
@@ -268,8 +273,10 @@ fn follow(level: &Level, physics: &Physics, other: &mut Other, lead: Lead) {
             other.follow.mode = Mode::Trail;
         }
     }
+    other.follow.turn_frame = other.follow.turn.filter(|_| other.follow.turn_on_trail);
     if other.follow.turn.is_some_and(|n| n >= turn) {
         other.follow.turn = None;
+        other.follow.turn_on_trail = false;
     }
 }
 
@@ -346,6 +353,7 @@ fn face(level: &Level, other: &mut Other, lead: Lead) {
     }
     if stands(level, other.follow.current()) {
         other.follow.turn = Some(1);
+        other.follow.turn_on_trail = other.follow.mode == Mode::Trail;
     } else {
         other.facing = flip(other.facing);
     }

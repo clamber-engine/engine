@@ -173,6 +173,20 @@ fn turns_toward_the_lead_on_the_fourth_frame_of_a_turn() {
 }
 
 #[test]
+fn a_turn_begun_on_the_trail_reports_its_seven_frames() {
+    let mut play = Play::stopping(Facing::Left);
+    let mut frames = Vec::new();
+    for _ in 0..9 {
+        play.idle(1);
+        frames.push(play.other().follow.turn_frame);
+    }
+    assert_eq!(
+        frames,
+        [1, 2, 3, 4, 5, 6, 7, 0, 0].map(|n| (n != 0).then_some(n))
+    );
+}
+
+#[test]
 fn faces_the_lead_at_once_off_the_ground() {
     let mut play = Play::stopping(Facing::Left);
     // Its current point is in the air.
