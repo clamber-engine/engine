@@ -1264,6 +1264,9 @@ pub struct Reach {
     /// down, whatever else the player does. `None`: carrying changes
     /// nothing.
     pub carry: Option<Span>,
+    /// Every frame the first character rides the animal. `None`: riding
+    /// changes nothing.
+    pub ride: Option<Span>,
 }
 
 /// The most `air_below` steps a [`Reach`] can have.
@@ -4236,6 +4239,7 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         "upright_fall",
         "bounce",
         "carry",
+        "ride",
     ];
     if let Some(key) = table.keys().find(|k| !KEYS.contains(&k.as_str())) {
         return Err(format!("{path}.{key}: no such value"));
@@ -4387,6 +4391,10 @@ fn parse_reach(value: &Value, path: &str) -> Result<Reach, String> {
         carry: match table.get("carry") {
             None => None,
             Some(_) => Some(span("carry")?),
+        },
+        ride: match table.get("ride") {
+            None => None,
+            Some(_) => Some(span("ride")?),
         },
     })
 }

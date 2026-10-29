@@ -329,7 +329,10 @@
 #   a roll ends sooner, or to the frame before a put-down sets the
 #   object down; a jump that took off then has the ranges on the ground
 #   for the rest of it and after its landing, instead of `jump` and
-#   `air`. The ground action takes `stand`, also in the air. In the
+#   `air`. `ride = [past from, to, below from, to]` (left out: riding
+#   changes nothing) applies to the first character on every frame of
+#   riding the animal, above all the others; on the frame a turn changes
+#   the facing, `past` is measured in the facing before. The ground action takes `stand`, also in the air. In the
 #   air after `jump`, `air_below = [[vy, below], ...]` lifts the lowest
 #   `below`: the first pair whose `vy` is at least the player's vertical
 #   speed gives it, past them all it's `air`'s. Only the character under
@@ -1285,6 +1288,9 @@ air = [-16, 19, 16, 58]
 air_below = [[-4.5, 20], [-3.5, 21], [-2.5, 22], [0, 14]]
 jump_early = 7
 land_hold = 7
+# Riding the animal, every part, from the first riding frame on
+# (collectibles.md, "Riding the animal").
+ride = [-16, 23, 7, 51]
 
 [[archetypes.spark.reach]]
 stand = [-13, 12, -9, 39]

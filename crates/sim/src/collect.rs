@@ -79,6 +79,7 @@ use crate::archetype::{Arrive, Behavior, MAX_LETTERS, Reach, Span};
 use crate::flow::{Flow, FlowEvent, Outcome};
 use crate::player::{Act, Facing, Player, State, frames};
 use crate::pose::Air;
+use crate::ride::RidePart;
 use crate::view::{self, View};
 use crate::world::{Event, Phase, World};
 
@@ -1154,7 +1155,17 @@ fn take(world: &mut World, start: Option<View>) {
             }
         }
         let reach = reach[player.character.min(1)];
-        let past = match player.facing {
+        // On the frame a turn changes a rider's facing, the range is the
+        // one for the facing before (collectibles.md, "Riding the animal").
+        let turned = player
+            .riding
+            .is_some_and(|r| player.character == 0 && r.part == RidePart::Turn(r.ride.turn_face));
+        let facing = match (turned, player.facing) {
+            (false, f) => f,
+            (true, Facing::Right) => Facing::Left,
+            (true, Facing::Left) => Facing::Right,
+        };
+        let past = match facing {
             Facing::Right => x - thing.pos.x.floor(),
             Facing::Left => thing.pos.x.floor() + i64::from(left_shift) - x,
         };
@@ -1254,8 +1265,16 @@ fn take(world: &mut World, start: Option<View>) {
 /// landing goes straight to the ranges on the ground. With a `carry`
 /// row, carrying takes it before all of these, up to the put-down's
 /// `set_down` frame, and a jump taken carrying has the ranges on the
-/// ground once carrying is over, in the air and after landing.
+/// ground once carrying is over, in the air and after landing. With a
+/// `ride` row, the first character riding the animal takes it on every
+/// frame, before all of these.
 pub(crate) fn span(reach: &Reach, player: &Player, crouch_start: u8, set_down: u8) -> Span {
+    if let Some(ride) = reach.ride
+        && player.character == 0
+        && player.riding.is_some()
+    {
+        return ride;
+    }
     let carried = reach.carry.is_some() && player.carried_jump;
     if let Some(carry) = reach.carry
         && carrying(player, set_down)

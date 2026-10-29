@@ -5,9 +5,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use clamber_input::{Action, Actions, Frame};
-use clamber_level::Level;
+use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Fixed, Presets};
-use clamber_sim::{Event, FlowEvent, InputFrame, START_LIVES, View, World, generic_feel, step};
+use clamber_sim::{
+    Behavior, Event, Facing, FlowEvent, InputFrame, Phase, Riding, START_LIVES, View, World,
+    generic_feel, step,
+};
 
 use Action::{Down, Jump, Left};
 
@@ -672,4 +675,73 @@ fn a_bunch_item_has_a_copy_fly_to_the_corner_on_its_release_step_and_the_16_afte
     assert_eq!(drawn[15], [(4, 2), (28, 15), (53, 28)]);
     assert_eq!(drawn[16], [(0, 0), (24, 13), (49, 26)]);
     assert_eq!(drawn[17].len(), 2, "the first item's copy is gone");
+}
+
+/// A world with the first character riding the animal on the floor at
+/// `X`, facing `facing`, and a `spark` far away to move.
+fn riding(facing: Facing) -> Play {
+    let src = format!(
+        "format = 1\nname = \"riding\"\nsize = [2000, 800]\nstart = [{X}, {F}]\n\
+         [[collision]]\nshape = \"rect\"\nrect = [0, {F}, 2000, 200]\n\
+         [[entities]]\ntype = \"hutch\"\nat = [40, {F}]\n\
+         [[entities]]\ntype = \"spark\"\nat = [1900, {F}]\n"
+    );
+    let level = Level::from_toml_str(&src, "riding").unwrap();
+    let mut world = World::new(
+        Arc::new(level),
+        Arc::new(generic_feel("classic-1").unwrap()),
+    );
+    let Some(Behavior::Hutch(hutch)) = world.things[0].archetype.map(|a| a.behavior) else {
+        panic!("no animal crate");
+    };
+    world.things[0].phase = Phase::Ridden;
+    world.things[0].pos = world.player.pos;
+    world.player.facing = facing;
+    world.player.riding = Some(Riding {
+        on_floor: true,
+        was_on_floor: true,
+        mount: None,
+        ..Riding::new(hutch.ride, Fixed::ZERO)
+    });
+    Play::new(world)
+}
+
+/// Moves the spark to `dx` right of the rider and `below` above its feet.
+fn put_spark(play: &mut Play, dx: i32, below: i32) {
+    play.world.things[1].pos = Vec2::new(Fixed::from_int(X + dx), Fixed::from_int(F - below));
+}
+
+#[test]
+fn riding_has_its_own_ranges_on_every_frame() {
+    for (past, below, want) in [
+        (-16, 7, true),
+        (23, 51, true),
+        (-17, 20, false),
+        (24, 20, false),
+        (0, 6, false),
+        (0, 52, false),
+    ] {
+        let mut play = riding(Facing::Right);
+        put_spark(&mut play, -past, below);
+        assert_eq!(
+            !play.step(&[]).taken.is_empty(),
+            want,
+            "I = {past}, D = {below}"
+        );
+    }
+}
+
+#[test]
+fn a_turn_frame_takes_by_the_facing_before() {
+    for (frame, want) in [(4, true), (5, false)] {
+        let mut play = riding(Facing::Left);
+        play.hold(&[Action::Right], frame);
+        // 20 px right of the rider: inside the facing-left range only.
+        put_spark(&mut play, 20, 20);
+        assert_eq!(
+            !play.step(&[Action::Right]).taken.is_empty(),
+            want,
+            "frame {frame}"
+        );
+    }
 }
