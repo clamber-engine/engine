@@ -1042,6 +1042,9 @@ pub struct PictureClock {
     crouched: bool,
     /// Frames of the crouch from D, 0 on D.
     crouch: Option<u32>,
+    /// The follower walking or running along its trail: how, and frames
+    /// since it began.
+    follow: Option<(clamber_sim::Pace, u32)>,
     /// Walking, running or turning on the ground, or in a walk-off's
     /// fall, on the frame before.
     moved: bool,
@@ -1084,11 +1087,39 @@ impl PictureClock {
 
     /// Moves the other character's picture on to `world` as it is after a
     /// logic frame: in a scene, those the spec read, and none elsewhere.
-    pub fn update_other(&mut self, world: &World) {
+    ///
+    /// `moving`: it moved along the ground this frame. Following the
+    /// trail it then walks or runs as the lead did at its point, each
+    /// picture for 2 frames from the first of the cycle on entering
+    /// (`following.md`, "The follower's pictures").
+    pub fn update_other(&mut self, world: &World, moving: bool) {
         self.shown = world.other.as_ref().and_then(|other| {
             let (frame, last) = scene_frame(world)?;
             scene_other(other.character, frame, last)
         });
+        let pace = world
+            .other
+            .as_ref()
+            .filter(|o| moving && o.character != 0 && o.follow.mode == clamber_sim::Mode::Trail)
+            .map(|o| o.follow.pace())
+            .filter(|&p| p != clamber_sim::Pace::Other);
+        let Some(pace) = pace else {
+            self.follow = None;
+            return;
+        };
+        let age = match self.follow {
+            Some((was, age)) if was == pace => age + 1,
+            _ => 0,
+        };
+        self.follow = Some((pace, age));
+        if self.shown.is_none() {
+            let (from, count) = match pace {
+                clamber_sim::Pace::Running => (16, 13),
+                _ => (0, 16),
+            };
+            let n = (age / 2) as usize % count;
+            self.shown = Some((Set::Walking, SECOND_WALKING[from + n]));
+        }
     }
 
     /// Moves on to `world` as it is after a logic frame. `jump_in`: a
@@ -5181,5 +5212,82 @@ mod stand_in_tests {
         assert_eq!(scene_other(0, 32, 366), Some((Set::Standing, "stand-1")));
         assert_eq!(scene_other(0, 364, 366), Some((Set::Standing, "stand-1")));
         assert_eq!(scene_other(0, 365, 366), None);
+    }
+}
+
+#[cfg(test)]
+mod follower_cycle_tests {
+    use clamber_sim::{Other, Pace};
+    use std::collections::VecDeque;
+    use std::sync::Arc;
+
+    use super::*;
+
+    fn world_with_follower(pace: Pace) -> World {
+        let level = clamber_level::Level::from_toml_str(
+            "format = 1\nsize = [256, 224]\nstart = [64, 100]\n",
+            "follower",
+        )
+        .unwrap();
+        let mut world = World::new(
+            Arc::new(level),
+            Arc::new(clamber_sim::generic_feel("classic-1").unwrap()),
+        );
+        let at = world.player.pos;
+        let mut other = Other::new(1, at, clamber_sim::Facing::Right, at);
+        other.follow.trail = VecDeque::from([(0, 0), (1, 0)]);
+        other.follow.paces = VecDeque::from([pace, Pace::Other]);
+        world.other = Some(other);
+        world
+    }
+
+    fn shown(
+        clock: &mut PictureClock,
+        world: &World,
+        moving: bool,
+        frames: usize,
+    ) -> Vec<&'static str> {
+        (0..frames)
+            .map(|_| {
+                clock.update_other(world, moving);
+                clock.shown().map_or("none", |(_, l)| l)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_follower_walks_two_frames_to_a_picture_from_the_first() {
+        let world = world_with_follower(Pace::Walking);
+        let mut clock = PictureClock::default();
+        assert_eq!(
+            shown(&mut clock, &world, true, 6),
+            [
+                "s-walk-1", "s-walk-1", "s-walk-2", "s-walk-2", "s-walk-3", "s-walk-3"
+            ]
+        );
+        // The cycle comes round after 16 pictures.
+        let rest = shown(&mut clock, &world, true, 28);
+        assert_eq!(rest[26..], ["s-walk-1", "s-walk-1"]);
+        // Standing still ends it; the next walk starts afresh.
+        assert_eq!(shown(&mut clock, &world, false, 1), ["none"]);
+        assert_eq!(shown(&mut clock, &world, true, 1), ["s-walk-1"]);
+    }
+
+    #[test]
+    fn the_follower_runs_a_cycle_of_13_restarting_on_entering_it() {
+        let mut clock = PictureClock::default();
+        let walk = world_with_follower(Pace::Walking);
+        shown(&mut clock, &walk, true, 5);
+        let run = world_with_follower(Pace::Running);
+        let got = shown(&mut clock, &run, true, 28);
+        assert_eq!(got[..3], ["s-run-1", "s-run-1", "s-run-2"]);
+        assert_eq!(got[26..], ["s-run-1", "s-run-1"]);
+    }
+
+    #[test]
+    fn the_follower_shows_nothing_new_when_the_lead_did_neither() {
+        let world = world_with_follower(Pace::Other);
+        let mut clock = PictureClock::default();
+        assert_eq!(shown(&mut clock, &world, true, 2), ["none", "none"]);
     }
 }

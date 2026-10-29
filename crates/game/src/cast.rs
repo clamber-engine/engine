@@ -1234,7 +1234,6 @@ impl Poses {
         self.clock = if respawn { 1 } else { self.clock + 1 };
         self.sparkles.update(world, self.clock - 1);
         self.player.pictures.update(world, jump_in);
-        self.other.pictures.update_other(world);
         let seen = world.other.as_ref().map(|o| o.pos);
         self.other_state = match (self.other_seen, seen) {
             (Some(a), Some(b)) if b.y < a.y => State::Jump,
@@ -1243,6 +1242,9 @@ impl Poses {
             _ => State::Idle,
         };
         self.other_seen = seen;
+        self.other
+            .pictures
+            .update_other(world, self.other_state == State::Walk);
         let id = cast.player;
         let landing = cast.playing(id, &self.player, LAND);
         let animation = cast.animation(id, Some(player_animation(world, landing)));

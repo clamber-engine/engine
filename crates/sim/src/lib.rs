@@ -124,7 +124,7 @@ pub use exit::{EXIT, Leaving, WALL_EXIT, area};
 pub use flow::{
     CHECKPOINT, DYING_FRAMES, Flow, FlowEvent, GEM, GOAL, Outcome, RELIC, START_LIVES, TONIC, reach,
 };
-pub use follow::{Follow, Mode, Point, point as follow_point};
+pub use follow::{Follow, Mode, Pace, Point, point as follow_point};
 pub use hidden::HIDDEN;
 pub use join::Join;
 pub use keg::{Burst, Resume};

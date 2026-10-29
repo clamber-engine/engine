@@ -29,7 +29,7 @@ use clamber_level::{Level, Vec2};
 use clamber_pack::{Param, Physics};
 
 use crate::columns;
-use crate::player::{Facing, Player, ceil, frames};
+use crate::player::{Facing, Player, State, ceil, frames};
 use crate::swap::Other;
 use crate::world::World;
 
@@ -47,9 +47,22 @@ pub struct Follow {
     /// the follower stood on the ground.
     pub catching_up: bool,
     pub mode: Mode,
+    /// How the lead moved on arriving at each of the newest points of
+    /// the trail, oldest first. Lined up with the trail's end; the older
+    /// points, if the trail has any, have none noted ([`Pace::Other`]).
+    pub paces: VecDeque<Pace>,
     /// Frames since the turn under way began, counting its first as 1, if
     /// one is.
     pub turn: Option<u8>,
+}
+
+/// How the lead moved on arriving at a point of the trail.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Pace {
+    #[default]
+    Other,
+    Walking,
+    Running,
 }
 
 /// What the follower does on its next frame.
@@ -121,6 +134,16 @@ impl Follow {
         }
     }
 
+    /// How the lead moved on arriving at the current point
+    /// (`following.md`, "The follower's pictures").
+    pub fn pace(&self) -> Pace {
+        let missing = self.trail.len().saturating_sub(self.paces.len());
+        match missing {
+            0 => self.paces.front().copied().unwrap_or_default(),
+            _ => Pace::Other,
+        }
+    }
+
     fn current(&self) -> Point {
         self.trail[0]
     }
@@ -134,6 +157,9 @@ impl Follow {
     fn step_on(&mut self) {
         if self.trail.len() > 1 {
             self.trail.pop_front();
+            if self.paces.len() > self.trail.len() {
+                self.paces.pop_front();
+            }
         }
     }
 }
@@ -166,6 +192,11 @@ pub(crate) fn update(world: &mut World, lead: Lead) {
 pub(crate) fn note(world: &mut World) {
     let at = point(world.player.pos);
     let most = world.feel.world[Param::FollowTrail].floor().max(1);
+    let pace = match world.player.state {
+        State::Walk => Pace::Walking,
+        State::Run => Pace::Running,
+        _ => Pace::Other,
+    };
     let Some(other) = &mut world.other else {
         return;
     };
@@ -174,8 +205,12 @@ pub(crate) fn note(world: &mut World) {
         return;
     }
     follow.trail.push_back(at);
+    follow.paces.push_back(pace);
     if follow.trail.len() as i64 > most {
         follow.trail.pop_front();
+    }
+    while follow.paces.len() > follow.trail.len() {
+        follow.paces.pop_front();
     }
     if let Mode::Rest { gained, .. } = &mut follow.mode {
         *gained = true;
