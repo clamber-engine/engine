@@ -1045,6 +1045,10 @@ pub struct PictureClock {
     /// The follower walking or running along its trail: how, and frames
     /// since it began.
     follow: Option<(clamber_sim::Pace, u32)>,
+    /// A jump the follower replays: frames since it was placed on the
+    /// take-off point (0 there), and frames since its fall ended (0 on
+    /// that frame), if it has.
+    leap: Option<(u32, Option<u32>)>,
     /// Walking, running or turning on the ground, or in a walk-off's
     /// fall, on the frame before.
     moved: bool,
@@ -1097,12 +1101,20 @@ impl PictureClock {
             let (frame, last) = scene_frame(world)?;
             scene_other(other.character, frame, last)
         });
+        self.update_leap(world);
+        if let Some((n, landed)) = self.leap {
+            self.follow = None;
+            if self.shown.is_none() {
+                self.shown = Some((Set::Jump, leap_picture(n, landed)));
+            }
+            return;
+        }
         let pace = world
             .other
             .as_ref()
             .filter(|o| moving && o.character != 0 && o.follow.mode == clamber_sim::Mode::Trail)
             .map(|o| o.follow.pace())
-            .filter(|&p| p != clamber_sim::Pace::Other);
+            .filter(|&p| matches!(p, clamber_sim::Pace::Walking | clamber_sim::Pace::Running));
         let Some(pace) = pace else {
             self.follow = None;
             return;
@@ -1120,6 +1132,26 @@ impl PictureClock {
             let n = (age / 2) as usize % count;
             self.shown = Some((Set::Walking, SECOND_WALKING[from + n]));
         }
+    }
+
+    /// Follows the follower through a jump of the lead it replays
+    /// (`following.md`, "A jump replayed on the trail").
+    fn update_leap(&mut self, world: &World) {
+        let placed = world
+            .other
+            .as_ref()
+            .filter(|o| o.character != 0)
+            .and_then(|o| o.follow.placed);
+        self.leap = match (placed, self.leap) {
+            (None, _) => None,
+            (Some((clamber_sim::Pace::Takeoff, _)), _) => Some((0, None)),
+            (Some(_), None) => None,
+            (Some((_, stands)), Some((n, landed))) => match landed {
+                Some(k) if k + 1 >= LEAP_LANDING => None,
+                Some(k) => Some((n + 1, Some(k + 1))),
+                None => Some((n + 1, stands.then_some(0))),
+            },
+        };
     }
 
     /// Moves on to `world` as it is after a logic frame. `jump_in`: a
@@ -5215,6 +5247,29 @@ mod stand_in_tests {
     }
 }
 
+/// Frames of the follower's landing pictures, from the end of its fall.
+const LEAP_LANDING: u32 = 5;
+
+/// The second character's picture `n` frames after the follower was
+/// placed on a take-off point, or `landed` frames after its fall ended.
+fn leap_picture(n: u32, landed: Option<u32>) -> &'static str {
+    const RISE: [&str; 7] = [
+        "s-rise-1", "s-rise-2", "s-rise-3", "s-rise-4", "s-rise-5", "s-rise-6", "s-rise-7",
+    ];
+    match (landed, n) {
+        (Some(0), _) => "s-air-6",
+        (Some(1..=2), _) => "s-land-1",
+        (Some(_), _) => "s-land-2",
+        (None, 0) => "s-jump-2",
+        (None, 1..=14) => RISE[(n as usize - 1) / 2],
+        (None, 15..=16) => "s-air-1",
+        (None, 17..=18) => "s-air-2",
+        (None, 19..=21) => "s-air-3",
+        (None, 22..=24) => "s-air-4",
+        (None, _) => "s-air-5",
+    }
+}
+
 #[cfg(test)]
 mod follower_cycle_tests {
     use clamber_sim::{Other, Pace};
@@ -5289,5 +5344,46 @@ mod follower_cycle_tests {
         let world = world_with_follower(Pace::Other);
         let mut clock = PictureClock::default();
         assert_eq!(shown(&mut clock, &world, true, 2), ["none", "none"]);
+    }
+
+    fn placed(clock: &mut PictureClock, world: &mut World, p: (Pace, bool)) -> &'static str {
+        world.other.as_mut().unwrap().follow.placed = Some(p);
+        clock.update_other(world, false);
+        clock.shown().map_or("none", |(_, l)| l)
+    }
+
+    #[test]
+    fn the_follower_shows_a_replayed_jump_by_the_table_then_lands() {
+        let mut world = world_with_follower(Pace::Other);
+        let mut clock = PictureClock::default();
+        assert_eq!(placed(&mut clock, &mut world, (Pace::Other, true)), "none");
+        let mut got = vec![placed(&mut clock, &mut world, (Pace::Takeoff, false))];
+        for _ in 1..30 {
+            got.push(placed(&mut clock, &mut world, (Pace::Other, false)));
+        }
+        let at = |n: usize| got[n];
+        assert_eq!(
+            [at(0), at(1), at(2), at(3)],
+            ["s-jump-2", "s-rise-1", "s-rise-1", "s-rise-2"]
+        );
+        assert_eq!(
+            [at(14), at(15), at(16), at(17), at(18)],
+            ["s-rise-7", "s-air-1", "s-air-1", "s-air-2", "s-air-2"]
+        );
+        assert_eq!(
+            [at(19), at(21), at(22), at(24), at(25), at(29)],
+            [
+                "s-air-3", "s-air-3", "s-air-4", "s-air-4", "s-air-5", "s-air-5"
+            ]
+        );
+        let land: Vec<_> = (0..7)
+            .map(|_| placed(&mut clock, &mut world, (Pace::Other, true)))
+            .collect();
+        assert_eq!(
+            land,
+            [
+                "s-air-6", "s-land-1", "s-land-1", "s-land-2", "s-land-2", "none", "none"
+            ]
+        );
     }
 }

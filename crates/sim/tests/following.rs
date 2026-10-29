@@ -8,7 +8,7 @@ use clamber_input::{Action, Actions, Frame};
 use clamber_level::{Level, Vec2};
 use clamber_pack::{CharacterFeel, Fixed, Presets};
 use clamber_sim::{
-    Facing, Follow, InputFrame, Mode, Other, Outcome, World, follow_point, generic_feel, step,
+    Facing, Follow, InputFrame, Mode, Other, Outcome, Pace, World, follow_point, generic_feel, step,
 };
 
 /// Flat ground at y = 300 from x = 0 to 4096, and a block 40 px high
@@ -249,4 +249,34 @@ fn both_come_back_at_the_start_after_falling_out() {
     assert_eq!(other.character, 1);
     assert_eq!(other.pos, play.world.player.pos);
     assert_eq!(other.follow, Follow::at(follow_point(other.pos)));
+}
+
+#[test]
+fn a_jump_is_replayed_from_one_take_off_point_to_a_landing() {
+    let mut play = Play::new();
+    play.idle(10);
+    let mut takeoff = None;
+    let mut placed = Vec::new();
+    for frame in 0..200 {
+        let keys: &[Action] = if frame == 40 { &[R, J] } else { &[R] };
+        play.step(keys);
+        if takeoff.is_none() && !play.world.player.grounded() {
+            takeoff = Some(follow_point(play.world.player.pos));
+        }
+        placed.push((follow_point(play.other().pos), play.other().follow.placed));
+    }
+    let takeoff = takeoff.expect("the lead jumped");
+    let marks: Vec<usize> = (0..placed.len())
+        .filter(|&i| matches!(placed[i].1, Some((Pace::Takeoff, _))))
+        .collect();
+    assert_eq!(marks.len(), 1, "{marks:?}");
+    let at = marks[0];
+    // It's placed on the point the lead left the ground at, which it
+    // doesn't stand on, then on in-air points until one it stands on.
+    assert_eq!(placed[at].0, takeoff);
+    assert_eq!(placed[at].1.map(|p| p.1), Some(false));
+    let landing = (at + 1..placed.len())
+        .find(|&i| placed[i].1.is_some_and(|p| p.1))
+        .expect("it lands");
+    assert!(landing > at + 5);
 }

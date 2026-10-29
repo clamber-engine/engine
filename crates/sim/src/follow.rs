@@ -51,6 +51,12 @@ pub struct Follow {
     /// the trail, oldest first. Lined up with the trail's end; the older
     /// points, if the trail has any, have none noted ([`Pace::Other`]).
     pub paces: VecDeque<Pace>,
+    /// The lead was off the ground at the newest point.
+    pub newest_air: bool,
+    /// What the follower was placed on this frame by following the trail:
+    /// the lead's pace at the point, and whether it stands there. `None`
+    /// off the trail.
+    pub placed: Option<(Pace, bool)>,
     /// Frames since the turn under way began, counting its first as 1, if
     /// one is.
     pub turn: Option<u8>,
@@ -63,6 +69,8 @@ pub enum Pace {
     Other,
     Walking,
     Running,
+    /// The first point the lead was off the ground at after being on it.
+    Takeoff,
 }
 
 /// What the follower does on its next frame.
@@ -197,6 +205,7 @@ pub(crate) fn note(world: &mut World) {
         State::Run => Pace::Running,
         _ => Pace::Other,
     };
+    let air = !world.player.grounded();
     let Some(other) = &mut world.other else {
         return;
     };
@@ -204,6 +213,12 @@ pub(crate) fn note(world: &mut World) {
     if follow.newest() == at {
         return;
     }
+    let pace = if air && !follow.newest_air {
+        Pace::Takeoff
+    } else {
+        pace
+    };
+    follow.newest_air = air;
     follow.trail.push_back(at);
     follow.paces.push_back(pace);
     if follow.trail.len() as i64 > most {
@@ -225,6 +240,7 @@ fn follow(level: &Level, physics: &Physics, other: &mut Other, lead: Lead) {
             other.facing = flip(other.facing);
         }
     }
+    other.follow.placed = None;
     match other.follow.mode {
         Mode::Trail => trail(level, physics, other, lead),
         Mode::Rest { target, gained } => {
@@ -265,6 +281,7 @@ fn trail(level: &Level, physics: &Physics, other: &mut Other, lead: Lead) {
         Fixed::from_int(x as i32) + other.pos.x - Fixed::from_int(other.pos.x.floor() as i32),
         other.pos.y + Fixed::from_int((feet - ceil(other.pos.y)) as i32),
     );
+    other.follow.placed = Some((other.follow.pace(), stands(level, (x, feet))));
     let follow = &mut other.follow;
     if follow.newest().0 != x {
         face(level, other, lead);
