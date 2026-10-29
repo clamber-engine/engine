@@ -94,6 +94,19 @@ pub fn rider_group(label: &str) -> Option<&'static [&'static str]> {
 /// frames: `animal-1` to `animal-6` and back, 6 frames each.
 const STANDING_CYCLE: [usize; 10] = [0, 1, 2, 3, 4, 5, 4, 3, 2, 1];
 
+/// The label of the player's own picture at the animal's place `since`
+/// frames after M, while mounting (animal-crate.md, "While mounting").
+pub fn mounting_player(since: u32) -> Option<&'static str> {
+    match since {
+        0..=2 => Some(JUMP[3]),
+        3..=5 => Some(JUMP[2]),
+        6..=8 => Some(JUMP[1]),
+        9..=13 => Some(JUMP[0]),
+        14..=21 => Some(hutch_pictures::STANDING[0]),
+        _ => None,
+    }
+}
+
 /// The index into [`hutch_pictures::STANDING`] of a standing animal's
 /// picture `n` frames into its cycle.
 pub fn standing_picture(n: u32) -> usize {

@@ -182,13 +182,13 @@ impl Cast {
         {
             return;
         }
-        // The mounting pictures of the animal's place are the character
-        // itself (animal-crate.md, "While mounting").
-        if world.things.iter().any(|t| {
-            is_hutch(t)
-                && matches!(t.phase, Phase::Mounted(since)
-                    if hutch_pictures::mounting(u32::from(since)).is_some())
-        }) && self.has_group(hutch_pictures::SHEET, &hutch_pictures::MOUNTING)
+        // While mounting the character's pictures are drawn with the
+        // animal's place (animal-crate.md, "While mounting").
+        if world
+            .things
+            .iter()
+            .any(|t| is_hutch(t) && matches!(t.phase, Phase::Mounted(_)))
+            && self.has_mount_pictures()
         {
             return;
         }
@@ -408,6 +408,12 @@ impl Cast {
         }
         if let Some(shown) = self.hutch_picture(thing, pose, x, y) {
             if let Some(sprite) = shown {
+                self.bank.draw(canvas, &Sprite { opacity, ..sprite });
+            }
+            if let Phase::Mounted(since) = thing.phase
+                && let Some(sprite) =
+                    self.mounting_player_sprite(u32::from(since), pose.hutch.flip, (x, y))
+            {
                 self.bank.draw(canvas, &Sprite { opacity, ..sprite });
             }
             return;
@@ -997,7 +1003,8 @@ impl Cast {
                     let flip = clock.flip;
                     self.group_sprite(sheet, &hutch_pictures::MOUNTING, entry, flip, at)
                 }
-                // M and M + 1 are not covered: the animal keeps standing.
+                // On M and M + 1 only the player's picture is there.
+                None if self.has_mount_pictures() => return Some(None),
                 None => self.standing_sprite(thing, clock.frames.unwrap_or(0), at),
             },
             // Left behind or running off: not covered either; the
@@ -1029,6 +1036,25 @@ impl Cast {
             _ => false,
         };
         (crate_own && before_animal).then_some(None)
+    }
+
+    /// Whether the hutch sheet has the pictures the player and the animal
+    /// show while mounting.
+    fn has_mount_pictures(&self) -> bool {
+        let sheet = hutch_pictures::SHEET;
+        self.has_group(sheet, &hutch_pictures::MOUNTING)
+            && self.has_group(sheet, &ride_pictures::JUMP)
+            && self.has_group(sheet, &hutch_pictures::STANDING)
+    }
+
+    /// The player's own picture at the animal's place `since` frames
+    /// after M, mirrored as the animal is.
+    fn mounting_player_sprite(&self, since: u32, flip: bool, at: (f32, f32)) -> Option<Sprite> {
+        if !self.has_mount_pictures() {
+            return None;
+        }
+        let label = ride_pictures::mounting_player(since)?;
+        self.group_sprite(hutch_pictures::SHEET, &[label], 0, flip, at)
     }
 
     /// Whether the sheet called `sheet` has the whole `group`.
@@ -2751,6 +2777,33 @@ mod tests {
         for phase in [Phase::Waiting(None), Phase::Mounted(0), Phase::Mounted(1)] {
             thing.phase = phase;
             assert_eq!(draw(&thing), [none, B, none, none], "{phase:?}");
+        }
+    }
+
+    #[test]
+    fn mounting_draws_the_player_s_picture_and_no_animal_on_the_first_two_frames() {
+        let mut thing = crate_thing();
+        let mut labels: Vec<&str> = hutch_pictures::STANDING.to_vec();
+        labels.extend(ride_pictures::JUMP);
+        labels.extend(hutch_pictures::MOUNTING);
+        let cast = Cast::new(vec![
+            ("hutch".to_string(), sheet()),
+            (
+                hutch_pictures::SHEET.to_string(),
+                labelled_sheet(&labels, 4),
+            ),
+        ]);
+        let draw = |thing: &Thing| {
+            let mut canvas = Canvas::new(4, 1);
+            cast.draw_thing(&mut canvas, thing, &Pose::default(), 2.0, 0.0);
+            [0, 1, 2, 3].map(|x| canvas.get(x, 0).unwrap())
+        };
+        let none = Color::default();
+        // Every picture is the same in this sheet: the player's is there
+        // on M, M + 1 and through M + 21, and the engine's art is not.
+        for since in [0, 1, 2, 3, 21] {
+            thing.phase = Phase::Mounted(since);
+            assert_eq!(draw(&thing), [none, B, none, none], "{since}");
         }
     }
 
